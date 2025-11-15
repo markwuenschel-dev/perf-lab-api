@@ -1,0 +1,38 @@
+# --- Core API stack ---
+fastapi
+uvicorn[standard]
+
+# --- Config & validation ---
+pydantic-settings
+
+# --- Database & migrations (Postgres, async-ready) ---
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# --- HTTP client (for calling external APIs later) ---
+httpx
+
+# --- Forms / uploads (for future file/form endpoints) ---
+python-multipart
+
+# --- Auth & security (when you add login or API keys) ---
+pyjwt
+passlib[bcrypt]
+
+# --- JSON & performance niceties ---
+orjson
+
+# --- Logging (plays well with your structlog habit) ---
+structlog
+
+# --- Testing ---
+pytest
+pytest-asyncio
+pytest-cov
+
+# --- Linting / type-checking / formatting ---
+mypy
+ruff
+black
+isort
