@@ -7,9 +7,15 @@ from pydantic import BaseModel
 
 app = FastAPI(title="Performance Lab API")
 
+origins = [
+    "http://localhost:5173",               # Vite dev
+    # later you'll add your deployed frontend URL, e.g.:
+    # "https://perf-lab-web.netlify.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # loosen for dev; tighten later
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
