@@ -4,8 +4,14 @@ from typing import List
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from app.core.config import settings
+from app.core.db import engine, Base
+from app.api.v1 import ingest, prescribe
 
-app = FastAPI(title="Performance Lab API")
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version="0.1.0",
+)
 
 origins = [
     "http://localhost:5173",               # Vite dev
@@ -13,9 +19,10 @@ origins = [
     # "https://perf-lab-web.netlify.app",
 ]
 
+# CORS for web frontend (tighten origins later)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # TODO: restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -411,9 +418,8 @@ for wk in range(8, 11):
 # -------- Endpoints --------
 
 @app.get("/ping")
-def ping():
-    return {"status": "ok"}
-
+async def ping():
+    return {"status": "ok", "system": "running"}
 
 @app.post("/compute-metrics", response_model=MetricsResponse)
 def compute_metrics(payload: MetricsRequest):
@@ -451,3 +457,11 @@ def get_run_program():
 @app.get("/program/strength", response_model=List[StrengthSession])
 def get_strength_program():
     return STRENGTH_SESSIONS
+
+@app.on_event("startup")
+async def init_tables():
+    # Dev-only auto-migrations: ensure models are imported so metadata is populated
+    from app.models import athlete_state, user  # noqa: F401
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
