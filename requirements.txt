@@ -19,6 +19,9 @@ python-multipart
 # --- Auth & security (when you add login or API keys) ---
 pyjwt
 passlib[bcrypt]
+python-jose[cryptography]
+python-multipart     # required for OAuth2PasswordRequestForm
+email-validator      # required for pydantic EmailStr
 
 # --- JSON & performance niceties ---
 orjson
@@ -36,3 +39,4 @@ mypy
 ruff
 black
 isort
+
