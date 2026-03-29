@@ -4,39 +4,55 @@ uvicorn[standard]
 
 # --- Config & validation ---
 pydantic-settings
+python-dotenv          # .env loading outside of pydantic-settings contexts
 
 # --- Database & migrations (Postgres, async-ready) ---
 sqlalchemy[asyncio]
-asyncpg
+asyncpg                # async Postgres driver (runtime)
+psycopg2-binary        # sync Postgres driver (Alembic needs this for migrations)
 alembic
+greenlet               # required by SQLAlchemy async internals
 
-# --- HTTP client (for calling external APIs later) ---
-httpx
-
-# --- Forms / uploads (for future file/form endpoints) ---
-python-multipart
-
-# --- Auth & security (when you add login or API keys) ---
+# --- Auth & security ---
 pyjwt
 passlib[bcrypt]
 python-jose[cryptography]
-python-multipart     # required for OAuth2PasswordRequestForm
-email-validator      # required for pydantic EmailStr
+python-multipart       # required for OAuth2PasswordRequestForm
+email-validator        # required for pydantic EmailStr
+bcrypt                 # passlib backend
 
-# --- JSON & performance niceties ---
-orjson
+# --- HTTP client ---
+httpx                  # async HTTP calls (external APIs, LLM endpoints)
 
-# --- Logging (plays well with your structlog habit) ---
-structlog
+# --- LLM / AI ---
+anthropic              # Anthropic SDK for the LLM prescriber layer
+openai                 # GPT-4 / GPT-4o (OpenAI)
+google-generativeai    # Gemini (Google)
+mistralai              # Mistral
+tiktoken               # token counting for OpenAI models
+tenacity               # retry logic for LLM API calls (rate limits, timeouts)
+
+# --- Background tasks ---
+celery[redis]          # async task queue (deferred state updates, weak point inference)
+redis                  # broker + cache backend for Celery
+
+# --- Rate limiting ---
+slowapi                # rate limiting for public-facing endpoints
+
+# --- JSON & performance ---
+orjson                 # fast JSON serialization
+
+# --- Logging ---
+structlog              # structured logging
 
 # --- Testing ---
 pytest
 pytest-asyncio
 pytest-cov
+httpx                  # also used as async test client for FastAPI
 
 # --- Linting / type-checking / formatting ---
 mypy
 ruff
 black
 isort
-
