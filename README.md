@@ -219,7 +219,7 @@ Defined in [`app/core/config.py`](app/core/config.py) (`.env` supported):
 |----------|---------|
 | `PROJECT_NAME` | API title (default: `Performance Lab API`) |
 | `API_V1_STR` | v1 prefix (default: `/v1`) |
-| `DATABASE_URL` | Async Postgres URL, e.g. `postgresql+asyncpg://postgres:postgres@localhost/perf_lab` |
+| `DATABASE_URL` | Async Postgres URL, e.g. `postgresql+asyncpg://postgres:postgres@localhost/perf_lab`. Plain `postgresql://` or `postgres://` (e.g. Render’s auto-injected URL) is rewritten to `postgresql+asyncpg://` at startup so `asyncpg` is used. |
 | `DEBUG` | SQL echo etc. (default: `True`) |
 | `SECRET_KEY` | JWT signing secret — **override in production** (generate e.g. `openssl rand -hex 32`) |
 | `ALGORITHM` | JWT algorithm (default: `HS256`) |
