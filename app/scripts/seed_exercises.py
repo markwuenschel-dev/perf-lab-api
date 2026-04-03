@@ -1,10 +1,10 @@
 """
-scripts/seed_exercises.py
+app/scripts/seed_exercises.py
 
 Populates the exercises table with a starter library.
-Run once after migrations:
+Run once after migrations (from repo root):
 
-    python -m scripts.seed_exercises
+    python -m app.scripts.seed_exercises
 
 Covers: Strength, Hypertrophy, Power, Running, Conditioning,
         Calisthenics, Hyrox/CrossFit, Grip, Olympic lifting.

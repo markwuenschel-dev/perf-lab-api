@@ -2,8 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1 import ingest, prescribe
-from app.api import auth  # new
+from app.api.v1 import auth, ingest, prescribe
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
