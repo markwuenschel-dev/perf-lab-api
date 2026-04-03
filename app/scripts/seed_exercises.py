@@ -11,8 +11,52 @@ Covers: Strength, Hypertrophy, Power, Running, Conditioning,
 """
 
 import asyncio
+
+from sqlalchemy.future import select
+
 from app.core.db import AsyncSessionLocal
+from app.data.exercise_bulk import bulk_exercises
+from app.engine.phi_table import default_phi_for_row
 from app.models.exercise import Exercise
+
+_EXERCISE_COLUMNS = {c.key for c in Exercise.__table__.columns} - {"id"}
+
+
+def _pattern_family(movement_pattern: str) -> str:
+    mp = movement_pattern.lower()
+    if "squat" in mp or mp == "single_leg":
+        return "squat_family"
+    if "hinge" in mp:
+        return "hinge_family"
+    if "push" in mp:
+        return "press_family"
+    if "pull" in mp:
+        return "pull_family"
+    if "run" in mp or "row" in mp or "bike" in mp:
+        return "locomotion"
+    if "carry" in mp:
+        return "carry_family"
+    if "jump" in mp:
+        return "jump_family"
+    if mp == "core":
+        return "core_family"
+    return "general"
+
+
+def _enrich_exercise_row(data: dict) -> dict:
+    row = dict(data)
+    sd = float(row.get("skill_demand", 0.5))
+    il = float(row.get("impact_level", 0.5))
+    pack = default_phi_for_row(row["modality"], row["movement_pattern"], sd, il)
+    row.setdefault("phi_adapt", pack["phi_adapt"])
+    row.setdefault("phi_fatigue", pack["phi_fatigue"])
+    row.setdefault("phi_tissue", pack["phi_tissue"])
+    row.setdefault("energy_mix", pack["energy_mix"])
+    row.setdefault("pattern_family", _pattern_family(row["movement_pattern"]))
+    row.setdefault("technical_ceiling", min(0.98, sd + 0.12))
+    row.setdefault("recovery_cost", 0.25 + il * 0.45)
+    row.setdefault("novelty_penalty", 0.08 + sd * 0.08)
+    return {k: v for k, v in row.items() if k in _EXERCISE_COLUMNS}
 
 
 EXERCISES = [
@@ -383,19 +427,19 @@ EXERCISES = [
 ]
 
 
-async def seed():
+async def seed() -> None:
+    combined = EXERCISES + bulk_exercises()
     async with AsyncSessionLocal() as db:
-        for data in EXERCISES:
-            existing = await db.execute(
-                __import__("sqlalchemy.future", fromlist=["select"])
-                .select(Exercise).where(Exercise.name == data["name"])
-            )
-            if existing.scalars().first():
-                continue  # idempotent — skip if already exists
-            db.add(Exercise(**data))
-
+        inserted = 0
+        for raw in combined:
+            clean = _enrich_exercise_row(raw)
+            res = await db.execute(select(Exercise).where(Exercise.name == clean["name"]))
+            if res.scalars().first():
+                continue
+            db.add(Exercise(**clean))
+            inserted += 1
         await db.commit()
-        print(f"Seeded {len(EXERCISES)} exercises.")
+        print(f"Exercise seed: inserted {inserted} new rows ({len(combined)} in catalog).")
 
 
 if __name__ == "__main__":

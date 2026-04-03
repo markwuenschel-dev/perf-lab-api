@@ -27,6 +27,28 @@ def recommend_next_session(
 
     # --- 1. Safety Overrides (Active Constraints) ---
 
+    if state.tissue_t.lumbar > 65.0 or state.tissue_t.knee > 70.0:
+        return WorkoutPrescription(
+            type="Recovery",
+            focus="Low-Impact Mobility + Swim / Bike Easy",
+            rationale=(
+                f"Regional tissue stress is elevated (lumbar {state.tissue_t.lumbar:.0f}, "
+                f"knee {state.tissue_t.knee:.0f}). Deload axial / knee-dominant loading."
+            ),
+            duration_min=30,
+        )
+
+    if state.fatigue_f.tendon > 55.0 or state.fatigue_f.structural > 65.0:
+        return WorkoutPrescription(
+            type="Tissue Deload",
+            focus="Isometrics + Blood-Flow Circuits",
+            rationale=(
+                f"Tendon / structural fatigue is high (tendon {state.fatigue_f.tendon:.0f}, "
+                f"structural {state.fatigue_f.structural:.0f}). Reduce plyometrics and max eccentrics."
+            ),
+            duration_min=35,
+        )
+
     if state.f_struct_damage > 70.0:
         return WorkoutPrescription(
             type="Recovery",

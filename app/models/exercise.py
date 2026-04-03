@@ -1,5 +1,11 @@
 from sqlalchemy import (
-    Column, Integer, String, Boolean, Float, ARRAY, Text
+    Column,
+    Integer,
+    String,
+    Boolean,
+    Float,
+    ARRAY,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -37,6 +43,19 @@ class Exercise(Base):
         comment="squat | hinge | push_horizontal | push_vertical | pull_horizontal | "
                 "pull_vertical | carry | run | row | bike | jump | rotation | core | mixed"
     )
+    pattern_family = Column(
+        String,
+        nullable=True,
+        index=True,
+        comment="e.g. squat_family | hinge_family | press_family | pull_family | locomotion"
+    )
+    unilateral = Column(Boolean, default=False, comment="True if single-limb emphasis")
+    rom_demand = Column(Float, nullable=True, comment="0–1 normalized ROM requirement")
+    contraction_bias = Column(
+        String,
+        nullable=True,
+        comment="eccentric | concentric | isometric | mixed"
+    )
 
     # Muscles
     primary_muscles = Column(ARRAY(String), default=list)
@@ -56,6 +75,16 @@ class Exercise(Base):
         comment="barbell | dumbbell | bodyweight | machine | cable | "
                 "kettlebell | distance | time | reps"
     )
+    sport_domains = Column(
+        ARRAY(String),
+        default=list,
+        comment="e.g. powerlifting | weightlifting | hyrox | crossfit | gymnastics"
+    )
+    scalable_by = Column(
+        String,
+        nullable=True,
+        comment="load | band | elevation | tempo | duration | distance"
+    )
 
     # Difficulty
     skill_demand = Column(
@@ -63,10 +92,35 @@ class Exercise(Base):
         default=0.5,
         comment="0–1. High = Olympic lifts, complex gymnastics. Low = machine isolation."
     )
+    technical_ceiling = Column(
+        Float,
+        default=0.5,
+        comment="0–1. Movement complexity cap before regressions recommended"
+    )
     impact_level = Column(
         Float,
         default=0.5,
         comment="0–1. Structural impact. High = heavy running, plyometrics. Low = bike."
+    )
+    recovery_cost = Column(
+        Float,
+        default=0.5,
+        comment="0–1. Expected systemic cost between sessions"
+    )
+    novelty_penalty = Column(
+        Float,
+        default=0.1,
+        comment="0–1. Novelty / coordination tax for dose model"
+    )
+
+    # Vector ontology (see PROJECT_AGENT_BRIEF.md)
+    phi_adapt = Column(JSONB, default=dict, comment="φ_adapt weights")
+    phi_fatigue = Column(JSONB, default=dict, comment="φ_fatigue weights")
+    phi_tissue = Column(JSONB, default=dict, comment="φ_tissue joint stress weights")
+    energy_mix = Column(
+        JSONB,
+        default=dict,
+        comment='{"aerobic","glycolytic","alactic"} fractions'
     )
 
     # Weak-point targeting tags

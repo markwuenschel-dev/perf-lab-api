@@ -3,29 +3,37 @@ from typing import Dict
 
 from pydantic import BaseModel, Field
 
+from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
+
 
 class UnifiedStateVector(BaseModel):
     """
-    DTO for S(t). Represents the digital twin snapshot.
+    Digital twin snapshot S(t): legacy scalars + decomposed engine vectors.
+
+    Legacy fields remain for backward-compatible API clients; they are derived
+    from (capacity_x, fatigue_f, tissue_t) on each update.
     """
+
     timestamp: datetime
 
-    # Capacities
+    capacity_x: CapacityState = Field(default_factory=CapacityState)
+    fatigue_f: FatigueState = Field(default_factory=FatigueState)
+    tissue_t: TissueState = Field(default_factory=TissueState)
+
+    # Legacy capacities (mirrors of X / batteries)
     c_met_aerobic: float = Field(..., description="Aerobic capacity (e.g. CS / VO2 proxy)")
     c_nm_force: float = Field(..., description="Maximal strength / force capacity")
     c_struct: float = Field(..., description="Structural capacity / CSA proxy")
     b_met_anaerobic: float = Field(..., description="Anaerobic work capacity (W'/D')")
 
-    # Fatigues (0–100 scales recommended)
+    # Legacy fatigues (mirrors of F aggregate view)
     f_met_systemic: float = Field(0.0, ge=0.0, le=100.0)
     f_nm_peripheral: float = Field(0.0, ge=0.0, le=100.0)
     f_nm_central: float = Field(0.0, ge=0.0, le=100.0)
     f_struct_damage: float = Field(0.0, ge=0.0, le=100.0)
 
-    # Signals
     s_struct_signal: float = Field(0.0, ge=0.0)
 
-    # Human Factors
     habit_strength: float = Field(0.0, ge=0.0, le=1.0)
     skill_state: Dict[str, float] = Field(default_factory=dict)
 

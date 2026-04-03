@@ -8,7 +8,7 @@ from app.core.db import get_db
 from app.core.auth import get_current_user
 from app.models.user import User
 from app.models.athlete_state import AthleteState
-from app.schemas.state import UnifiedStateVector
+from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session, WorkoutPrescription
 
 router = APIRouter(tags=["Prescription"])
@@ -39,7 +39,7 @@ async def get_next_session(
             duration_min=60,
         )
 
-    state = UnifiedStateVector.model_validate(last_record)
+    state = unified_from_athlete_row(last_record)
     try:
         return recommend_next_session(state, goal=goal)
     except Exception as e:

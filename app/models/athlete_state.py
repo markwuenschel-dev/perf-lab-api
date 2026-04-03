@@ -37,3 +37,6 @@ class AthleteState(Base):
     # Human Factors
     habit_strength = Column(Float, default=0.0)
     skill_state = Column(JSONB, default=dict)  # e.g. {"squat": 0.8}
+
+    # Full-spectrum engine bundle: {"x": CapacityState, "f": FatigueState, "t": TissueState}
+    engine_state = Column(JSONB, nullable=True)
