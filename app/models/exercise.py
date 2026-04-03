@@ -146,4 +146,5 @@ class Exercise(Base):
     )
 
     # Arbitrary extra metadata (tempo, rest guidelines, etc.)
+    # Optional: {"provenance_primitive_ids": ["twin_state_engine", ...]} — see training_primitives.json
     meta = Column(JSONB, default=dict)

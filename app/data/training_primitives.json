@@ -1,0 +1,83 @@
+[
+  {
+    "id": "banister_impulse_response",
+    "name": "Banister impulse–response model",
+    "domain": "general",
+    "source_type": "literature",
+    "source_name": "Banister et al. (1975)",
+    "evidence_level": "high",
+    "description": "Fitness–fatigue dynamics from training impulse and decay constants."
+  },
+  {
+    "id": "foster_load_monotony",
+    "name": "Foster session load & monotony",
+    "domain": "general",
+    "source_type": "literature",
+    "source_name": "Foster et al.",
+    "evidence_level": "moderate",
+    "description": "TRIMP-like load, monotony, strain for internal training load."
+  },
+  {
+    "id": "twin_state_engine",
+    "name": "perf-lab unified S(t) twin",
+    "domain": "general",
+    "source_type": "derived",
+    "source_name": "perf-lab-api engine",
+    "evidence_level": "heuristic",
+    "description": "Empirical fatigue, tissue, and capacity coupling in this codebase."
+  },
+  {
+    "id": "pendlay_wl_principles",
+    "name": "High-frequency classical lift emphasis",
+    "domain": "weightlifting",
+    "source_type": "coach_system",
+    "source_name": "Pendlay-style weightlifting principles",
+    "evidence_level": "heuristic",
+    "description": "Frequent competition lifts, technique-first, controlled volume."
+  },
+  {
+    "id": "hinshaw_aerobic_principles",
+    "name": "Aerobic base & threshold layering",
+    "domain": "running",
+    "source_type": "coach_system",
+    "source_name": "Hinshaw-style aerobic system (decomposed)",
+    "evidence_level": "heuristic",
+    "description": "Majority low intensity; threshold and VO2 work layered, fatigue via volume."
+  },
+  {
+    "id": "sheiko_volume_distribution",
+    "name": "Volume-first periodization bias",
+    "domain": "powerlifting",
+    "source_type": "coach_system",
+    "source_name": "Sheiko-style principles (decomposed)",
+    "evidence_level": "heuristic",
+    "description": "High submax volume, specificity waves — not a copy of any program sheet."
+  },
+  {
+    "id": "rpe_autoregulation",
+    "name": "RPE-based autoregulation",
+    "domain": "powerlifting",
+    "source_type": "literature",
+    "source_name": "Zourdos / Helms RPE literature",
+    "evidence_level": "moderate",
+    "description": "Intra-session load adjustment from perceived exertion."
+  },
+  {
+    "id": "gymnastics_progression_gate",
+    "name": "Skill progression gating",
+    "domain": "gymnastics",
+    "source_type": "derived",
+    "source_name": "Standard practice + twin skill_state",
+    "evidence_level": "heuristic",
+    "description": "No skipping progressions; tendon and wrist stress managed gradually."
+  },
+  {
+    "id": "grip_tendon_adaptation",
+    "name": "Grip: tendon slower than muscle",
+    "domain": "grip",
+    "source_type": "literature",
+    "source_name": "Tendon physiology consensus",
+    "evidence_level": "moderate",
+    "description": "Limit high-frequency max crush/pinch; submax holds for volume."
+  }
+]

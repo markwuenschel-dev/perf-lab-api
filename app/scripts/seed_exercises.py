@@ -67,7 +67,14 @@ EXERCISES = [
          skill_demand=0.7, impact_level=0.6,
          weak_point_tags=["squat_pattern", "anterior_chain"],
          is_benchmark=True,
-         coaching_notes="Brace hard, knees track toes, depth below parallel."),
+         coaching_notes="Brace hard, knees track toes, depth below parallel.",
+         meta={
+             "provenance_primitive_ids": [
+                 "sheiko_volume_distribution",
+                 "rpe_autoregulation",
+                 "twin_state_engine",
+             ],
+         }),
 
     dict(name="Front Squat", modality="Strength", movement_pattern="squat",
          primary_muscles=["quads", "core"], secondary_muscles=["upper_back"],

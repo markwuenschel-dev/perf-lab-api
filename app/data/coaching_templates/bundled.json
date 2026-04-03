@@ -1,0 +1,381 @@
+[
+  {
+    "template_id": "tmpl_olift_pendlay_style_v1",
+    "name": "Pendlay-style Olympic Lifting Base",
+    "domain": "olympic_lifting",
+    "source_type": "coach_system",
+    "source_name": "Pendlay-style public principles",
+    "evidence_level": "moderate",
+    "goal_bias": {
+      "strength": 0.55,
+      "power": 0.95,
+      "hypertrophy": 0.2,
+      "aerobic": 0.1,
+      "glycolytic": 0.2,
+      "skill": 1.0,
+      "tissue_resilience": 0.45
+    },
+    "weekly_structure": {
+      "days_per_week": 5,
+      "primary_days": ["snatch", "clean_and_jerk", "front_squat", "back_squat", "pulls"],
+      "secondary_days": ["power_variations", "pressing", "rows", "trunk"],
+      "recovery_days": ["day4_pm_optional", "day6", "day7"]
+    },
+    "load_distribution": {
+      "intensity_bias": "wave",
+      "volume_bias": "moderate",
+      "density_bias": "low",
+      "specificity_bias": "high"
+    },
+    "state_targets": ["power", "skill", "max_strength", "mobility"],
+    "fatigue_profile": {
+      "cns": 0.8,
+      "muscular": 0.55,
+      "metabolic": 0.2,
+      "structural": 0.5,
+      "tendon": 0.35,
+      "grip": 0.25
+    },
+    "hard_constraints": [
+      "olift_limit_reps_per_set_competition_lifts",
+      "olift_no_high_fatigue_metcon_before_technical_session",
+      "olift_require_freshness_for_heavy_technical_singles"
+    ],
+    "soft_constraints": [
+      "prefer_competition_lifts_2_to_4_exposures_week",
+      "prefer_squat_2_to_3_times_week",
+      "prefer_pulls_after_classical_lifts"
+    ],
+    "exercise_bias": [
+      {"exercise_family": "snatch", "weight": 1.0},
+      {"exercise_family": "clean_and_jerk", "weight": 1.0},
+      {"exercise_family": "front_squat", "weight": 0.9},
+      {"exercise_family": "back_squat", "weight": 0.8},
+      {"exercise_family": "clean_pull_snatch_pull", "weight": 0.8},
+      {"exercise_family": "bodybuilding_accessory", "weight": 0.3}
+    ],
+    "benchmark_preferences": [
+      "snatch_1rm",
+      "clean_and_jerk_1rm",
+      "front_squat_3rm",
+      "back_squat_3rm",
+      "snatch_from_blocks_technical_grade"
+    ],
+    "progression_rules": [
+      "wave_intensity_across_week",
+      "increase_load_if_bar_speed_and_technique_pass",
+      "reduce_load_if_technique_grade_fails"
+    ],
+    "progression_gates": [
+      "no_load_jump_if_technical_grade_below_threshold",
+      "no_max_attempt_if_cns_fatigue_high"
+    ],
+    "deload_rules": [
+      "deload_if_7d_cns_load_exceeds_threshold",
+      "deload_if_two_consecutive_technical_regressions"
+    ],
+    "explain_tags": ["high_skill_priority", "quality_over_fatigue", "specificity_high"]
+  },
+  {
+    "template_id": "tmpl_run_hinshaw_style_v1",
+    "name": "Hinshaw-style Aerobic Capacity and Fatigue Management",
+    "domain": "running",
+    "source_type": "coach_system",
+    "source_name": "Hinshaw-style public principles",
+    "evidence_level": "moderate",
+    "goal_bias": {
+      "strength": 0.1,
+      "power": 0.2,
+      "hypertrophy": 0.05,
+      "aerobic": 1.0,
+      "glycolytic": 0.55,
+      "skill": 0.35,
+      "tissue_resilience": 0.6
+    },
+    "weekly_structure": {
+      "days_per_week": 5,
+      "primary_days": ["zone2_long", "threshold", "intervals", "easy_run"],
+      "secondary_days": ["strides", "mobility", "optional_cross_training"],
+      "recovery_days": ["1_to_2_easy_or_off"]
+    },
+    "load_distribution": {
+      "intensity_bias": "moderate",
+      "volume_bias": "moderate",
+      "density_bias": "moderate",
+      "specificity_bias": "high"
+    },
+    "state_targets": ["aerobic", "glycolytic", "work_capacity", "tissue_resilience"],
+    "fatigue_profile": {
+      "cns": 0.2,
+      "muscular": 0.45,
+      "metabolic": 0.7,
+      "structural": 0.55,
+      "tendon": 0.45,
+      "grip": 0.0
+    },
+    "hard_constraints": [
+      "run_limit_high_intensity_sessions_per_week",
+      "run_no_back_to_back_threshold_and_vo2_days",
+      "run_limit_long_run_ramp_rate"
+    ],
+    "soft_constraints": [
+      "prefer_majority_easy_volume",
+      "prefer_threshold_before_vo2_if_base_low",
+      "prefer_strides_after_easy_days"
+    ],
+    "exercise_bias": [
+      {"exercise_family": "zone2_run", "weight": 1.0},
+      {"exercise_family": "tempo_threshold_run", "weight": 0.85},
+      {"exercise_family": "vo2_intervals", "weight": 0.75},
+      {"exercise_family": "hill_sprints", "weight": 0.45},
+      {"exercise_family": "all_out_repeat_sprints", "weight": 0.2}
+    ],
+    "benchmark_preferences": [
+      "5k_time_trial",
+      "10k_time_trial",
+      "threshold_pace_test",
+      "half_marathon_time",
+      "resting_hr_trend"
+    ],
+    "progression_rules": [
+      "increase_easy_volume_before_interval_density",
+      "add_threshold_minutes_before_max_velocity_exposure",
+      "increase_long_run_gradually"
+    ],
+    "progression_gates": [
+      "no_vo2_progression_if_structural_fatigue_high",
+      "no_long_run_jump_if_last_two_long_runs_exceeded_recovery_window"
+    ],
+    "deload_rules": [
+      "reduce_volume_every_3_to_5_weeks_if_structural_load_accumulates",
+      "replace_intervals_with_easy_run_if_fatigue_and_hr_proxy_mismatch"
+    ],
+    "explain_tags": ["aerobic_base_first", "fatigue_managed_by_distribution", "durability_matters"]
+  },
+  {
+    "template_id": "tmpl_pl_531_style_v1",
+    "name": "5/3/1-style Strength Progression",
+    "domain": "powerlifting",
+    "source_type": "coach_system",
+    "source_name": "5/3/1-style public principles",
+    "evidence_level": "moderate",
+    "goal_bias": {
+      "strength": 1.0,
+      "power": 0.45,
+      "hypertrophy": 0.4,
+      "aerobic": 0.1,
+      "glycolytic": 0.1,
+      "skill": 0.35,
+      "tissue_resilience": 0.5
+    },
+    "weekly_structure": {
+      "days_per_week": 4,
+      "primary_days": ["squat_day", "bench_day", "deadlift_day", "press_day"],
+      "secondary_days": ["assistance", "easy_conditioning"],
+      "recovery_days": ["2_to_3_non_lifting_blocks"]
+    },
+    "load_distribution": {
+      "intensity_bias": "wave",
+      "volume_bias": "moderate",
+      "density_bias": "low",
+      "specificity_bias": "moderate"
+    },
+    "state_targets": ["max_strength", "skill", "tissue_resilience"],
+    "fatigue_profile": {
+      "cns": 0.65,
+      "muscular": 0.65,
+      "metabolic": 0.15,
+      "structural": 0.55,
+      "tendon": 0.35,
+      "grip": 0.2
+    },
+    "hard_constraints": [
+      "pl_cap_deadlift_heavy_exposures",
+      "pl_do_not_max_when_readiness_low",
+      "pl_limit_assistance_if_main_lift_fatigue_high"
+    ],
+    "soft_constraints": [
+      "prefer_submax_training_max",
+      "prefer_slow_progression",
+      "prefer_balanced_push_pull_accessory"
+    ],
+    "exercise_bias": [
+      {"exercise_family": "competition_squat", "weight": 1.0},
+      {"exercise_family": "competition_bench", "weight": 1.0},
+      {"exercise_family": "competition_deadlift", "weight": 0.95},
+      {"exercise_family": "overhead_press", "weight": 0.8},
+      {"exercise_family": "rows_chins", "weight": 0.7},
+      {"exercise_family": "single_joint_accessory", "weight": 0.4}
+    ],
+    "benchmark_preferences": [
+      "e1rm_squat",
+      "e1rm_bench",
+      "e1rm_deadlift",
+      "top_set_rpe_trend"
+    ],
+    "progression_rules": [
+      "progress_training_max_slowly_after_successful_cycle",
+      "autoregulate_top_set_if_rpe_exceeds_target",
+      "use_assistance_to_fill_weak_points_not_replace_main_lifts"
+    ],
+    "progression_gates": [
+      "no_training_max_increase_if_two_cycles_stall",
+      "no_jumps_in_deadlift_when_lumbar_or_grip_fatigue_high"
+    ],
+    "deload_rules": [
+      "scheduled_low_stress_week_each_cycle",
+      "additional_deload_if_structural_or_cns_load_spikes"
+    ],
+    "explain_tags": ["submaximal_progression", "main_lifts_anchor_plan", "fatigue_controlled"]
+  },
+  {
+    "template_id": "tmpl_pl_juggernaut_style_v1",
+    "name": "Juggernaut-style Accumulation to Intensification",
+    "domain": "powerlifting",
+    "source_type": "coach_system",
+    "source_name": "Juggernaut-style public principles",
+    "evidence_level": "moderate",
+    "goal_bias": {
+      "strength": 0.95,
+      "power": 0.4,
+      "hypertrophy": 0.65,
+      "aerobic": 0.05,
+      "glycolytic": 0.1,
+      "skill": 0.35,
+      "tissue_resilience": 0.55
+    },
+    "weekly_structure": {
+      "days_per_week": 4,
+      "primary_days": ["squat", "bench", "deadlift", "press_or_secondary_bench"],
+      "secondary_days": ["volume_variants", "rows_hamstrings_triceps"],
+      "recovery_days": ["2_to_3"]
+    },
+    "load_distribution": {
+      "intensity_bias": "wave",
+      "volume_bias": "wave",
+      "density_bias": "moderate",
+      "specificity_bias": "moderate"
+    },
+    "state_targets": ["hypertrophy", "max_strength", "work_capacity"],
+    "fatigue_profile": {
+      "cns": 0.6,
+      "muscular": 0.8,
+      "metabolic": 0.25,
+      "structural": 0.6,
+      "tendon": 0.4,
+      "grip": 0.2
+    },
+    "hard_constraints": [
+      "pl_limit_volume_if_bar_speed_collapse",
+      "pl_limit_deadlift_volume_if_lumbar_fatigue_high"
+    ],
+    "soft_constraints": [
+      "prefer_high_rep_accumulation_early_block",
+      "prefer_intensification_late_block",
+      "prefer_amrap_as_feedback_not_maxing"
+    ],
+    "exercise_bias": [
+      {"exercise_family": "competition_lifts", "weight": 0.9},
+      {"exercise_family": "close_variations", "weight": 0.85},
+      {"exercise_family": "hypertrophy_accessory", "weight": 0.7}
+    ],
+    "benchmark_preferences": [
+      "e1rm_from_top_set",
+      "rep_prs_at_fixed_percentages",
+      "volume_tolerance_trend"
+    ],
+    "progression_rules": [
+      "start_block_with_higher_reps_lower_intensity",
+      "progress_toward_lower_reps_higher_intensity",
+      "update_targets_from_rep_performance"
+    ],
+    "progression_gates": [
+      "no_intensity_jump_if_amrap_underperforms_expectation",
+      "reduce_volume_when_muscular_fatigue_exceeds_threshold"
+    ],
+    "deload_rules": [
+      "insert_pivot_after_complete_wave",
+      "reduce_accessory_volume_before_comp_specific_phase"
+    ],
+    "explain_tags": ["volume_builds_base", "intensification_follows_accumulation", "autoregulated_feedback"]
+  },
+  {
+    "template_id": "tmpl_gymnastics_progression_v1",
+    "name": "Gymnastics Strength and Skill Ladder",
+    "domain": "gymnastics",
+    "source_type": "derived",
+    "source_name": "gymnastics/calisthenics progression synthesis",
+    "evidence_level": "heuristic",
+    "goal_bias": {
+      "strength": 0.7,
+      "power": 0.25,
+      "hypertrophy": 0.2,
+      "aerobic": 0.05,
+      "glycolytic": 0.1,
+      "skill": 1.0,
+      "tissue_resilience": 0.85
+    },
+    "weekly_structure": {
+      "days_per_week": 4,
+      "primary_days": ["pull_skill", "push_skill", "handstand", "rings_or_core"],
+      "secondary_days": ["mobility", "scapular_prep", "tendon_capacity"],
+      "recovery_days": ["2_to_3"]
+    },
+    "load_distribution": {
+      "intensity_bias": "moderate",
+      "volume_bias": "moderate",
+      "density_bias": "low",
+      "specificity_bias": "high"
+    },
+    "state_targets": ["skill", "relative_strength", "mobility", "tissue_resilience"],
+    "fatigue_profile": {
+      "cns": 0.45,
+      "muscular": 0.55,
+      "metabolic": 0.15,
+      "structural": 0.55,
+      "tendon": 0.85,
+      "grip": 0.6
+    },
+    "hard_constraints": [
+      "gym_no_progression_without_prerequisites",
+      "gym_limit_high_tendon_load_on_consecutive_days",
+      "gym_limit_kipping_if_strict_strength_missing"
+    ],
+    "soft_constraints": [
+      "prefer_quality_singles_or_short_sets_for_skills",
+      "prefer_isometric_progression_before_dynamic_complexity",
+      "prefer_scapular_control_before_advanced_ring_work"
+    ],
+    "exercise_bias": [
+      {"exercise_family": "ring_support", "weight": 0.9},
+      {"exercise_family": "false_grip", "weight": 0.8},
+      {"exercise_family": "strict_pullup_dip", "weight": 1.0},
+      {"exercise_family": "handstand_line_drills", "weight": 0.95},
+      {"exercise_family": "front_lever_planche_progressions", "weight": 0.85},
+      {"exercise_family": "kipping_skill", "weight": 0.4}
+    ],
+    "benchmark_preferences": [
+      "strict_pullup_max",
+      "ring_support_hold",
+      "l_sit_hold",
+      "wall_handstand_hold",
+      "false_grip_hang",
+      "strict_dip_max"
+    ],
+    "progression_rules": [
+      "advance_by_hold_time_or_lever_then_rom_then_instability",
+      "unlock_dynamic_skill_only_after_static_prerequisites",
+      "progress_kipping_only_after_strict_capacity_threshold"
+    ],
+    "progression_gates": [
+      "ring_muscle_up_requires_false_grip_support_pull_and_dip_gates",
+      "handstand_walk_requires_wall_line_and_freestanding_hold_gate",
+      "front_lever_progression_requires_scapular_depression_and_tuck_hold_gate"
+    ],
+    "deload_rules": [
+      "reduce_tendon_loading_after_two_high_ring_weeks",
+      "swap_dynamic_skill_for_shapes_and_isometrics_if_elbow_or_wrist_load_high"
+    ],
+    "explain_tags": ["skill_gate_enforced", "tendon_first", "relative_strength_priority"]
+  }
+]
