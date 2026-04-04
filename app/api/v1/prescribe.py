@@ -10,6 +10,7 @@ from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescription_finalize import finalize_prescription
 from app.logic.prescriber import recommend_next_session
 from app.logic.workout_history import recent_workout_summaries
+from app.services import dashboard_service
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 
@@ -52,6 +53,12 @@ async def get_next_session(
     state = unified_from_athlete_row(last_record)
     try:
         recent = await recent_workout_summaries(db, current_user.id)
-        return recommend_next_session(state, goal=goal, recent_sessions=recent)
+        kpi_summary = await dashboard_service.latest_kpi_values(db, current_user.id)
+        return recommend_next_session(
+            state,
+            goal=goal,
+            recent_sessions=recent,
+            kpi_summary=kpi_summary or None,
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to generate prescription: {str(e)}")

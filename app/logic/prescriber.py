@@ -20,6 +20,7 @@ def recommend_next_session(
     state: UnifiedStateVector,
     goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
     recent_sessions: list[dict] | None = None,
+    kpi_summary: dict[str, float] | None = None,
 ) -> WorkoutPrescription:
     """
     The greedy Controller / Decision Engine.
@@ -30,7 +31,13 @@ def recommend_next_session(
       3. Goal-based optimization with skill and habit.
 
     Each path is finalized with template linkage, session validation, and `why`.
+
+    `kpi_summary` holds latest derived dashboard metrics (codes → values). These are
+    soft signals only: state vectors remain the primary controller; KPIs nudge copy
+    and light template bias, not hard safety.
     """
+
+    kpi = kpi_summary or {}
 
     # --- 1. Safety Overrides (Active Constraints) ---
 
@@ -274,13 +281,20 @@ def recommend_next_session(
         )
 
     if goal == "OlympicLifts":
+        ratio = kpi.get("wl_snatch_cj_ratio")
+        extra = ""
+        if ratio is not None and ratio < 72.0:
+            extra = (
+                f" KPI: snatch is a low share of C&J ({ratio:.0f}%) — extra snatch "
+                "skill and strength-off-the-floor work this block."
+            )
         return _finalize(
             WorkoutPrescription(
                 type="Weightlifting Technique",
                 focus="Snatch & Clean Drills + Hang Variations @ RPE 6–7",
                 rationale=(
                     "Prioritizing positions, pulls, and turnover under the bar — "
-                    "classic lifts and complexes before heavy singles."
+                    "classic lifts and complexes before heavy singles." + extra
                 ),
                 duration_min=60,
             ),
@@ -291,13 +305,25 @@ def recommend_next_session(
         )
 
     if goal == "Powerlifting":
+        rel = kpi.get("pl_relative_total")
+        extra = ""
+        if rel is not None and rel < 3.0:
+            extra = (
+                f" KPI hint: relative total ({rel:.2f}×BW) is modest — bias quality reps "
+                "and volume before pushing absolute intensity."
+            )
+        elif kpi.get("pl_projected_total") is not None:
+            extra = (
+                f" Dashboard projected total ~{kpi['pl_projected_total']:.0f} kg — "
+                "keep autoregulation honest on secondary lifts."
+            )
         return _finalize(
             WorkoutPrescription(
                 type="SBD Strength",
                 focus="Squat / Bench / Deadlift — top sets + back-off volume",
                 rationale=(
                     "Competition lifts and close variants to drive 1RM-relevant "
-                    "strength with managed fatigue."
+                    "strength with managed fatigue." + extra
                 ),
                 duration_min=75,
             ),
@@ -376,13 +402,20 @@ def recommend_next_session(
         )
 
     if goal == "Running":
+        ff = kpi.get("run_fatigue_factor")
+        extra = ""
+        if ff is not None and ff > 14.0:
+            extra = (
+                f" KPI: 400m–mile fatigue factor is elevated ({ff:.1f}%) — "
+                "prioritize threshold and tempo durability, not just easy volume."
+            )
         return _finalize(
             WorkoutPrescription(
                 type="Aerobic Base",
                 focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
                 rationale=(
                     "Building cardiac output and durability with low-intensity "
-                    "volume; cap intensity if tissue stress is elevated."
+                    "volume; cap intensity if tissue stress is elevated." + extra
                 ),
                 duration_min=45,
             ),

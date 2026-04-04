@@ -1,12 +1,13 @@
 """
 State evolution S(t) → S(t+1): multi-component fatigue, tissue load, slow capacity,
-and legacy scalar sync.
+legacy scalar sync, and benchmark observation assimilation.
 """
 
 from __future__ import annotations
 
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any, Sequence
 
 from app.engine.parameters import default_parameters
 from app.engine.phi_table import default_phi_for_row
@@ -15,6 +16,109 @@ from app.logic import cross_talk
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
+
+_VECTOR_ATTR = {"capacity": "capacity_x", "fatigue": "fatigue_f", "tissue": "tissue_t"}
+
+
+def _capacity_ceiling(key: str) -> float:
+    return 650.0 if key == "aerobic" else 100.0
+
+
+def _read_axis(state: UnifiedStateVector, vector: str, key: str) -> float:
+    sub = getattr(state, _VECTOR_ATTR[vector])
+    return float(getattr(sub, key))
+
+
+def _write_axis(state: UnifiedStateVector, vector: str, key: str, value: float) -> None:
+    sub = getattr(state, _VECTOR_ATTR[vector])
+    cap = _capacity_ceiling(key) if vector == "capacity" else 100.0
+    setattr(sub, key, max(0.0, min(cap, value)))
+
+
+def _mapping_delta(
+    mapping: Any,
+    signal: float,
+    observation_weight: float,
+) -> float:
+    cfg = mapping.config or {}
+    scale = float(cfg.get("scale", 30.0))
+    amp = float(cfg.get("amp", 2.5))
+    coef = float(mapping.coefficient) * observation_weight
+    intercept = float(mapping.intercept)
+    mt = mapping.mapping_type
+
+    if mt == "direct":
+        r = signal - intercept
+        return coef * amp * math.tanh(r / max(1e-6, scale))
+    if mt == "inverse":
+        r = intercept - signal
+        return coef * amp * math.tanh(r / max(1e-6, scale))
+    if mt == "logistic":
+        k = float(cfg.get("k", 0.1))
+        p = 1.0 / (1.0 + math.exp(-k * (signal - intercept)))
+        return coef * amp * (p - 0.5) * 2.0
+    if mt == "ratio_threshold":
+        thr = float(cfg.get("threshold", 1.0))
+        denom = float(cfg.get("denom", 1.0))
+        ratio = signal / max(1e-6, denom)
+        return coef * amp if ratio > thr else 0.0
+    if mt == "bounded":
+        r = signal - intercept
+        return coef * amp * math.tanh(r / max(1e-6, scale))
+    return 0.0
+
+
+def apply_benchmark_observation(
+    prev_state: UnifiedStateVector,
+    *,
+    raw_value: float,
+    normalized_value: float | None,
+    better_direction: str,
+    observation_weight: float,
+    mappings: Sequence[Any],
+) -> UnifiedStateVector:
+    """
+    Weighted residual-style nudge on capacity / fatigue / tissue axes from
+    `observation_mappings` (no full EKF in phase 1).
+    """
+    s = prev_state.model_copy(deep=True)
+    base = normalized_value if normalized_value is not None else raw_value
+    if better_direction == "lower":
+        # Time / pace: faster (smaller raw) → larger signal for direct/inverse mappings
+        signal = 1.0 / max(float(base), 1e-9)
+    elif better_direction == "higher":
+        signal = float(base)
+    else:
+        # closer_to_target: pass through; mappings should encode target in intercept/config
+        signal = float(base)
+
+    for m in mappings:
+        if m.target_vector not in _VECTOR_ATTR:
+            continue
+        try:
+            cur = _read_axis(s, m.target_vector, m.target_key)
+        except AttributeError:
+            continue
+        delta = _mapping_delta(m, signal, observation_weight)
+        new_v = cur + delta
+        if m.min_value is not None:
+            new_v = max(new_v, float(m.min_value))
+        if m.max_value is not None:
+            new_v = min(new_v, float(m.max_value))
+        _write_axis(s, m.target_vector, m.target_key, new_v)
+
+    legacy = sync_legacy_from_vectors(s.capacity_x, s.fatigue_f, s.tissue_t)
+    s.c_met_aerobic = legacy["c_met_aerobic"]
+    s.c_nm_force = legacy["c_nm_force"]
+    s.c_struct = legacy["c_struct"]
+    s.b_met_anaerobic = legacy["b_met_anaerobic"]
+    s.f_met_systemic = legacy["f_met_systemic"]
+    s.f_nm_peripheral = legacy["f_nm_peripheral"]
+    s.f_nm_central = legacy["f_nm_central"]
+    s.f_struct_damage = legacy["f_struct_damage"]
+
+    s.timestamp = datetime.utcnow()
+    return s
 
 
 def _exp_decay(value: float, hours: float, tau: float) -> float:

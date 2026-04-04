@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1 import auth, ingest, prescribe
+from app.api.v1 import auth, benchmarks, dashboard, ingest, prescribe
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -23,6 +23,8 @@ app.include_router(auth.router)
 # Existing v1 routers
 app.include_router(ingest.router, prefix=settings.API_V1_STR)
 app.include_router(prescribe.router, prefix=settings.API_V1_STR)
+app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
+app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 
 # TODO: add when implemented
 # app.include_router(blocks.router, prefix=settings.API_V1_STR)
