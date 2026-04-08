@@ -1,18 +1,42 @@
 """
 Session stress dose D(t): six-dimensional vector + legacy fatigue channels.
 
-Uses parameter exponents from EngineParameters and modality φ defaults.
+Exercise-aware: when WorkoutLog.exercises contains entries with resolved phi_*
+vectors, dose is aggregated from per-exercise contributions. Falls back to
+modality-level defaults (via default_phi_for_row) when phi vectors are absent.
+
+Uses parameter exponents from EngineParameters.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from app.engine.parameters import default_parameters
 from app.engine.phi_table import default_phi_for_row
-from app.schemas.engine_vectors import StressDoseSix
-from app.schemas.workouts import StressDose, WorkoutLog
+from app.schemas.engine_vectors import AdaptationContribution, StressDoseSix
+from app.schemas.workouts import ExerciseEntry, StressDose, WorkoutLog
 
+
+# ---------------------------------------------------------------------------
+# Internal per-exercise dose bundle (not exposed in API)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _ExerciseDose:
+    """Aggregation bucket for a single exercise entry."""
+    base: float
+    phi_adapt: dict[str, float]
+    phi_fatigue: dict[str, float]
+    phi_tissue: dict[str, float]
+    energy_mix: dict[str, float]
+    volume_weight: float   # relative contribution weight for aggregation
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _infer_movement_pattern(log: WorkoutLog) -> str:
     if log.dominant_movement_pattern:
@@ -22,11 +46,150 @@ def _infer_movement_pattern(log: WorkoutLog) -> str:
     return "mixed"
 
 
+def _phi_for_entry(entry: ExerciseEntry, session_modality: str) -> dict:
+    """
+    Resolve phi vectors for one exercise entry.
+
+    Priority:
+      1. Resolved phi vectors on the entry (populated by service layer from DB row)
+      2. Entry's own modality/movement_pattern fields (if DB row populated them)
+      3. Session modality fallback via default_phi_for_row
+    """
+    if entry.phi_adapt:
+        return {
+            "phi_adapt": entry.phi_adapt,
+            "phi_fatigue": entry.phi_fatigue or {},
+            "phi_tissue": entry.phi_tissue or {},
+            "energy_mix": entry.energy_mix or {},
+        }
+    # Fall back to defaults using entry-level metadata if available
+    modality = entry.modality or session_modality
+    movement = entry.movement_pattern or "mixed"
+    skill = entry.skill_demand if entry.skill_demand is not None else 0.5
+    impact = entry.impact_level if entry.impact_level is not None else 0.5
+    return default_phi_for_row(modality, movement, skill, impact)
+
+
+def _entry_volume_proxy(entry: ExerciseEntry) -> float:
+    """Compute a volume proxy for a single exercise entry."""
+    sets = entry.sets or 3.0
+    reps = entry.reps or 8.0
+    load = entry.load_kg or 0.0
+    dur = entry.duration_seconds or 0.0
+    dist = entry.distance_meters or 0.0
+
+    # Weight × reps × sets proxy
+    vol_load = sets * reps * load
+    # Add time / distance terms
+    return vol_load * 0.005 + dur / 60.0 + dist / 500.0 + sets * reps * 0.1
+
+
+def _entry_intensity(entry: ExerciseEntry, session_rpe: float) -> float:
+    """Intensity 0–1 for a single entry; falls back to session RPE."""
+    if entry.avg_rpe is not None:
+        return entry.avg_rpe / 10.0
+    return session_rpe / 10.0
+
+
+def _entry_failure_proximity(entry: ExerciseEntry, session_rpe: float) -> float:
+    """Proximity to failure 0–1."""
+    if entry.avg_rir is not None:
+        return max(0.15, min(1.0, (10.0 - entry.avg_rir) / 10.0))
+    return max(0.2, session_rpe / 10.0)
+
+
+def _aggregate_phi(
+    exercise_doses: list[_ExerciseDose],
+) -> tuple[dict[str, float], dict[str, float], dict[str, float], dict[str, float]]:
+    """
+    Volume-weighted aggregation of phi vectors across exercises.
+
+    Returns (phi_adapt, phi_fatigue, phi_tissue, energy_mix).
+    """
+    total_w = sum(d.volume_weight for d in exercise_doses)
+    if total_w <= 0:
+        total_w = 1.0
+
+    agg_adapt: dict[str, float] = {}
+    agg_fatigue: dict[str, float] = {}
+    agg_tissue: dict[str, float] = {}
+    agg_em: dict[str, float] = {}
+
+    for d in exercise_doses:
+        w = d.volume_weight / total_w
+        for k, v in d.phi_adapt.items():
+            agg_adapt[k] = agg_adapt.get(k, 0.0) + v * w
+        for k, v in d.phi_fatigue.items():
+            agg_fatigue[k] = agg_fatigue.get(k, 0.0) + v * w
+        for k, v in d.phi_tissue.items():
+            agg_tissue[k] = agg_tissue.get(k, 0.0) + v * w
+        for k, v in d.energy_mix.items():
+            agg_em[k] = agg_em.get(k, 0.0) + v * w
+
+    return agg_adapt, agg_fatigue, agg_tissue, agg_em
+
+
+def _compute_adaptation_contribution(
+    phi_adapt: dict[str, float],
+    base: float,
+) -> AdaptationContribution:
+    """
+    Map phi_adapt weights + base dose → per-axis adaptation signal.
+
+    phi_adapt keys use the vocabulary from domain_vocab.PHI_ADAPT_TO_CAPACITY.
+    We normalize here so the output uses CapacityState field names.
+    """
+    from app.logic.domain_vocab import PHI_ADAPT_TO_CAPACITY
+
+    ac: dict[str, float] = {k: 0.0 for k in AdaptationContribution.KEYS}
+    for phi_key, weight in phi_adapt.items():
+        cap_key = PHI_ADAPT_TO_CAPACITY.get(phi_key)
+        if cap_key and cap_key in ac:
+            ac[cap_key] += weight * base
+    return AdaptationContribution(**ac)
+
+
+# ---------------------------------------------------------------------------
+# Primary entry point
+# ---------------------------------------------------------------------------
+
 def calculate_stress_dose(log: WorkoutLog) -> StressDose:
+    """
+    Compute session stress dose from a WorkoutLog.
+
+    When log.exercises is populated with resolved phi vectors, the dose
+    reflects the actual exercise selection. Otherwise falls back to
+    modality-level defaults (legacy behavior, fully preserved).
+
+    Returns StressDose including:
+    - dose_six: 6-axis session dose
+    - adaptation_contribution: per-capacity-axis adaptation signal
+    - legacy scalar channels (backward compat)
+    """
     p = default_parameters()
     movement = _infer_movement_pattern(log)
 
-    # Volume proxy V
+    # ------------------------------------------------------------------
+    # Resolve phi pack: exercise-aware or modality fallback
+    # ------------------------------------------------------------------
+    if log.exercises:
+        exercise_doses = _build_exercise_doses(log, p)
+        phi_adapt, phi_fatigue, phi_tissue, energy_mix = _aggregate_phi(exercise_doses)
+    else:
+        phi_pack = default_phi_for_row(
+            log.modality,
+            movement,
+            skill_demand=0.55 if log.modality in ("Power", "Mixed") else 0.45,
+            impact_level=0.75 if log.modality == "Running" else 0.55,
+        )
+        phi_adapt = phi_pack["phi_adapt"]
+        phi_fatigue = phi_pack["phi_fatigue"]
+        phi_tissue = phi_pack["phi_tissue"]
+        energy_mix = phi_pack["energy_mix"]
+
+    # ------------------------------------------------------------------
+    # Session-level volume proxy (always from session fields)
+    # ------------------------------------------------------------------
     sets = log.estimated_sets or max(3.0, log.duration_minutes / 12.0)
     vol_load = log.total_volume_load or 0.0
     V = log.duration_minutes + 0.02 * vol_load + 2.0 * sets
@@ -40,59 +203,37 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
     else:
         F = max(0.2, intensity_u)
 
-    phi_pack = default_phi_for_row(
-        log.modality,
-        movement,
-        skill_demand=0.55 if log.modality in ("Power", "Mixed") else 0.45,
-        impact_level=0.75 if log.modality == "Running" else 0.55,
-    )
-    phi_f = phi_pack["phi_fatigue"]
-    w_phi = max(0.25, sum(phi_f.values()) / max(1, len(phi_f)))
+    w_phi = max(0.25, sum(phi_fatigue.values()) / max(1, len(phi_fatigue)))
 
     base = (
         w_phi
         * math.log1p(V)
-        * (intensity_u**p.dose_alpha)
-        * (Delta**p.dose_beta)
-        * (N**p.dose_gamma)
-        * (F**p.dose_rho)
+        * (intensity_u ** p.dose_alpha)
+        * (Delta ** p.dose_beta)
+        * (N ** p.dose_gamma)
+        * (F ** p.dose_rho)
     )
 
-    if log.modality == "Running":
-        em = phi_pack["energy_mix"]
-        six = StressDoseSix(
-            volume=base * 0.35 * (em["aerobic"] + 0.4),
-            intensity=base * 0.45 * intensity_u,
-            density=base * 0.25 * Delta,
-            impact=base * 0.55 * max(intensity_u, 0.4),
-            skill=base * 0.08,
-            metabolic=base * 0.9 * (em["aerobic"] + em["glycolytic"]),
-        )
-    elif log.modality in ("Strength", "Hypertrophy", "Power", "Mixed"):
-        six = StressDoseSix(
-            volume=base * 0.5,
-            intensity=base * 0.65 * intensity_u,
-            density=base * 0.35 * Delta,
-            impact=base * 0.25 * F,
-            skill=base * 0.2 * phi_pack["phi_adapt"].get("skill", 0.2),
-            metabolic=base * 0.35 * (phi_pack["energy_mix"]["glycolytic"] + 0.2),
-        )
-    else:
-        six = StressDoseSix(
-            volume=base * 0.4,
-            intensity=base * 0.5 * intensity_u,
-            density=base * 0.3 * Delta,
-            impact=base * 0.3,
-            skill=base * 0.15,
-            metabolic=base * 0.45,
-        )
+    # ------------------------------------------------------------------
+    # Build 6-axis dose vector (modality-shaped)
+    # ------------------------------------------------------------------
+    six = _shape_six(base, log.modality, intensity_u, Delta, F, phi_adapt, energy_mix)
 
+    # Human-factor gain
     sleep_penalty = 1.0 + max(0.0, (5.0 - log.sleep_quality) * 0.2)
     life_penalty = 1.0 + max(0.0, (5.0 - log.life_stress_inverse) * 0.2)
     global_gain = sleep_penalty * life_penalty
     six = six.scaled(global_gain)
 
-    # Legacy channels (same human-factor gain on fatigue-like terms)
+    # ------------------------------------------------------------------
+    # Adaptation contribution
+    # ------------------------------------------------------------------
+    adapt_contrib = _compute_adaptation_contribution(phi_adapt, base)
+    adapt_contrib = adapt_contrib.scaled(1.0 / global_gain)  # fatigue penalty → lower gain
+
+    # ------------------------------------------------------------------
+    # Legacy channels
+    # ------------------------------------------------------------------
     d_met_systemic = six.metabolic * 14.0 + six.density * 6.0
     d_nm_peripheral = six.volume * 0.55 + six.intensity * 9.0
     d_nm_central = six.intensity * 11.0 + six.skill * 7.0
@@ -104,9 +245,94 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
 
     return StressDose(
         dose_six=six,
+        adaptation_contribution=adapt_contrib,
         d_met_systemic=max(0.0, d_met_systemic),
         d_nm_peripheral=max(0.0, d_nm_peripheral),
         d_nm_central=max(0.0, d_nm_central),
         d_struct_damage=max(0.0, d_struct_damage),
         d_struct_signal=max(0.0, d_struct_signal),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Exercise-level dose building
+# ---------------------------------------------------------------------------
+
+def _build_exercise_doses(log: WorkoutLog, p) -> list[_ExerciseDose]:
+    """Build per-exercise dose bundles, then return for aggregation."""
+    doses = []
+    for entry in log.exercises:
+        phi_pack = _phi_for_entry(entry, log.modality)
+        vol_proxy = _entry_volume_proxy(entry)
+        intensity = _entry_intensity(entry, log.session_rpe)
+        fp = _entry_failure_proximity(entry, log.session_rpe)
+
+        N = max(0.2, log.novelty)
+        Delta = max(0.35, min(2.5, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)))
+        w_phi = max(0.25, sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])))
+
+        base = (
+            w_phi
+            * math.log1p(max(0.1, vol_proxy))
+            * (intensity ** p.dose_alpha)
+            * (Delta ** p.dose_beta)
+            * (N ** p.dose_gamma)
+            * (fp ** p.dose_rho)
+        )
+
+        doses.append(
+            _ExerciseDose(
+                base=base,
+                phi_adapt=phi_pack["phi_adapt"],
+                phi_fatigue=phi_pack["phi_fatigue"],
+                phi_tissue=phi_pack["phi_tissue"],
+                energy_mix=phi_pack["energy_mix"],
+                volume_weight=max(0.1, vol_proxy),
+            )
+        )
+    return doses
+
+
+# ---------------------------------------------------------------------------
+# Six-axis shaping (modality-specific distribution of base dose)
+# ---------------------------------------------------------------------------
+
+def _shape_six(
+    base: float,
+    modality: str,
+    intensity_u: float,
+    Delta: float,
+    F: float,
+    phi_adapt: dict[str, float],
+    energy_mix: dict[str, float],
+) -> StressDoseSix:
+    em_aerobic = energy_mix.get("aerobic", 0.33)
+    em_glycolytic = energy_mix.get("glycolytic", 0.33)
+    skill_phi = phi_adapt.get("skill", 0.15)
+
+    if modality == "Running":
+        return StressDoseSix(
+            volume=base * 0.35 * (em_aerobic + 0.4),
+            intensity=base * 0.45 * intensity_u,
+            density=base * 0.25 * Delta,
+            impact=base * 0.55 * max(intensity_u, 0.4),
+            skill=base * 0.08,
+            metabolic=base * 0.9 * (em_aerobic + em_glycolytic),
+        )
+    if modality in ("Strength", "Hypertrophy", "Power", "Mixed"):
+        return StressDoseSix(
+            volume=base * 0.5,
+            intensity=base * 0.65 * intensity_u,
+            density=base * 0.35 * Delta,
+            impact=base * 0.25 * F,
+            skill=base * 0.2 * max(skill_phi, 0.1),
+            metabolic=base * 0.35 * (em_glycolytic + 0.2),
+        )
+    return StressDoseSix(
+        volume=base * 0.4,
+        intensity=base * 0.5 * intensity_u,
+        density=base * 0.3 * Delta,
+        impact=base * 0.3,
+        skill=base * 0.15,
+        metabolic=base * 0.45,
     )

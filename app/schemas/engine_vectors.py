@@ -166,3 +166,45 @@ class EnergyMix(BaseModel):
     aerobic: float = Field(0.33, ge=0.0, le=1.0)
     glycolytic: float = Field(0.33, ge=0.0, le=1.0)
     alactic: float = Field(0.34, ge=0.0, le=1.0)
+
+
+class AdaptationContribution(BaseModel):
+    """
+    Per-session adaptation signal by capacity axis.
+
+    Computed by the dose engine from aggregated phi_adapt vectors and session
+    load. Consumed by state_update to drive explicit capacity gains.
+    """
+
+    aerobic: float = Field(0.0, ge=0.0)
+    glycolytic: float = Field(0.0, ge=0.0)
+    max_strength: float = Field(0.0, ge=0.0)
+    hypertrophy: float = Field(0.0, ge=0.0)
+    power: float = Field(0.0, ge=0.0)
+    skill: float = Field(0.0, ge=0.0)
+    mobility: float = Field(0.0, ge=0.0)
+    work_capacity: float = Field(0.0, ge=0.0)
+
+    KEYS: ClassVar[tuple[str, ...]] = (
+        "aerobic",
+        "glycolytic",
+        "max_strength",
+        "hypertrophy",
+        "power",
+        "skill",
+        "mobility",
+        "work_capacity",
+    )
+
+    def scaled(self, factor: float) -> "AdaptationContribution":
+        f = max(0.0, factor)
+        return AdaptationContribution(
+            aerobic=self.aerobic * f,
+            glycolytic=self.glycolytic * f,
+            max_strength=self.max_strength * f,
+            hypertrophy=self.hypertrophy * f,
+            power=self.power * f,
+            skill=self.skill * f,
+            mobility=self.mobility * f,
+            work_capacity=self.work_capacity * f,
+        )

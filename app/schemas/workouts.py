@@ -3,7 +3,45 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.engine_vectors import StressDoseSix
+from app.schemas.engine_vectors import AdaptationContribution, StressDoseSix
+
+
+class ExerciseEntry(BaseModel):
+    """
+    A single exercise within a session log.
+
+    `phi_*` and `energy_mix` are resolved from the Exercise DB row by the
+    service layer before the dose engine runs. They are left blank in
+    client-submitted logs; the engine falls back to modality defaults when absent.
+    """
+
+    exercise_id: Optional[int] = None
+    exercise_name: Optional[str] = None
+
+    sets: Optional[float] = Field(default=None, ge=1)
+    reps: Optional[float] = Field(default=None, ge=0)
+    load_kg: Optional[float] = Field(default=None, ge=0)
+    duration_seconds: Optional[float] = Field(default=None, ge=0)
+    distance_meters: Optional[float] = Field(default=None, ge=0)
+    avg_rpe: Optional[float] = Field(default=None, ge=1, le=10)
+    avg_rir: Optional[float] = Field(default=None, ge=0, le=10)
+    tempo: Optional[str] = None
+    rest_seconds: Optional[float] = Field(default=None, ge=0)
+
+    # Resolved phi vectors (populated by service layer from Exercise DB row)
+    phi_adapt: Optional[dict] = None
+    phi_fatigue: Optional[dict] = None
+    phi_tissue: Optional[dict] = None
+    energy_mix: Optional[dict] = None
+
+    # Resolved exercise metadata (populated by service layer)
+    modality: Optional[str] = None
+    movement_pattern: Optional[str] = None
+    skill_demand: Optional[float] = None
+    impact_level: Optional[float] = None
+    recovery_cost: Optional[float] = None
+    weak_point_tags: Optional[list[str]] = None
+    sport_domains: Optional[list[str]] = None
 
 
 class WorkoutLog(BaseModel):
@@ -46,13 +84,25 @@ class WorkoutLog(BaseModel):
         description="1 = Very high life stress, 10 = No life stress",
     )
 
+    # Concrete exercise entries (optional; enables exercise-aware dose computation)
+    exercises: list[ExerciseEntry] = Field(
+        default_factory=list,
+        description="Per-exercise breakdown. When present, dose reflects actual exercise phi vectors.",
+    )
+
 
 class StressDose(BaseModel):
     """
     Stress dose: six-dimensional engine vector plus legacy scalars for clients.
+
+    `adaptation_contribution` is the session's positive adaptation signal per
+    capacity axis. Used by state_update for explicit capacity gains.
     """
 
     dose_six: StressDoseSix = Field(default_factory=StressDoseSix)
+    adaptation_contribution: AdaptationContribution = Field(
+        default_factory=AdaptationContribution
+    )
 
     d_met_systemic: float = 0.0
     d_nm_peripheral: float = 0.0

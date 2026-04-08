@@ -1,12 +1,19 @@
 """
-State evolution S(t) → S(t+1): multi-component fatigue, tissue load, slow capacity,
-legacy scalar sync, and benchmark observation assimilation.
+State evolution S(t) → S(t+1): multi-component fatigue, tissue load, explicit
+capacity adaptation, legacy scalar sync, and benchmark observation assimilation.
+
+Key changes vs v1:
+- Explicit adaptation gains per capacity axis driven by AdaptationContribution
+- Fatigue-suppression of adaptation efficiency
+- Domain cross-talk rules (aerobic→work_capacity, hypertrophy→max_strength, skill∩CNS)
+- Benchmark-driven state updates use the observation's actual observed_at timestamp
+  (fixes chronological correctness — no more utcnow() on benchmark writes)
 """
 
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence
 
 from app.engine.parameters import default_parameters
@@ -76,20 +83,23 @@ def apply_benchmark_observation(
     better_direction: str,
     observation_weight: float,
     mappings: Sequence[Any],
+    observed_at: datetime | None = None,
 ) -> UnifiedStateVector:
     """
     Weighted residual-style nudge on capacity / fatigue / tissue axes from
     `observation_mappings` (no full EKF in phase 1).
+
+    `observed_at` is used as the state timestamp when provided.
+    This ensures chronological correctness: benchmark-driven states are anchored
+    to when the test was performed, not when the API call was made.
     """
     s = prev_state.model_copy(deep=True)
     base = normalized_value if normalized_value is not None else raw_value
     if better_direction == "lower":
-        # Time / pace: faster (smaller raw) → larger signal for direct/inverse mappings
         signal = 1.0 / max(float(base), 1e-9)
     elif better_direction == "higher":
         signal = float(base)
     else:
-        # closer_to_target: pass through; mappings should encode target in intercept/config
         signal = float(base)
 
     for m in mappings:
@@ -117,7 +127,12 @@ def apply_benchmark_observation(
     s.f_nm_central = legacy["f_nm_central"]
     s.f_struct_damage = legacy["f_struct_damage"]
 
-    s.timestamp = datetime.utcnow()
+    # Use observation timestamp for chronological correctness
+    if observed_at is not None:
+        s.timestamp = observed_at
+    else:
+        s.timestamp = datetime.now(timezone.utc)
+
     return s
 
 
@@ -157,6 +172,78 @@ def _tissue_impulse_from_dose(dose: StressDose, log: WorkoutLog) -> dict[str, fl
     six = dose.dose_six
     scale = six.impact * 0.6 + six.volume * 0.04 + six.intensity * 0.45
     return {k: float(pt.get(k, 0.05)) * scale * 9.0 for k in TissueState.KEYS}
+
+
+def _adaptation_efficiency(state: UnifiedStateVector, p) -> float:
+    """
+    Compute adaptation efficiency multiplier [0.3, 1.0] based on mean fatigue.
+
+    High fatigue suppresses adaptation: the body is in repair mode, not supercompensation.
+    """
+    f = state.fatigue_f
+    f_values = [getattr(f, k) for k in FatigueState.KEYS]
+    mean_f = sum(f_values) / max(1, len(f_values))
+
+    thr = p.adapt_fatigue_suppress_threshold
+    floor = p.adapt_fatigue_suppress_floor
+
+    if mean_f <= thr:
+        return 1.0
+    # Linear suppression from threshold to 100 (at 100, efficiency = floor)
+    excess = (mean_f - thr) / max(1.0, 100.0 - thr)
+    return max(floor, 1.0 - excess * (1.0 - floor))
+
+
+def _apply_adaptation_gains(
+    s: UnifiedStateVector,
+    dose: StressDose,
+    p,
+) -> UnifiedStateVector:
+    """
+    Apply explicit per-axis capacity gains from dose.adaptation_contribution.
+
+    Gains are scaled by:
+    1. Per-axis adaptation coefficient (p.adapt_coef)
+    2. Session efficiency (fatigue suppression)
+    3. CNS fatigue penalty for skill axis
+
+    Also applies cross-talk:
+    - aerobic adaptation → nudges work_capacity
+    - hypertrophy adaptation → slow support of max_strength
+    """
+    ac = dose.adaptation_contribution
+    efficiency = _adaptation_efficiency(s, p)
+
+    for key in ac.KEYS:
+        signal = getattr(ac, key)
+        if signal <= 0.0:
+            continue
+
+        coef = p.adapt_coef.get(key, 0.012)
+        gain = signal * coef * efficiency
+
+        # Skill adaptation is additionally suppressed under high CNS fatigue
+        if key == "skill" and s.fatigue_f.cns > p.crosstalk_skill_suppressed_above_cns:
+            cns_excess = (s.fatigue_f.cns - p.crosstalk_skill_suppressed_above_cns) / 45.0
+            gain *= max(0.5, 1.0 - cns_excess * 0.5)
+
+        cur = getattr(s.capacity_x, key)
+        ceiling = _capacity_ceiling(key)
+        setattr(s.capacity_x, key, min(ceiling, cur + gain))
+
+    # Cross-talk: aerobic improvement nudges work_capacity
+    aerobic_gain = getattr(ac, "aerobic") * p.adapt_coef.get("aerobic", 0.015) * efficiency
+    if aerobic_gain > 0:
+        wc_xgain = aerobic_gain * p.crosstalk_aerobic_on_work_capacity / max(1e-6, p.adapt_coef.get("aerobic", 0.015))
+        s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_xgain)
+
+    # Cross-talk: hypertrophy slowly supports max_strength
+    hyp_gain = getattr(ac, "hypertrophy") * p.adapt_coef.get("hypertrophy", 0.018) * efficiency
+    if hyp_gain > 0:
+        ms_xgain = hyp_gain * p.crosstalk_hypertrophy_on_max_strength / max(1e-6, p.adapt_coef.get("hypertrophy", 0.018))
+        s.capacity_x.max_strength = min(100.0, s.capacity_x.max_strength + ms_xgain)
+
+    return s
 
 
 def update_athlete_state(
@@ -204,7 +291,7 @@ def update_athlete_state(
         v = getattr(s.tissue_t, key) + d_t[key]
         setattr(s.tissue_t, key, max(0.0, min(100.0, v)))
 
-    # --- 5. Signaling + slow capacity (Banister-style nudge) ---
+    # --- 5. Signaling + slow structural capacity (Banister-style nudge) ---
     s.s_struct_signal = _exp_decay(s.s_struct_signal, hours, cross_talk.TAU_SIGNAL)
     s.s_struct_signal += dose.d_struct_signal
     s.s_struct_signal = max(0.0, s.s_struct_signal)
@@ -220,10 +307,14 @@ def update_athlete_state(
         )
         s.s_struct_signal *= 0.85
 
+    # --- 6. Explicit adaptation gains (new v2 path) ---
+    s = _apply_adaptation_gains(s, dose, p)
+
+    # --- 7. Legacy metabolic cross-talk (preserved from v1) ---
     wc_gain = p.crosstalk_metabolic_on_work_capacity * min(s.fatigue_f.metabolic * 0.015, 0.4)
     s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_gain)
 
-    # --- 6. Legacy mirrors ---
+    # --- 8. Legacy mirrors ---
     legacy = sync_legacy_from_vectors(s.capacity_x, s.fatigue_f, s.tissue_t)
     s.c_met_aerobic = legacy["c_met_aerobic"]
     s.c_nm_force = legacy["c_nm_force"]

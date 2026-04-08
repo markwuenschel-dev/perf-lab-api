@@ -110,6 +110,9 @@ async def create_observation(
         else:
             current = unified_from_athlete_row(last)
 
+        # Use the observation's own timestamp so state history stays chronologically correct
+        observation_time = body.observed_at or datetime.utcnow()
+
         new_state = apply_benchmark_observation(
             current,
             raw_value=body.raw_value,
@@ -117,11 +120,20 @@ async def create_observation(
             better_direction=definition.better_direction,
             observation_weight=float(definition.observation_weight),
             mappings=mappings,
+            observed_at=observation_time,
         )
         kwargs = athlete_state_kwargs_from_unified(new_state)
         db.add(AthleteState(user_id=user_id, **kwargs))
 
     await db.commit()
+
+    # Auto-recompute derived KPI metrics so the dashboard is immediately fresh
+    from app.services import dashboard_service as _ds
+    try:
+        await _ds.recompute_derived_metrics(db, user_id)
+    except Exception:
+        # Non-critical: KPI recompute failure should not fail the observation write
+        pass
     await db.refresh(obs)
     return BenchmarkObservationRead(
         id=obs.id,
