@@ -9,7 +9,8 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -26,12 +27,21 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 # ---------------------------------------------------------------------------
-# Request / response schemas (auth-specific, keep local to this router)
+# Request / response schemas
 # ---------------------------------------------------------------------------
 
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if len(v) > 72:
+            raise ValueError("Password cannot exceed 72 characters (bcrypt limit)")
+        return v
 
 
 class TokenResponse(BaseModel):
@@ -57,7 +67,10 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    # Check uniqueness
+    """
+    Create new user + empty AthleteProfile in a single transaction.
+    """
+    # Check for duplicate email
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalars().first():
         raise HTTPException(
@@ -65,20 +78,36 @@ async def register(
             detail="Email already registered",
         )
 
-    user = User(
-        email=body.email,
-        hashed_password=hash_password(body.password),
-    )
-    db.add(user)
-    await db.flush()  # get user.id before profile insert
+    try:
+        # Single atomic transaction
+        async with db.begin():
+            user = User(
+                email=body.email.lower(),                    # normalize email
+                hashed_password=hash_password(body.password),  # ← only string passed
+            )
+            db.add(user)
+            await db.flush()  # get ID before creating profile
 
-    # Create empty profile — filled in during onboarding flow
-    profile = AthleteProfile(user_id=user.id)
-    db.add(profile)
+            # Create empty athlete profile
+            profile = AthleteProfile(user_id=user.id)
+            db.add(profile)
 
-    await db.commit()
-    await db.refresh(user)
-    return user
+        await db.refresh(user)
+        return user
+
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+    except Exception as exc:
+        await db.rollback()
+        # Log this in production (structlog / logging)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create account. Please try again.",
+        ) from exc
 
 
 @router.post("/token", response_model=TokenResponse)
