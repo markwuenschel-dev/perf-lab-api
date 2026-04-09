@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, prescribe
+from app.models import Base
+from app.core.db import engine
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -43,3 +45,10 @@ app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 @app.get("/ping")
 async def ping():
     return {"status": "ok", "system": "running"}
+
+
+@app.on_event("startup")
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("✅ All tables ensured on startup")
