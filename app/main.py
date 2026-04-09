@@ -11,8 +11,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://performancelab.netlify.app"],
-    allow_credentials=False,
+    allow_origins=[
+        "http://localhost:5173",      # Vite dev server
+        "http://127.0.0.1:5173",      # alternative localhost
+        "https://performancelab.netlify.app",  # your production frontend
+        # Add any other domains later (e.g. custom domain)
+    ],
+    allow_credentials=True,           # Required for JWT Authorization header
     allow_methods=["*"],
     allow_headers=["*"],
 )
