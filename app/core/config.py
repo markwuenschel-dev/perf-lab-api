@@ -1,24 +1,15 @@
 """
 app/core/config.py
-
-Add these to your .env:
-
-    SECRET_KEY=<run: openssl rand -hex 32>
-    ALGORITHM=HS256
-    ACCESS_TOKEN_EXPIRE_MINUTES=10080   # 7 days
-
-Render (and similar) inject DATABASE_URL as postgresql://... which loads the sync
-psycopg2 driver. We normalize plain postgresql/postgres schemes to
-postgresql+asyncpg for SQLAlchemy's async engine.
 """
 
 from urllib.parse import urlparse, urlunparse
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _asyncpg_database_url(url: str) -> str:
+    """Convert postgresql:// → postgresql+asyncpg:// for SQLAlchemy async engine."""
     parsed = urlparse(url)
     if parsed.scheme in ("postgresql", "postgres"):
         return urlunparse(parsed._replace(scheme="postgresql+asyncpg"))
@@ -28,8 +19,17 @@ def _asyncpg_database_url(url: str) -> str:
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Performance Lab API"
     API_V1_STR: str = "/v1"
+
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost/dbname"
     DEBUG: bool = True
+
+    # Auth
+    SECRET_KEY: str = "change-me-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
+    # Future features
+    USE_STRUCTURED_COACHING_TEMPLATES: bool = True
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
@@ -38,17 +38,12 @@ class Settings(BaseSettings):
             return _asyncpg_database_url(v)
         return v
 
-    # Auth
-    SECRET_KEY: str = "change-me-in-production"  # override in .env
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-
-    # Prescription: structured coaching templates + constraint engine (v2 path)
-    USE_STRUCTURED_COACHING_TEMPLATES: bool = True
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",          # ignore unknown env vars
+    )
 
 
 settings = Settings()

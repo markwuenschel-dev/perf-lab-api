@@ -1,7 +1,7 @@
 """
 app/core/auth.py
 
-JWT authentication utilities and FastAPI dependency.
+JWT + bcrypt utilities. Production-ready, Render-safe.
 """
 
 from datetime import datetime, timedelta
@@ -19,13 +19,9 @@ from app.core.db import get_db
 from app.models.user import User
 
 
-# ---------------------------------------------------------------------------
-# Password hashing (direct bcrypt - production ready)
-# ---------------------------------------------------------------------------
-
 def hash_password(plain: str) -> str:
     """Hash password using official bcrypt (no passlib)."""
-    if not plain:
+    if not plain or len(plain.strip()) == 0:
         raise ValueError("Password cannot be empty")
     if len(plain) > 72:
         raise ValueError("Password cannot exceed 72 bytes (bcrypt limit)")
@@ -36,16 +32,14 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a password against its bcrypt hash."""
+    """Verify password against bcrypt hash. Safe against timing attacks."""
+    if not plain or not hashed:
+        return False
     try:
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
 
-
-# ---------------------------------------------------------------------------
-# JWT
-# ---------------------------------------------------------------------------
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
@@ -54,7 +48,7 @@ def create_access_token(
     subject: Any,
     expires_delta: Optional[timedelta] = None,
 ) -> str:
-    """Create a new JWT access token."""
+    """Create JWT access token."""
     expire = datetime.utcnow() + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
@@ -62,15 +56,11 @@ def create_access_token(
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-# ---------------------------------------------------------------------------
-# FastAPI dependency
-# ---------------------------------------------------------------------------
-
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Get current authenticated user from JWT token."""
+    """FastAPI dependency: get current authenticated user."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
