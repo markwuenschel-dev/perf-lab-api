@@ -1,15 +1,13 @@
 """
 app/models/__init__.py
 
-Import all ORM models here so:
-  1. Alembic's env.py can discover them via `from app.models import *`
-  2. SQLAlchemy's Base.metadata is fully populated before create_all / migrations run
+Central place to import all models so Alembic and the app can discover them.
 """
 
-# Export Base so `from app.models import Base` works everywhere
-from app.core.db import Base  # ← ADD THIS LINE
+# Re-export Base so `from app.models import Base` works everywhere
+from app.core.db import Base  # noqa: F401
 
-# Import all model classes
+# Import all model classes (this triggers registration with Base.metadata)
 from app.models.user import User, AthleteProfile                  # noqa: F401
 from app.models.athlete_state import AthleteState                 # noqa: F401
 from app.models.exercise import Exercise                          # noqa: F401
