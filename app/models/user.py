@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,          # ← was missing
     ForeignKey,
     Integer,
     String,
