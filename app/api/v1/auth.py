@@ -49,30 +49,62 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    # Duplicate check
+    """Create new user + empty AthleteProfile."""
+    # Check for duplicate email
     result = await db.execute(select(User).where(User.email == body.email))
     if result.scalars().first():
         raise HTTPException(status_code=409, detail="Email already registered")
 
     try:
-        async with db.begin():   # atomic transaction
-            user = User(
-                email=body.email.lower(),
-                hashed_password=hash_password(body.password),   # ← this is the most common crash point
-            )
-            db.add(user)
-            await db.flush()
+        user = User(
+            email=body.email.lower(),
+            hashed_password=hash_password(body.password),
+        )
+        db.add(user)
+        await db.flush()                    # get ID before creating profile
 
-            profile = AthleteProfile(user_id=user.id)
-            db.add(profile)
+        profile = AthleteProfile(user_id=user.id)
+        db.add(profile)
 
+        await db.commit()                   # ← correct way (no nested transaction)
         await db.refresh(user)
         return user
 
-    except Exception as exc:   # ← catch everything and return real error
+    except IntegrityError:
         await db.rollback()
-        # This will now show the exact Python error in the frontend
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    except Exception as exc:
+        await db.rollback()
+        # This now shows the exact error in the frontend
         raise HTTPException(
             status_code=500,
             detail=f"Registration failed: {type(exc).__name__}: {str(exc)}"
         ) from exc
+
+
+@router.post("/token", response_model=TokenResponse)
+async def login(
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    result = await db.execute(select(User).where(User.email == form.username))
+    user = result.scalars().first()
+
+    if not user or not verify_password(form.password, user.hashed_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is inactive")
+
+    token = create_access_token(subject=user.id)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=UserResponse)
+async def me(current_user: User = Depends(get_current_user)) -> User:
+    return current_user
