@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship   # ← ADD THIS
+from sqlalchemy.orm import Mapped, relationship
 
 from app.core.db import Base
 
@@ -43,8 +43,8 @@ class AthleteState(Base):
     # Full-spectrum engine bundle: {"x": CapacityState, "f": FatigueState, "t": TissueState}
     engine_state = Column(JSONB, nullable=True)
 
-    user = relationship(
+    user: Mapped["User"] = relationship(
         "User",
-        back_populates="athlete_state",   # must match the name used in User model
-        uselist=False,                    # one-to-one
+        back_populates="athlete_state",
+        uselist=False,
     )

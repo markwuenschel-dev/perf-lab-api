@@ -1,4 +1,6 @@
 from datetime import datetime
+from typing import List  # if you have other lists
+from sqlalchemy.orm import Mapped, relationship
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ARRAY
 from sqlalchemy.orm import relationship
