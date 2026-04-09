@@ -16,6 +16,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    athlete_state: Mapped["AthleteState"] = relationship(
+        "AthleteState",
+        back_populates="user",          # ← must match the name in AthleteState
+        uselist=False,                  # one-to-one (most common for athlete state)
+        cascade="all, delete-orphan",
+    )
+
     # Relationships
     profile = relationship("AthleteProfile", back_populates="user", uselist=False)
     athlete_states = relationship("AthleteState", back_populates="user")

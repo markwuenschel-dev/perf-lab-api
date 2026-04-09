@@ -1,7 +1,9 @@
+# app/models/athlete_state.py
 from datetime import datetime
 
 from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship   # ← ADD THIS
 
 from app.core.db import Base
 
@@ -40,3 +42,9 @@ class AthleteState(Base):
 
     # Full-spectrum engine bundle: {"x": CapacityState, "f": FatigueState, "t": TissueState}
     engine_state = Column(JSONB, nullable=True)
+
+    user = relationship(
+        "User",
+        back_populates="athlete_state",   # must match the name used in User model
+        uselist=False,                    # one-to-one
+    )
