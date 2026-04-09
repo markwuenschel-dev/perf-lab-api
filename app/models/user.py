@@ -2,7 +2,15 @@
 from datetime import datetime
 from typing import List
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from app.core.db import Base
@@ -25,12 +33,12 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-    # All historical athlete states (one-to-many)
+    # Historical athlete states (one-to-many)
     athlete_states: Mapped[List["AthleteState"]] = relationship(
         "AthleteState",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",                    # better performance for loading history
+        lazy="selectin",
     )
 
     # Other relationships
@@ -51,13 +59,11 @@ class AthleteProfile(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Experience & schedule
     experience_years = Column(Float, default=0.0)
     experience_level = Column(String, default="beginner")
     available_days_per_week = Column(Integer, default=3)
     session_duration_minutes = Column(Integer, default=60)
 
-    # Equipment, 1RMs, body metrics, etc.
     equipment = Column(ARRAY(String), default=list)
     squat_1rm = Column(Float, nullable=True)
     deadlift_1rm = Column(Float, nullable=True)
@@ -69,5 +75,4 @@ class AthleteProfile(Base):
     bodyweight_kg = Column(Float, nullable=True)
     height_cm = Column(Float, nullable=True)
 
-    # Relationship
     user: Mapped["User"] = relationship("User", back_populates="profile")
