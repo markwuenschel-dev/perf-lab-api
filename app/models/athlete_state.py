@@ -1,17 +1,21 @@
 # app/models/athlete_state.py
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, relationship
 
 from app.core.db import Base
 
+if TYPE_CHECKING:
+    from app.models.user import User
+
 
 class AthleteState(Base):
     """
     Persistent history of the Unified State Vector S(t).
-    Based on 'Unified Sports Performance Framework' - Table 1.
+    One user can have many AthleteState records over time.
     """
     __tablename__ = "athlete_states"
 
@@ -19,32 +23,29 @@ class AthleteState(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
-    # Capacities (The Ceiling - Slow Adaptation)
-    c_met_aerobic = Column(Float, nullable=False, comment="Critical Speed/Power")
-    c_nm_force = Column(Float, nullable=False, comment="Max Force/1RM")
-    c_struct = Column(Float, nullable=False, comment="Structural Integrity/CSA")
+    # Capacities
+    c_met_aerobic = Column(Float, nullable=False)
+    c_nm_force = Column(Float, nullable=False)
+    c_struct = Column(Float, nullable=False)
 
-    # Batteries (The Tank - Fast Recharge)
-    b_met_anaerobic = Column(Float, nullable=False, comment="W' or D'")
+    # Batteries
+    b_met_anaerobic = Column(Float, nullable=False)
 
-    # Fatigues (The Cost - Fast/Mid Decay), stored as arbitrary units (0–100 recommended)
+    # Fatigues
     f_met_systemic = Column(Float, default=0.0)
     f_nm_peripheral = Column(Float, default=0.0)
     f_nm_central = Column(Float, default=0.0)
     f_struct_damage = Column(Float, default=0.0)
 
-    # Signals (The Adaptation Trigger)
+    # Signals & human factors
     s_struct_signal = Column(Float, default=0.0)
-
-    # Human Factors
     habit_strength = Column(Float, default=0.0)
-    skill_state = Column(JSONB, default=dict)  # e.g. {"squat": 0.8}
-
-    # Full-spectrum engine bundle: {"x": CapacityState, "f": FatigueState, "t": TissueState}
+    skill_state = Column(JSONB, default=dict)
     engine_state = Column(JSONB, nullable=True)
 
+    # Relationship - points back to User
     user: Mapped["User"] = relationship(
         "User",
-        back_populates="athlete_state",
+        back_populates="athlete_states",
         uselist=False,
     )
