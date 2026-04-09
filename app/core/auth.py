@@ -1,7 +1,7 @@
 """
 app/core/auth.py
 
-JWT authentication utilities and FastAPI dependency for the Performance Lab API.
+JWT authentication utilities and FastAPI dependency.
 """
 
 from datetime import datetime, timedelta
@@ -20,15 +20,15 @@ from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
-# Password hashing (direct bcrypt - no more passlib issues)
+# Password hashing (direct bcrypt - production ready)
 # ---------------------------------------------------------------------------
 
 def hash_password(plain: str) -> str:
-    """Hash password using bcrypt (recommended for production)."""
+    """Hash password using official bcrypt (no passlib)."""
     if not plain:
         raise ValueError("Password cannot be empty")
     if len(plain) > 72:
-        raise ValueError("Password cannot be longer than 72 bytes (bcrypt limit)")
+        raise ValueError("Password cannot exceed 72 bytes (bcrypt limit)")
 
     salt = bcrypt.gensalt(rounds=12)
     hashed = bcrypt.hashpw(plain.encode("utf-8"), salt)
@@ -63,14 +63,14 @@ def create_access_token(
 
 
 # ---------------------------------------------------------------------------
-# FastAPI dependency — resolves the current authenticated user
+# FastAPI dependency
 # ---------------------------------------------------------------------------
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """FastAPI dependency to get the current authenticated user from JWT."""
+    """Get current authenticated user from JWT token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
