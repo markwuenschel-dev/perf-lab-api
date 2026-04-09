@@ -1,28 +1,16 @@
 """
 app/core/auth.py
 
-JWT authentication utilities and FastAPI dependency.
-
-Usage:
-    from app.core.auth import get_current_user
-
-    @router.get("/me")
-    async def me(current_user: User = Depends(get_current_user)):
-        return current_user
-
-Configuration (add to .env / config.py):
-    SECRET_KEY      — long random string (use: openssl rand -hex 32)
-    ALGORITHM       — "HS256" (default)
-    ACCESS_TOKEN_EXPIRE_MINUTES — default 60 * 24 * 7 (7 days)
+JWT authentication utilities and FastAPI dependency for the Performance Lab API.
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -30,19 +18,29 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.models.user import User
 
-# ---------------------------------------------------------------------------
-# Password hashing
-# ---------------------------------------------------------------------------
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# ---------------------------------------------------------------------------
+# Password hashing (direct bcrypt - no more passlib issues)
+# ---------------------------------------------------------------------------
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    """Hash password using bcrypt (recommended for production)."""
+    if not plain:
+        raise ValueError("Password cannot be empty")
+    if len(plain) > 72:
+        raise ValueError("Password cannot be longer than 72 bytes (bcrypt limit)")
+
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(plain.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    """Verify a password against its bcrypt hash."""
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -53,9 +51,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 def create_access_token(
-    subject: int | str,
+    subject: Any,
     expires_delta: Optional[timedelta] = None,
 ) -> str:
+    """Create a new JWT access token."""
     expire = datetime.utcnow() + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
@@ -71,13 +70,17 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    """FastAPI dependency to get the current authenticated user from JWT."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise credentials_exception
