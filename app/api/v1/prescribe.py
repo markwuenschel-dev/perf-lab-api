@@ -16,44 +16,43 @@ from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 
 router = APIRouter(tags=["Prescription"])
 
-
 @router.get("/next-session", response_model=WorkoutPrescription)
 async def get_next_session(
-    goal: TrainingGoal = Query(
-        TRAINING_GOAL_DEFAULT,
-        description=(
-            "Training emphasis for next-session prescription (barbell WL, PL, "
-            "metcon, calisthenics, gymnastics, grip, run / sprint / half or full marathon, etc.)"
-        ),
-    ),
+    goal: TrainingGoal = Query(TRAINING_GOAL_DEFAULT, description=...),
+    user_id: int | None = Query(None, description="DEV ONLY — remove in production"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),   # ← put this back
 ) -> WorkoutPrescription:
+    effective_user_id = user_id or current_user.id
+    """DEV-friendly version that auto-initializes baseline state."""
+    effective_user_id = user_id or 1
+
+    # Auto-create baseline AthleteState if none exists yet
     result = await db.execute(
         select(AthleteState)
-        .where(AthleteState.user_id == current_user.id)
+        .where(AthleteState.user_id == effective_user_id)
         .order_by(AthleteState.timestamp.desc())
         .limit(1)
     )
     last_record = result.scalars().first()
 
     if not last_record:
-        return finalize_prescription(
-            WorkoutPrescription(
-                type="Assessment",
-                focus="Establish Baseline",
-                rationale="No state history found. Complete onboarding and baseline testing first.",
-                duration_min=60,
-            ),
-            None,
-            goal,
-            "no_athlete_state",
+        from app.services.state_service import initialize_athlete_state
+        await initialize_athlete_state(db, effective_user_id)
+        # re-fetch the newly created state
+        result = await db.execute(
+            select(AthleteState)
+            .where(AthleteState.user_id == effective_user_id)
+            .order_by(AthleteState.timestamp.desc())
+            .limit(1)
         )
+        last_record = result.scalars().first()
 
     state = unified_from_athlete_row(last_record)
+
     try:
-        recent = await recent_workout_summaries(db, current_user.id)
-        kpi_summary = await dashboard_service.latest_kpi_values(db, current_user.id)
+        recent = await recent_workout_summaries(db, effective_user_id)
+        kpi_summary = await dashboard_service.latest_kpi_values(db, effective_user_id)
         return recommend_next_session(
             state,
             goal=goal,

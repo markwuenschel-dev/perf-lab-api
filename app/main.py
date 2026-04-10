@@ -14,7 +14,7 @@ from app.core.db import engine
 from app.models import Base
 
 from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, prescribe
-
+from app.api.v1.onboard import router as onboard_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +39,8 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+app.include_router(onboard_router)
 
 
 # ----------------------------------------------------------------------

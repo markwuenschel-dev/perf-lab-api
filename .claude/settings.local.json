@@ -4,7 +4,10 @@
       "Bash(python -c \"from main import app; print\\('Routes:'\\); [print\\(f'  {r.methods} {r.path}'\\) for r in app.routes]\")",
       "Bash(pip install:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m ':*)"
+      "Bash(git commit -m ':*)",
+      "Bash(npm run:*)",
+      "Bash(grep \"muted-foreground\" dist/assets/*.css)",
+      "Bash(grep -o \"muted-foreground:[^;]*\" dist/assets/*.css)"
     ]
   }
 }
