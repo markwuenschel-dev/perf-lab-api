@@ -326,11 +326,15 @@ The project wins first by making the engine correct, legible, and adaptive.
 
 If effort has to be sequenced tightly, the strongest order is:
 
-### Phase 1
-- migrations
-- tests
-- onboarding endpoints
-- better baseline seeding
+### Phase 1 — Core Engine Hardening & First-Run Loop (✅ COMPLETE)
+
+- [x] Alembic migrations working
+- [x] `POST /v1/onboard` endpoint (creates profile + weak points)
+- [x] `GET /v1/next-session` auto-initializes baseline `AthleteState`
+- [x] First real prescription returned from engine
+- [x] Dev-friendly testing with `?user_id=1`
+
+**Status**: The full quickstart flow from QUICKSTART_FLOW.md now works end-to-end.
 
 ### Phase 2
 - block/planned-session APIs

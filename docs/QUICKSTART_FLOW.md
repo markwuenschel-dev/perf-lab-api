@@ -21,7 +21,7 @@ Those functions are the real backbone of the first-run experience.
 
 ---
 
-## The Short Version
+## The Short Version (Now Implemented)
 
 ```text
 Create user
@@ -47,10 +47,11 @@ Repeat loop
 
 The currently visible API surface supports the core loop:
 
-- `POST /v1/simulate-dose`
-- `POST /v1/log-workout`
-- `GET /v1/next-session`
-- `GET /ping`
+POST /v1/onboard          → creates user + profile + weak points
+GET  /v1/next-session     → auto-creates baseline AthleteState if missing
+                          → returns real prescription
+POST /v1/log-workout      → updates state + returns new S(t+1)
+GET  /v1/next-session     → returns updated prescription
 
 The repo also makes room for onboarding, blocks, and weak-point routers, but
 those are signposted as planned rather than fully surfaced in the visible API
