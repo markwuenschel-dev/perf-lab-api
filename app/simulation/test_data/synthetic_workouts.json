@@ -1,0 +1,10 @@
+[
+  {
+    "description": "Sample heavy squat session",
+    "modality": "strength",
+    "duration_minutes": 60,
+    "session_rpe": 8,
+    "avg_rir": 2,
+    "estimated_sets": 5
+  }
+]
