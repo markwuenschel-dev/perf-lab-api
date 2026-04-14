@@ -56,3 +56,5 @@ mypy
 ruff
 black
 isort
+numpy
+scipy
