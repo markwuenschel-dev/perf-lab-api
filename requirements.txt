@@ -1,60 +1,64 @@
-# --- Core API stack ---
-fastapi
-uvicorn[standard]
+# =============================================
+# Performance Lab API - requirements.txt
+# =============================================
 
-# --- Config & validation ---
-pydantic-settings
-python-dotenv          # .env loading outside of pydantic-settings contexts
+# Core API stack
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
 
-# --- Database & migrations (Postgres, async-ready) ---
-sqlalchemy[asyncio]
-asyncpg                # async Postgres driver (runtime)
-psycopg2-binary        # sync Postgres driver (Alembic needs this for migrations)
-alembic
-greenlet               # required by SQLAlchemy async internals
+# Config & validation
+pydantic-settings>=2.5.0
+python-dotenv>=1.0.0
 
-# --- Auth & security ---
-pyjwt
-passlib[bcrypt]
-python-jose[cryptography]
-python-multipart       # required for OAuth2PasswordRequestForm
-email-validator        # required for pydantic EmailStr
-bcrypt                 # passlib backend
+# Database & migrations (Postgres, async-ready)
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.0
+alembic>=1.13.0
+greenlet>=3.0.0
 
-# --- HTTP client ---
-httpx                  # async HTTP calls (external APIs, LLM endpoints)
+# Auth & security
+pyjwt>=2.8.0
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+email-validator>=2.1.0
+bcrypt>=4.0.0
 
-# --- LLM / AI ---
-anthropic              # Anthropic SDK for the LLM prescriber layer
-openai                 # GPT-4 / GPT-4o (OpenAI)
-google-generativeai    # Gemini (Google)
-mistralai              # Mistral
-tiktoken               # token counting for OpenAI models
-tenacity               # retry logic for LLM API calls (rate limits, timeouts)
+# HTTP client
+httpx>=0.27.0
 
-# --- Background tasks ---
-celery[redis]          # async task queue (deferred state updates, weak point inference)
-redis                  # broker + cache backend for Celery
+# JSON & performance
+orjson>=3.10.0
 
-# --- Rate limiting ---
-slowapi                # rate limiting for public-facing endpoints
+# --- v0.3 Refined Math Model (Dose Engine + State Dynamics) ---
+numpy>=1.26.0
+scipy>=1.12.0
 
-# --- JSON & performance ---
-orjson                 # fast JSON serialization
+# --- LLM / AI (planned for prescriber layer) ---
+anthropic>=0.30.0
+openai>=1.35.0
+google-generativeai>=0.7.0
+mistralai>=0.4.0
+tiktoken>=0.7.0
+tenacity>=8.4.0
+
+# --- Background tasks & rate limiting (planned) ---
+celery[redis]>=5.4.0
+redis>=5.0.0
+slowapi>=0.1.0
 
 # --- Logging ---
-structlog              # structured logging
+structlog>=24.4.0
 
-# --- Testing ---
-pytest
-pytest-asyncio
-pytest-cov
-httpx                  # also used as async test client for FastAPI
+# =============================================
+# Development / Testing / Tooling
+# =============================================
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
 
-# --- Linting / type-checking / formatting ---
-mypy
-ruff
-black
-isort
-numpy
-scipy
+mypy>=1.10.0
+ruff>=0.5.0
+black>=24.0.0
+isort>=5.13.0
