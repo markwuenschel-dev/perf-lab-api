@@ -10,6 +10,12 @@ class OnboardRequest(BaseModel):
     equipment: List[str] = Field(default_factory=list)
     self_reported_weak_points: List[str] = Field(default_factory=list)
     goal: str = "Strength"
+    # Baseline lift / biometric context (all optional)
+    squat_1rm_kg: Optional[float] = Field(None, gt=0)
+    deadlift_1rm_kg: Optional[float] = Field(None, gt=0)
+    bench_1rm_kg: Optional[float] = Field(None, gt=0)
+    bodyweight_kg: Optional[float] = Field(None, gt=0)
+    run_5k_seconds: Optional[float] = Field(None, gt=0)
 
 class OnboardResponse(BaseModel):
     user_id: int

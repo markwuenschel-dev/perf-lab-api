@@ -786,6 +786,9 @@ def recommend_next_session(
     goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
     recent_sessions: list[dict] | None = None,
     kpi_summary: dict[str, float] | None = None,
+    active_weak_points: list[str] | None = None,
+    available_equipment: list[str] | None = None,
+    block_context: dict | None = None,
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -796,8 +799,14 @@ def recommend_next_session(
 
     `kpi_summary` holds latest derived dashboard metrics (codes → values).
     These are soft signals: state vectors are the primary controller.
+
+    `active_weak_points` biases candidate scoring toward sessions that address
+    flagged limitations. `block_context` applies a +0.15 bias to candidates
+    whose type matches the planned session category.
     """
     kpi = kpi_summary or {}
+    weak_points = active_weak_points or []
+    block = block_context or {}
 
     # --- 1. Hard safety overrides (always override scoring) ---
     safety = _safety_candidates(state)
@@ -810,12 +819,27 @@ def recommend_next_session(
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
 
-    # --- 3. Score and sort (no hard filtering needed here; finalize handles constraint override) ---
-    scored = sorted(all_candidates, key=_score_candidate, reverse=True)
+    # --- 3. Score and sort ---
+    def _score_with_context(c: SessionCandidate) -> float:
+        base = _score_candidate(c)
+        # Boost candidates whose type matches the planned session category
+        if block.get("session_category") and c.type == block["session_category"]:
+            base += 0.15
+        return base
+
+    scored = sorted(all_candidates, key=_score_with_context, reverse=True)
 
     if not scored:
         # Fallback — should not happen unless generator returns empty
         scored = _gen_general_candidates(state, kpi, recent_sessions)
 
     # --- 4. Return best candidate (finalize adds explainability + hard-constraint override) ---
-    return _finalize(scored[0], state, goal, recent_sessions)
+    rx = _finalize(scored[0], state, goal, recent_sessions)
+
+    # Annotate weak-point context in the explanation if present
+    if weak_points and rx.why:
+        rx.why.constraints_applied.extend(
+            [f"weak_point:{tag}" for tag in weak_points]
+        )
+
+    return rx

@@ -2,10 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from datetime import date
+
 from app.core.db import get_db
 from app.core.auth import get_current_user
 from app.models.user import User
 from app.models.athlete_state import AthleteState
+from app.models.weak_point import WeakPoint
+from app.models.mesocycle import MesocycleBlock, BlockStatus, PlannedSession, SessionStatus
 from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescription_finalize import finalize_prescription
 from app.logic.prescriber import recommend_next_session
@@ -50,14 +54,69 @@ async def get_next_session(
 
     state = unified_from_athlete_row(last_record)
 
+    # Fetch active (unresolved) weak-point tags for context injection
+    wp_result = await db.execute(
+        select(WeakPoint.tag).where(
+            WeakPoint.user_id == effective_user_id,
+            WeakPoint.resolved_at.is_(None),
+        )
+    )
+    active_weak_points = [row[0] for row in wp_result.all()]
+
+    # Fetch active block + today's planned session for block-context bias
+    block_result = await db.execute(
+        select(MesocycleBlock)
+        .where(
+            MesocycleBlock.user_id == effective_user_id,
+            MesocycleBlock.status == BlockStatus.ACTIVE,
+        )
+        .order_by(MesocycleBlock.created_at.desc())
+        .limit(1)
+    )
+    active_block = block_result.scalars().first()
+
+    planned_session = None
+    if active_block:
+        ps_result = await db.execute(
+            select(PlannedSession)
+            .where(
+                PlannedSession.block_id == active_block.id,
+                PlannedSession.scheduled_date == date.today(),
+                PlannedSession.status == SessionStatus.PENDING,
+            )
+            .limit(1)
+        )
+        planned_session = ps_result.scalars().first()
+
+    block_context = None
+    if active_block and planned_session:
+        block_context = {
+            "block_goal": active_block.goal.value,
+            "session_category": planned_session.category,
+            "is_deload": planned_session.is_deload,
+            "week_number": planned_session.week_number,
+        }
+
     try:
         recent = await recent_workout_summaries(db, effective_user_id)
         kpi_summary = await dashboard_service.latest_kpi_values(db, effective_user_id)
-        return recommend_next_session(
+        rx = recommend_next_session(
             state,
             goal=goal,
             recent_sessions=recent,
             kpi_summary=kpi_summary or None,
+            active_weak_points=active_weak_points or None,
+            block_context=block_context,
         )
+        # Persist prescription back to the planned session slot
+        if planned_session is not None:
+            planned_session.prescribed_content = {
+                "type": rx.type,
+                "focus": rx.focus,
+                "rationale": rx.rationale,
+                "duration_min": rx.duration_min,
+            }
+            await db.commit()
+        return rx
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to generate prescription: {str(e)}")

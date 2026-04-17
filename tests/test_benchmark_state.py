@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.derived_metric_formulas import hinshaw_fatigue_factor
-from app.logic.state_update import apply_benchmark_observation
+from app.logic.state_update_v0 import apply_benchmark_observation
 from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 

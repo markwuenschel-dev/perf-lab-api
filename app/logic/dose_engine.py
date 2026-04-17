@@ -35,5 +35,10 @@ def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
     }
 
 
-# Backward compatibility alias for legacy code
+# LEGACY: This module uses the numpy-based dose engine with signature:
+#   calculate_stress_doses(workout: dict, athlete_state: dict) -> dict
+# For the production v0.3 engine (WorkoutLog → StressDose), import from:
+#   app.logic.dose_engine_v0.calculate_stress_dose
+# The alias below is intentionally kept for any script that already imports it,
+# but it does NOT have the same signature as dose_engine_v0.calculate_stress_dose.
 calculate_stress_dose = calculate_stress_doses

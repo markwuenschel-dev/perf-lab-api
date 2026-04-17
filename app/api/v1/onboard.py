@@ -6,6 +6,7 @@ from app.core.db import get_db
 from app.models.user import User, AthleteProfile
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.onboarding import OnboardRequest, OnboardResponse
+from app.services.state_service import initialize_athlete_state
 
 router = APIRouter(prefix="/v1", tags=["onboarding"])
 
@@ -47,8 +48,16 @@ async def onboard_athlete(request: OnboardRequest, db: AsyncSession = Depends(ge
         db.add(wp)
     await db.commit()
 
+    # 4. Seed baseline athlete state immediately so first /next-session is ready
+    await initialize_athlete_state(
+        db,
+        user.id,
+        experience_level=request.experience_level,
+        squat_1rm_kg=request.squat_1rm_kg,
+    )
+
     return OnboardResponse(
         user_id=user.id,
         profile_id=profile.id,
-        message="Athlete profile created. Baseline state will be initialized on first workout or next-session call."
+        message="Athlete profile and baseline state created.",
     )

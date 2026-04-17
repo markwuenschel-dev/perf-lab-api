@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified, unified_from_athlete_row
-from app.logic.state_update import apply_benchmark_observation
+from app.logic.state_update_v0 import apply_benchmark_observation
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation

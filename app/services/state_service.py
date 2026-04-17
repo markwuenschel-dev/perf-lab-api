@@ -15,15 +15,32 @@ from app.models.exercise import Exercise
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import WorkoutLog
-from app.logic.dose_engine import calculate_stress_dose
-from app.logic.state_update import update_athlete_state
+from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.logic.state_update_v0 import update_athlete_state
 
 
-async def initialize_athlete_state(db: AsyncSession, user_id: int) -> UnifiedStateVector:
-    """
-    Creates baseline S0 if none exists (intermediate athlete defaults).
-    """
-    x = capacity_from_legacy(300.0, 1000.0, 100.0, 15000.0)
+_BASELINE_CAPACITIES = {
+    "beginner":     dict(c_met_aerobic=180.0,  c_nm_force=500.0,   c_struct=60.0,  b_met_anaerobic=8000.0),
+    "intermediate": dict(c_met_aerobic=300.0,  c_nm_force=1000.0,  c_struct=100.0, b_met_anaerobic=15000.0),
+    "advanced":     dict(c_met_aerobic=500.0,  c_nm_force=1800.0,  c_struct=160.0, b_met_anaerobic=25000.0),
+    "elite":        dict(c_met_aerobic=650.0,  c_nm_force=2500.0,  c_struct=220.0, b_met_anaerobic=35000.0),
+}
+
+
+def _build_baseline_vector(
+    user_id: int,
+    experience_level: str = "intermediate",
+    squat_1rm_kg: float | None = None,
+) -> tuple[UnifiedStateVector, AthleteState]:
+    """Build S0 and the matching ORM row — does NOT touch the DB."""
+    caps = _BASELINE_CAPACITIES.get(experience_level, _BASELINE_CAPACITIES["intermediate"])
+    c_nm_force = squat_1rm_kg * 10.0 if squat_1rm_kg is not None else caps["c_nm_force"]
+    x = capacity_from_legacy(
+        caps["c_met_aerobic"],
+        c_nm_force,
+        caps["c_struct"],
+        caps["b_met_anaerobic"],
+    )
     f = FatigueState()
     t = TissueState()
     leg = sync_legacy_from_vectors(x, f, t)
@@ -38,9 +55,19 @@ async def initialize_athlete_state(db: AsyncSession, user_id: int) -> UnifiedSta
         skill_state={"squat": 0.5, "deadlift": 0.5},
         **leg,
     )
+    row = AthleteState(user_id=user_id, **athlete_state_kwargs_from_unified(u))
+    return u, row
 
-    kwargs = athlete_state_kwargs_from_unified(u)
-    row = AthleteState(user_id=user_id, **kwargs)
+
+async def initialize_athlete_state(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    experience_level: str = "intermediate",
+    squat_1rm_kg: float | None = None,
+) -> UnifiedStateVector:
+    """Creates baseline S0 for a new user and commits it."""
+    _, row = _build_baseline_vector(user_id, experience_level, squat_1rm_kg)
     db.add(row)
     await db.commit()
     await db.refresh(row)
@@ -151,7 +178,10 @@ async def process_new_workout(
     last_record = result.scalars().first()
 
     if not last_record:
-        current_state = await initialize_athlete_state(db, user_id)
+        # Build and stage the baseline row without committing yet — the whole
+        # operation (init + first workout) will commit atomically at the end.
+        current_state, baseline_row = _build_baseline_vector(user_id)
+        db.add(baseline_row)
     else:
         current_state = unified_from_athlete_row(last_record)
 
@@ -160,10 +190,15 @@ async def process_new_workout(
 
     dose = calculate_stress_dose(log)
 
-    if log.timestamp < current_state.timestamp:
+    # Normalize both timestamps to UTC-naive for comparison
+    # (DB returns naive datetimes; log.timestamp may be tz-aware)
+    log_ts = log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+    state_ts = current_state.timestamp.replace(tzinfo=None) if current_state.timestamp.tzinfo else current_state.timestamp
+
+    if log_ts < state_ts:
         dt = timedelta(seconds=0)
     else:
-        dt = log.timestamp - current_state.timestamp
+        dt = log_ts - state_ts
 
     new_state_schema = update_athlete_state(current_state, dose, dt, log)
 

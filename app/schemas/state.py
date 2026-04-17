@@ -36,6 +36,7 @@ class UnifiedStateVector(BaseModel):
 
     habit_strength: float = Field(0.0, ge=0.0, le=1.0)
     skill_state: Dict[str, float] = Field(default_factory=dict)
+    model_version: str = Field("v0.3", description="State engine version")
 
     class Config:
         from_attributes = True

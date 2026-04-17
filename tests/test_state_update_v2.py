@@ -11,7 +11,7 @@ Tests for state_update v2:
 from datetime import datetime, timedelta, timezone
 
 from app.engine.state_bridge import sync_legacy_from_vectors
-from app.logic.state_update import (
+from app.logic.state_update_v0 import (
     apply_benchmark_observation,
     update_athlete_state,
     _adaptation_efficiency,

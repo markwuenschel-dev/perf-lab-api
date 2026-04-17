@@ -41,6 +41,15 @@ class PrescriptionExplanation(BaseModel):
     )
 
 
+class ExercisePrescription(BaseModel):
+    """A single prescribed exercise within a session."""
+    name: str
+    sets: int | None = None
+    reps: str | None = None
+    load_note: str | None = None
+    weak_point_tags: list[str] = Field(default_factory=list)
+
+
 class WorkoutPrescription(BaseModel):
     """
     Next-session recommendation. Legacy fields required; `why` optional for old clients.
@@ -50,4 +59,6 @@ class WorkoutPrescription(BaseModel):
     focus: str
     rationale: str
     duration_min: int
+    model_version: str = Field("v0.3", description="Prescription engine version")
+    exercises: list[ExercisePrescription] = Field(default_factory=list)
     why: PrescriptionExplanation | None = None
