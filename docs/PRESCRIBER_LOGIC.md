@@ -441,25 +441,32 @@ Exercise selection should come after session type and dosage, not before.
 If the user cannot tell why the recommendation changed, trust drops fast.
 
 Current Visible Behavior vs Intended Behavior
-Clearly visible today
+
+As of v0.3 the following are implemented:
+
+Implemented
 there is a next-session endpoint
 the frontend treats it as the source of the next recommendation
-the response includes type, focus, duration_min, and rationale
-the broader model clearly expects block context, weak-point biasing, and
-exercise selection to feed prescription
-Clearly intended by schema/comments
-planned sessions are lazily filled by the prescriber
-weak points are aggregated as bias signals
-exercise library metadata is used for concrete movement selection
-deload flags should alter prescription intensity targets
-block templates should inform the day’s session category
-Not confirmed from uploaded implementation
-exact threshold values
-exact scoring / ranking algorithm
-whether generation is deterministic, LLM-based, or hybrid
-exact conflict resolution when multiple fatigue channels are high
+the response includes type, focus, duration_min, rationale, model_version,
+  exercises (ExercisePrescription list), and why (PrescriptionExplanation)
+recommend_next_session() accepts active_weak_points, available_equipment,
+  and block_context as optional parameters
+active unresolved WeakPoint tags are fetched from the DB and passed as
+  active_weak_points → annotated in why.constraints_applied as weak_point:{tag}
+active MesocycleBlock + today’s PlannedSession are fetched; block_context
+  applies a +0.15 score bias to candidates matching the planned session category
+PlannedSession.prescribed_content is written after generation
 
-That uncertainty should stay explicit until the prescriber code is documented directly.
+Still intended / not yet complete
+equipment-aware exercise selection (available_equipment parameter exists;
+  AthleteProfile.equipment query is planned but not yet wired in the route)
+deload flags should alter prescription intensity targets more explicitly
+block templates should inform session category selection more deeply
+exact threshold values for fatigue channel constraints — directional logic
+  exists but specific cutoffs are not fully documented
+whether generation is deterministic, LLM-based, or hybrid — currently
+  deterministic candidate scoring + selection
+exact conflict resolution when multiple fatigue channels are high
 
 Suggested Architecture for the Prescriber
 

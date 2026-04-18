@@ -48,35 +48,34 @@ The project naturally breaks into five roadmap themes:
 ## 1. Core Engine Hardening
 
 ## 1.1 Add Alembic migrations
-### Status
-Clearly planned in the README, not yet configured.
+### Status ✅ COMPLETE
 
-### Why it matters
-The model layer is already rich enough that schema drift will become painful
-without migrations.
+Two migrations are now in place:
 
-### Targets
-- initialize Alembic
-- create migration history for current ORM tables
-- document migration workflow
-- support reproducible local setup
+- `a000_init` — creates all 9 foundational tables in FK-dependency order
+  (users, athlete_profiles, exercises, mesocycle_blocks, planned_sessions,
+  workout_logs, weak_points, athlete_states)
+- `a001_benchmark_kpi_tables` — benchmark KPI tables, chains from a000
+
+Run `alembic upgrade head` on a fresh DB to create all tables.
 
 ---
 
 ## 1.2 Expand automated testing
-### Status
-Tooling is present; strategy and coverage are still growing.
+### Status ✅ SUBSTANTIALLY COMPLETE
 
-### Why it matters
-This is a stateful modeling system. Regressions will not always appear as route
-errors; many will appear as subtle logic drift.
+Test files added in v0.3:
 
-### Targets
-- unit tests for dose engine
-- unit tests for state update logic
-- service tests for first-run and multi-session flows
+- `tests/test_dose_engine_v0.py` — 10 unit tests for `calculate_stress_dose`
+- `tests/test_state_update_unit.py` — 10 unit tests for `update_athlete_state`
+- `tests/test_orm_persistence.py` — 5 DB persistence tests
+- `tests/test_integration_flow.py` — 4 end-to-end scenario tests
+- `tests/conftest.py` — async DB fixture with `DROP SCHEMA CASCADE` isolation
+
+### Remaining targets
 - route tests for ingest and prescribe paths
 - scenario tests for overload and deload behavior
+- weak-point emergence and resolution scenarios
 
 ---
 
@@ -93,16 +92,15 @@ Partly planned in README TODOs.
 ---
 
 ## 1.4 Add model/version traceability
-### Status
-Architecturally important, not visibly implemented.
+### Status ✅ INITIAL IMPLEMENTATION COMPLETE
 
-### Why it matters
-As dose formulas and update logic evolve, the project will need a clean way to
-reason about which version produced which state.
+`model_version = "v0.3"` is now a field on:
 
-### Targets
-- version identifiers for dose/update logic
-- migration strategy for historical states
+- `UnifiedStateVector` — every persisted state row carries which engine version produced it
+- `WorkoutPrescription` — every prescription carries which engine version generated it
+
+### Remaining targets
+- migration strategy for historical states when formula changes
 - replay strategy from event logs where needed
 
 ---
@@ -110,35 +108,40 @@ reason about which version produced which state.
 ## 2. Onboarding and Athlete Setup
 
 ## 2.1 Add explicit onboarding endpoints
-### Status
-Router is signposted in the main app, but not visibly active.
+### Status ✅ COMPLETE
 
-### Why it matters
-The system already has the data model for baseline setup, but the first-run path
-is not yet surfaced as a clean product flow.
+`POST /v1/onboard` is live. It:
 
-### Targets
-- create athlete profile
-- capture equipment and schedule constraints
-- capture baseline benchmarks
-- optionally capture self-reported weak points
-- initialize baseline `S0`
-- return initial recommendation
+- creates the AthleteProfile row
+- optionally creates self-reported WeakPoint rows
+- initializes baseline AthleteState S0 immediately
+- accepts `experience_level`, `squat_1rm_kg`, `deadlift_1rm_kg`, `bench_1rm_kg`,
+  `bodyweight_kg`, `run_5k_seconds` as optional inputs
+
+The frontend onboarding form (`OnboardingForm.tsx`) calls this endpoint
+immediately after registration.
 
 ---
 
 ## 2.2 Improve baseline state seeding
-### Status
-A safe default `S0` exists today.
+### Status ✅ COMPLETE
 
-### Why it matters
-Generic defaults are useful for bootstrapping, but profile-informed seeding will
-improve early recommendations.
+`initialize_athlete_state()` now accepts `experience_level` and `squat_1rm_kg`
+keyword arguments and seeds from a 4-tier capacity table:
 
-### Targets
-- derive baseline assumptions from profile fields
-- use experience level and baseline performance to shape initial capacities
-- better initialize skill state and habit strength
+| Level        | c_met_aerobic | c_nm_force | c_struct | b_met_anaerobic |
+|-------------|--------------|-----------|---------|----------------|
+| beginner     | 180           | 500        | 60       | 8000            |
+| intermediate | 300           | 1000       | 100      | 15000           |
+| advanced     | 500           | 1800       | 160      | 25000           |
+| elite        | 650           | 2500       | 220      | 35000           |
+
+If `squat_1rm_kg` is provided, `c_nm_force = squat_1rm_kg * 10.0` overrides
+the table value.
+
+### Remaining targets
+- better initialize skill state from profile data
+- seed `habit_strength` from `experience_years`
 
 ---
 
@@ -173,16 +176,23 @@ The product should expose that.
 ---
 
 ## 3.2 Enrich prescriber logic
-### Status
-Core concept exists and is already exposed via `next-session`; implementation details are only partly visible.
+### Status ✅ PARTIALLY COMPLETE
 
-### Targets
-- stronger constraint filtering by fatigue channel
-- better use of block slot context
-- weak-point-aware exercise biasing
-- equipment-aware exercise selection
-- clearer rationale generation
+Implemented in v0.3:
+
+- `active_weak_points` parameter — prescriber receives active unresolved WeakPoint
+  tags from the DB; `constraints_applied` in the explanation is populated with
+  `weak_point:{tag}` entries
+- `block_context` parameter — when an active MesocycleBlock + today's PlannedSession
+  exist, a +0.15 score bias is applied to candidates matching the planned session
+  category; prescription is written back to `PlannedSession.prescribed_content`
+- `exercises` field on WorkoutPrescription — populated by the prescriber's finalize step
+
+### Remaining targets
+- stronger constraint filtering by fatigue channel threshold values
+- equipment-aware exercise selection (requires AthleteProfile.equipment query)
 - benchmark-aware prescription decisions
+- clearer rationale generation using block goal context
 
 ---
 
@@ -328,18 +338,24 @@ If effort has to be sequenced tightly, the strongest order is:
 
 ### Phase 1 — Core Engine Hardening & First-Run Loop (✅ COMPLETE)
 
-- [x] Alembic migrations working
-- [x] `POST /v1/onboard` endpoint (creates profile + weak points)
+- [x] Alembic migrations: a000 (foundational) + a001 (benchmark KPI tables)
+- [x] `POST /v1/onboard` endpoint (creates profile + weak points + seeds S0)
 - [x] `GET /v1/next-session` auto-initializes baseline `AthleteState`
-- [x] First real prescription returned from engine
-- [x] Dev-friendly testing with `?user_id=1`
+- [x] `POST /v1/log-workout` → `process_new_workout` → `UnifiedStateVector`
+- [x] Profile-aware baseline seeding (4-tier experience_level + squat_1rm_kg)
+- [x] model_version traceability on all response DTOs
+- [x] Weak-point injection into prescriber (active unresolved tags from DB)
+- [x] Block context injection into prescriber (active block + today's planned session)
+- [x] Unit tests: dose engine (10), state update (10)
+- [x] Integration tests: ORM persistence (5), end-to-end flow (4)
+- [x] Import chain corrected: state_service imports from v0.3 engines
 
-**Status**: The full quickstart flow from QUICKSTART_FLOW.md now works end-to-end.
+**Status**: The full quickstart flow from QUICKSTART_FLOW.md works end-to-end.
 
 ### Phase 2
-- block/planned-session APIs
-- richer prescriber logic
-- exercise library seeding
+- block creation and calendar-generation routes (MesocycleBlock CRUD)
+- exercise library seed data across all modalities
+- equipment-aware prescriber exercise selection
 - deload and benchmark flows
 
 ### Phase 3

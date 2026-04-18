@@ -380,21 +380,62 @@ That would already be far more useful than a suite made of only happy-path route
 
 ---
 
-## What Should Be Tested First
+## Current Test Coverage (v0.3)
 
-If coverage is still being built out, the best order is:
+The following test files are in place:
 
-1. `initialize_athlete_state(...)`
-2. `process_new_workout(...)`
-3. `POST /v1/log-workout`
-4. `POST /v1/simulate-dose`
-5. `GET /v1/next-session`
-6. repeated-session scenarios
-7. deload and weak-point scenarios
+### Unit tests (no DB required)
+`tests/test_dose_engine_v0.py` — 10 tests covering:
+- return type (StressDose)
+- all channels non-negative
+- higher RPE increases dose
+- running produces aerobic-dominant adaptation
+- strength produces max_strength adaptation
+- non-mutating (two calls → identical results)
+- near-zero duration → near-zero dose
 
-Why this order:
-The service-layer state loop is the core failure surface.
-If that is wrong, everything built on top of it is downstream noise.
+`tests/test_state_update_unit.py` — 10 tests covering:
+- return type (UnifiedStateVector)
+- append-only (prior state unchanged)
+- fatigue increases after high RPE
+- high fatigue suppresses adaptation (tested at fatigue=100)
+- capacity not decreased by normal workout
+- zero timedelta still applies dose
+- legacy mirror consistency (c_nm_force == capacity_x.max_strength * 10.0)
+
+### DB integration tests (requires live PostgreSQL)
+`tests/conftest.py` — async DB fixture using `DROP SCHEMA public CASCADE`
+isolation (handles circular FK between planned_sessions and workout_logs)
+
+`tests/test_orm_persistence.py` — 5 tests covering:
+- process_new_workout appends one new row
+- prior state row not modified
+- new state timestamp matches log timestamp
+- workout_log is separate from athlete_state (Decision 2)
+- simulate_dose creates no state row
+
+`tests/test_integration_flow.py` — 4 scenario tests:
+- first run: new user → init → workout → fatigue > baseline
+- repeated sessions: 3 logs → 4 rows, timestamps ascending
+- backdated log: timestamp before state → dt clamped to 0, no crash
+- fatigue accumulates: two hard sessions close together → f2 > f1
+
+### Remaining test targets
+- route tests for `POST /v1/log-workout` and `GET /v1/next-session`
+- deload and weak-point scenario tests
+- `POST /v1/onboard` end-to-end test
+
+---
+
+## What Should Be Tested Next
+
+If extending coverage, the priority order is:
+
+1. `POST /v1/onboard` — profile creation + baseline state in one call
+2. `GET /v1/next-session` — shape, model_version, exercises, why
+3. `POST /v1/log-workout` — route-level wiring
+4. repeated-session overload scenarios
+5. deload and weak-point scenarios
 
 ---
 

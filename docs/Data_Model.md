@@ -446,11 +446,15 @@ These are worth documenting explicitly as the project grows:
 
 1. How should model versioning be tracked?
 
-If dose logic changes, do you:
+As of v0.3, `model_version = "v0.3"` is stored as a field on both:
 
-replay from logs
-store engine version per state
-store engine version per dose snapshot
+- `UnifiedStateVector` (every persisted AthleteState row carries the engine version)
+- `WorkoutPrescription` (every prescription response carries the engine version)
+
+This gives a lightweight audit trail. If dose logic changes in a future version,
+consumers can detect which formula set produced each row by inspecting
+model_version. Full replay-from-logs and per-dose-snapshot versioning remain
+open questions as the project scales.
 2. How should active state be queried?
 
 Current pattern is “latest row by timestamp.”

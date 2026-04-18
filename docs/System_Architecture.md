@@ -120,17 +120,25 @@ The current orchestration flow in `process_new_workout` is:
 The prescriber reads the latest state and returns the next recommended session.
 
 ```
-Current State S(t) + Goal + Constraints → Prescription u(t)
+Current State S(t) + Goal + Constraints + Weak Points + Block Context → Prescription u(t)
 ```
 
-The prescriber is intended to incorporate:
+The prescriber incorporates:
 
-- Current fatigue state
-- Current capacities
+- Current fatigue state and capacities
 - Goal context
-- Block context
-- Weak-point biasing
-- Exercise availability / equipment constraints
+- Active MesocycleBlock + today's PlannedSession (block_context — applies a
+  +0.15 score bias toward candidates matching the planned session category)
+- Active unresolved WeakPoint tags (active_weak_points — annotates
+  constraints_applied in the explanation with weak_point:{tag} entries)
+- Exercise availability / equipment constraints (available_equipment parameter
+  exists; equipment query from AthleteProfile is planned)
+
+The resulting `WorkoutPrescription` includes `model_version`, `exercises`, and
+a `PrescriptionExplanation` (why) with structured rationale.
+
+If a `PlannedSession` exists for today, the prescriber writes the generated
+prescription back to `PlannedSession.prescribed_content`.
 
 The project's long-term value lives here. The dose engine and state model explain what is happening; the prescriber decides what to do next.
 
@@ -239,7 +247,13 @@ The prescriber chooses the next recommended session based on current state and g
 
 ## API Surface
 
-### Implemented endpoints (as of April 2026)
+### Implemented endpoints (as of v0.3, April 2026)
+
+#### `POST /v1/onboard`
+First-run setup. Creates AthleteProfile + optional WeakPoints + seeds S0.
+- **Input:** `OnboardRequest` (email, experience_level, squat_1rm_kg, …)
+- **Output:** `OnboardResponse` (user_id, profile_id, message)
+- **Mutates state:** Yes — seeds baseline AthleteState
 
 #### `POST /v1/simulate-dose`
 Pure transform — no state mutation.
@@ -249,16 +263,15 @@ Pure transform — no state mutation.
 #### `POST /v1/log-workout`
 State-changing path.
 - **Input:** `WorkoutLog`
-- **Behavior:** Computes dose, updates state, persists result
-- **Output:** Updated `UnifiedStateVector`
-
-#### `POST /v1/onboard`
-Complete first-run onboarding.
+- **Behavior:** Resolves exercise phi vectors, computes dose, updates state, persists new row atomically
+- **Output:** Updated `UnifiedStateVector` (includes `model_version`)
 
 #### `GET /v1/next-session`
-Control output. Auto-creates baseline state if none exists.
-- **Input:** Latest state + goal
-- **Output:** `WorkoutPrescription`
+Control output.
+- **Input:** Latest state + goal (query param)
+- **Behavior:** Queries active WeakPoints + active MesocycleBlock/PlannedSession;
+  may write prescription to PlannedSession.prescribed_content
+- **Output:** `WorkoutPrescription` (includes `model_version`, `exercises`, `why`)
 
 #### `GET /ping`
 Health check.
@@ -372,13 +385,26 @@ These are the architectural invariants the code should continue to respect.
 
 ## Current Limitations
 
-Several parts of the architecture are clearly planned but not fully closed yet:
+The core loop is operational. Remaining planned-but-not-yet-implemented layers:
 
-- Alembic migrations are not yet set up
-- Modality-aware versioning is still planned
-- Persistent onboarding flow is signposted but not fully wired
-- `blocks` / `weak_points` / `onboarding` routers are noted but not active
-- Data assimilation / EKF is conceptual rather than implemented
-- Some frontend sections are explicitly demo placeholders
+- Block creation and calendar-generation routes (`MesocycleBlock` CRUD) — the
+  prescriber can read blocks if rows exist, but there is no public API to create
+  or manage them yet
+- `weak_points` write routes — weak points can be seeded via `/v1/onboard` but
+  there is no standalone API to add, update, or resolve them yet
+- Equipment-aware exercise selection — `AthleteProfile.equipment` is stored but
+  not yet queried in the prescriber's exercise filter step
+- Modality-aware versioning — planned but not implemented
+- Data assimilation / EKF correction — conceptual, not implemented
+- Some frontend sections remain demo placeholders pending block/history views
 
-These are normal at this stage, but they should be documented as planned layers rather than implied to be complete.
+Items completed in v0.3:
+
+- Alembic migrations: a000 (foundational) + a001 (benchmark KPI tables)
+- `POST /v1/onboard` endpoint (profile + weak points + baseline state)
+- Profile-aware baseline seeding (4-tier capacity table)
+- Weak-point injection into prescriber (DB query + constraints_applied annotation)
+- Block context injection into prescriber (score bias + prescription persistence)
+- `model_version` on `UnifiedStateVector` and `WorkoutPrescription`
+- Import chain corrected: service layer imports from v0.3 engine modules
+- 20 unit + integration tests

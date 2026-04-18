@@ -45,24 +45,16 @@ Repeat loop
 
 ## What Exists Today
 
-The currently visible API surface supports the core loop:
+The full first-run loop is operational as of v0.3:
 
-POST /v1/onboard          → creates user + profile + weak points
-GET  /v1/next-session     → auto-creates baseline AthleteState if missing
-                          → returns real prescription
+POST /v1/onboard          → creates AthleteProfile + optional WeakPoints + seeds S0
+GET  /v1/next-session     → returns real prescription (auto-inits state if missing)
 POST /v1/log-workout      → updates state + returns new S(t+1)
 GET  /v1/next-session     → returns updated prescription
 
-The repo also makes room for onboarding, blocks, and weak-point routers, but
-those are signposted as planned rather than fully surfaced in the visible API
-entrypoint today.
-
-That means the onboarding story is currently a combination of:
-
-- account creation / auth setup
-- baseline model initialization
-- first workout logging
-- ongoing recommendation refresh
+Onboarding is now a single API call rather than a multi-step manual setup.
+After `POST /v1/onboard`, the athlete has a profile, baseline state, and is
+ready to receive a prescription immediately.
 
 ---
 
@@ -149,17 +141,27 @@ so that every later update becomes a transition from a known prior state.
 
 ### Current baseline assumptions
 
-The current service seeds values like:
+`initialize_athlete_state()` accepts `experience_level` and `squat_1rm_kg`
+keyword arguments and seeds from a 4-tier table:
 
-- `c_met_aerobic = 300.0`
-- `c_nm_force = 1000.0`
-- `c_struct = 100.0`
-- `b_met_anaerobic = 15000.0`
+| Level        | c_met_aerobic | c_nm_force | c_struct | b_met_anaerobic |
+|-------------|--------------|-----------|---------|----------------|
+| beginner     | 180           | 500        | 60       | 8000            |
+| intermediate | 300           | 1000       | 100      | 15000           |
+| advanced     | 500           | 1800       | 160      | 25000           |
+| elite        | 650           | 2500       | 220      | 35000           |
+
+If `squat_1rm_kg` is provided, `c_nm_force = squat_1rm_kg * 10.0` overrides
+the table value.
+
+All experience levels share:
 - fatigue channels set to `0.0`
 - `habit_strength = 0.5`
 - starter skill state for squat and deadlift
 
-These are system defaults, not athlete-specific truth.
+`POST /v1/onboard` passes `experience_level` and `squat_1rm_kg` from the
+request body directly to `initialize_athlete_state()`, so the baseline is
+profile-informed from the first call.
 
 ---
 
@@ -381,18 +383,19 @@ context. True adaptation starts after real logged sessions accumulate.
 
 ---
 
-## Suggested Future Onboarding API Shape
+## Implemented Onboarding API Shape
 
-As onboarding becomes explicit, a strong flow would be:
+As of v0.3, the onboarding flow is:
 
-1. create user
-2. create athlete profile
-3. optionally record self-reported weak points
-4. initialize baseline state
-5. optionally generate a starting block
-6. return first recommendation
+1. create user (POST /auth/register)
+2. POST /v1/onboard — in one call:
+   - creates AthleteProfile with experience level, schedule, equipment
+   - optionally creates self-reported WeakPoint rows
+   - initializes baseline S0 (profile-aware seeding)
+3. GET /v1/next-session — first prescription is immediately available
 
-That would turn the current architectural pieces into a clean first-run API.
+Optionally, a starting MesocycleBlock can be created separately (block routes
+are planned but not yet implemented as a public API endpoint).
 
 ---
 
