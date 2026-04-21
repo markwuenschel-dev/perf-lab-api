@@ -212,6 +212,11 @@ Input
 
 WorkoutLog
 
+Additional planning-aware fields now supported:
+- `planned_session_id` (optional)
+- `is_benchmark` (optional)
+- `benchmark_results` (optional key/value payload)
+
 Output
 
 UnifiedStateVector
@@ -246,6 +251,9 @@ computes D(t) from the workout log
 computes the time delta since the previous state
 updates the model
 persists a new state row
+persists a `WorkoutLog` event row
+links to a planned session when explicitly provided or same-day pending match exists
+marks linked planned session as completed
 returns the new state snapshot
 Why that matters
 
@@ -278,7 +286,32 @@ const newState = await logWorkout({
   distance_meters: 6000,
   sleep_quality: 7,
   life_stress_inverse: 6,
+  planned_session_id: 42,
 });
+
+GET /v1/planning/blocks
+POST /v1/planning/blocks
+PATCH /v1/planning/blocks/{block_id}
+
+Planning block CRUD for authenticated users.
+
+Use these endpoints to create/update the mesocycle container and auto-generate
+planned sessions.
+
+GET /v1/planning/sessions
+PATCH /v1/planning/sessions/{session_id}
+
+Session list/update surface.
+
+- list supports date-window filtering (`start_date`, `end_date`)
+- patch supports status transitions and rescheduling date updates
+
+GET /v1/planning/today
+
+Returns today’s pending planned session slot (if any) plus current prescription
+context for the selected goal.
+
+This is the preferred endpoint for “what slot should I execute today?” UX.
 GET /v1/next-session
 
 Returns the recommended next session based on the athlete’s latest state and
@@ -323,6 +356,7 @@ This endpoint:
 auto-initializes baseline AthleteState if none exists (prefer POST /v1/onboard instead)
 queries active unresolved WeakPoint rows and passes them to the prescriber as
   bias signals (shown as weak_point:{tag} entries in constraints_applied)
+queries AthleteProfile equipment and injects available equipment context
 queries the active MesocycleBlock and today’s PlannedSession if one exists,
   applies a +0.15 score bias to candidates matching the planned session category,
   and writes the resulting prescription back to PlannedSession.prescribed_content

@@ -146,32 +146,40 @@ the table value.
 ---
 
 ## 2.3 Benchmark and assessment flow
-### Status
-Supported by the data model conceptually, not yet fully surfaced as a product flow.
+### Status ✅ PARTIALLY COMPLETE
+
+Planning/session flow now supports benchmark session slots and log payloads:
+
+- `PlannedSession.is_benchmark` and `benchmark_key` are surfaced
+- benchmark sessions can be scheduled via planning cadence
+- `WorkoutLog` accepts `is_benchmark` + `benchmark_results`
 
 ### Targets
-- define benchmark session types
-- store benchmark results in workout logs
 - feed benchmark results into state and weak-point updates
-- schedule benchmark retests intentionally
+- richer benchmark type taxonomy beyond periodic retests
 
 ---
 
 ## 3. Planning and Prescriber Enrichment
 
 ## 3.1 Activate block and planned-session routes
-### Status
-Strong schema support exists; router surface is still planned.
+### Status ✅ COMPLETE (MVP ROUTER LIVE)
+
+`/v1/planning/*` is now implemented:
+
+- create/list/update blocks
+- list/update planned sessions
+- retrieve today’s planned session slot with prescription context
 
 ### Why it matters
 The model already distinguishes long-range intent from daily adaptation.
 The product should expose that.
 
-### Targets
-- create blocks
-- generate planned session calendars
-- retrieve today’s session slot
-- connect completed workout logs back to planned sessions
+### Completed behavior
+- block creation auto-generates session calendar rows
+- workout logs can link to planned sessions
+- `process_new_workout` auto-links same-day pending sessions when possible
+- completed sessions are marked with `workout_log_id` + completion status
 
 ---
 
@@ -190,8 +198,8 @@ Implemented in v0.3:
 
 ### Remaining targets
 - stronger constraint filtering by fatigue channel threshold values
-- equipment-aware exercise selection (requires AthleteProfile.equipment query)
-- benchmark-aware prescription decisions
+- deeper exercise selection from DB exercise library (beyond current equipment mapping)
+- benchmark-aware decision quality tuning
 - clearer rationale generation using block goal context
 
 ---
@@ -353,10 +361,11 @@ If effort has to be sequenced tightly, the strongest order is:
 **Status**: The full quickstart flow from QUICKSTART_FLOW.md works end-to-end.
 
 ### Phase 2
-- block creation and calendar-generation routes (MesocycleBlock CRUD)
+- [x] block creation and calendar-generation routes (`/v1/planning/*`)
+- [x] planned-session retrieval and completion linkage
+- [x] equipment-aware prescription fallback/constraints tags
+- [x] deload and benchmark planning flags in session flow
 - exercise library seed data across all modalities
-- equipment-aware prescriber exercise selection
-- deload and benchmark flows
 
 ### Phase 3
 - EKF / data assimilation

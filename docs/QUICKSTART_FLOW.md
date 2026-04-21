@@ -394,8 +394,11 @@ As of v0.3, the onboarding flow is:
    - initializes baseline S0 (profile-aware seeding)
 3. GET /v1/next-session — first prescription is immediately available
 
-Optionally, a starting MesocycleBlock can be created separately (block routes
-are planned but not yet implemented as a public API endpoint).
+Optionally, a starting MesocycleBlock can be created separately via:
+
+- `POST /v1/planning/blocks`
+- `GET /v1/planning/sessions`
+- `GET /v1/planning/today`
 
 ---
 

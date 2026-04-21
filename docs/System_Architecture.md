@@ -131,8 +131,8 @@ The prescriber incorporates:
   +0.15 score bias toward candidates matching the planned session category)
 - Active unresolved WeakPoint tags (active_weak_points — annotates
   constraints_applied in the explanation with weak_point:{tag} entries)
-- Exercise availability / equipment constraints (available_equipment parameter
-  exists; equipment query from AthleteProfile is planned)
+- Exercise availability / equipment constraints (available_equipment is fetched
+  from AthleteProfile and applied in current prescription output)
 
 The resulting `WorkoutPrescription` includes `model_version`, `exercises`, and
 a `PrescriptionExplanation` (why) with structured rationale.
@@ -273,6 +273,24 @@ Control output.
   may write prescription to PlannedSession.prescribed_content
 - **Output:** `WorkoutPrescription` (includes `model_version`, `exercises`, `why`)
 
+#### `POST /v1/planning/blocks`
+Creates a mesocycle block and auto-generates planned session rows.
+
+#### `GET /v1/planning/blocks`
+Lists the authenticated user’s planning blocks.
+
+#### `PATCH /v1/planning/blocks/{block_id}`
+Updates block metadata/status.
+
+#### `GET /v1/planning/sessions`
+Lists planned sessions (supports date-window filtering).
+
+#### `PATCH /v1/planning/sessions/{session_id}`
+Updates session status or scheduled date (skip/reschedule/complete workflows).
+
+#### `GET /v1/planning/today`
+Returns today’s pending planned session slot plus prescription context.
+
 #### `GET /ping`
 Health check.
 
@@ -282,11 +300,12 @@ Health check.
 
 The current frontend acts as a thin control console over the API.
 
-It supports three main behaviors:
+It supports planning plus the original twin loop:
 
-1. Simulate a dose without changing state
-2. Log a workout and update `S(t)`
-3. Request a new prescription
+1. Create/manage blocks and planned sessions
+2. Simulate a dose without changing state
+3. Log a workout and update `S(t)` (with planned-session linkage)
+4. Request a new prescription / today slot context
 
 The UI mirrors the actual backend architecture rather than inventing a separate front-end-only mental model.
 
