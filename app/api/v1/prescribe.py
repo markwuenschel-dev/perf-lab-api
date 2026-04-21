@@ -6,7 +6,7 @@ from datetime import date
 
 from app.core.db import get_db
 from app.core.auth import get_current_user
-from app.models.user import User
+from app.models.user import AthleteProfile, User
 from app.models.athlete_state import AthleteState
 from app.models.weak_point import WeakPoint
 from app.models.mesocycle import MesocycleBlock, BlockStatus, PlannedSession, SessionStatus
@@ -29,7 +29,6 @@ async def get_next_session(
 ) -> WorkoutPrescription:
     effective_user_id = user_id or current_user.id
     """DEV-friendly version that auto-initializes baseline state."""
-    effective_user_id = user_id or 1
 
     # Auto-create baseline AthleteState if none exists yet
     result = await db.execute(
@@ -94,8 +93,14 @@ async def get_next_session(
             "block_goal": active_block.goal.value,
             "session_category": planned_session.category,
             "is_deload": planned_session.is_deload,
+            "is_benchmark": planned_session.is_benchmark,
             "week_number": planned_session.week_number,
         }
+
+    profile_result = await db.execute(
+        select(AthleteProfile).where(AthleteProfile.user_id == effective_user_id).limit(1)
+    )
+    profile = profile_result.scalars().first()
 
     try:
         recent = await recent_workout_summaries(db, effective_user_id)
@@ -106,6 +111,7 @@ async def get_next_session(
             recent_sessions=recent,
             kpi_summary=kpi_summary or None,
             active_weak_points=active_weak_points or None,
+            available_equipment=(profile.equipment if profile else None),
             block_context=block_context,
         )
         # Persist prescription back to the planned session slot
@@ -115,6 +121,9 @@ async def get_next_session(
                 "focus": rx.focus,
                 "rationale": rx.rationale,
                 "duration_min": rx.duration_min,
+                "model_version": rx.model_version,
+                "exercises": [e.model_dump() for e in rx.exercises],
+                "why": rx.why.model_dump() if rx.why else None,
             }
             await db.commit()
         return rx

@@ -12,6 +12,8 @@ from app.engine.state_bridge import (
 from app.engine.phi_table import default_phi_for_row
 from app.models.athlete_state import AthleteState
 from app.models.exercise import Exercise
+from app.models.mesocycle import PlannedSession, SessionStatus
+from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import WorkoutLog
@@ -189,6 +191,56 @@ async def process_new_workout(
     log = await _resolve_exercise_phis(db, log)
 
     dose = calculate_stress_dose(log)
+
+    # Persist raw workout event for replay/audit and planning linkage.
+    workout_row = WorkoutLogORM(
+        user_id=user_id,
+        planned_session_id=log.planned_session_id,
+        session_timestamp=log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp,
+        modality=log.modality,
+        duration_minutes=log.duration_minutes,
+        session_rpe=log.session_rpe,
+        avg_rir=log.avg_rir,
+        distance_meters=log.distance_meters or 0.0,
+        total_volume_load=log.total_volume_load or 0.0,
+        sleep_quality=log.sleep_quality,
+        life_stress_inverse=log.life_stress_inverse,
+        dose_snapshot=dose.model_dump(),
+        is_benchmark=log.is_benchmark,
+        benchmark_results=log.benchmark_results,
+    )
+    db.add(workout_row)
+    await db.flush()
+
+    # If no explicit planned_session_id was provided, best-effort match by date.
+    planned_session = None
+    if log.planned_session_id is not None:
+        ps_result = await db.execute(
+            select(PlannedSession).where(
+                PlannedSession.id == log.planned_session_id,
+                PlannedSession.user_id == user_id,
+            )
+        )
+        planned_session = ps_result.scalars().first()
+    else:
+        session_day = workout_row.session_timestamp.date()
+        ps_result = await db.execute(
+            select(PlannedSession)
+            .where(
+                PlannedSession.user_id == user_id,
+                PlannedSession.scheduled_date == session_day,
+                PlannedSession.status == SessionStatus.PENDING,
+            )
+            .order_by(PlannedSession.id.asc())
+            .limit(1)
+        )
+        planned_session = ps_result.scalars().first()
+
+    if planned_session is not None:
+        planned_session.workout_log_id = workout_row.id
+        planned_session.status = SessionStatus.COMPLETED
+        planned_session.completed_at = datetime.utcnow()
+        workout_row.planned_session_id = planned_session.id
 
     # Normalize both timestamps to UTC-naive for comparison
     # (DB returns naive datetimes; log.timestamp may be tz-aware)

@@ -136,6 +136,8 @@ class PlannedSession(Base):
 
     # Whether this is a deload session (affects prescriber intensity targets)
     is_deload = Column(Boolean, default=False)
+    is_benchmark = Column(Boolean, default=False)
+    benchmark_key = Column(String, nullable=True, comment="e.g. periodic_retest, block_exit")
 
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)

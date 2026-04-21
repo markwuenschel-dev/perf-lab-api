@@ -20,7 +20,7 @@ from typing import Optional
 
 from app.logic.domain_vocab import GOAL_TO_DOMAIN
 from app.logic.prescription_finalize import finalize_prescription
-from app.schemas.prescription import WorkoutPrescription
+from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 
@@ -781,6 +781,46 @@ def _finalize(
     return finalize_prescription(rx, state, goal, candidate.branch_id, recent_sessions=recent_sessions)
 
 
+_EQUIPMENT_EXERCISE_MAP: dict[str, list[tuple[str, str, str]]] = {
+    "barbell": [
+        ("Back Squat", "4", "4-6"),
+        ("Romanian Deadlift", "3", "5-8"),
+        ("Bench Press", "4", "4-6"),
+    ],
+    "dumbbells": [
+        ("DB Goblet Squat", "4", "8-10"),
+        ("DB RDL", "3", "8-10"),
+        ("DB Floor Press", "3", "8-12"),
+    ],
+    "pullup_bar": [
+        ("Pull-Up", "4", "4-8"),
+        ("Hanging Knee Raise", "3", "10-15"),
+    ],
+    "bodyweight": [
+        ("Tempo Squat", "4", "8-12"),
+        ("Push-Up", "4", "8-15"),
+        ("Split Squat", "3", "8-12/side"),
+    ],
+}
+
+
+def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[ExercisePrescription]:
+    equipment = {e.lower() for e in (available_equipment or [])}
+    picks: list[tuple[str, str, str]] = []
+
+    for key in ("barbell", "dumbbells", "kettlebell", "machine", "cable", "pullup_bar"):
+        if key in equipment and key in _EQUIPMENT_EXERCISE_MAP:
+            picks.extend(_EQUIPMENT_EXERCISE_MAP[key])
+
+    if not picks:
+        picks.extend(_EQUIPMENT_EXERCISE_MAP["bodyweight"])
+
+    return [
+        ExercisePrescription(name=name, sets=int(sets), reps=reps, load_note="Autoregulate by RPE")
+        for name, sets, reps in picks[:4]
+    ]
+
+
 def recommend_next_session(
     state: UnifiedStateVector,
     goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
@@ -841,5 +881,18 @@ def recommend_next_session(
         rx.why.constraints_applied.extend(
             [f"weak_point:{tag}" for tag in weak_points]
         )
+    if block.get("is_deload") and rx.why:
+        rx.why.constraints_applied.append("block:deload")
+    if block.get("is_benchmark") and rx.why:
+        rx.why.constraints_applied.append("block:benchmark")
+
+    # Equipment-aware exercise payload with bodyweight fallback.
+    rx.exercises = _exercise_list_for_equipment(available_equipment)
+    if rx.why:
+        if available_equipment:
+            rx.why.constraints_applied.append("equipment:filtered")
+        else:
+            rx.why.constraints_applied.append("equipment:fallback_bodyweight")
+        rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))
 
     return rx

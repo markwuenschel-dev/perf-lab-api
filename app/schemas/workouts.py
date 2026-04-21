@@ -90,6 +90,17 @@ class WorkoutLog(BaseModel):
         description="Per-exercise breakdown. When present, dose reflects actual exercise phi vectors.",
     )
 
+    # Optional linkage to planning layer
+    planned_session_id: Optional[int] = Field(
+        default=None,
+        description="If provided, marks this log as fulfillment of the planned session.",
+    )
+    is_benchmark: bool = False
+    benchmark_results: Optional[dict] = Field(
+        default=None,
+        description="Optional benchmark key/value payload for benchmark sessions.",
+    )
+
 
 class StressDose(BaseModel):
     """

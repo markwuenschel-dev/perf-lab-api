@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.db import engine
 from app.models import Base
 
-from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, prescribe
+from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, planning, prescribe
 from app.api.v1.onboard import router as onboard_router
 
 @asynccontextmanager
@@ -76,6 +76,7 @@ app.include_router(ingest.router, prefix=settings.API_V1_STR)
 app.include_router(prescribe.router, prefix=settings.API_V1_STR)
 app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
+app.include_router(planning.router, prefix=settings.API_V1_STR)
 
 # Future routers (uncomment when ready)
 # app.include_router(blocks.router, prefix=settings.API_V1_STR)

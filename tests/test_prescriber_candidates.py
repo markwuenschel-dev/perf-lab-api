@@ -229,3 +229,17 @@ def test_fatigued_state_produces_different_prescription_than_fresh():
     # Just verify both return valid prescriptions
     assert rx_fresh.type
     assert rx_tired.type
+
+
+def test_equipment_aware_exercises_fallback_to_bodyweight():
+    s = _healthy_state()
+    rx = recommend_next_session(s, goal="Strength", available_equipment=None)
+    assert len(rx.exercises) > 0
+    assert any("equipment:fallback_bodyweight" in c for c in (rx.why.constraints_applied if rx.why else []))
+
+
+def test_equipment_aware_exercises_use_available_equipment():
+    s = _healthy_state()
+    rx = recommend_next_session(s, goal="Strength", available_equipment=["barbell"])
+    assert len(rx.exercises) > 0
+    assert any("equipment:filtered" in c for c in (rx.why.constraints_applied if rx.why else []))
