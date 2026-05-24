@@ -137,3 +137,53 @@ async def test_fatigue_accumulates_across_sessions(async_db):
     assert f2 > f1, (
         f"Fatigue should accumulate across closely-spaced sessions: f1={f1:.2f}, f2={f2:.2f}"
     )
+
+
+async def test_register_onboard_token_nextsession_roundtrip(async_db):
+    """
+    Full auth flow: register → onboard (JWT) → token → next-session.
+    Validates that the onboard endpoint works with a real user and that
+    the user can obtain a token and receive a prescription.
+    """
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.core.db import get_db
+
+    async def _override_get_db():
+        yield async_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Register
+            reg = await client.post("/auth/register", json={"email": "roundtrip@test.com", "password": "securepass1"})
+            assert reg.status_code == 201, reg.text
+
+            # 2. Get token
+            tok = await client.post(
+                "/auth/token",
+                data={"username": "roundtrip@test.com", "password": "securepass1"},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            assert tok.status_code == 200, tok.text
+            token = tok.json()["access_token"]
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # 3. Onboard with JWT (no email in body now)
+            onboard = await client.post("/v1/onboard", json={
+                "experience_level": "intermediate",
+                "experience_years": 3.0,
+                "available_days_per_week": 4,
+                "equipment": ["barbell", "pullup_bar"],
+            }, headers=headers)
+            assert onboard.status_code == 200, onboard.text
+            assert onboard.json()["user_id"] > 0
+
+            # 4. Get next session
+            rx = await client.get("/v1/next-session?goal=Strength", headers=headers)
+            assert rx.status_code == 200, rx.text
+            assert rx.json()["type"] != ""
+    finally:
+        app.dependency_overrides.pop(get_db, None)

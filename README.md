@@ -25,7 +25,7 @@ The API exposes JSON endpoints; the complexity is internal.
 - **Server:** Uvicorn
 - **Config:** pydantic-settings (dotenv `.env` supported)
 - **Database:** SQLAlchemy 2.x (async) with `asyncpg` for the running API
-- **Migrations:** Alembic — `alembic.ini` and `alembic/env.py` are configured and import all models via `app.models`; **no revision scripts are checked in under `alembic/versions/` yet**, so `alembic upgrade head` is not usable until an initial migration is added
+- **Migrations:** Alembic — three migrations ship with the repo (`a000` foundational tables, `a001` benchmark/KPI tables, `a002` planned-session benchmark columns). Run `alembic upgrade head` on a fresh database to create all tables.
 - **Auth:** JWT (`python-jose`), bcrypt hashing via passlib, OAuth2 password flow for `/auth/token`
 - **Testing (tooling):** pytest, pytest-asyncio, pytest-cov
 - **Lint / format / types:** ruff, black, isort, mypy
@@ -56,10 +56,13 @@ The API exposes JSON endpoints; the complexity is internal.
 
 - Still exposes running calculators and programs (`/compute-metrics`, `/program/run`, `/program/strength`) and may run `Base.metadata.create_all` on startup — useful for VO₂ demo flows and bootstrapping tables when no Alembic revisions exist yet
 
-**In progress / planned:**
+**Also implemented (v0.3):**
 
-- Alembic revision files and seed/migration workflow as the source of truth for schema
-- Additional v1 routers (blocks, weak points, onboarding) — see comments in [`app/main.py`](app/main.py)
+- `POST /v1/onboard` — one-call athlete setup: profile + optional weak points + baseline state `S0`
+- `POST /v1/planning/blocks` / `GET /v1/planning/sessions` / `GET /v1/planning/today` — mesocycle block and session calendar
+- `POST /v1/benchmarks/observations` / `GET /v1/benchmarks/definitions` — benchmark recording and KPI recompute
+- `GET /v1/dashboard/bundle` — KPI summary and domain readiness surface
+- Equipment-aware prescription constraints; weak-point injection; block-context bias in prescriber
 
 ---
 
@@ -150,7 +153,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Create a `.env` file in the project root (see **Environment variables**). For anything beyond `simulate-dose`, ensure Postgres is running and `DATABASE_URL` points at your database.
+Copy `.env.example` to `.env` and fill in your values (see **Environment variables**). For anything beyond `simulate-dose`, ensure Postgres is running and `DATABASE_URL` points at your database. Then create and seed the schema:
+
+```bash
+alembic upgrade head
+python -m app.scripts.seed_exercises
+```
 
 ---
 
@@ -200,8 +208,17 @@ CORS is currently permissive (`*`); tighten `allow_origins` for production.
 
 **JWT required** (`Authorization: Bearer <token>`)
 
-- `POST /v1/log-workout` — Body: `WorkoutLog` → updates state for current user → `UnifiedStateVector`
-- `GET /v1/next-session?goal=...` — Query `goal`: `Strength` | `Hypertrophy` | `Power` | `General` (default `Strength`) → `WorkoutPrescription`
+- `POST /v1/onboard` — Create athlete profile + seed baseline state in one call
+- `POST /v1/log-workout` — Body: `WorkoutLog` → updates state → `UnifiedStateVector`
+- `GET /v1/next-session?goal=...` — `Strength` | `Hypertrophy` | `Power` | `General` → `WorkoutPrescription`
+- `POST /v1/planning/blocks` — Create mesocycle block (auto-generates session calendar)
+- `GET /v1/planning/blocks` — List blocks for current user
+- `PATCH /v1/planning/blocks/{id}` — Update block
+- `GET /v1/planning/sessions` — List planned sessions
+- `GET /v1/planning/today` — Today's session slot with prescription context
+- `GET /v1/benchmarks/definitions` — Benchmark definition library
+- `POST /v1/benchmarks/observations` — Record a benchmark result (triggers KPI recompute)
+- `GET /v1/dashboard/bundle` — KPI bundle + domain readiness for current user
 
 ### `main:app` (legacy only)
 
@@ -231,13 +248,18 @@ Defined in [`app/core/config.py`](app/core/config.py) (`.env` supported):
 
 - Async engine and sessions: [`app/core/db.py`](app/core/db.py)
 - Alembic targets `Base.metadata` with all models loaded from [`app/models/__init__.py`](app/models/__init__.py)
-- Until revision files exist under `alembic/versions/`, you can bootstrap schema using the legacy app’s startup path (`main:app`) or add an initial Alembic migration and use `alembic upgrade head`
+- Three migrations ship with the repo — run `alembic upgrade head` on a fresh database
+
+```bash
+alembic upgrade head
+python -m app.scripts.seed_exercises   # loads 290+ exercise library rows (idempotent)
+```
 
 ---
 
 ## Tests
 
-Pytest and plugins are listed in `requirements.txt`. There is no committed test suite layout yet; when tests exist:
+143 tests across unit, ORM persistence, and end-to-end flows. Run with:
 
 ```bash
 pytest -q
@@ -275,5 +297,6 @@ MIT — see [LICENSE](LICENSE).
 
 ## Changelog
 
+- **2026-05-24:** README synced to v0.3 — Alembic migrations live, 143 tests, all planning/benchmark/dashboard routes documented, exercise seed step added.
 - **2026-04-03:** README aligned with JWT auth, dual entrypoints, Alembic layout, expanded models/services, and sibling `perf-lab-web` repo.
 - **2025-11-21:** Earlier documentation pass (stack, structure, setup, env, endpoints).

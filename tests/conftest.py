@@ -8,6 +8,7 @@ that require a running Postgres instance.
 import os
 import asyncio
 
+import httpx
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
@@ -17,7 +18,7 @@ from sqlalchemy.pool import NullPool
 
 # Import all models so Base.metadata is populated before create_all
 import app.models  # noqa: F401 — registers all models with Base
-from app.core.db import Base
+from app.core.db import Base, get_db
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -74,3 +75,23 @@ async def async_db():
         await conn.execute(sa.text("CREATE SCHEMA public"))
         await conn.execute(sa.text("GRANT ALL ON SCHEMA public TO PUBLIC"))
     await engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def http_client(async_db: AsyncSession):
+    """
+    Async HTTP test client wired to the FastAPI app with the test DB session
+    injected via dependency override. No lifespan is triggered — tables are
+    managed by the async_db fixture.
+    """
+    from app.main import app
+
+    async def _override_get_db():
+        yield async_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    app.dependency_overrides.pop(get_db, None)

@@ -49,12 +49,7 @@ app.include_router(onboard_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://performancelab.netlify.app",
-        # Add your custom domain here later
-    ],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,           # Required for JWT Bearer tokens
     allow_methods=["*"],
     allow_headers=["*"],
