@@ -2,461 +2,465 @@
 
 ## Purpose
 
-This document explains what should be tested in Performance Lab, why those tests
-matter, and which behaviors deserve strict assertions versus looser tolerance.
+This document explains what should be tested in Performance Lab, why those tests matter, and where exact assertions are appropriate versus where directional or scenario assertions are better.
 
-The project is not a typical CRUD API.
-It is a stateful control system with:
+Performance Lab is not a typical CRUD API. It is a stateful control system with:
 
 - internal model transitions
-- approximate physiological mappings
+- approximate dose and physiology mappings
 - adaptive prescription decisions
-- persistence of event and state history
+- planning state
+- benchmark-driven assimilation
+- persistence of event, observation, state, and KPI history
 
-That means shallow route tests are not enough.
+The central testing question is not only:
 
----
+> Does the endpoint return 200?
 
-## Testing Philosophy
+It is:
 
-The central question is not:
+> Did the engine behave correctly, safely, and consistently under realistic training conditions?
 
-> “Does the endpoint return 200?”
+## Current Scope to Test
 
-The central question is:
+Backend surfaces currently include:
 
-> “Did the engine behave correctly, safely, and consistently under realistic
-> training conditions?”
+- auth routes
+- onboarding
+- simulate-dose
+- log-workout
+- next-session
+- planning blocks/sessions/today
+- benchmark definitions/observations/recompute
+- dashboard KPIs/domain-summary/readiness
+- state update engine
+- dose engine
+- prescriber candidate scoring/finalization
+- migrations through `a002`
 
-A good test suite should therefore separate:
+Frontend surfaces currently include:
 
-- **hard invariants** that must not break
-- **bounded outputs** that must stay in valid ranges
-- **approximate calculations** that may evolve without implying a bug
-- **scenario behavior** that only appears across sequences of workouts
+- auth strip
+- sessionStorage auth state
+- onboarding gate
+- digital twin loop
+- planning panel
+- typed API client
+- manually mirrored DTOs
+- Tailwind/design system config
 
----
-
-## Test Pyramid for This Project
-
-A useful testing stack for Performance Lab is:
+## Test Pyramid
 
 ### 1. Unit tests
+
 Fast tests for:
+
 - dose calculation
 - state update rules
-- prescriber selection rules
-- helper functions
+- state bridge conversions
+- planning template generation helpers
+- benchmark mapping helpers
+- derived metric formula helpers
+- prescriber scoring and safety helpers
+- frontend pure helpers
 
-### 2. Integration tests
+### 2. Service integration tests
+
 Tests across:
-- DB session + service layer
-- route + schema + service wiring
-- persistence and retrieval of latest state
 
-### 3. Scenario tests
-Longer-flow tests for:
-- repeated heavy training
-- deload behavior
-- missed sessions
-- weak-point emergence
-- recommendation shifts over time
+- DB session + services
+- state initialization + workout processing
+- block creation + session generation
+- benchmark observation + state/KPI/weak-point updates
+- dashboard payload composition
 
-### 4. Contract tests
-Tests that keep the public API stable:
+### 3. Route contract tests
+
+Tests for:
+
+- auth behavior
+- request validation
 - response shape
-- required fields
-- error handling
-- mutating vs non-mutating behavior
+- error detail shape
+- auth-required route protection
+- non-mutating vs mutating semantics
 
----
+### 4. Scenario tests
 
-## What Must Never Break
+Longer flows:
 
-These are the highest-priority invariants.
-If these break, the model is no longer trustworthy.
+- first-run lifecycle
+- repeated hard sessions
+- deload week behavior
+- planned vs completed session linkage
+- benchmark deficit -> weak point -> prescription bias
+- benchmark improvement -> weak point resolution
+- KPI-driven prescription shift
 
-## 1. State transition integrity
-A logged workout must produce a valid transition from prior state to next state.
+### 5. Frontend tests / checks
 
-Tests should verify:
-- the latest state is fetched correctly
-- baseline state is created when no prior state exists
-- a new state row is persisted after update
-- old state history is preserved
+Minimum required checks:
 
-### Why this matters
-This is the backbone of the engine.
-If state history is lost or overwritten, replayability and trust collapse.
+- `npx tsc --noEmit`
+- `npm run build`
+- API client contract smoke tests where possible
+- component rendering tests for core surfaces if test framework is added
 
----
+## Hard Invariants
 
-## 2. Append-only state history
-`AthleteState` should behave like a history table, not a mutable singleton.
+These should use strict assertions.
 
-Tests should verify:
-- logging a workout creates a new state row
-- the previous row remains intact
-- latest-state lookup returns the newest timestamped row
+### 1. Append-only state history
 
-### Failure mode
-A “helpful simplification” that overwrites the prior row would destroy time-series history.
+Logging a workout must create a new `AthleteState` row. It must not overwrite the previous row.
 
----
+Assert:
 
-## 3. Fatigue bounds
-Fatigue channels should remain in valid numeric ranges.
+- state row count increases
+- previous row values remain unchanged
+- latest-state query returns the newest timestamped row
+
+### 2. Workout logs remain separate from state
+
+`POST /v1/log-workout` must create a `WorkoutLog` row and an `AthleteState` row. They are different objects.
+
+Assert:
+
+- workout event exists
+- dose snapshot is stored
+- state row exists separately
+
+### 3. Simulate-dose does not mutate state
+
+`POST /v1/simulate-dose` is pure.
+
+Assert:
+
+- no workout rows created
+- no athlete state rows created or modified
+
+### 4. Negative time deltas are clamped
+
+If a workout timestamp is older than the current state timestamp, effective `dt` must be zero rather than negative.
+
+Assert:
+
+- no crash
+- new state is valid
+- no negative time transition propagates
+
+### 5. Fatigue and tissue bounds
+
+Fatigue and tissue vectors must stay within [0, 100].
 
 Relevant fields:
-- `f_met_systemic`
-- `f_nm_peripheral`
-- `f_nm_central`
-- `f_struct_damage`
 
-Tests should verify:
-- fatigue values never become negative
-- fatigue values remain within intended schema bounds
-- edge-case workouts do not produce invalid numeric states
+- `fatigue_f.*`
+- `tissue_t.*`
+- legacy fatigue mirrors
 
-### Why this matters
-Out-of-range fatigue values tend to cascade into broken recommendations.
+### 6. Legacy mirrors stay aligned
 
----
+State bridge conversion should keep legacy fields in sync with decomposed vectors.
 
-## 4. Monotonicity and time handling rules
-Time should never run backward in state evolution.
+Assert examples:
 
-The current service already clamps negative elapsed time to zero when a workout
-arrives with an older timestamp than the current state.
+- `c_nm_force == capacity_x.max_strength * 10.0`
+- `b_met_anaerobic == capacity_x.glycolytic * 300.0`
+- legacy fatigue values reflect `fatigue_f` as defined by `sync_legacy_from_vectors()`
 
-Tests should verify:
-- negative `dt` never propagates
-- out-of-order workout timestamps do not corrupt the transition
-- timestamp ordering remains consistent for persisted state history
+### 7. Planned session linkage
 
-### Why this matters
-Temporal bugs in a stateful model are subtle and destructive.
+When a workout provides `planned_session_id`, the planned session should be marked complete and linked.
 
----
+When no ID is provided, same-day pending match should work best-effort.
 
-## 5. Mutating vs non-mutating endpoint separation
-The API distinguishes between preview and state transition.
+Assert:
 
-Tests should verify:
-- `POST /v1/simulate-dose` does **not** create or mutate athlete state
-- `POST /v1/log-workout` **does** create a new state row
-- `GET /v1/next-session` behaves as read-oriented in the current design
+- planned session status becomes completed
+- `workout_log_id` is set
+- workout row has `planned_session_id`
+- `completed_at` is set
 
-### Why this matters
-If preview paths mutate state, the control loop becomes untrustworthy.
+### 8. Benchmark observations preserve timestamp semantics
 
----
+Benchmark-driven state rows should use the observation's `observed_at` timestamp when provided.
 
-## What Is Approximate by Nature
+Assert:
 
-These are areas where exact numeric matching should usually be avoided.
+- new state timestamp equals observation time
+- state history remains queryable in chronological order
 
-## 1. Dose calculations
-The dose engine is a modeling layer, not a bookkeeping layer.
+### 9. Weak-point benchmark feedback
 
-That means tests should usually assert:
-- directional behavior
-- monotonic trends
-- reasonable output ranges
-- stable relationships between input severity and dose magnitude
+Valid normalized benchmark observations should create or resolve weak points based on thresholds.
 
-Not brittle exact magic numbers, unless you are explicitly snapshotting a chosen
-reference implementation.
+Assert:
 
-### Good test style
-- a harder workout produces more systemic dose than an easier one
-- poor sleep increases cost relative to otherwise matched input
-- adding distance or volume changes the relevant dose channels
+- normalized `< 40` creates/refreshes benchmark-sourced weak points
+- normalized `> 65` resolves active matching benchmark weak points
+- invalid observations do not update weak points
 
-### Bad test style
-- asserting that a workout always produces exactly `17.38291` forever
+### 10. Derived KPI recomputation writes snapshots
 
----
+Recomputing derived metrics should write `DerivedMetricSnapshot` rows for computable definitions.
 
-## 2. Prescriber scoring and ranking
-As prescriber logic evolves, exact ordering may change while still being correct.
+Assert:
 
-Tests should favor:
-- exclusion rules
-- required constraints
-- acceptable recommendation classes
-- rationale presence
+- snapshots are created
+- contributing observations are recorded when applicable
+- missing inputs do not crash computation
 
-Instead of locking the system into one exact implementation too early.
+### 11. Auth route behavior
 
----
+Assert:
 
-## What Requires Scenario Tests
+- duplicate email returns 409
+- too-short password fails validation
+- bad login returns 401
+- inactive user returns 403
+- authenticated `/auth/me` returns user
 
-Some behaviors only show up over sequences, not single function calls.
+### 12. Alembic migration integrity
 
-## 1. Overreaching / overtraining patterns
-The engine should respond differently after repeated hard sessions than after one.
+Assert against a fresh database:
 
-Scenario tests should simulate:
-- multiple high-RPE sessions in close succession
-- inadequate recovery between sessions
-- worsening sleep or life stress inputs
+- `alembic upgrade head` succeeds
+- foundational tables exist
+- benchmark/KPI tables exist
+- planned-session benchmark columns exist
 
-Expected outcomes may include:
-- accumulating fatigue
-- reduced readiness
-- more conservative recommendations
-- lower-cost next sessions
+## Approximate / Directional Assertions
 
-### Why this matters
-A single isolated workout test cannot tell you whether the system behaves like a
-real control loop.
+These should not overfit exact numbers unless deliberately snapshotting a reference implementation.
 
----
-
-## 2. Deload cycles
-The schema already makes room for deload behavior via block-level configuration
-and `PlannedSession.is_deload`.
+### Dose calculations
 
-Scenario tests should verify:
-- deload sessions preserve block identity while reducing dosage
-- intensity / volume targets are reduced appropriately
-- the system does not treat deload weeks as random unrelated sessions
-
-### Why this matters
-Many systems claim to support deloads but only by switching to generic light workouts.
-
----
-
-## 3. First-run lifecycle
-The first-run path deserves its own scenario test.
-
-Test:
-- create a user
-- initialize baseline state
-- request next session
-- log first workout
-- verify updated state exists
-- request next session again
-
-This should mirror the real adoption path.
-
----
-
-## 4. Planned vs completed session behavior
-As planning routes are added, scenario tests should verify:
-- a planned session can be fulfilled by a workout log
-- completed status is tracked correctly
-- skipped or rescheduled sessions do not silently disappear
-
----
-
-## 5. Weak-point emergence and resolution
-Once weak-point logic is more exposed, scenario tests should verify:
-- multiple weak-point signals can accumulate for the same tag
-- active unresolved weak points affect prescription biasing
-- resolved weak points stop biasing recommendations
+Prefer assertions like:
 
----
-
-## Recommended Test Categories
-
-## A. Dose engine tests
-Focus:
-- relative scaling
-- modality-specific behavior
-- human-factor effects
-- valid ranges
-
-Examples:
-- running dose differs from strength dose for matched duration/RPE
-- worse sleep increases fatigue-related dose pressure
-- higher RPE generally raises stress dose channels
-
----
-
-## B. State update tests
-Focus:
-- persistence of new state rows
-- decay/adaptation behavior
-- range safety
-- timestamp handling
-
-Examples:
-- first workout initializes baseline if absent
-- second workout uses the latest existing state
-- negative elapsed time is clamped safely
-- fatigue channels remain valid
-
----
-
-## C. Service-layer tests
-Focus:
-- orchestration correctness in `initialize_athlete_state(...)`
-- orchestration correctness in `process_new_workout(...)`
-
-Examples:
-- `initialize_athlete_state` creates only one baseline row when needed
-- `process_new_workout` calls dose calculation and persists a new state
-- state history length increases after logging a workout
-
----
-
-## D. API route tests
-Focus:
-- request/response shape
-- route wiring
-- serialization
-- non-mutating vs mutating path behavior
-
-Examples:
-- `POST /v1/simulate-dose` returns a valid `StressDose`
-- `POST /v1/log-workout` returns a valid `UnifiedStateVector`
-- `GET /ping` returns health payload
-- invalid workout payloads return validation errors
-
----
-
-## E. Prescriber tests
-Focus:
-- constraint obedience
-- recommendation shape
-- rationale generation
-- correct response to state conditions
-
-Examples:
-- high structural fatigue does not yield a high-impact recommendation class
-- equipment constraints eliminate unsupported exercise choices
-- output includes `type`, `focus`, `duration_min`, and `rationale`
-
----
-
-## Assertion Style Guidelines
-
-## Prefer invariant assertions for core safety
-Example:
-- state row count increased by one
-- fatigue remains within bounds
-- no negative time delta is applied
-
-## Prefer directional assertions for physiological logic
-Example:
-- harder session yields greater systemic stress than easier session
-
-## Prefer class-based assertions for recommendations
-Example:
-- recommendation belongs to an acceptable low-cost category
-instead of demanding one exact string too early
-
-## Avoid over-snapshotting approximate systems
-Snapshot tests can be useful for payload shape and rationale presence, but they
-should not freeze every numeric modeling detail unless that is intentional.
-
----
-
-## Suggested Test Matrix
-
-A compact initial matrix could be:
-
-### Core invariants
-- baseline initialization
-- append-only state history
-- fatigue range safety
-- non-negative effective `dt`
-
-### API contracts
-- simulate-dose does not mutate
-- log-workout mutates and persists
-- next-session returns valid response shape
-
-### Scenarios
-- first-run flow
-- repeated hard sessions
-- recovery-friendly session after overload
-- deload week session behavior
-
-That would already be far more useful than a suite made of only happy-path route tests.
-
----
-
-## Current Test Coverage (v0.3)
-
-The following test files are in place:
-
-### Unit tests (no DB required)
-`tests/test_dose_engine_v0.py` — 10 tests covering:
-- return type (StressDose)
-- all channels non-negative
 - higher RPE increases dose
-- running produces aerobic-dominant adaptation
-- strength produces max_strength adaptation
-- non-mutating (two calls → identical results)
-- near-zero duration → near-zero dose
+- poor sleep/life stress increases fatigue load
+- running creates more metabolic/impact stress than equivalent strength session
+- strength/hypertrophy sessions create relevant neuromuscular/structural signal
+- per-exercise phi vectors affect dose relative to fallback defaults
 
-`tests/test_state_update_unit.py` — 10 tests covering:
-- return type (UnifiedStateVector)
-- append-only (prior state unchanged)
-- fatigue increases after high RPE
-- high fatigue suppresses adaptation (tested at fatigue=100)
-- capacity not decreased by normal workout
-- zero timedelta still applies dose
-- legacy mirror consistency (c_nm_force == capacity_x.max_strength * 10.0)
+Avoid brittle assertions such as exact floating-point dose values.
 
-### DB integration tests (requires live PostgreSQL)
-`tests/conftest.py` — async DB fixture using `DROP SCHEMA public CASCADE`
-isolation (handles circular FK between planned_sessions and workout_logs)
+### State updates
 
-`tests/test_orm_persistence.py` — 5 tests covering:
-- process_new_workout appends one new row
-- prior state row not modified
-- new state timestamp matches log timestamp
-- workout_log is separate from athlete_state (Decision 2)
-- simulate_dose creates no state row
+Prefer assertions like:
 
-`tests/test_integration_flow.py` — 4 scenario tests:
-- first run: new user → init → workout → fatigue > baseline
-- repeated sessions: 3 logs → 4 rows, timestamps ascending
-- backdated log: timestamp before state → dt clamped to 0, no crash
-- fatigue accumulates: two hard sessions close together → f2 > f1
+- fatigue decays over rest
+- hard sessions increase fatigue
+- high fatigue suppresses adaptation efficiency
+- valid adaptation contribution nudges capacity upward slowly
 
-### Remaining test targets
-- route tests for `POST /v1/log-workout` and `GET /v1/next-session`
-- deload and weak-point scenario tests
-- `POST /v1/onboard` end-to-end test
+Avoid exact long-run physiology numbers unless freezing a model version.
 
----
+### Prescriber selection
 
-## What Should Be Tested Next
+Prefer assertions like:
 
-If extending coverage, the priority order is:
+- high structural/tendon stress returns recovery or tissue-deload class
+- high CNS fatigue avoids max neural work
+- block category match receives priority when safe
+- weak-point tags appear in explanation
+- equipment constraints produce compatible or fallback exercises
 
-1. `POST /v1/onboard` — profile creation + baseline state in one call
-2. `GET /v1/next-session` — shape, model_version, exercises, why
-3. `POST /v1/log-workout` — route-level wiring
-4. repeated-session overload scenarios
-5. deload and weak-point scenarios
+Avoid locking to one exact string if multiple safe recommendations are valid.
 
----
+## Route Test Matrix
+
+### Auth
+
+- register success
+- register duplicate
+- password validation
+- login success
+- login failure
+- me with token
+- me without token
+
+### Onboarding
+
+- onboard fills profile shell
+- self-reported weak points created
+- baseline state created
+- squat 1RM affects force capacity
+- onboarding requires auth
+
+### Ingest
+
+- simulate-dose response shape
+- simulate-dose non-mutating
+- log-workout response shape
+- log-workout creates workout log
+- log-workout appends state
+- log-workout links planned session by ID
+- log-workout same-day matches planned session
+- log-workout stores dose snapshot
+- backdated log clamps `dt`
+
+### Prescribe
+
+- next-session requires auth
+- no state auto-initializes baseline
+- response includes `model_version`, exercises, and `why`
+- active weak points appear in constraints
+- active planned session writes `prescribed_content`
+- high fatigue/tissue state triggers recovery class
+- DEV ONLY user override should be removed or explicitly test-guarded before production
+
+### Planning
+
+- create block creates sessions
+- default templates work
+- deload flags generated
+- benchmark flags generated
+- list blocks scoped to user
+- list sessions date-window filtering
+- patch status
+- patch scheduled date
+- today endpoint no session
+- today endpoint session without state
+- today endpoint session with prescription
+
+### Benchmarks
+
+- list definitions
+- create observation unknown code -> 400
+- derived-only definition cannot receive observation
+- valid observation creates row
+- valid observation applies mappings to state
+- valid observation triggers weak-point feedback
+- valid observation triggers derived KPI recompute best-effort
+- list observations by code
+- limit bounds enforced
+
+### Dashboard
+
+- KPI bundle includes latest snapshot per metric
+- primary anchors dedupe to latest per code
+- domain summary filters by domain
+- readiness returns no-state note when no state
+- readiness flags reflect latest KPI values
+
+## Scenario Tests
+
+### 1. First-run lifecycle
+
+```text
+register -> login -> onboard -> next-session -> log-workout -> next-session
+```
+
+Expected:
+
+- profile exists
+- baseline state exists
+- first prescription returns valid shape
+- workout log persists
+- state history length increases
+- second prescription reflects updated state
+
+### 2. Planning lifecycle
+
+```text
+onboard -> create block -> list sessions -> get today -> log same-day workout -> session completed
+```
+
+Expected:
+
+- block created
+- sessions generated
+- today's session returned when scheduled
+- prescription content written
+- log links session
+- completed status and `workout_log_id` set
+
+### 3. Overload behavior
+
+Simulate repeated high-RPE sessions close together.
+
+Expected:
+
+- fatigue accumulates
+- tissue stress accumulates
+- next prescription shifts lower cost or recovery-oriented when thresholds are crossed
+
+### 4. Deload behavior
+
+Create a block with deload cadence and inspect week N.
+
+Expected:
+
+- planned sessions marked deload
+- prescription explanation includes deload constraint
+- eventual dosage should be lower than normal block week once implemented fully
+
+### 5. Benchmark deficit and improvement
+
+Post low normalized benchmark, then high normalized benchmark.
+
+Expected:
+
+- deficit creates benchmark weak point
+- prescription includes weak-point constraint
+- improvement resolves weak point
+- future prescription no longer includes resolved tag
+
+### 6. KPI-driven prescription
+
+Create observations that compute a KPI used by the prescriber.
+
+Expected:
+
+- KPI snapshot exists
+- `latest_kpi_values()` returns code
+- prescription branch/rationale changes when KPI crosses heuristic threshold
+
+## Frontend Checks
+
+### Required before docs/API sync commit
+
+```bash
+npx tsc --noEmit
+npm run build
+npm run lint
+```
+
+### API type sync checks
+
+When backend schemas change, inspect:
+
+- `src/types.ts`
+- `src/trainingGoals.ts`
+- `src/api/perfLabClient.ts`
+- `DigitalTwinPanel.tsx`
+- `OnboardingForm.tsx`
+- `PlanningPanel.tsx`
+
+### Useful future component tests
+
+- unauthenticated state shows sign-in prompts
+- registration sets onboarding pending
+- onboarding submit calls `completeOnboarding`
+- planning panel creates block and reloads sessions
+- session actions call patch endpoint
+- digital twin log flow refreshes next session after logging
+- 401 calls unauthorized bridge and clears session
+
+## Current Test Coverage Note
+
+Previous project docs referenced unit and integration tests for dose engine, state update, ORM persistence, and integration flow. Those test files were not included in the latest uploaded source set, so this document describes the target strategy and the behaviors that should be verified rather than claiming current test counts.
 
 ## Short Version
 
-Performance Lab should test four things differently:
+The highest-value tests are:
 
-### Must never break
-- state history behavior
-- fatigue bounds
-- time-handling invariants
-- mutating vs non-mutating endpoint separation
-
-### Approximate by nature
-- dose calculations
-- recommendation ranking details
-
-### Needs scenario tests
-- overreaching / overtraining patterns
-- deload cycles
-- first-run flow
-- weak-point accumulation
-
-That is the difference between testing a website and testing a training engine.
+1. append-only state history
+2. simulate vs log mutation separation
+3. planned-session linkage
+4. benchmark observation -> state/KPI/weak-point updates
+5. prescriber safety overrides
+6. route response contracts
+7. frontend type sync/build checks

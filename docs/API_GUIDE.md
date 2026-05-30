@@ -4,324 +4,330 @@
 
 This guide explains how to use the Performance Lab API as an external consumer.
 
-Swagger tells you the shape of each endpoint. This document explains the
-meaning of each endpoint in the system:
-
-- what it is for
-- when to call it
-- what it changes
-- what it does **not** change
+Swagger tells you the endpoint shapes. This document explains what each endpoint means in the system, when to call it, whether it mutates state, and what clients should avoid.
 
 The core mental model is:
 
 ```text
-log/test input → D(t) → S(t) → next session u(t)
+workout / benchmark input -> D(t) or observation signal -> S(t) -> next session u(t)
+```
 
 Where:
 
-D(t) is the computed stress dose from a workout
-S(t) is the athlete’s current modeled internal state
-u(t) is the next recommended session
-Base Concepts
+- `D(t)` is the computed stress dose from a workout.
+- `S(t)` is the athlete's modeled internal state.
+- `u(t)` is the next recommended session.
+- Benchmark observations can also nudge `S(t)` through observation mappings and update weak-point signals.
 
-Performance Lab is not just a workout logger.
+## Base Concepts
 
-It is a stateful training engine. That means some endpoints are pure transforms
-and some endpoints move the athlete model forward.
+Performance Lab is not just a workout logger. It is a stateful training engine.
 
-That distinction matters.
+That means there are three different kinds of API behavior:
 
-Pure endpoint
+1. **Pure transform** — computes and returns something without changing persisted state.
+2. **State transition** — changes the athlete model or related persisted history.
+3. **Read-oriented with planned-session side effects** — primarily reads state, but may write generated prescription content to a planned session slot.
 
-A pure endpoint computes something and returns it, but does not change stored state.
+A client that treats all endpoints as harmless reads will create incorrect behavior.
 
-Mutating endpoint
-
-A mutating endpoint updates the persisted athlete model and should be treated as
-a state transition.
-
-If a client ignores that difference, it will create incorrect behavior very fast.
-
-API Shape
+## API Shape
 
 Preferred backend entrypoint:
 
+```bash
 uvicorn app.main:app --reload
+```
 
-Default API version prefix:
+Versioned API prefix:
 
+```text
 /v1
+```
 
-Utility endpoint outside the versioned prefix:
+Auth and legacy endpoints are outside the `/v1` prefix:
 
+```text
+/auth/*
+/compute-metrics
+/program/run
+/program/strength
 /ping
-Current Endpoints
-GET /ping
+```
+
+The FastAPI app is `app.main:app`. Schema management is handled by Alembic only; do not use `Base.metadata.create_all` as a substitute for migrations.
+
+## Authentication
+
+Most personalized endpoints require a Bearer token.
+
+### POST /auth/register
+
+Creates a new `User` and an empty `AthleteProfile` shell.
+
+Input:
+
+```json
+{
+  "email": "athlete@example.com",
+  "password": "minimum-8-chars"
+}
+```
+
+Password rules:
+
+- minimum 8 characters
+- maximum 72 characters because of bcrypt limits
+
+Output:
+
+```json
+{
+  "id": 1,
+  "email": "athlete@example.com",
+  "is_active": true
+}
+```
+
+Does it mutate state?
+
+Yes. It creates account identity and an empty profile row.
+
+### POST /auth/token
+
+OAuth2 password-form login endpoint.
+
+Input uses `application/x-www-form-urlencoded`:
+
+```text
+username=athlete@example.com&password=...
+```
+
+Output:
+
+```json
+{
+  "access_token": "...",
+  "token_type": "bearer"
+}
+```
+
+Does it mutate state?
+
+No.
+
+### GET /auth/me
+
+Returns the current authenticated user.
+
+Requires:
+
+```text
+Authorization: Bearer <token>
+```
+
+Does it mutate state?
+
+No.
+
+## Health and Legacy Endpoints
+
+### GET /ping
 
 Healthcheck endpoint.
 
-Use this to verify that the API is reachable.
+Output includes:
 
-Response
+```json
+{
+  "status": "ok",
+  "system": "running",
+  "version": "0.2.0",
+  "project": "Performance Lab"
+}
+```
 
-Returns a small status payload indicating the system is running.
-
-Use cases
-deployment smoke test
-client boot check
-environment verification
 Does it mutate state?
 
 No.
 
-POST /v1/simulate-dose
+### POST /compute-metrics
 
-Converts a workout log into a computed StressDose.
+Legacy v0.1 field-test endpoint used by the frontend's `HeroFlowColumn`.
 
-This endpoint is the safest way to answer:
+It accepts age/sex/300m/1.5mi inputs and returns VO2 estimate, categories, fatigue profile, race pace, and pace zones.
 
-“What stress would this workout create?”
-
-Input
-
-WorkoutLog
-
-Typical fields include:
-
-timestamp
-modality
-duration
-session RPE
-optional RIR
-optional distance
-optional volume
-sleep quality
-inverse life stress
-Output
-
-StressDose
-
-Current stress dose fields:
-
-d_met_systemic
-d_nm_peripheral
-d_nm_central
-d_struct_damage
-d_struct_signal
 Does it mutate state?
 
 No.
 
-When to use it
+### GET /program/run
+### GET /program/strength
 
-Use this endpoint when you want to:
+Legacy static program endpoints preserved for compatibility with the older field-test UI.
 
-preview a session’s load
-run what-if scenarios
-compare candidate workouts
-inspect the input-to-dose mapping without advancing the athlete state
-When not to use it
+Does it mutate state?
 
-Do not use this endpoint when the workout actually happened and should count
-toward the athlete’s training history.
+No.
 
-Use POST /v1/log-workout for that.
+## Core Digital Twin Endpoints
 
-Client example
-const dose = await simulateDose({
-  timestamp: new Date().toISOString(),
-  modality: "Strength",
-  duration_minutes: 45,
-  session_rpe: 7,
-  avg_rir: 2,
-  sleep_quality: 5,
-  life_stress_inverse: 5,
-});
-POST /v1/onboard
+### POST /v1/simulate-dose
 
-Creates the athlete profile and seeds baseline state in a single call.
+Converts a workout log into a computed `StressDose`.
 
-This endpoint is the correct entry point for a new athlete.
+This endpoint answers:
 
-Input
+> What stress would this workout create?
 
-OnboardRequest
+Input: `WorkoutLog`.
+
+Representative fields:
+
+```json
+{
+  "timestamp": "2026-05-29T15:00:00Z",
+  "modality": "Strength",
+  "duration_minutes": 45,
+  "session_rpe": 7,
+  "avg_rir": 2,
+  "sleep_quality": 5,
+  "life_stress_inverse": 5,
+  "dominant_movement_pattern": "squat",
+  "novelty": 1.0,
+  "estimated_sets": 12,
+  "exercises": []
+}
+```
+
+`modality` currently accepts:
+
+```text
+Running | Strength | Hypertrophy | Power | Mixed
+```
+
+Optional per-exercise entries can be included. When present, the service/engine can use exercise-level phi vectors. When absent, the dose engine falls back to modality and movement-pattern defaults.
+
+Output: `StressDose`.
 
 Fields include:
 
-email (required)
-experience_level ("beginner" | "intermediate" | "advanced" | "elite")
-experience_years
-available_days_per_week
-session_duration_minutes
-equipment
-self_reported_weak_points (list of canonical weak-point tags)
-squat_1rm_kg
-deadlift_1rm_kg
-bench_1rm_kg
-bodyweight_kg
-run_5k_seconds
-
-All fields except `email` are optional. If `squat_1rm_kg` is provided, it is used
-to seed `c_nm_force = squat_1rm_kg * 10.0` directly. Otherwise, `experience_level`
-drives a 4-tier baseline table (beginner → elite).
-
-Output
-
-OnboardResponse
-
-user_id
-profile_id
-message
+- `dose_six.volume`
+- `dose_six.intensity`
+- `dose_six.density`
+- `dose_six.impact`
+- `dose_six.skill`
+- `dose_six.metabolic`
+- `adaptation_contribution` by capacity axis
+- legacy channels: `d_met_systemic`, `d_nm_peripheral`, `d_nm_central`, `d_struct_damage`, `d_struct_signal`
 
 Does it mutate state?
 
-Yes.
+No.
 
-This endpoint:
+When to use it:
 
-creates the AthleteProfile row
-optionally creates self-reported WeakPoint rows
-initializes baseline AthleteState S0 immediately
+- preview a session's load
+- compare candidate workouts
+- run what-if scenarios
+- debug the input-to-dose mapping without advancing the athlete model
 
-After this call, GET /v1/next-session will return a recommendation without
-needing to auto-initialize state separately.
+When not to use it:
 
-When to use it
+Do not use it to record a real workout. Use `POST /v1/log-workout` instead.
 
-Use this endpoint once per athlete, immediately after account creation. All
-subsequent state evolution happens through POST /v1/log-workout.
+### POST /v1/onboard
 
-Client example
-const onboardResult = await onboard({
-  email: "athlete@example.com",
-  experience_level: "intermediate",
-  squat_1rm_kg: 100,
-  available_days_per_week: 4,
-  goal: "Strength",
-});
+Creates or fills the athlete profile and seeds baseline state.
 
-POST /v1/log-workout
+This endpoint assumes the user already exists and is authenticated. Registration creates the profile shell; onboarding fills it.
 
-Logs a completed workout, computes stress dose, updates the athlete state, and
-returns the new S(t) snapshot.
+Input: `OnboardRequest`.
 
-This is the main state-transition endpoint in the current system.
+Fields:
 
-Input
+- `experience_years`
+- `experience_level`
+- `available_days_per_week`
+- `session_duration_minutes`
+- `equipment`
+- `self_reported_weak_points`
+- `goal`
+- `squat_1rm_kg`
+- `deadlift_1rm_kg`
+- `bench_1rm_kg`
+- `bodyweight_kg`
+- `run_5k_seconds`
 
-WorkoutLog
+Output: `OnboardResponse`.
 
-Additional planning-aware fields now supported:
-- `planned_session_id` (optional)
-- `is_benchmark` (optional)
-- `benchmark_results` (optional key/value payload)
+```json
+{
+  "user_id": 1,
+  "profile_id": 1,
+  "message": "Athlete profile and baseline state ready.",
+  "next_step": "Call GET /v1/next-session?goal=Strength to get first prescription"
+}
+```
 
-Output
-
-UnifiedStateVector
-
-Current state fields include:
-
-capacities:
-c_met_aerobic
-c_nm_force
-c_struct
-battery:
-b_met_anaerobic
-fatigues:
-f_met_systemic
-f_nm_peripheral
-f_nm_central
-f_struct_damage
-signals:
-s_struct_signal
-human factors:
-habit_strength
-skill_state
 Does it mutate state?
 
-Yes.
+Yes. It:
 
-This endpoint:
+1. upserts/fills `AthleteProfile`
+2. creates self-reported `WeakPoint` rows when requested
+3. creates baseline `AthleteState` S0
 
-loads the latest athlete state
-initializes a baseline state if none exists
-computes D(t) from the workout log
-computes the time delta since the previous state
-updates the model
-persists a new state row
-persists a `WorkoutLog` event row
-links to a planned session when explicitly provided or same-day pending match exists
-marks linked planned session as completed
-returns the new state snapshot
-Why that matters
+Important current behavior:
 
-Calling this endpoint twice with the same workout is not harmless.
-It is not just “saving a form.” It advances the athlete model.
+- `experience_level` chooses a baseline capacity tier.
+- `squat_1rm_kg`, when present, overrides `c_nm_force` as `squat_1rm_kg * 10.0`.
+- The endpoint currently stores profile fields such as experience, schedule, and equipment. The uploaded route does not show persistence of all baseline lift fields, even though they are present in the request schema.
 
-When to use it
+### POST /v1/log-workout
 
-Use this endpoint when:
+Logs a completed workout, computes stress dose, updates athlete state, persists the workout log, links planning data when possible, and returns the new state snapshot.
 
-a workout actually occurred
-the engine should treat it as real training history
-the next prescription should reflect it
-When not to use it
+Input: `WorkoutLog`.
 
-Do not use this endpoint for:
+Additional planning/benchmark fields:
 
-experimentation
-previewing candidate sessions
-debugging dose logic in isolation
+- `planned_session_id`
+- `is_benchmark`
+- `benchmark_results`
 
-Use simulate-dose for that.
+Does it mutate state?
 
-Client example
-const newState = await logWorkout({
-  timestamp: new Date().toISOString(),
-  modality: "Running",
-  duration_minutes: 35,
-  session_rpe: 6,
-  distance_meters: 6000,
-  sleep_quality: 7,
-  life_stress_inverse: 6,
-  planned_session_id: 42,
-});
+Yes. This is the primary state-transition endpoint.
 
-GET /v1/planning/blocks
-POST /v1/planning/blocks
-PATCH /v1/planning/blocks/{block_id}
+The service flow is:
 
-Planning block CRUD for authenticated users.
+1. fetch latest `AthleteState`
+2. stage baseline state if none exists
+3. resolve per-exercise phi vectors from the `Exercise` table when possible
+4. calculate `StressDose`
+5. persist a `WorkoutLog` with `dose_snapshot`
+6. link to an explicit planned session or best-effort same-day pending session
+7. mark linked planned session completed
+8. clamp negative elapsed time to zero
+9. update `S(t)` to `S(t+1)`
+10. persist a new `AthleteState` row
+11. return the new `UnifiedStateVector`
 
-Use these endpoints to create/update the mesocycle container and auto-generate
-planned sessions.
+Calling this endpoint twice with the same workout is not harmless. It advances the model twice and creates duplicate event/state history.
 
-GET /v1/planning/sessions
-PATCH /v1/planning/sessions/{session_id}
+### GET /v1/next-session
 
-Session list/update surface.
+Returns the recommended next session for the authenticated athlete.
 
-- list supports date-window filtering (`start_date`, `end_date`)
-- patch supports status transitions and rescheduling date updates
+Query params:
 
-GET /v1/planning/today
+- `goal` — one of the `TrainingGoal` values
+- `user_id` — current code contains a DEV ONLY override; do not expose this as a production integration pattern
 
-Returns today’s pending planned session slot (if any) plus current prescription
-context for the selected goal.
+Supported `goal` values:
 
-This is the preferred endpoint for “what slot should I execute today?” UX.
-GET /v1/next-session
-
-Returns the recommended next session based on the athlete’s latest state and
-the requested goal.
-
-This endpoint is the controller output of the system.
-
-Query params
-goal
-Supported values:
+```text
 Strength
 Hypertrophy
 Power
@@ -336,270 +342,424 @@ Running
 Sprinting
 HalfMarathon
 FullMarathon
+```
 
-Output
-
-WorkoutPrescription
-
-type
-focus
-rationale
-duration_min
-model_version ("v0.3")
-exercises (list of ExercisePrescription — name, sets, reps, load_note, weak_point_tags)
-why (PrescriptionExplanation — state_drivers, goal_alignment, constraints_applied, warnings, score)
-
-Side effects
-
-This endpoint:
-
-auto-initializes baseline AthleteState if none exists (prefer POST /v1/onboard instead)
-queries active unresolved WeakPoint rows and passes them to the prescriber as
-  bias signals (shown as weak_point:{tag} entries in constraints_applied)
-queries AthleteProfile equipment and injects available equipment context
-queries the active MesocycleBlock and today’s PlannedSession if one exists,
-  applies a +0.15 score bias to candidates matching the planned session category,
-  and writes the resulting prescription back to PlannedSession.prescribed_content
-
-Does it mutate state?
-
-It does not mutate AthleteState. However, if an active planned session exists
-for today, it will write the generated prescription to that row. Treat it as
-read-oriented for state purposes, but be aware of the planned-session side effect.
-
-When to use it
-
-Use this endpoint when you want:
-
-the next recommended workout
-refreshed guidance after logging a session
-a recommendation for a selected training goal
-Common pattern
-
-A normal client flow is:
-
-call GET /v1/next-session
-user completes workout
-call POST /v1/log-workout
-call GET /v1/next-session again
-
-That is exactly how the current frontend uses it.
-
-Client example
-const rx = await getNextSession("Strength");
-Current Client Flow
-
-The current frontend expresses the intended API usage very clearly.
-
-On initial load
-
-The UI requests a next session for the selected goal.
-
-On “Simulate D(t)”
-
-The UI calls POST /v1/simulate-dose and shows the returned dose only.
-
-On “Log & update S(t)”
-
-The UI calls POST /v1/log-workout, stores the returned state, then immediately
-refreshes the recommended next session.
-
-On “Refresh u(t)”
-
-The UI calls GET /v1/next-session again.
-
-This is the correct separation of concerns:
-
-simulate for preview
-log for mutation
-next-session for control output
-Current DTOs
-OnboardRequest
-
-email
-experience_level ("beginner" | "intermediate" | "advanced" | "elite", default "intermediate")
-experience_years
-available_days_per_week
-session_duration_minutes
-equipment
-self_reported_weak_points
-goal
-squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, bodyweight_kg, run_5k_seconds (all optional)
-
-OnboardResponse
-
-user_id
-profile_id
-message
-next_step
-
-WorkoutLog
-
-Raw workout input.
-
-Representative fields:
-
-timestamp
-modality
-duration_minutes
-session_rpe
-avg_rir
-distance_meters
-total_volume_load
-sleep_quality
-life_stress_inverse
-
-Notes
-session_rpe is bounded
-human context is part of the input, not an afterthought
-the same DTO is used for both simulation and logging
-
-StressDose
-
-Internal dose vector returned by simulation.
+Output: `WorkoutPrescription`.
 
 Fields:
 
-d_met_systemic
-d_nm_peripheral
-d_nm_central
-d_struct_damage
-d_struct_signal
-Notes
+- `type`
+- `focus`
+- `rationale`
+- `duration_min`
+- `model_version`
+- `exercises[]`
+- `why`
 
-This is not a user profile and not a persisted state snapshot.
-It is a transient internal transform output.
+The `why` object can include:
 
-WorkoutPrescription
+- `state_drivers`
+- `goal_alignment`
+- `constraints_applied`
+- `source_alignment`
+- `template_id`
+- `prescription_branch`
+- `validation`
+- `warnings`
+- `score`
+- `structured_template_name`
 
-type
-focus
-rationale
-duration_min
-model_version (e.g. "v0.3" — identifies the engine version that produced this)
-exercises (list of ExercisePrescription — name, sets, reps, load_note, weak_point_tags)
-why (PrescriptionExplanation — state_drivers, goal_alignment, constraints_applied, warnings, score)
+Does it mutate state?
 
-Notes
+It does not mutate `AthleteState`. It can write generated prescription content to today's pending `PlannedSession.prescribed_content` when an active block and pending planned session exist.
 
-constraints_applied contains weak_point:{tag} entries for any active unresolved
-weak points that were passed to the prescriber at generation time.
+Context used by the route:
 
-UnifiedStateVector
+- latest `AthleteState`
+- auto-initialized baseline state if no state exists
+- active unresolved weak-point tags
+- active block and today's pending planned session
+- athlete equipment from profile
+- recent workout summaries
+- latest KPI values from dashboard service
+
+## Planning Endpoints
+
+Planning endpoints are under `/v1/planning` and require auth.
+
+### POST /v1/planning/blocks
+
+Creates a `MesocycleBlock` and auto-generates `PlannedSession` rows.
+
+Input: `BlockCreateRequest`.
+
+Fields:
+
+- `goal`
+- `start_date`
+- `duration_weeks`
+- `sessions_per_week`
+- `weekly_template`
+- `modality_mix`
+- `rationale`
+- `deload_every_n_weeks`
+- `deload_volume_factor`
+- `benchmark_every_n_weeks`
+
+If `weekly_template` is omitted, the service uses a default goal-based template for supported goals. Current defaults are explicit for Strength and Running, with fallback to Strength.
+
+Generated sessions include:
+
+- `week_number`
+- `day_of_week`
+- `category`
+- `modality`
+- `status = pending`
+- `is_deload` based on deload cadence
+- `is_benchmark` and `benchmark_key = periodic_retest` based on benchmark cadence
+
+Does it mutate state?
+
+Yes. It creates a block and scheduled session rows.
+
+### GET /v1/planning/blocks
+
+Lists the authenticated user's blocks, newest first.
+
+Does it mutate state?
+
+No.
+
+### PATCH /v1/planning/blocks/{block_id}
+
+Updates block metadata.
+
+Currently patchable:
+
+- `status`
+- `rationale`
+
+Does it mutate state?
+
+Yes.
+
+### GET /v1/planning/sessions
+
+Lists planned sessions for the authenticated user.
+
+Optional query params:
+
+- `start_date`
+- `end_date`
+
+Does it mutate state?
+
+No.
+
+### PATCH /v1/planning/sessions/{session_id}
+
+Updates a planned session.
+
+Currently patchable:
+
+- `status`
+- `scheduled_date`
+
+Does it mutate state?
+
+Yes.
+
+### GET /v1/planning/today
+
+Returns today's pending planned session plus a prescription payload if state exists.
+
+Behavior:
+
+- Finds today's pending `PlannedSession`.
+- If no session exists, returns `{ session: null, prescription: null }`.
+- If no athlete state exists, returns session with `prescription: null`.
+- If state exists, generates a prescription using session context and profile equipment.
+- Writes prescription content back to the planned session row.
+
+Does it mutate state?
+
+It does not mutate `AthleteState`, but it can write `prescribed_content` to `PlannedSession`.
+
+## Benchmark Endpoints
+
+Benchmark endpoints are under `/v1/benchmarks` and require auth.
+
+### GET /v1/benchmarks/definitions
+
+Lists benchmark definitions.
+
+Does it mutate state?
+
+No.
+
+### POST /v1/benchmarks/observations
+
+Creates a benchmark observation.
+
+Input: `BenchmarkObservationCreate`.
+
+Fields:
+
+- `benchmark_code`
+- `raw_value`
+- `secondary_value`
+- `normalized_value`
+- `observed_at`
+- `bodyweight_kg`
+- `rpe`
+- `heart_rate_avg`
+- `heart_rate_drift_pct`
+- `notes`
+- `protocol_metadata`
+- `validity_status`
+- `source`
+
+Does it mutate state?
+
+Yes, when valid and mappable. It can:
+
+1. create a `BenchmarkObservation`
+2. initialize baseline state if needed
+3. apply observation mappings to create a new `AthleteState` row
+4. create or refresh benchmark-sourced weak points when normalized value is low
+5. resolve benchmark-sourced weak points when normalized value improves
+6. recompute derived KPI metrics
+
+Important thresholds in current service:
+
+- normalized value `< 40.0` flags deficits
+- normalized value `> 65.0` resolves matching benchmark weak points
+
+### GET /v1/benchmarks/observations
+
+Lists benchmark observations for the user.
+
+Query params:
+
+- `benchmark_code` optional
+- `limit` default 100, bounded 1-500
+
+Does it mutate state?
+
+No.
+
+### POST /v1/benchmarks/recompute-derived
+
+Recomputes derived KPI snapshots from latest observations and profile context.
+
+Does it mutate state?
+
+Yes. It writes `DerivedMetricSnapshot` rows.
+
+## Dashboard Endpoints
+
+Dashboard endpoints are under `/v1/dashboard` and require auth.
+
+### GET /v1/dashboard/kpis
+
+Returns a bundle of latest derived KPI values and latest primary-anchor benchmark observations.
+
+Does it mutate state?
+
+No.
+
+### GET /v1/dashboard/domain-summary?domain=...
+
+Returns KPI and primary-anchor data for one domain.
+
+Does it mutate state?
+
+No.
+
+### GET /v1/dashboard/readiness
+
+Returns latest `UnifiedStateVector` plus KPI-derived readiness flags.
+
+Current flags include:
+
+- `run_fatigue_factor_elevated`
+- `pl_relative_total_low`
+- `wl_snatch_share_low`
+
+Does it mutate state?
+
+No.
+
+## DTO Summary
+
+### WorkoutLog
+
+Raw session input.
+
+Key fields:
+
+- timestamp
+- modality
+- duration_minutes
+- session_rpe
+- avg_rir
+- distance_meters
+- total_volume_load
+- dominant_movement_pattern
+- novelty
+- estimated_sets
+- sleep_quality
+- life_stress_inverse
+- exercises[]
+- planned_session_id
+- is_benchmark
+- benchmark_results
+
+### ExerciseEntry
+
+Optional per-exercise log entry.
+
+Client-facing fields include:
+
+- exercise_id
+- exercise_name
+- sets
+- reps
+- load_kg
+- duration_seconds
+- distance_meters
+- avg_rpe
+- avg_rir
+- tempo
+- rest_seconds
+
+Service-resolved fields include phi vectors, energy mix, modality, movement pattern, skill demand, impact level, recovery cost, weak-point tags, and sport domains.
+
+### StressDose
+
+Transient transform output, not a persisted state snapshot.
+
+Fields:
+
+- `dose_six`
+- `adaptation_contribution`
+- legacy scalar channels
+
+### UnifiedStateVector
 
 Modeled athlete state snapshot.
 
-Fields include:
+Contains:
 
-capacities (c_met_aerobic, c_nm_force, c_struct, b_met_anaerobic)
-fatigue channels (f_met_systemic, f_nm_peripheral, f_nm_central, f_struct_damage)
-adaptation signal (s_struct_signal)
-habit and skill information (habit_strength, skill_state)
-model_version (e.g. "v0.3" — identifies which engine version produced this state)
-decomposed vectors (capacity_x, fatigue_f, tissue_t)
+- decomposed `capacity_x`
+- decomposed `fatigue_f`
+- decomposed `tissue_t`
+- legacy scalar mirrors
+- structural signal
+- habit strength
+- skill state
+- model version
 
-Notes
+### WorkoutPrescription
 
-This is the most important object in the system.
-It is what the engine believes about the athlete right now.
-model_version allows future consumers to detect which formula set produced
-each persisted state row.
+Controller output.
 
-Error Handling
+Contains:
 
-The current frontend client expects JSON error payloads when available and falls
-back to text otherwise.
+- legacy display fields
+- `model_version`
+- exercise list
+- structured explanation
+
+## Error Handling
+
+The frontend client expects JSON errors when available and falls back to text otherwise.
 
 Recommended client behavior:
 
-treat non-2xx responses as structured API errors
-surface the backend detail field when present
-do not assume all failures return JSON
+- treat all non-2xx responses as API errors
+- surface the backend `detail` field when present
+- clear session on 401 for authenticated endpoints
+- do not assume every failure returns JSON
 
 A reasonable client error shape is:
 
-message
-status
-details
-Idempotency and Safety
+```ts
+{
+  message: string;
+  status?: number;
+  details?: unknown;
+}
+```
 
-This is the main place API consumers will make mistakes.
+## Idempotency and Safety
 
-Safe to repeat
-GET /ping
-POST /v1/simulate-dose for the same hypothetical input
+Safe to repeat:
 
-Has a side effect (planned-session write) but does not mutate AthleteState
-GET /v1/next-session
-  - if a PlannedSession exists for today, the generated prescription is written
-    back to planned_session.prescribed_content; repeated calls overwrite it with
-    the same content, so this is safe to call multiple times
+- `GET /ping`
+- `GET /auth/me`
+- `POST /v1/simulate-dose` for the same hypothetical input
+- read/list endpoints
 
-Not safe to repeat casually
-POST /v1/log-workout
-POST /v1/onboard (creates a new profile row each call — call once per athlete)
+Read-oriented but can update planned-session content:
 
-Why:
-log-workout advances the stored model and should be treated like recording
-a real event, not like refreshing a page.
+- `GET /v1/next-session`
+- `GET /v1/planning/today`
 
-If duplicate submission protection becomes necessary later, it should be added
-deliberately rather than assumed.
+Not safe to repeat casually:
 
-Recommended Integration Patterns
-Pattern 1: Recommendation-driven app
+- `POST /auth/register`
+- `POST /v1/onboard`
+- `POST /v1/log-workout`
+- `POST /v1/planning/blocks`
+- `POST /v1/benchmarks/observations`
+- `POST /v1/benchmarks/recompute-derived`
 
-Use when the product is centered on “what should I do today?”
+## Recommended Integration Patterns
 
-Fetch recommendation
-Show rationale
-User completes workout
-Log workout
-Refresh recommendation
-Pattern 2: Preview / planner app
+### Recommendation-driven app
 
-Use when the product helps compare hypothetical sessions.
+```text
+register/login -> onboard -> get next session -> perform workout -> log workout -> refresh next session
+```
 
-Build candidate workouts
-Simulate dose for each
-Compare outcomes
-Log only the chosen completed workout
-Pattern 3: Coach console
+### Planner app
 
-Use when a coach wants to inspect state and decisions.
+```text
+create block -> inspect sessions -> open today's session -> perform session -> log workout -> session marked completed
+```
 
-Review current state
-Review recommended session
-Simulate alternatives if needed
-Log actual completed work
-Re-check next session
-Current Limitations
+### Benchmark loop
 
-The API surface is clean and the core loop is fully operational as of v0.3.
+```text
+list definitions -> post observation -> derived KPIs recomputed -> weak points/state updated -> next prescription reflects KPI + weak-point context
+```
 
-Known boundaries:
+### Coach/debug console
 
-auth exists but is not yet described here in detail
-block creation and calendar-generation routes are not yet active
-  (MesocycleBlock + PlannedSession are readable by the prescriber if rows exist,
-  but there is no public API to create or manage blocks yet)
-exercise library seed data is not fully populated across all modalities
-data assimilation / EKF correction is planned but not implemented
-some frontend sections are demo placeholders pending block/history views
+```text
+review state -> review KPIs -> review active weak points -> inspect planned vs completed sessions -> simulate alternatives -> log actual work
+```
 
-The following are now implemented and stable:
+## Current Boundaries
 
-POST /v1/onboard (profile creation + baseline state seeding)
-GET /v1/next-session with weak-point and block-context injection
-Alembic migrations a000 (foundational tables) + a001 (benchmark KPI tables)
-model_version traceability on UnifiedStateVector and WorkoutPrescription
+Implemented and active:
 
-Invariants for API Consumers
+- auth
+- onboarding
+- simulate dose
+- log workout
+- next session
+- planning block/session MVP
+- today planned session
+- benchmark definitions/observations
+- derived KPI recomputation
+- dashboard KPI/readiness payloads
+- exercise-aware dose fallback path
+- candidate-based prescriber with validation/explainability
 
-These should remain true even as the API grows:
+Not yet exposed as standalone public APIs in the uploaded source:
 
-simulate-dose stays non-mutating
-log-workout remains the main state transition endpoint
-next-session remains recommendation-oriented
-the client should not need to understand internal model math to consume the API
-the backend remains the source of truth for S(t)
+- weak-point create/update/resolve routes outside onboarding/benchmark feedback
+- exercise library management routes
+- route-level tests were not provided in the uploaded source set

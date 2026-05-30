@@ -1,0 +1,115 @@
+{
+  "_comment": "Authoritative task state. Only the Orchestrator writes here. Do not edit manually.",
+  "_schema_version": "1.0",
+  "_empty_template": {
+    "task_id": "TASK-NNN",
+    "slug": "short-kebab-slug",
+    "status": "claimed | done | archived | blocked | reopened",
+    "owner": "planner | researcher | coder | critic | orchestrator | null",
+    "turn": 1,
+    "max_turns": 3,
+    "created": "YYYY-MM-DD HH:MM",
+    "updated": "YYYY-MM-DD HH:MM",
+    "handoff_file": "agent_collab/handoffs/claimed/TASK-NNN_slug_claimed.md",
+    "blocked_reason": null,
+    "reopen_reason": null
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-001",
+      "slug": "remove-dev-user-override",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:00",
+      "updated": "2026-05-29 00:04",
+      "handoff_file": "agent_collab/handoffs/done/TASK-001_remove-dev-user-override_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-002",
+      "slug": "persist-baseline-fields",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:05",
+      "updated": "2026-05-29 00:10",
+      "handoff_file": "agent_collab/handoffs/done/TASK-002_persist-baseline-fields_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-003",
+      "slug": "migrate-dose-engine-import",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:11",
+      "updated": "2026-05-29 00:20",
+      "handoff_file": "agent_collab/handoffs/done/TASK-003_migrate-dose-engine-import_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-004",
+      "slug": "auth-route-tests",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:20",
+      "updated": "2026-05-29 00:30",
+      "handoff_file": "agent_collab/handoffs/done/TASK-004_auth-route-tests_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-005",
+      "slug": "dashboard-route-tests",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:30",
+      "updated": "2026-05-29 00:40",
+      "handoff_file": "agent_collab/handoffs/done/TASK-005_dashboard-route-tests_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-006",
+      "slug": "block-goal-templates",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:40",
+      "updated": "2026-05-29 00:50",
+      "handoff_file": "agent_collab/handoffs/done/TASK-006_block-goal-templates_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-007",
+      "slug": "research-exercise-selection",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 00:50",
+      "updated": "2026-05-29 01:00",
+      "handoff_file": "agent_collab/handoffs/done/TASK-007_research-exercise-selection_done.md",
+      "blocked_reason": null
+    },
+    {
+      "task_id": "TASK-008",
+      "slug": "weak-point-routes",
+      "status": "done",
+      "owner": null,
+      "turn": 1,
+      "max_turns": 3,
+      "created": "2026-05-29 01:00",
+      "updated": "2026-05-29 01:10",
+      "handoff_file": "agent_collab/handoffs/done/TASK-008_weak-point-routes_done.md",
+      "blocked_reason": null
+    }
+  ]
+}

@@ -1,7 +1,28 @@
-# DEPRECATED: Legacy stub — do not import from this module.
-# Use app.logic.state_update_v0 for update_athlete_state and apply_benchmark_observation.
-# Use app.services.state_service for process_new_workout.
-# This file is kept to avoid breaking any external scripts; safe to delete once confirmed unused.
+"""
+DEPRECATED / TRANSITION MODULE
+
+This module is mostly a stub.
+
+**Current recommended modules:**
+
+- `app.logic.state_update_v0`          → Core state evolution functions
+  (update_athlete_state, apply_benchmark_observation, etc.)
+
+- `app.services.state_service`         → High-level workout processing
+
+- `app.logic.state_dynamics`           → Lower-level dynamics (if needed directly)
+
+This file is kept only to avoid breaking old imports. It will be removed after the transition.
+"""
+import warnings
+
+warnings.warn(
+    "app.logic.state_update is deprecated. "
+    "Use app.logic.state_update_v0 or app.services.state_service instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 
 from datetime import datetime
 from typing import Dict, Any

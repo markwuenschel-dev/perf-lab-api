@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Dict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
+# Prefer domain layer as source of truth (schemas re-export for compatibility)
+from app.domain.vectors import CapacityState, FatigueState, TissueState
 
 
 class UnifiedStateVector(BaseModel):
@@ -38,5 +39,4 @@ class UnifiedStateVector(BaseModel):
     skill_state: Dict[str, float] = Field(default_factory=dict)
     model_version: str = Field("v0.3", description="State engine version")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BenchmarkDefinitionRead(BaseModel):
@@ -21,8 +21,7 @@ class BenchmarkDefinitionRead(BaseModel):
     fatigue_targets: list[str] | None
     tissue_targets: list[str] | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BenchmarkObservationCreate(BaseModel):
@@ -53,8 +52,7 @@ class BenchmarkObservationRead(BaseModel):
     validity_status: str
     source: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecomputeDerivedResponse(BaseModel):

@@ -1,8 +1,34 @@
+"""
+DEPRECATED / TRANSITION MODULE
+
+This module contains the older dict-based dose calculation.
+
+**Preferred import for new code:**
+    from app.logic.dose_engine_v0 import calculate_stress_dose
+
+The modern engine (v0.3+) works with proper `WorkoutLog` / `ExerciseEntry` objects,
+supports per-exercise phi vectors, produces `StressDose` with `dose_six` + adaptation,
+and is the foundation for the refined mathematical model.
+
+This file is kept only for backward compatibility with older scripts and notebooks.
+It will be removed after the transition period.
+"""
+import warnings
+
 import numpy as np
+
 from app.engine.config import DOSE_PARAMS, MODALITY_WEIGHTS
 
+warnings.warn(
+    "app.logic.dose_engine is deprecated. "
+    "Use `from app.logic.dose_engine_v0 import calculate_stress_dose` for the current engine.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+
 def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
-    """Non-linear dose mapping (PDF Section 4.1)."""
+    """Legacy non-linear dose mapping (old dict interface)."""
     T = workout["duration_minutes"]
     RPE = workout["session_rpe"]
     RIR = workout.get("avg_rir", 3.0)
@@ -35,10 +61,10 @@ def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
     }
 
 
-# LEGACY: This module uses the numpy-based dose engine with signature:
-#   calculate_stress_doses(workout: dict, athlete_state: dict) -> dict
-# For the production v0.3 engine (WorkoutLog → StressDose), import from:
-#   app.logic.dose_engine_v0.calculate_stress_dose
-# The alias below is intentionally kept for any script that already imports it,
-# but it does NOT have the same signature as dose_engine_v0.calculate_stress_dose.
+# Legacy alias (kept for scripts that expect this name)
 calculate_stress_dose = calculate_stress_doses
+
+
+# Re-export the modern engine for convenience during transition
+from app.logic.dose_engine_v0 import calculate_stress_dose as calculate_stress_dose_v0  # noqa: F401,E402
+

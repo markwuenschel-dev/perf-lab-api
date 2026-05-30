@@ -6,7 +6,7 @@ from app.core.auth import get_current_user
 from app.models.user import User
 from app.schemas.workouts import WorkoutLog, StressDose
 from app.schemas.state import UnifiedStateVector
-from app.logic.dose_engine import calculate_stress_dose
+from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.services import state_service
 
 router = APIRouter(tags=["Ingest"])

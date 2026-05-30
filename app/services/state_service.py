@@ -33,6 +33,10 @@ def _build_baseline_vector(
     user_id: int,
     experience_level: str = "intermediate",
     squat_1rm_kg: float | None = None,
+    deadlift_1rm_kg: float | None = None,
+    bench_1rm_kg: float | None = None,
+    bodyweight_kg: float | None = None,
+    run_5k_seconds: float | None = None,
 ) -> tuple[UnifiedStateVector, AthleteState]:
     """Build S0 and the matching ORM row — does NOT touch the DB."""
     caps = _BASELINE_CAPACITIES.get(experience_level, _BASELINE_CAPACITIES["intermediate"])
@@ -67,9 +71,21 @@ async def initialize_athlete_state(
     *,
     experience_level: str = "intermediate",
     squat_1rm_kg: float | None = None,
+    deadlift_1rm_kg: float | None = None,
+    bench_1rm_kg: float | None = None,
+    bodyweight_kg: float | None = None,
+    run_5k_seconds: float | None = None,
 ) -> UnifiedStateVector:
     """Creates baseline S0 for a new user and commits it."""
-    _, row = _build_baseline_vector(user_id, experience_level, squat_1rm_kg)
+    _, row = _build_baseline_vector(
+        user_id,
+        experience_level,
+        squat_1rm_kg,
+        deadlift_1rm_kg,
+        bench_1rm_kg,
+        bodyweight_kg,
+        run_5k_seconds,
+    )
     db.add(row)
     await db.commit()
     await db.refresh(row)

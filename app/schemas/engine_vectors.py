@@ -1,14 +1,37 @@
 """
-Typed vectors for the full-spectrum engine (see PROJECT_AGENT_BRIEF.md).
+Typed vectors for the full-spectrum engine.
 
-All vectors use fixed keys so JSONB storage and API responses stay stable.
+These are now re-exported from the domain layer (app/domain/vectors.py),
+which is the canonical source of truth for the mathematical model.
+
+This file is kept for backward compatibility during the transition.
+New internal engine code should prefer:
+
+    from app.domain.vectors import CapacityState, ...
 """
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal, Mapping
+# Re-export everything from the domain layer so existing imports continue to work
+from app.domain.vectors import (  # noqa: F401
+    AdaptationContribution,
+    CapacityKey,
+    CapacityState,
+    EnergyMix,
+    FatigueKey,
+    FatigueState,
+    PhiVectors,
+    StressDoseSix,
+    TissueKey,
+    TissueState,
+)
 
-from pydantic import BaseModel, Field, field_validator
+# The rest of this file is intentionally left minimal during transition.
+# All actual model definitions now live in app/domain/vectors.py
+
+from typing import ClassVar, Literal, Mapping  # noqa: F401
+
+from pydantic import BaseModel, Field, field_validator  # noqa: F401
 
 
 CapacityKey = Literal[

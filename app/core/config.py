@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    # CORS — comma-separated list of allowed origins.
+    # Defaults to local dev origins only. Override via ALLOWED_ORIGINS env var.
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
     # Future features
     USE_STRUCTURED_COACHING_TEMPLATES: bool = True
 

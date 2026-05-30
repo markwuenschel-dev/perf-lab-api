@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 class OnboardRequest(BaseModel):
-    email: str
     experience_years: float = Field(0.0, ge=0)
     experience_level: str = "intermediate"
     available_days_per_week: int = Field(3, ge=1, le=7)

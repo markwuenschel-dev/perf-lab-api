@@ -2,428 +2,438 @@
 
 ## Purpose
 
-Performance Lab is a training engine that models the athlete rather than a single sport-specific output. The system maintains a latent internal state `S(t)` representing capacities, batteries, fatigues, and adaptation signals, then uses new workout inputs to update that state and choose the next session.
+Performance Lab is an adaptive training engine that models the athlete rather than a single workout, race, or lift. It maintains a latent internal state `S(t)` across capacities, fatigues, tissue stress, skill, habit, and adaptation signals. It uses workouts and benchmark observations to update that state, then prescribes the next useful session.
 
-At a high level, the architecture is:
+High-level architecture:
 
+```text
+Workout Log
+   -> Stress Dose Engine D(t)
+   -> State Update Engine S(t+1)
+   -> Prescriber u(t)
+   -> API Response + Persistence
+
+Benchmark Observation
+   -> Observation Mapping
+   -> State Nudge S(t+1)
+   -> Weak-Point / KPI Updates
+   -> Prescriber Context
 ```
-Workout / Test Input
-        ↓
-Stress Dose Engine  →  D(t)
-        ↓
-State Update Engine →  S(t+1)
-        ↓
-Prescriber          →  u(t)
-        ↓
-API Response + Persistence
-```
-
-Where:
-
-- `D(t)` is the computed stress dose from a workout or test
-- `S(t)` is the current internal athlete state
-- `u(t)` is the recommended next session
-
----
 
 ## Design Goals
 
-The system is built around five design goals:
+1. Model the athlete, not just the event.
+2. Separate raw inputs, modeled state, plans, measurements, and prescriptions.
+3. Preserve history.
+4. Support multiple time scales.
+5. Stay API-first.
+6. Keep the system legible enough to debug.
 
-### 1. Model the athlete, not just the event
-The engine tracks latent internal state across systems rather than only returning a pace, time, or 1RM estimate.
+## Runtime Entrypoint
 
-### 2. Separate input, state, and prescription
-- Raw workout logs are not the same thing as internal state.
-- Internal state is not the same thing as the next prescription.
+The canonical backend entrypoint is:
 
-### 3. Support multiple time scales
-Fast fatigue and slower adaptation are stored separately. This lets the system distinguish "can perform today" from "has improved over time."
+```bash
+uvicorn app.main:app --reload
+```
 
-### 4. Preserve history
-State is persisted as a time series, not overwritten in place. Workout logs are stored independently so the system can be replayed if the dose engine changes.
+The FastAPI application is `app.main:app`.
 
-### 5. Stay API-first
-The backend exposes simple JSON endpoints while keeping the model complexity internal.
+Application startup:
 
----
+- verifies database connectivity
+- checks Alembic head
+- does not mutate schema
+- does not call `Base.metadata.create_all`
 
-## Runtime Components
+Schema management is handled through Alembic migrations only.
+
+## Router Layout
+
+Auth and legacy routes are outside `/v1`:
+
+```text
+/auth/register
+/auth/token
+/auth/me
+/compute-metrics
+/program/run
+/program/strength
+/ping
+```
+
+Modern routes are under `/v1`:
+
+```text
+/v1/onboard
+/v1/simulate-dose
+/v1/log-workout
+/v1/next-session
+/v1/planning/*
+/v1/benchmarks/*
+/v1/dashboard/*
+```
+
+Routers included by the app:
+
+- auth
+- legacy
+- ingest
+- prescribe
+- benchmarks
+- dashboard
+- planning
+- onboard router
+
+## Core Backend Components
 
 ### 1. API Layer
 
-The API is served through FastAPI.
+FastAPI routes handle transport, auth dependencies, request/response models, and error shaping. They should stay thin.
 
-There are currently two entry-point patterns in the repo:
+Examples:
 
-- `app.main:app` — preferred versioned API
-- `main:app` — legacy/demo entry with extra endpoints
-
-The preferred app includes:
-
-- `auth` router
-- `ingest` router
-- `prescribe` router
-- `/ping` health endpoint
-
-Planned routers already signposted in code:
-
-- `blocks`
-- `weak_points`
-- `onboarding`
-
-This gives the system a clear boundary between transport concerns and training logic.
-
----
+- `ingest.py` delegates workout processing to `state_service`
+- `prescribe.py` gathers context and delegates prescription to `recommend_next_session`
+- `planning.py` delegates block/session generation to `planning_service`
+- `benchmarks.py` delegates observation handling to `benchmark_service`
 
 ### 2. Stress Dose Engine
 
+Preferred implementation:
+
+```python
+app.logic.dose_engine_v0.calculate_stress_dose
+```
+
+Deprecated compatibility module:
+
+```python
+app.logic.dose_engine
+```
+
 The dose engine converts a `WorkoutLog` into a `StressDose`.
 
-```
-WorkoutLog → StressDose
-```
+It supports:
 
-The current `StressDose` schema includes:
-
-| Field | Description |
-|---|---|
-| `d_met_systemic` | Metabolic systemic stress |
-| `d_nm_peripheral` | Neuromuscular peripheral stress |
-| `d_nm_central` | Neuromuscular central stress |
-| `d_struct_damage` | Structural damage |
-| `d_struct_signal` | Structural adaptation signal |
-
-This layer exists so the raw workout does not directly mutate athlete state. Instead, the workout is first translated into a normalized internal dose vector. That separation lets the same system handle very different modalities while still updating a shared latent state.
-
----
+- modality-level fallback
+- dominant movement pattern inference
+- per-exercise dose when entries are supplied
+- phi adaptation/fatigue/tissue vectors
+- energy mix
+- six-axis dose vector
+- adaptation contribution vector
+- legacy scalar dose channels
 
 ### 3. State Update Engine
 
-The state update engine evolves the athlete from `S(t)` to `S(t+1)`.
+Preferred implementation:
 
-The current orchestration flow in `process_new_workout` is:
-
-1. Load the most recent persisted athlete state
-2. Create a baseline state if none exists
-3. Compute `D(t)` from the workout log
-4. Compute elapsed time `dt`
-5. Apply the update rules to produce a new state
-6. Persist a new `AthleteState` row
-
-> **Important:** The system persists a new state snapshot rather than mutating the old one. This is the core modeling decision in the whole project. It preserves temporal history and makes future replay, auditability, and model-version migration much easier.
-
----
-
-### 4. Prescriber
-
-The prescriber reads the latest state and returns the next recommended session.
-
-```
-Current State S(t) + Goal + Constraints + Weak Points + Block Context → Prescription u(t)
+```python
+app.logic.state_update_v0.update_athlete_state
 ```
 
-The prescriber incorporates:
+The state update engine applies:
 
-- Current fatigue state and capacities
-- Goal context
-- Active MesocycleBlock + today's PlannedSession (block_context — applies a
-  +0.15 score bias toward candidates matching the planned session category)
-- Active unresolved WeakPoint tags (active_weak_points — annotates
-  constraints_applied in the explanation with weak_point:{tag} entries)
-- Exercise availability / equipment constraints (available_equipment is fetched
-  from AthleteProfile and applied in current prescription output)
+- multi-timescale fatigue decay
+- tissue stress decay
+- recovery effects from sleep and life stress
+- fatigue impulses from dose
+- tissue impulses from dose
+- structural signal accumulation
+- explicit adaptation gains by capacity axis
+- cross-talk effects
+- legacy scalar mirror syncing
 
-The resulting `WorkoutPrescription` includes `model_version`, `exercises`, and
-a `PrescriptionExplanation` (why) with structured rationale.
+### 4. State Service
 
-If a `PlannedSession` exists for today, the prescriber writes the generated
-prescription back to `PlannedSession.prescribed_content`.
+Primary service:
 
-The project's long-term value lives here. The dose engine and state model explain what is happening; the prescriber decides what to do next.
+```python
+app.services.state_service.process_new_workout
+```
 
----
+Responsibilities:
 
-### 5. Persistence Layer
+1. fetch latest `AthleteState`
+2. build baseline state if missing
+3. resolve exercise phi vectors from the `Exercise` table
+4. calculate stress dose
+5. persist `WorkoutLog` and dose snapshot
+6. link or same-day match a planned session
+7. mark planned session completed
+8. clamp negative `dt`
+9. persist new `AthleteState`
+10. return unified state
 
-The persistence model is intentionally split into different categories of data:
+Baseline initialization is handled by:
 
-| Category | Purpose |
-|---|---|
-| Event history | What happened |
-| State history | What the system believed |
-| Planning objects | What was intended |
-| Supporting metadata | Why choices were made |
+```python
+initialize_athlete_state(...)
+```
 
-This separation prevents a common failure mode: collapsing logs, state, and plan into one table and losing replayability.
+### 5. State Bridge
 
----
+`app.engine.state_bridge` maps between ORM rows and `UnifiedStateVector`.
+
+It keeps these aligned:
+
+- legacy scalar columns
+- `engine_state` JSONB
+- Pydantic `UnifiedStateVector`
+
+This lets old clients continue using scalar fields while the engine evolves through decomposed vectors.
+
+### 6. Planning Service
+
+`create_block_with_sessions()` creates a `MesocycleBlock` and generated `PlannedSession` rows.
+
+Current behavior:
+
+- computes `end_date`
+- uses default goal templates when no weekly template is supplied
+- marks deload weeks
+- marks periodic benchmark sessions
+- commits generated rows
+
+`get_today_session()` returns today's pending planned session.
+
+### 7. Benchmark Service
+
+Benchmark service supports:
+
+- listing benchmark definitions
+- listing observations
+- creating observations
+- applying observation mappings to state
+- creating/resolving benchmark weak points
+- recomputing derived KPI snapshots
+
+Benchmark observations can create new `AthleteState` rows independently of workout logs.
+
+### 8. Dashboard Service
+
+Dashboard service supports:
+
+- latest valid observation lookup by benchmark code
+- latest KPI values
+- derived metric recomputation
+- dashboard KPI bundle
+- domain summary
+- readiness payload with KPI flags
+
+### 9. Prescriber
+
+`recommend_next_session()` is candidate-based.
+
+Inputs:
+
+- state
+- goal
+- recent sessions
+- KPI summary
+- active weak points
+- available equipment
+- block context
+
+Pipeline:
+
+```text
+safety overrides
+  -> goal candidates + readiness redirects
+  -> scoring
+  -> finalization
+  -> equipment exercise payload
+  -> explanation annotations
+```
+
+Finalization attaches validation, provenance, source alignment, warnings, and structured template metadata.
+
+## Persistence Architecture
+
+The schema separates data by meaning.
+
+| Layer | Tables | Meaning |
+|---|---|---|
+| Identity | users, athlete_profiles | account + setup |
+| Event history | workout_logs | completed workouts |
+| Measurement history | benchmark_observations | tests / benchmarks |
+| State history | athlete_states | model belief timeline |
+| Planning | mesocycle_blocks, planned_sessions | intended future work |
+| Bias signals | weak_points | limitations and evidence |
+| Movement library | exercises | prescribable movements |
+| Metrics | benchmark_definitions, derived_metric_definitions, derived_metric_snapshots, observation_mappings | benchmark/KPI system |
 
 ## Core Domain Objects
 
-### Athlete State `S(t)`
+### UnifiedStateVector
 
-The unified athlete state stores multiple classes of internal variables.
+Contains:
 
-#### Capacities
-Slow-changing ceilings:
-- `c_met_aerobic`
-- `c_nm_force`
-- `c_struct`
-
-These represent longer-horizon capability rather than same-day readiness.
-
-#### Batteries
-Fast-recharge energetic reserve:
-- `b_met_anaerobic`
-
-This captures finite high-intensity work capacity.
-
-#### Fatigues
-Shorter-horizon costs:
-- `f_met_systemic`
-- `f_nm_peripheral`
-- `f_nm_central`
-- `f_struct_damage`
-
-These are the main readiness suppressors.
-
-#### Signals
-Adaptation triggers:
+- `capacity_x`
+- `fatigue_f`
+- `tissue_t`
+- legacy scalar mirrors
 - `s_struct_signal`
-
-These represent productive stimuli rather than only cost.
-
-#### Human Factors
-Behavioral / technical modifiers:
 - `habit_strength`
 - `skill_state`
+- `model_version`
 
-This is an important design choice: the engine is not purely physiological.
+### WorkoutLog DTO
 
----
+Contains:
 
-### Workout Input
+- session timestamp
+- modality
+- duration
+- RPE/RIR
+- distance/volume
+- movement pattern
+- novelty
+- estimated sets
+- sleep/stress
+- optional exercise entries
+- planning/benchmark metadata
 
-The current workout input schema supports:
+### StressDose
 
-- `timestamp`
-- `modality`
-- `duration`
-- Session RPE
-- Optional RIR
-- Optional distance / volume
-- Sleep quality
-- Inverse life stress
+Contains:
 
-This means the system already treats training as more than external load — it includes human context directly in the state transition.
+- six-dimensional dose
+- adaptation contribution
+- legacy scalar channels
 
----
+### WorkoutPrescription
 
-## Control Loop
+Contains:
 
-### Step 1: Input arrives
-A workout log is submitted to the API.
+- session display fields
+- engine model version
+- exercises
+- structured `why`
 
-### Step 2: Dose is computed
-The workout is translated into internal stress terms `D(t)`.
+### BenchmarkObservation
 
-### Step 3: Current state is loaded
-The engine retrieves the latest stored `AthleteState`. If none exists, it creates a baseline `S0`.
+Contains:
 
-### Step 4: Time delta is computed
-Elapsed time since the last state is calculated. If the incoming workout timestamp is older than the current state timestamp, the system clamps `dt` to zero rather than allowing a negative transition.
+- benchmark definition reference
+- raw and normalized values
+- observation metadata
+- validity/source fields
 
-### Step 5: State is updated
-The update engine applies decay, fatigue accumulation, signal generation, and adaptation logic to produce `S(t+1)`.
+## Control Loops
 
-### Step 6: New state is persisted
-A new `AthleteState` row is written.
+### Workout loop
 
-### Step 7: Prescription is produced
-The prescriber chooses the next recommended session based on current state and goal.
+```text
+User logs workout
+  -> service resolves exercise phi vectors
+  -> dose engine computes D(t)
+  -> workout log + dose snapshot persisted
+  -> state update computes S(t+1)
+  -> new athlete state row persisted
+  -> planned session completed if matched
+```
 
----
+### Prescription loop
 
-## API Surface
+```text
+Client asks next-session
+  -> latest state loaded or initialized
+  -> weak points loaded
+  -> active block / today session loaded
+  -> recent workouts loaded
+  -> latest KPIs loaded
+  -> prescriber recommends u(t)
+  -> planned session content written if applicable
+```
 
-### Implemented endpoints (as of v0.3, April 2026)
+### Planning loop
 
-#### `POST /v1/onboard`
-First-run setup. Creates AthleteProfile + optional WeakPoints + seeds S0.
-- **Input:** `OnboardRequest` (email, experience_level, squat_1rm_kg, …)
-- **Output:** `OnboardResponse` (user_id, profile_id, message)
-- **Mutates state:** Yes — seeds baseline AthleteState
+```text
+Client creates block
+  -> block persisted
+  -> sessions generated from template
+  -> deload and benchmark flags assigned
+  -> today/session endpoints expose slots
+```
 
-#### `POST /v1/simulate-dose`
-Pure transform — no state mutation.
-- **Input:** `WorkoutLog`
-- **Output:** `StressDose`
+### Benchmark loop
 
-#### `POST /v1/log-workout`
-State-changing path.
-- **Input:** `WorkoutLog`
-- **Behavior:** Resolves exercise phi vectors, computes dose, updates state, persists new row atomically
-- **Output:** Updated `UnifiedStateVector` (includes `model_version`)
+```text
+Client posts observation
+  -> definition loaded
+  -> observation persisted
+  -> observation mappings applied to state if valid
+  -> weak points updated
+  -> derived KPIs recomputed
+```
 
-#### `GET /v1/next-session`
-Control output.
-- **Input:** Latest state + goal (query param)
-- **Behavior:** Queries active WeakPoints + active MesocycleBlock/PlannedSession;
-  may write prescription to PlannedSession.prescribed_content
-- **Output:** `WorkoutPrescription` (includes `model_version`, `exercises`, `why`)
+## Frontend Architecture Summary
 
-#### `POST /v1/planning/blocks`
-Creates a mesocycle block and auto-generates planned session rows.
+The frontend is a React/TypeScript SPA that mirrors backend domain concepts.
 
-#### `GET /v1/planning/blocks`
-Lists the authenticated user’s planning blocks.
+Main surfaces:
 
-#### `PATCH /v1/planning/blocks/{block_id}`
-Updates block metadata/status.
+- auth strip
+- onboarding form
+- digital twin panel
+- planning panel
+- legacy field-test column
 
-#### `GET /v1/planning/sessions`
-Lists planned sessions (supports date-window filtering).
+The central API wrapper is `src/api/perfLabClient.ts`.
 
-#### `PATCH /v1/planning/sessions/{session_id}`
-Updates session status or scheduled date (skip/reschedule/complete workflows).
+The central type mirror is `src/types.ts`.
 
-#### `GET /v1/planning/today`
-Returns today’s pending planned session slot plus prescription context.
+Frontend control loop:
 
-#### `GET /ping`
-Health check.
+```text
+GET /v1/next-session
+POST /v1/simulate-dose
+POST /v1/log-workout
+GET /v1/next-session
+```
 
----
+Planning UI adds:
 
-## Frontend Architecture
-
-The current frontend acts as a thin control console over the API.
-
-It supports planning plus the original twin loop:
-
-1. Create/manage blocks and planned sessions
-2. Simulate a dose without changing state
-3. Log a workout and update `S(t)` (with planned-session linkage)
-4. Request a new prescription / today slot context
-
-The UI mirrors the actual backend architecture rather than inventing a separate front-end-only mental model.
-
----
-
-## Planning Layer
-
-Beyond the immediate state loop, the architecture includes a macro-planning layer:
-
-- `MesocycleBlock`
-- `PlannedSession`
-
-This allows the system to bridge from long-range goal structure to daily adaptive prescription.
-
-- A **block** defines intent, template, and cadence.
-- A **planned session** defines a concrete training slot.
-- The **prescriber** can then populate prescribed content lazily when the athlete opens that day's session.
-
-This is the right boundary between planning and adaptation:
-- The block sets direction.
-- The current state sets today's constraints.
-
----
-
-## Weak Point Layer
-
-Weak points are modeled explicitly as first-class data, not just hidden heuristics.
-
-Each weak point includes:
-
-- Canonical tag
-- Source
-- Confidence
-- Optional note
-- Resolution status
-
-This design lets the system distinguish:
-
-- What the **user thinks** is weak
-- What a **benchmark shows** is weak
-- What the **model infers** is weak
-
-Those signals can later be aggregated by the prescriber instead of being flattened into a binary flag.
-
----
-
-## Exercise Library Layer
-
-The exercise library is the catalog the prescriber uses to turn an abstract session into concrete movements.
-
-Each exercise stores:
-
-- Modality
-- Movement pattern
-- Primary / secondary muscles
-- Equipment requirements
-- Load type
-- Skill demand
-- Impact level
-- Weak-point tags
-- Benchmark flag
-- Coaching notes
-- Extra metadata
-
-Prescription is not just "choose intensity" — it is also "choose the right implementation given constraints."
-
----
-
-## Persistence Strategy
-
-The project uses an event-plus-state model:
-
-| Object | Represents |
-|---|---|
-| `WorkoutLog` | What happened |
-| `AthleteState` | What the engine believed after processing it |
-| `PlannedSession` | What was intended |
-| `WeakPoint` | What the system thinks needs biasing |
-| `Exercise` | What can be prescribed |
-
-That separation should be preserved. A common bad refactor would be merging logs and state to "simplify" the schema — that would make replay, debugging, and model evolution much worse.
-
----
+```text
+POST /v1/planning/blocks
+GET /v1/planning/blocks
+GET /v1/planning/sessions
+PATCH /v1/planning/sessions/{id}
+```
 
 ## Invariants
 
-These are the architectural invariants the code should continue to respect.
-
-1. **State snapshots are append-only** — never overwrite athlete state in place.
-2. **Workout logs remain separate from state** — logs are raw events; state is model interpretation.
-3. **The dose engine is an intermediate layer** — workouts should not directly modify state without going through `D(t)`.
-4. **Prescription depends on current state, not just the last workout** — the controller should act on modeled readiness and trend, not only recency.
-5. **Planning and adaptation stay distinct** — blocks define structure; state defines day-level modulation.
-
----
+1. State snapshots are append-only.
+2. Workout logs remain separate from state.
+3. Benchmarks remain separate from workouts unless explicitly linked by flow.
+4. Plans remain separate from completed logs.
+5. Dose is an intermediate layer for workout-driven updates.
+6. Observation mappings are the benchmark-to-state bridge.
+7. Prescription depends on current state and context, not only the last workout.
+8. Weak points bias but do not dominate.
+9. Equipment constraints should eventually be hard filters.
+10. Alembic controls schema state.
 
 ## Current Limitations
 
-The core loop is operational. Remaining planned-but-not-yet-implemented layers:
+Implemented:
 
-- Block creation and calendar-generation routes (`MesocycleBlock` CRUD) — the
-  prescriber can read blocks if rows exist, but there is no public API to create
-  or manage them yet
-- `weak_points` write routes — weak points can be seeded via `/v1/onboard` but
-  there is no standalone API to add, update, or resolve them yet
-- Equipment-aware exercise selection — `AthleteProfile.equipment` is stored but
-  not yet queried in the prescriber's exercise filter step
-- Modality-aware versioning — planned but not implemented
-- Data assimilation / EKF correction — conceptual, not implemented
-- Some frontend sections remain demo placeholders pending block/history views
+- core workout loop
+- onboarding
+- planning MVP
+- benchmark/KPI MVP
+- candidate prescriber
+- validation/explainability finalization
+- frontend planning and twin surfaces
 
-Items completed in v0.3:
+Still missing or partial:
 
-- Alembic migrations: a000 (foundational) + a001 (benchmark KPI tables)
-- `POST /v1/onboard` endpoint (profile + weak points + baseline state)
-- Profile-aware baseline seeding (4-tier capacity table)
-- Weak-point injection into prescriber (DB query + constraints_applied annotation)
-- Block context injection into prescriber (score bias + prescription persistence)
-- `model_version` on `UnifiedStateVector` and `WorkoutPrescription`
-- Import chain corrected: service layer imports from v0.3 engine modules
-- 20 unit + integration tests
+- standalone weak-point management API
+- exercise library management API
+- DB-driven exercise selection in prescriber
+- full frontend benchmark/dashboard UI
+- route and scenario tests in uploaded source set
+- removal of DEV ONLY `user_id` next-session override
+- full persistence of all onboarding baseline fields

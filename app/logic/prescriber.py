@@ -1,23 +1,31 @@
 """
-Candidate-based prescription engine.
+Candidate-based prescription engine (orchestrator).
 
-Architecture:
-  1. Hard safety overrides  — identical hard stops from v1; always override.
-  2. Candidate generation   — goal + state + weak points → pool of session candidates.
-  3. Constraint validation  — filter candidates that would violate hard constraints.
-  4. Candidate scoring      — rank by goal alignment, state needs, fatigue cost,
-                              tissue cost, novelty, habit bias, template bias.
-  5. Finalize               — attach explainability and provenance to winner.
+Responsibilities:
+- Generate goal-aware + state-aware SessionCandidate pools
+- Apply hard safety overrides
+- Orchestrate scoring + block context + equipment/weak-point logic
+- Finalize the chosen prescription with explainability
 
-The output is still a WorkoutPrescription, but its contents are assembled from
-scored candidates rather than hardcoded per-goal branches.
+Core domain types (`SessionCandidate`, scoring primitives, readiness helpers)
+live in `app.logic.constraint_engine.candidate`.
+
+The constraint_engine package also provides template-driven validation
+(`SessionValidator`) used by the coaching template system.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Optional
 
+from app.logic.constraint_engine.candidate import (
+    SessionCandidate,
+    score_candidate as _score_candidate,
+    apply_block_context_boost,
+    mean_fatigue,
+    max_tissue_load,
+    overall_readiness as _readiness,
+)
 from app.logic.domain_vocab import GOAL_TO_DOMAIN
 from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
@@ -25,80 +33,9 @@ from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 
 
-# ---------------------------------------------------------------------------
-# Candidate data class
-# ---------------------------------------------------------------------------
-
-@dataclass
-class SessionCandidate:
-    type: str
-    focus: str
-    rationale: str
-    duration_min: int
-    branch_id: str
-
-    # Scoring axes (0–1 each, higher = better)
-    goal_alignment: float = 1.0        # How directly this serves the stated goal
-    state_fit: float = 1.0             # Matches current capacity/need
-    fatigue_penalty: float = 0.0       # Estimated fatigue cost (penalizes)
-    tissue_penalty: float = 0.0        # Estimated tissue stress (penalizes)
-    novelty_bonus: float = 0.0         # Variation bonus (mild)
-    habit_bonus: float = 0.0           # Adherence alignment
-    template_bias: float = 0.0         # Template-guided preference
-
-    # Weak-point coverage: fraction of active weak-point tags addressed
-    weak_point_coverage: float = 0.0
-
-    # Set True to mark as a hard-safety override — skips scoring, always wins
-    is_safety_override: bool = False
-
-
-# ---------------------------------------------------------------------------
-# Candidate scoring
-# ---------------------------------------------------------------------------
-
-_SCORE_WEIGHTS = {
-    "goal_alignment": 0.30,
-    "state_fit": 0.25,
-    "weak_point_coverage": 0.15,
-    "fatigue_penalty": -0.15,   # negative: high penalty → lower score
-    "tissue_penalty": -0.08,
-    "novelty_bonus": 0.04,
-    "habit_bonus": 0.03,
-    "template_bias": 0.05,       # unused yet; reserved for template-guided bias
-}
-
-
-def _score_candidate(c: SessionCandidate) -> float:
-    """Linear weighted score in [0, 1] range."""
-    s = 0.0
-    for axis, w in _SCORE_WEIGHTS.items():
-        s += w * getattr(c, axis)
-    return max(0.0, min(1.0, s))
-
-
-# ---------------------------------------------------------------------------
-# Fatigue / tissue readiness helpers
-# ---------------------------------------------------------------------------
-
-def _mean_fatigue(state: UnifiedStateVector) -> float:
-    f = state.fatigue_f
-    values = [f.cns, f.muscular, f.metabolic, f.structural, f.tendon, f.grip]
-    return sum(values) / len(values)
-
-
-def _tissue_max(state: UnifiedStateVector) -> float:
-    t = state.tissue_t
-    return max(
-        t.shoulder, t.elbow, t.wrist, t.lumbar,
-        t.hip, t.knee, t.ankle, t.finger,
-    )
-
-
-def _readiness(state: UnifiedStateVector) -> float:
-    """Overall readiness 0–1 (1 = fully fresh)."""
-    mf = _mean_fatigue(state)
-    return max(0.0, 1.0 - mf / 100.0)
+# Note: SessionCandidate, scoring, and readiness helpers now live in
+# app.logic.constraint_engine.candidate for better separation of concerns.
+# We import them at the top of this file.
 
 
 # ---------------------------------------------------------------------------
@@ -582,8 +519,8 @@ def _gen_general_candidates(
             branch_id="gpp_balanced",
             goal_alignment=0.9,
             state_fit=readiness,
-            fatigue_penalty=_mean_fatigue(state) / 100.0 * 0.5,
-            tissue_penalty=_tissue_max(state) / 100.0 * 0.3,
+            fatigue_penalty=mean_fatigue(state) / 100.0 * 0.5,
+            tissue_penalty=max_tissue_load(state) / 100.0 * 0.3,
             habit_bonus=state.habit_strength,
         ),
     ]

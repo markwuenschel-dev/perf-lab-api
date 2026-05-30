@@ -4,10 +4,16 @@ Pytest configuration and shared fixtures.
 DB fixtures use a dedicated test database (perflab_test). If the DB is
 unavailable the tests are skipped gracefully — they're integration tests
 that require a running Postgres instance.
+
+Improved strategy (v0.3+):
+- Schema is dropped for clean isolation per test.
+- Tables are created via Alembic migrations (not Base.metadata.create_all).
+  This catches migration drift and keeps test schema faithful to production.
 """
 import os
 import asyncio
 
+import httpx
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
@@ -15,9 +21,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-# Import all models so Base.metadata is populated before create_all
-import app.models  # noqa: F401 — registers all models with Base
-from app.core.db import Base
+from alembic.config import Config
+from alembic import command
+
+# Still import models for relationship wiring if needed, but we no longer rely on create_all
+import app.models  # noqa: F401
+from app.core.db import get_db
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -43,34 +52,56 @@ def event_loop():
 @pytest_asyncio.fixture(scope="function")
 async def async_db():
     """
-    Async DB session fixture.
+    Async DB session fixture (Alembic-aligned).
 
-    Creates all tables before the test, yields a session, and drops all tables
-    after. Each test function gets a clean DB slate.
-
-    Skip gracefully if the DB is unavailable.
+    - Drops the public schema for a completely clean slate per test.
+    - Runs Alembic migrations to head (instead of Base.metadata.create_all).
+      This ensures tests exercise the same schema that production uses.
+    - Skips gracefully if the test database is unavailable.
     """
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
+
     try:
-        # Clean slate for every test — handles leftover data from crashed runs
+        # 1. Clean slate
         async with engine.begin() as conn:
-            await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
+            await conn.execute(sa.text("DROP SCHEMA IF EXISTS public CASCADE"))
             await conn.execute(sa.text("CREATE SCHEMA public"))
             await conn.execute(sa.text("GRANT ALL ON SCHEMA public TO PUBLIC"))
-            await conn.run_sync(Base.metadata.create_all)
+
+        # 2. Run real migrations (this is the key improvement)
+        alembic_cfg = Config("alembic.ini")
+        # Override the URL so Alembic targets the test database
+        alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL.replace("+asyncpg", ""))
+        command.upgrade(alembic_cfg, "head")
+
     except Exception as exc:
         await engine.dispose()
-        pytest.skip(f"Test DB unavailable ({TEST_DATABASE_URL}): {exc}")
+        pytest.skip(f"Test DB unavailable or migration failed ({TEST_DATABASE_URL}): {exc}")
 
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
 
     async with factory() as session:
         yield session
 
-    # Drop everything — use CASCADE to handle circular FKs between
-    # planned_sessions and workout_logs cleanly.
-    async with engine.begin() as conn:
-        await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
-        await conn.execute(sa.text("CREATE SCHEMA public"))
-        await conn.execute(sa.text("GRANT ALL ON SCHEMA public TO PUBLIC"))
+    # Cleanup
     await engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def http_client(async_db: AsyncSession):
+    """
+    Async HTTP test client wired to the FastAPI app with the test DB session
+    injected via dependency override. No lifespan is triggered — tables are
+    managed by the async_db fixture.
+    """
+    from app.main import app
+
+    async def _override_get_db():
+        yield async_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    app.dependency_overrides.pop(get_db, None)

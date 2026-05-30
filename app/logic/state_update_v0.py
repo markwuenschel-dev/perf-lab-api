@@ -1,13 +1,17 @@
 """
-State evolution S(t) → S(t+1): multi-component fatigue, tissue load, explicit
-capacity adaptation, legacy scalar sync, and benchmark observation assimilation.
+Current production athlete state evolution engine.
 
-Key changes vs v1:
-- Explicit adaptation gains per capacity axis driven by AdaptationContribution
-- Fatigue-suppression of adaptation efficiency
-- Domain cross-talk rules (aerobic→work_capacity, hypertrophy→max_strength, skill∩CNS)
-- Benchmark-driven state updates use the observation's actual observed_at timestamp
-  (fixes chronological correctness — no more utcnow() on benchmark writes)
+Handles:
+- Multi-timescale fatigue decay
+- Tissue load accumulation
+- Capacity adaptation driven by AdaptationContribution vectors
+- Cross-talk between domains
+- Benchmark observation assimilation with correct timestamps
+
+This is the preferred module for state updates. See also:
+- `app.logic.state_dynamics`
+- `app.logic.cross_talk`
+- `app.services.state_service`
 """
 
 from __future__ import annotations
