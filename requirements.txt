@@ -1,6 +1,16 @@
 # =============================================
-# Performance Lab API - requirements.txt
+# Performance Lab API - requirements.txt (LEGACY)
 # =============================================
+#
+# Prefer the new pyproject.toml + pip install -e ".[dev]" workflow.
+# This file is kept for backward compatibility during transition.
+#
+# To install with modern tooling:
+#   pip install -e ".[dev]"
+#   # or for optional features:
+#   pip install -e ".[dev,llm]"
+# =============================================
+
 
 # Core API stack
 fastapi>=0.115.0

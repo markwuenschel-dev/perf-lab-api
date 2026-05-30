@@ -66,14 +66,17 @@ The API exposes JSON endpoints; the complexity is internal.
 
 ---
 
-## Two FastAPI entry points
+## FastAPI Entrypoint (Single Source of Truth)
 
-| Entry | Command | Role |
-|--------|---------|------|
-| **Primary** | `uvicorn app.main:app --reload` | Auth, `/v1` digital twin (JWT on protected routes), `/ping` |
-| **Legacy** | `uvicorn main:app --reload` | Running metrics + program endpoints; older app shell; may create DB tables on startup |
+**Use only this command:**
 
-Use **both** locally if you need VO₂ `/compute-metrics` from the legacy app while testing v1 + auth on `app.main:app`.
+```bash
+uvicorn app.main:app --reload
+```
+
+The root `main.py` (`uvicorn main:app`) is **deprecated**. It still works for the old VO₂ calculators and program generators (now served via the included legacy router), but it is no longer maintained and will be removed in a future release.
+
+All new development and deployment should use `app.main:app`. The legacy running calculators remain available under the modern app for backward compatibility.
 
 ---
 
@@ -164,22 +167,18 @@ python -m app.scripts.seed_exercises
 
 ## Running the API
 
-**Primary (auth + v1):**
+**Recommended (only supported entrypoint):**
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-**Legacy (VO₂ + programs):**
-
-```bash
-uvicorn main:app --reload
-```
-
 Then open:
 
 - Docs: http://127.0.0.1:8000/docs
-- Health: http://127.0.0.1:8000/ping (on `app.main:app` only)
+- Health: http://127.0.0.1:8000/ping
+
+The root `main.py` entrypoint is deprecated and should no longer be used.
 
 **Production-style:**
 

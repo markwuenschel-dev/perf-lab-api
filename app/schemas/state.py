@@ -3,7 +3,8 @@ from typing import Dict
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
+# Prefer domain layer as source of truth (schemas re-export for compatibility)
+from app.domain.vectors import CapacityState, FatigueState, TissueState
 
 
 class UnifiedStateVector(BaseModel):

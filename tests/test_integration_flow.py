@@ -139,6 +139,83 @@ async def test_fatigue_accumulates_across_sessions(async_db):
     )
 
 
+async def test_onboard_persists_all_baseline_fields(async_db):
+    """
+    POST /v1/onboard with all five baseline fields → AthleteProfile row must
+    contain non-null values for every mapped column.
+
+    Mapping verified:
+      squat_1rm_kg   → profile.squat_1rm
+      deadlift_1rm_kg → profile.deadlift_1rm
+      bench_1rm_kg   → profile.bench_1rm
+      bodyweight_kg  → profile.bodyweight_kg
+      run_5k_seconds → profile.run_5k_seconds
+    """
+    from httpx import AsyncClient, ASGITransport
+    from sqlalchemy import select as sa_select
+    from app.main import app
+    from app.core.db import get_db
+    from app.models.user import AthleteProfile
+
+    async def _override_get_db():
+        yield async_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Register
+            reg = await client.post(
+                "/auth/register",
+                json={"email": "baseline_fields@test.com", "password": "securepass1"},
+            )
+            assert reg.status_code == 201, reg.text
+
+            # Get token
+            tok = await client.post(
+                "/auth/token",
+                data={"username": "baseline_fields@test.com", "password": "securepass1"},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            assert tok.status_code == 200, tok.text
+            token = tok.json()["access_token"]
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Onboard with all five baseline fields
+            onboard = await client.post(
+                "/v1/onboard",
+                json={
+                    "experience_level": "intermediate",
+                    "experience_years": 3.0,
+                    "available_days_per_week": 4,
+                    "equipment": ["barbell"],
+                    "squat_1rm_kg": 140.0,
+                    "deadlift_1rm_kg": 180.0,
+                    "bench_1rm_kg": 100.0,
+                    "bodyweight_kg": 82.5,
+                    "run_5k_seconds": 1350.0,
+                },
+                headers=headers,
+            )
+            assert onboard.status_code == 200, onboard.text
+            profile_id = onboard.json()["profile_id"]
+
+        # Query the profile directly from DB to confirm persistence
+        result = await async_db.execute(
+            sa_select(AthleteProfile).where(AthleteProfile.id == profile_id)
+        )
+        profile = result.scalar_one()
+
+        assert profile.squat_1rm == 140.0,    f"squat_1rm expected 140.0, got {profile.squat_1rm}"
+        assert profile.deadlift_1rm == 180.0, f"deadlift_1rm expected 180.0, got {profile.deadlift_1rm}"
+        assert profile.bench_1rm == 100.0,    f"bench_1rm expected 100.0, got {profile.bench_1rm}"
+        assert profile.bodyweight_kg == 82.5, f"bodyweight_kg expected 82.5, got {profile.bodyweight_kg}"
+        assert profile.run_5k_seconds == 1350.0, f"run_5k_seconds expected 1350.0, got {profile.run_5k_seconds}"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 async def test_register_onboard_token_nextsession_roundtrip(async_db):
     """
     Full auth flow: register → onboard (JWT) → token → next-session.

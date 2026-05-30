@@ -26,6 +26,41 @@ _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
         WeeklyTemplateSlot(day_of_week=4, category="Threshold Work", modality="Running"),
         WeeklyTemplateSlot(day_of_week=6, category="Active Recovery", modality="Running"),
     ],
+    BlockGoal.HYPERTROPHY: [
+        WeeklyTemplateSlot(day_of_week=1, category="High Volume Upper", modality="Hypertrophy"),
+        WeeklyTemplateSlot(day_of_week=3, category="High Volume Lower", modality="Hypertrophy"),
+        WeeklyTemplateSlot(day_of_week=5, category="Accessory / Isolation", modality="Hypertrophy"),
+    ],
+    BlockGoal.POWER: [
+        WeeklyTemplateSlot(day_of_week=1, category="Power Development", modality="Power"),
+        WeeklyTemplateSlot(day_of_week=3, category="Strength Potentiation", modality="Strength"),
+        WeeklyTemplateSlot(day_of_week=5, category="Neural Priming", modality="Power"),
+    ],
+    BlockGoal.HYROX: [
+        WeeklyTemplateSlot(day_of_week=1, category="Strength Endurance", modality="Mixed"),
+        WeeklyTemplateSlot(day_of_week=3, category="Running + Functional", modality="Mixed"),
+        WeeklyTemplateSlot(day_of_week=6, category="Hyrox Simulation", modality="Mixed"),
+    ],
+    BlockGoal.CROSSFIT: [
+        WeeklyTemplateSlot(day_of_week=1, category="Strength + Skill", modality="Mixed"),
+        WeeklyTemplateSlot(day_of_week=3, category="MetCon", modality="Conditioning"),
+        WeeklyTemplateSlot(day_of_week=5, category="Engine Work", modality="Conditioning"),
+    ],
+    BlockGoal.CALISTHENICS: [
+        WeeklyTemplateSlot(day_of_week=1, category="Skill & Straight-Arm Strength", modality="Calisthenics"),
+        WeeklyTemplateSlot(day_of_week=3, category="Bodyweight Strength", modality="Calisthenics"),
+        WeeklyTemplateSlot(day_of_week=5, category="Gymnastics Conditioning", modality="Calisthenics"),
+    ],
+    BlockGoal.GENERAL: [
+        WeeklyTemplateSlot(day_of_week=1, category="Full-Body GPP", modality="General"),
+        WeeklyTemplateSlot(day_of_week=3, category="Aerobic + Strength", modality="General"),
+        WeeklyTemplateSlot(day_of_week=5, category="Active Recovery", modality="General"),
+    ],
+    BlockGoal.RECOMP: [
+        WeeklyTemplateSlot(day_of_week=1, category="Strength Preservation", modality="Strength"),
+        WeeklyTemplateSlot(day_of_week=3, category="Metabolic Conditioning", modality="Conditioning"),
+        WeeklyTemplateSlot(day_of_week=5, category="Active Recovery", modality="General"),
+    ],
 }
 
 

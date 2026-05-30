@@ -2,423 +2,437 @@
 
 ## Purpose
 
-This guide shows the first-run lifecycle of Performance Lab from the perspective
-of a developer integrating the API or a contributor trying to understand the
-main control loop.
+This guide explains the first-run lifecycle of Performance Lab from account creation through the first adaptive recommendation, first workout, planning block, and benchmark loop.
 
-The goal is not to explain every subsystem in detail. The goal is to answer the
-practical question:
+The practical question is:
 
-> How does a new athlete move from account creation to their first adaptive
-> recommendation?
+> How does a new athlete move from account creation to useful adaptive training guidance?
 
-At the center of the system are two service-layer functions:
-
-- `initialize_athlete_state(...)`
-- `process_new_workout(...)`
-
-Those functions are the real backbone of the first-run experience.
-
----
-
-## The Short Version (Now Implemented)
+## The Short Version
 
 ```text
-Create user
+Register user
    ↓
-Create athlete profile (optional but strongly recommended)
+Login and store token
    ↓
-Initialize baseline state S0
+Onboard athlete profile + seed baseline state S0
    ↓
-Get an initial next-session recommendation
+Create optional planning block
    ↓
-Log first real workout
+Get first next-session recommendation or today's planned session
    ↓
-Update athlete state to S(t+1)
+Log completed workout
    ↓
-Get the next recommendation
+Persist workout + update S(t+1) + complete linked planned session
    ↓
-Repeat loop
+Refresh next-session recommendation
+   ↓
+Optionally post benchmark observations
+   ↓
+Update KPIs / weak points / state
+   ↓
+Repeat
 ```
-
----
 
 ## What Exists Today
 
-The full first-run loop is operational as of v0.3:
+The core loop is implemented:
 
-POST /v1/onboard          → creates AthleteProfile + optional WeakPoints + seeds S0
-GET  /v1/next-session     → returns real prescription (auto-inits state if missing)
-POST /v1/log-workout      → updates state + returns new S(t+1)
-GET  /v1/next-session     → returns updated prescription
-
-Onboarding is now a single API call rather than a multi-step manual setup.
-After `POST /v1/onboard`, the athlete has a profile, baseline state, and is
-ready to receive a prescription immediately.
-
----
-
-## Step 1: Create the User
-
-First, create the athlete account.
-
-At the data-model level, `User` owns the athlete-specific state, blocks, and
-weak points.
-
-Representative account fields include:
-
-- `email`
-- `hashed_password`
-- `is_active`
-- `created_at`
-
-### Why this comes first
-
-Every persisted training object hangs off `user_id`.
-Without a user, there is no stable identity to attach state history to.
-
----
-
-## Step 2: Create the Athlete Profile
-
-After the user exists, create the athlete profile.
-
-This is not just a nice-to-have form. It captures durable constraints and
-baseline assumptions that should shape prescription later.
-
-Representative profile fields include:
-
-- experience years / level
-- available days per week
-- session duration
-- available equipment
-- baseline lifts / performance markers
-- bodyweight / height
-
-### Why it matters
-
-The profile is where the system learns what the athlete can realistically do.
-This keeps the prescriber from recommending sessions that are impossible,
-mis-scoped, or mismatched to the athlete’s environment.
-
-### Practical note
-
-The visible service code can initialize a baseline state without a populated
-profile, but production onboarding should strongly prefer creating profile data
-first.
-
----
-
-## Step 3: Initialize the Athlete State
-
-Once the user exists, the system needs an initial internal state `S0`.
-
-This is handled by:
-
-```python
-initialize_athlete_state(db, user_id)
+```text
+POST /auth/register
+POST /auth/token
+GET  /auth/me
+POST /v1/onboard
+GET  /v1/next-session
+POST /v1/simulate-dose
+POST /v1/log-workout
+GET  /v1/next-session
 ```
 
-### What it does
+Planning is implemented:
 
-If the athlete has no prior state history, the service creates a baseline state
-using safe defaults for an intermediate athlete.
+```text
+POST  /v1/planning/blocks
+GET   /v1/planning/blocks
+PATCH /v1/planning/blocks/{block_id}
+GET   /v1/planning/sessions
+PATCH /v1/planning/sessions/{session_id}
+GET   /v1/planning/today
+```
 
-The initial state includes:
+Benchmark/dashboard loop is implemented:
 
-- baseline capacities
-- baseline anaerobic battery
-- zeroed fatigue channels
-- zeroed structural signal
-- neutral habit strength
-- starter skill values
+```text
+GET  /v1/benchmarks/definitions
+POST /v1/benchmarks/observations
+GET  /v1/benchmarks/observations
+POST /v1/benchmarks/recompute-derived
+GET  /v1/dashboard/kpis
+GET  /v1/dashboard/domain-summary
+GET  /v1/dashboard/readiness
+```
 
-### Why this exists
+## Step 0: Run the Backend Correctly
 
-The prescriber cannot reason over a missing state.
-Even if the initial values are only placeholders, the system needs a valid `S0`
-so that every later update becomes a transition from a known prior state.
+The preferred entrypoint is:
 
-### Current baseline assumptions
+```bash
+uvicorn app.main:app --reload
+```
 
-`initialize_athlete_state()` accepts `experience_level` and `squat_1rm_kg`
-keyword arguments and seeds from a 4-tier table:
+Before starting against a real database, run:
 
-| Level        | c_met_aerobic | c_nm_force | c_struct | b_met_anaerobic |
-|-------------|--------------|-----------|---------|----------------|
-| beginner     | 180           | 500        | 60       | 8000            |
-| intermediate | 300           | 1000       | 100      | 15000           |
-| advanced     | 500           | 1800       | 160      | 25000           |
-| elite        | 650           | 2500       | 220      | 35000           |
+```bash
+alembic upgrade head
+```
 
-If `squat_1rm_kg` is provided, `c_nm_force = squat_1rm_kg * 10.0` overrides
-the table value.
+The app checks database connectivity and Alembic head at startup. Schema management is migration-based; do not rely on `create_all`.
 
-All experience levels share:
-- fatigue channels set to `0.0`
+## Step 1: Register the User
+
+```http
+POST /auth/register
+```
+
+Input:
+
+```json
+{
+  "email": "athlete@example.com",
+  "password": "strong-password"
+}
+```
+
+Registration creates:
+
+- `User`
+- empty `AthleteProfile`
+
+Why this comes first:
+
+Every athlete-specific row hangs off `user_id`.
+
+## Step 2: Login
+
+```http
+POST /auth/token
+```
+
+Use OAuth2 password form data:
+
+```text
+username=athlete@example.com&password=strong-password
+```
+
+Store the returned Bearer token. The frontend stores it in `sessionStorage`.
+
+## Step 3: Confirm Current User
+
+```http
+GET /auth/me
+Authorization: Bearer <token>
+```
+
+This verifies the token and returns the current user.
+
+## Step 4: Onboard the Athlete
+
+```http
+POST /v1/onboard
+Authorization: Bearer <token>
+```
+
+Input example:
+
+```json
+{
+  "experience_level": "intermediate",
+  "experience_years": 4,
+  "available_days_per_week": 4,
+  "session_duration_minutes": 60,
+  "equipment": ["barbell", "dumbbells", "pullup_bar"],
+  "self_reported_weak_points": ["grip", "posterior_chain"],
+  "goal": "Strength",
+  "squat_1rm_kg": 120,
+  "bodyweight_kg": 82
+}
+```
+
+What it does:
+
+1. finds or creates the `AthleteProfile`
+2. fills experience, schedule, and equipment fields
+3. creates self-reported weak-point rows
+4. initializes baseline `AthleteState` S0
+
+Baseline seeding uses a four-tier table:
+
+| Level | c_met_aerobic | c_nm_force | c_struct | b_met_anaerobic |
+|---|---:|---:|---:|---:|
+| beginner | 180 | 500 | 60 | 8000 |
+| intermediate | 300 | 1000 | 100 | 15000 |
+| advanced | 500 | 1800 | 160 | 25000 |
+| elite | 650 | 2500 | 220 | 35000 |
+
+If `squat_1rm_kg` is provided, `c_nm_force = squat_1rm_kg * 10.0`.
+
+Current baseline state also starts with:
+
+- zero fatigue vectors
+- zero tissue vectors
 - `habit_strength = 0.5`
 - starter skill state for squat and deadlift
 
-`POST /v1/onboard` passes `experience_level` and `squat_1rm_kg` from the
-request body directly to `initialize_athlete_state()`, so the baseline is
-profile-informed from the first call.
+## Step 5: Get the First Recommendation
 
----
+```http
+GET /v1/next-session?goal=Strength
+Authorization: Bearer <token>
+```
 
-## Step 4: Get the Initial Recommendation
+The route reads:
 
-Once a valid `S0` exists, the client can request the next session.
+- latest state
+- profile equipment
+- active weak points
+- active block/today session if present
+- recent workout summaries
+- latest KPI values
 
-Use:
+If no state exists, it auto-initializes a baseline state.
+
+The response is a `WorkoutPrescription` with:
+
+- type
+- focus
+- rationale
+- duration
+- exercise list
+- structured explanation
+
+## Step 6: Optionally Create a Planning Block
+
+```http
+POST /v1/planning/blocks
+Authorization: Bearer <token>
+```
+
+Input example:
+
+```json
+{
+  "goal": "Strength",
+  "start_date": "2026-05-29",
+  "duration_weeks": 8,
+  "sessions_per_week": 3,
+  "deload_every_n_weeks": 4,
+  "benchmark_every_n_weeks": 4
+}
+```
+
+The service creates:
+
+- one active `MesocycleBlock`
+- scheduled `PlannedSession` rows
+- deload flags based on cadence
+- periodic benchmark session flags based on cadence
+
+If no weekly template is supplied, the service uses built-in defaults for Strength or Running, with Strength as fallback.
+
+## Step 7: Open Today's Planned Session
+
+```http
+GET /v1/planning/today?goal=Strength
+Authorization: Bearer <token>
+```
+
+Behavior:
+
+- returns today's pending planned session if one exists
+- returns a prescription if state exists
+- writes prescription content back to the planned session
+
+This is the best endpoint for a planning-first UI.
+
+## Step 8: Simulate a Workout Before Logging
+
+```http
+POST /v1/simulate-dose
+```
+
+This endpoint is pure. It returns `StressDose` and does not create state or logs.
+
+Use it to preview or compare candidate sessions.
+
+## Step 9: Log the Completed Workout
+
+```http
+POST /v1/log-workout
+Authorization: Bearer <token>
+```
+
+Input example:
+
+```json
+{
+  "timestamp": "2026-05-29T18:30:00Z",
+  "modality": "Strength",
+  "duration_minutes": 60,
+  "session_rpe": 7.5,
+  "avg_rir": 2,
+  "sleep_quality": 7,
+  "life_stress_inverse": 6,
+  "dominant_movement_pattern": "squat",
+  "estimated_sets": 15,
+  "planned_session_id": 42
+}
+```
+
+The service:
+
+1. fetches latest state
+2. initializes baseline if absent
+3. resolves exercise phi vectors if exercise IDs/names are present
+4. calculates stress dose
+5. stores workout event with dose snapshot
+6. links to explicit planned session or same-day pending session
+7. marks planned session completed
+8. clamps negative `dt` to zero
+9. updates state
+10. persists a new state row
+11. returns the latest state
+
+## Step 10: Refresh the Recommendation
+
+After logging:
 
 ```http
 GET /v1/next-session?goal=Strength
 ```
 
-Or any other supported goal surface such as:
+Now the recommendation reflects the completed workout, current fatigue, updated tissue stress, active weak points, KPIs, and block context.
 
-- `Strength`
-- `Hypertrophy`
-- `Power`
-- `General`
+## Step 11: Post Benchmark Observations
 
-The broader model surface also makes room for additional goals such as
-`Running`, `Hyrox`, `CrossFit`, `Calisthenics`, and `Recomp`.
-
-### What to expect
-
-The recommendation should be treated as the controller’s current best guess
-based on the latest available state.
-
-At this stage, the recommendation is being generated from baseline state rather
-than a rich training history, so it should be interpreted as a starting point,
-not deeply individualized guidance.
-
----
-
-## Step 5: Log the First Workout
-
-After the athlete completes a real session, log it through the ingest path.
-
-Use:
+First list definitions:
 
 ```http
-POST /v1/log-workout
+GET /v1/benchmarks/definitions
 ```
 
-With a body shaped like `WorkoutLog`.
+Then post an observation:
 
-Representative fields:
-
-- `timestamp`
-- `modality`
-- `duration_minutes`
-- `session_rpe`
-- optional `avg_rir`
-- optional `distance_meters`
-- optional `total_volume_load`
-- `sleep_quality`
-- `life_stress_inverse`
-
-### Why this step matters
-
-This is the first real state transition.
-Until this point, the athlete exists as:
-
-- identity
-- optional profile
-- baseline internal state
-
-After this step, the system also has:
-
-- a real observed training event
-- a computed stress dose
-- an updated internal state derived from actual behavior
-
----
-
-## Step 6: Update the State
-
-The main state-transition service is:
-
-```python
-process_new_workout(db, user_id, log)
+```http
+POST /v1/benchmarks/observations
 ```
 
-This function performs the real control-loop update.
+Example:
 
-### Internal flow
+```json
+{
+  "benchmark_code": "run_5k",
+  "raw_value": 1320,
+  "normalized_value": 55,
+  "observed_at": "2026-05-29T12:00:00Z",
+  "validity_status": "valid",
+  "source": "manual"
+}
+```
 
-1. Fetch the latest `AthleteState`
-2. Initialize `S0` if no state exists yet
-3. Compute `D(t)` from the incoming `WorkoutLog`
-4. Compute elapsed time `dt`
-5. Apply the state update rules
-6. Persist a **new** athlete state row
-7. Return the updated `UnifiedStateVector`
+If valid and mappable, this can:
 
-### Important behavior
+- create a benchmark observation
+- apply observation mappings to state
+- create a new `AthleteState`
+- create or resolve benchmark weak points
+- recompute derived KPI snapshots
 
-If the incoming workout timestamp is older than the current state timestamp,
-`dt` is clamped to zero instead of allowing a negative time transition.
+## Step 12: Read Dashboard / Readiness
 
-That is an important safety behavior and should remain documented.
+```http
+GET /v1/dashboard/kpis
+GET /v1/dashboard/readiness
+```
 
----
+The dashboard surfaces:
 
-## Step 7: Refresh the Next Session
+- derived KPI snapshots
+- primary anchor observations
+- latest state
+- KPI-derived flags
 
-After the first workout is logged and the state is updated, request the next
-session again.
+These same KPI values can feed prescription logic.
 
-This is the first moment where the recommendation is meaningfully shaped by:
+## Normal Client Flow
 
-- a real workout event
-- computed stress dose
-- updated fatigue state
-- current goal
-
-In practical client flow:
-
-1. get recommendation
-2. complete session
-3. log workout
-4. get recommendation again
-
-That is already how the current frontend behaves.
-
----
-
-## Step 8: Repeat the Loop
-
-Once the first workout has been processed, the system enters its normal cycle.
+### Non-planning flow
 
 ```text
-recommend → perform → log → update state → recommend again
+register -> login -> onboard -> get next-session -> simulate optional -> log workout -> get next-session
 ```
 
-That loop is the core product experience.
+### Planning flow
 
-As more infrastructure is added, the same loop can be enriched by:
-
-- better onboarding data
-- active mesocycle blocks
-- planned session slots
-- weak-point inference
-- benchmark sessions
-- individualized model calibration
-
-But the loop itself does not change.
-
----
-
-## Example End-to-End Narrative
-
-Here is the practical first-run story for a new athlete.
-
-### Day 0
-- user account is created
-- athlete profile is created
-- baseline state `S0` is initialized
-- client asks for `next-session`
-- athlete sees an initial recommendation
-
-### Day 1
-- athlete completes the recommended session
-- client sends `POST /v1/log-workout`
-- server computes `D(t)`
-- server updates the state to `S(t+1)`
-- client requests `next-session` again
-- athlete sees an updated prescription
-
-### Day 2+
-- the same loop repeats
-- recommendations become progressively more grounded in actual training history
-
----
-
-## Minimal Integration Sequence
-
-A minimal real integration can be thought of in four calls.
-
-### 1. Ensure the API is alive
-```http
-GET /ping
+```text
+register -> login -> onboard -> create block -> get planning/today -> log workout -> completed session -> get next/today again
 ```
 
-### 2. Ensure the athlete exists and has baseline state
-This may involve auth/user creation plus a service call or onboarding path.
+### Benchmark loop
 
-### 3. Get the first recommendation
-```http
-GET /v1/next-session?goal=Strength
+```text
+list benchmark definitions -> post observation -> KPIs recomputed -> weak points/state updated -> prescription reflects new context
 ```
-
-### 4. After the workout, log it
-```http
-POST /v1/log-workout
-```
-
-Then request `next-session` again.
-
----
 
 ## Common Mistakes to Avoid
 
-## Mistake 1: Treating `log-workout` like a harmless form submit
-It is not just persistence. It advances the athlete model.
-Duplicate submissions are not benign.
+### Mistake 1: Treating `log-workout` like a harmless form submit
 
-## Mistake 2: Skipping baseline state creation
-The system should always have a valid `S0` before trying to reason about the
-athlete.
+It advances the model and creates a workout row. Duplicate submissions are not benign.
 
-## Mistake 3: Confusing `simulate-dose` with `log-workout`
-`simulate-dose` is for previews and experiments.
-`log-workout` is for real completed work.
+### Mistake 2: Using `simulate-dose` for real completed work
 
-## Mistake 4: Expecting deep personalization before any history exists
-The first recommendation is useful, but it is still operating from sparse
-context. True adaptation starts after real logged sessions accumulate.
+Simulation does not persist history or update state.
 
----
+### Mistake 3: Skipping baseline state creation and expecting deep recommendations
 
-## Implemented Onboarding API Shape
+`next-session` can auto-initialize, but onboarding gives better first-run state.
 
-As of v0.3, the onboarding flow is:
+### Mistake 4: Expecting planned sessions to be workout logs
 
-1. create user (POST /auth/register)
-2. POST /v1/onboard — in one call:
-   - creates AthleteProfile with experience level, schedule, equipment
-   - optionally creates self-reported WeakPoint rows
-   - initializes baseline S0 (profile-aware seeding)
-3. GET /v1/next-session — first prescription is immediately available
+Planned sessions are schedule slots. Workout logs are observed events. Link them.
 
-Optionally, a starting MesocycleBlock can be created separately via:
+### Mistake 5: Assuming benchmark observations are just dashboard data
 
-- `POST /v1/planning/blocks`
-- `GET /v1/planning/sessions`
-- `GET /v1/planning/today`
+Valid benchmark observations can update state and weak-point signals.
 
----
+### Mistake 6: Forgetting auth prefix rules
 
-## Short Version
+Auth is not under `/v1`; training routes are.
 
-Performance Lab starts simple:
+## Minimal Working Sequence
 
-```text
-Create user
-→ initialize state
-→ get recommendation
-→ log workout
-→ update state
-→ get next recommendation
-→ repeat
+```bash
+# 1. Migrate database
+alembic upgrade head
+
+# 2. Start backend
+uvicorn app.main:app --reload
+
+# 3. Register user
+POST /auth/register
+
+# 4. Login
+POST /auth/token
+
+# 5. Onboard
+POST /v1/onboard
+
+# 6. Get first session
+GET /v1/next-session?goal=Strength
+
+# 7. Log completed work
+POST /v1/log-workout
+
+# 8. Refresh guidance
+GET /v1/next-session?goal=Strength
 ```
-
-The two service functions that matter most to this flow are:
-
-- `initialize_athlete_state(...)`
-- `process_new_workout(...)`
-
-That is the first-run narrative the repo currently needs.

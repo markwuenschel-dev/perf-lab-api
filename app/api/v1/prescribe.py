@@ -23,17 +23,15 @@ router = APIRouter(tags=["Prescription"])
 @router.get("/next-session", response_model=WorkoutPrescription)
 async def get_next_session(
     goal: TrainingGoal = Query(TRAINING_GOAL_DEFAULT, description=...),
-    user_id: int | None = Query(None, description="DEV ONLY — remove in production"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),   # ← put this back
+    current_user: User = Depends(get_current_user),
 ) -> WorkoutPrescription:
-    effective_user_id = user_id or current_user.id
     """DEV-friendly version that auto-initializes baseline state."""
 
     # Auto-create baseline AthleteState if none exists yet
     result = await db.execute(
         select(AthleteState)
-        .where(AthleteState.user_id == effective_user_id)
+        .where(AthleteState.user_id == current_user.id)
         .order_by(AthleteState.timestamp.desc())
         .limit(1)
     )
@@ -41,11 +39,11 @@ async def get_next_session(
 
     if not last_record:
         from app.services.state_service import initialize_athlete_state
-        await initialize_athlete_state(db, effective_user_id)
+        await initialize_athlete_state(db, current_user.id)
         # re-fetch the newly created state
         result = await db.execute(
             select(AthleteState)
-            .where(AthleteState.user_id == effective_user_id)
+            .where(AthleteState.user_id == current_user.id)
             .order_by(AthleteState.timestamp.desc())
             .limit(1)
         )
@@ -56,7 +54,7 @@ async def get_next_session(
     # Fetch active (unresolved) weak-point tags for context injection
     wp_result = await db.execute(
         select(WeakPoint.tag).where(
-            WeakPoint.user_id == effective_user_id,
+            WeakPoint.user_id == current_user.id,
             WeakPoint.resolved_at.is_(None),
         )
     )
@@ -66,7 +64,7 @@ async def get_next_session(
     block_result = await db.execute(
         select(MesocycleBlock)
         .where(
-            MesocycleBlock.user_id == effective_user_id,
+            MesocycleBlock.user_id == current_user.id,
             MesocycleBlock.status == BlockStatus.ACTIVE,
         )
         .order_by(MesocycleBlock.created_at.desc())
@@ -98,13 +96,13 @@ async def get_next_session(
         }
 
     profile_result = await db.execute(
-        select(AthleteProfile).where(AthleteProfile.user_id == effective_user_id).limit(1)
+        select(AthleteProfile).where(AthleteProfile.user_id == current_user.id).limit(1)
     )
     profile = profile_result.scalars().first()
 
     try:
-        recent = await recent_workout_summaries(db, effective_user_id)
-        kpi_summary = await dashboard_service.latest_kpi_values(db, effective_user_id)
+        recent = await recent_workout_summaries(db, current_user.id)
+        kpi_summary = await dashboard_service.latest_kpi_values(db, current_user.id)
         rx = recommend_next_session(
             state,
             goal=goal,

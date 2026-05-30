@@ -7,7 +7,12 @@
       "Bash(git commit -m ':*)",
       "Bash(npm run:*)",
       "Bash(grep \"muted-foreground\" dist/assets/*.css)",
-      "Bash(grep -o \"muted-foreground:[^;]*\" dist/assets/*.css)"
+      "Bash(grep -o \"muted-foreground:[^;]*\" dist/assets/*.css)",
+      "Bash(python -m pytest tests/ --collect-only)",
+      "Bash(Find src *)",
+      "WebSearch",
+      "Bash(xargs ls)",
+      "Bash(python -m pytest tests/test_prescribe_routes.py -v)"
     ]
   }
 }

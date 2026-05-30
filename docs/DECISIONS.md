@@ -2,423 +2,407 @@
 
 ## Purpose
 
-This document records the project’s most important architectural decisions and
-why they were made.
+This document records the project's most important architectural decisions and why they exist.
 
-It exists for one reason:
+It exists to prevent future cleanup from undoing the parts of the system that are conceptually correct.
 
-> to stop future “cleanup” from undoing the parts of the system that are
-> conceptually correct.
+This is not a changelog. It is a rationale log.
 
-This is not a changelog.
-It is a rationale log.
-
----
-
-## How to Use This Document
-
-Each section records:
-
-- the decision
-- why it exists
-- what it protects against
-- what tradeoff it accepts
-
-These are not abstract philosophy notes.
-They are guardrails for future development.
-
----
-
-## Decision 1: Persist State History Instead of Recomputing Only the Latest State
+## Decision 1: Persist State History Instead of Only the Latest State
 
 ### Decision
-Store athlete state as an append-only time series of `AthleteState` rows instead
-of keeping only one mutable “current state” record.
+
+Store athlete state as an append-only time series of `AthleteState` rows.
 
 ### Why
-Performance Lab is modeling an evolving internal system.
-That makes the sequence of states meaningful, not just the latest snapshot.
 
-Persisting state history gives the project:
+Performance Lab models an evolving internal system. The sequence of states matters, not only the latest snapshot.
+
+Persisting state history gives:
+
 - auditability
 - trend visibility
 - replay support
 - easier debugging
-- future model migration options
+- model-version migration options
 
 ### What this protects against
-A common simplification is to store only one current-state row per athlete.
-That feels cleaner at first and is wrong for this system.
 
-It would make it harder to:
-- inspect how the model changed over time
-- compare prior and current estimates
-- understand the effect of a workout sequence
-- replay history after logic changes
-
-### Tradeoff
-It increases storage and adds a little more query discipline.
-That tradeoff is worth it.
+A tempting simplification is to keep one mutable current-state row per athlete. That would make it harder to inspect how the model changed over time or replay history after logic changes.
 
 ### Rule
-Do not overwrite prior state rows as a default implementation pattern.
 
----
+Do not overwrite prior state rows as the default update pattern.
 
-## Decision 2: Keep Workout Logs Separate from Athlete State
+## Decision 2: Keep Workout Logs Separate From Athlete State
 
 ### Decision
-Store raw workout events in `WorkoutLog` and modeled internal state in
-`AthleteState`.
+
+Store observed workouts in `WorkoutLog` and modeled internal state in `AthleteState`.
 
 ### Why
-These are different categories of truth.
+
+These are different categories of truth:
 
 - `WorkoutLog` = what happened
 - `AthleteState` = what the engine believes after processing what happened
 
-If they are merged, the system loses the distinction between observation and
-interpretation.
-
 ### What this protects against
-If a future refactor collapses logs and state into one table, it becomes harder to:
-- replay history with updated logic
-- debug incorrect model transitions
-- tell whether a value came from user input or model inference
 
-### Tradeoff
-There is some duplication in lifecycle complexity.
-That is acceptable because the conceptual separation is essential.
+Merging them makes old rows ambiguous after dose logic changes and makes replay/debugging much harder.
 
 ### Rule
-Do not merge event history and modeled state for convenience.
 
----
+Do not merge event history and modeled state for convenience.
 
 ## Decision 3: Use an Explicit Stress Dose Layer `D(t)`
 
 ### Decision
-Translate a workout into a `StressDose` before updating the athlete state.
 
-### Why
-Workouts should not directly mutate internal state without an intermediate model
-layer.
-
-The dose layer creates a clean mapping:
+Translate workouts into `StressDose` before updating state.
 
 ```text
-WorkoutLog → StressDose → AthleteState update
+WorkoutLog -> StressDose -> AthleteState update
 ```
 
-This supports:
-- better reasoning about input effects
-- non-mutating preview endpoints
-- modality expansion under a shared framework
-- cleaner debugging of the control loop
+### Why
+
+The dose layer makes input effects inspectable and enables non-mutating preview endpoints.
 
 ### What this protects against
-A tempting shortcut is to let each workout directly change state using ad hoc
-logic embedded everywhere.
-That makes the system harder to reason about and much harder to generalize.
 
-### Tradeoff
-It introduces an extra abstraction layer.
-That is a feature, not overhead, in a modeling system.
+Ad hoc workout-specific state mutation scattered through the codebase.
 
 ### Rule
-Do not bypass the dose layer for normal state transitions.
 
----
+Normal workout-driven state transitions must pass through the dose layer.
 
-## Decision 4: Model Fatigue as Multi-Dimensional, Not a Single Readiness Number
+## Decision 4: Keep Preview and Mutation Separate at the API Layer
 
 ### Decision
-Track multiple fatigue channels instead of flattening everything into one score.
 
-Current fatigue channels include:
+Expose:
+
+- `POST /v1/simulate-dose` for pure preview
+- `POST /v1/log-workout` for real state transition
+
+### Why
+
+Clients need to ask two different questions:
+
+1. What would this workout do?
+2. This workout happened; update the athlete.
+
+### Rule
+
+Do not fuse preview and mutation paths.
+
+## Decision 5: Model Fatigue as Multi-Dimensional
+
+### Decision
+
+Track multiple fatigue channels, including decomposed `fatigue_f` axes:
+
+- cns
+- muscular
+- metabolic
+- structural
+- tendon
+- grip
+
+And legacy scalar mirrors:
+
 - `f_met_systemic`
 - `f_nm_peripheral`
 - `f_nm_central`
 - `f_struct_damage`
 
 ### Why
-Different forms of fatigue constrain different training choices.
 
-Examples:
-- high structural damage should affect impact and loading decisions
-- high central fatigue should affect neural and technical work
-- high metabolic fatigue should affect dense conditioning or threshold-style work
-
-A single fatigue number hides those distinctions too early.
+Different fatigue types constrain different training choices.
 
 ### What this protects against
-If everything is flattened into one readiness score at the model level, the
-prescriber loses the ability to make intelligent constrained choices.
 
-### Tradeoff
-The system becomes slightly more complex to inspect.
-That complexity is justified because it preserves useful signal.
+Flattening fatigue into one readiness score too early, causing the prescriber to lose useful signal.
 
 ### Rule
-Do not collapse the underlying fatigue model into one scalar internally.
-A UI may show a summary score, but the engine should keep the channels.
 
----
+A UI may show a summary readiness score, but the engine should preserve the channels.
 
-## Decision 5: Separate Capacity From Fatigue
+## Decision 6: Separate Capacity, Fatigue, and Tissue Stress
 
 ### Decision
-Store long-horizon capacities separately from short-horizon fatigue.
+
+Store long-horizon capacities, short-horizon fatigues, and regional tissue stress separately.
 
 ### Why
-Performance today is shaped by both:
-- what the athlete is capable of in general
-- what cost they are carrying right now
 
-Those are not the same thing.
-
-A strong but tired athlete should not be treated like a weak fresh athlete.
-Likewise, a fresh but underdeveloped athlete should not be treated like a fully
-adapted one.
-
-### What this protects against
-Programs that only read recent fatigue tend to lose progression logic.
-Programs that only read capacity tend to ignore recovery reality.
-
-### Tradeoff
-It requires maintaining more state variables.
-That is central to the project’s whole value proposition.
+A strong tired athlete is not the same as a weak fresh athlete. A globally fresh athlete with localized knee/lumbar tissue stress still needs constraints.
 
 ### Rule
-Do not reduce the engine to either “fitness only” or “fatigue only.”
-It must keep both.
 
----
+Do not reduce the engine to either fitness-only or fatigue-only logic.
 
-## Decision 6: Store Weak Points as Probabilistic Signals, Not Permanent Traits
+## Decision 7: Keep Legacy Scalar Mirrors Aligned With Engine Vectors
 
 ### Decision
-Represent weak points as rows with:
-- tag
-- source
-- confidence
-- note
-- active/resolved status
 
-Instead of storing a single fixed weakness label per athlete.
+Persist legacy scalar columns and decomposed `engine_state` JSONB together, with bridge helpers keeping them aligned.
 
 ### Why
-Weakness is often uncertain, context-dependent, and multi-sourced.
 
-A self-reported weakness is not the same as one revealed by a benchmark or
-inferred from repeated training behavior.
-
-The current structure allows the system to accumulate and weigh evidence over time.
-
-### What this protects against
-A simplistic “athlete has weakness X” flag becomes stale fast and erases source quality.
-It also makes it harder to resolve or re-evaluate weak points later.
+This allows old clients to keep working while the engine evolves toward richer vector state.
 
 ### Tradeoff
-It adds aggregation complexity for the prescriber.
-That is worth it because the data model remains truthful.
+
+It introduces duplication. The bridge layer must remain disciplined.
 
 ### Rule
-Do not treat weak points as one permanent static attribute.
 
----
+When writing `AthleteState`, derive legacy columns from the unified vector rather than manually letting them drift.
 
-## Decision 7: Keep Planning and Adaptation Separate
+## Decision 8: Store Weak Points as Probabilistic Signals
 
 ### Decision
-Separate long-range plan structures from day-level adaptive decisions.
 
-This is reflected in:
-- `MesocycleBlock`
-- `PlannedSession`
-- the prescriber’s dynamic filling of `prescribed_content`
+Represent weak points as rows with tag, source, confidence, note, and resolved status.
 
 ### Why
-A block should provide direction.
-The current state should determine today’s exact dosage and implementation.
 
-This preserves both:
-- program coherence
-- adaptive responsiveness
-
-### What this protects against
-Two opposite failure modes:
-
-1. a rigid static plan that ignores readiness
-2. a reactive day-by-day generator that loses long-term direction
-
-### Tradeoff
-The system has to maintain both a plan layer and a control layer.
-That is the right architecture for adaptive training.
+Weakness can come from self-report, benchmark, inference, or performance data. Those sources have different confidence levels and should not be collapsed into one permanent trait.
 
 ### Rule
-Do not let the existence of a block eliminate state-based adaptation.
-Do not let daily adaptation erase block identity.
 
----
+Do not treat weak points as one static athlete attribute.
 
-## Decision 8: Use the Exercise Library as a Metadata Layer, Not Hard-Coded Choices
+## Decision 9: Weak Points Bias the Prescriber, They Do Not Hijack It
 
 ### Decision
-Store exercise characteristics in structured seed data rather than hard-coding
-selection logic everywhere.
 
-The exercise model includes:
-- modality
-- movement pattern
-- equipment requirements
-- load type
-- skill demand
-- impact level
-- weak-point tags
-- coaching notes
+Active weak-point tags are passed into prescription logic as bias signals and explanation constraints.
 
 ### Why
-The prescriber needs a flexible bridge from abstract training intent to concrete
-movement selection.
 
-A metadata-driven exercise library scales better than a large pile of brittle
-if/else branches.
-
-### What this protects against
-Hard-coded exercise selection becomes difficult to maintain as modalities,
-equipment options, and weak-point logic expand.
-
-### Tradeoff
-The project must maintain high-quality seed data.
-That is an acceptable price for extensibility.
+A limitation is useful information, not absolute command authority.
 
 ### Rule
-Prefer data-driven exercise selection over sprawling hard-coded branching.
 
----
+Weak points should influence exercise choice, assistance work, and emphasis after safety, goal, and block context are respected.
 
-## Decision 9: Keep Preview and Mutation Separate at the API Layer
+## Decision 10: Keep Planning and Adaptation Separate
 
 ### Decision
-Support both:
-- non-mutating dose preview
-- mutating workout logging
 
-Through separate endpoints.
+Use `MesocycleBlock` and `PlannedSession` for strategic structure, while the prescriber uses current state to fill daily content.
 
 ### Why
-The client needs to ask two different questions:
 
-1. what would this workout do?
-2. this workout happened — update the athlete
-
-Those should not be the same API call.
+A block provides direction. The athlete state controls dosage and constraints today.
 
 ### What this protects against
-If preview and mutation are fused, the system becomes dangerous to integrate.
-Clients will accidentally advance the athlete model while experimenting.
 
-### Tradeoff
-It adds one more endpoint.
-That is trivial compared to the clarity it provides.
+Two bad extremes:
+
+1. rigid plans that ignore readiness
+2. reactive day-by-day generators that lose long-term coherence
 
 ### Rule
-Keep `simulate-dose` non-mutating and `log-workout` mutating.
 
----
+Do not let a block eliminate adaptive state-based prescription. Do not let daily adaptation erase block identity.
 
-## Decision 10: Treat Human Factors as First-Class Inputs
+## Decision 11: Populate Planned Session Content Lazily
 
 ### Decision
-Include human-context fields such as sleep quality and life-stress inverse in
-workout input and state evolution.
+
+A `PlannedSession` stores the slot first. `prescribed_content` is written when today's session is opened or a matching next-session prescription is generated.
 
 ### Why
-Training response is not determined by external load alone.
-Two identical workouts can have different internal cost depending on recovery
-context.
 
-### What this protects against
-A purely mechanical load model will look clean and behave unrealistically.
-
-### Tradeoff
-Self-reported fields are noisy.
-That is fine as long as the system treats them as informative context, not
-perfect measurement.
+The exact content should use fresh `S(t)`, weak points, KPIs, and recent workout context.
 
 ### Rule
-Do not strip human factors out of the model just to make inputs look cleaner.
 
----
+Do not precompute exact session content too early unless the product explicitly wants a static plan.
 
-## Decision 11: Bias the Prescriber With Weak Points, but Do Not Let Them Dominate
+## Decision 12: Link Completed Workouts to Planned Sessions
 
 ### Decision
-Weak points should influence prescription, but not automatically override the
-main goal or current safety constraints.
+
+A completed workout links to a planned session through `planned_session_id` / `workout_log_id`.
 
 ### Why
-A detected limitation is useful information, not absolute command authority.
 
-The right pattern is usually:
-- preserve session identity
-- bias exercise choice or assistance work
-- avoid reckless choices when fatigue says no
-
-### What this protects against
-A prescriber that overreacts to every weak point becomes incoherent and loses
-block structure.
-
-### Tradeoff
-It requires more nuanced decision logic.
-That nuance is necessary.
+Plans and completions are different. Linking preserves both.
 
 ### Rule
-Weak points should bias selection, not hijack programming.
 
----
+Do not replace planned-session rows with observed workout data.
 
-## Decision 12: Favor Legibility Over Premature Cleverness
+## Decision 13: Use Benchmarks as a Separate Measurement Layer
 
 ### Decision
-Keep the architecture explainable:
-- explicit state model
-- explicit dose layer
-- explicit planning objects
-- explicit weak-point rows
-- explicit rationale in prescriptions
+
+Represent benchmark protocols and benchmark observations separately from workouts.
 
 ### Why
-A system that cannot be explained cannot be debugged or trusted for long.
 
-### What this protects against
-Premature compression into opaque abstractions that look elegant but make
-maintenance and reasoning worse.
-
-### Tradeoff
-Some parts of the system will look more verbose than a minimalist prototype.
-That is a good trade in this domain.
+Benchmarks are measurements. They may happen inside planned sessions, but their role is to calibrate or validate the model.
 
 ### Rule
-Prefer structures that make the control loop easy to inspect and defend.
 
----
+Use `BenchmarkObservation` and `ObservationMapping` when a measurement should update state or weak-point signals.
+
+## Decision 14: Store Derived KPIs as Snapshots
+
+### Decision
+
+Compute derived metrics from observations and store `DerivedMetricSnapshot` rows.
+
+### Why
+
+Derived KPI values can change as observations or formulas change. Snapshotting provides an audit trail and dashboard history.
+
+### Rule
+
+Do not hide all KPI computation as transient UI-only logic.
+
+## Decision 15: Use Observation Mappings Before Full EKF Complexity
+
+### Decision
+
+Current benchmark assimilation uses weighted residual-style mapping rules rather than a full EKF.
+
+### Why
+
+This is enough to close the benchmark-to-state loop while keeping the system legible and easy to debug.
+
+### Tradeoff
+
+It is less theoretically complete than a full state estimator.
+
+### Rule
+
+Keep mappings explicit and auditable until the model is mature enough to justify heavier assimilation machinery.
+
+## Decision 16: Use the Exercise Library as a Metadata Layer
+
+### Decision
+
+Store movement metadata, equipment, phi vectors, tissue/fatigue weights, and weak-point tags in `Exercise` rows.
+
+### Why
+
+The prescriber and dose engine need structured movement information. Hard-coded choices do not scale across modalities.
+
+### Rule
+
+Prefer data-driven exercise selection and phi resolution over sprawling if/else branches.
+
+## Decision 17: Keep Auth Outside `/v1`
+
+### Decision
+
+Auth routes live at `/auth/*`, while modern domain routes live under `/v1`.
+
+### Why
+
+The token endpoint uses OAuth2 password-form conventions and is consumed differently from the versioned training API.
+
+### Rule
+
+Do not accidentally document auth as `/v1/auth/*` unless the router is actually moved.
+
+## Decision 18: Use Alembic as the Only Schema Manager
+
+### Decision
+
+The app startup checks database connectivity and Alembic head, but it does not call `create_all`.
+
+### Why
+
+Auto-creating tables at startup hides migration problems and creates schema drift.
+
+### Rule
+
+Use `alembic upgrade head` before running against a real database.
+
+## Decision 19: Keep Deprecated Transition Modules Thin
+
+### Decision
+
+`app.logic.dose_engine` and `app.logic.state_update` are compatibility/deprecation modules. Current code should use:
+
+- `app.logic.dose_engine_v0.calculate_stress_dose`
+- `app.logic.state_update_v0.update_athlete_state`
+- `app.services.state_service.process_new_workout`
+
+### Why
+
+This preserves old imports while making the preferred implementation explicit.
+
+### Rule
+
+New code should not build on deprecated modules.
+
+## Decision 20: Frontend Types Are Manual Mirrors
+
+### Decision
+
+`src/types.ts` manually mirrors backend Pydantic schemas. It is not generated.
+
+### Why
+
+The project is small enough that manual sync is acceptable, but the cost is that backend schema changes must be reflected deliberately.
+
+### Rule
+
+Whenever backend schemas change, update `src/types.ts`, `trainingGoals.ts`, the API client, and relevant form/rendering components.
+
+## Decision 21: Keep the Frontend Control Loop Close to the Backend Domain
+
+### Decision
+
+The UI names and flow mirror backend concepts:
+
+```text
+simulate-dose -> log-workout -> next-session
+planning block -> planned session -> today's session
+```
+
+### Why
+
+This preserves conceptual legibility and avoids creating a separate UI-only mental model.
+
+### Rule
+
+Do not hide the control loop behind vague UI abstractions too early.
+
+## Decision 22: Favor Legibility Over Premature Cleverness
+
+### Decision
+
+Prefer explicit state, dose, plan, benchmark, weak-point, and explanation structures.
+
+### Why
+
+A system that cannot be explained cannot be debugged or trusted.
+
+### Rule
+
+Accept some verbosity when it makes the control loop easier to inspect and defend.
 
 ## Short Version
 
-The key design bets in Performance Lab are:
+The key design bets are:
 
 1. persist state history
 2. separate logs from state
 3. use an explicit dose layer
-4. keep fatigue multi-dimensional
-5. separate capacity from fatigue
-6. model weak points as probabilistic signals
-7. keep planning and adaptation separate
-8. use metadata-driven exercise selection
-9. separate preview from mutation in the API
-10. keep human factors in the loop
-
-If future development preserves those, the project will stay pointed in the
-right direction.
+4. keep preview and mutation separate
+5. preserve multi-channel fatigue and tissue state
+6. keep planning and adaptation distinct
+7. use weak points as probabilistic bias signals
+8. use benchmarks as state-calibration observations
+9. store derived KPIs as snapshots
+10. use exercise metadata instead of hard-coded movements
+11. keep frontend DTOs synchronized with backend schemas

@@ -93,3 +93,41 @@ async def test_next_session_model_version_v03(http_client):
     resp = await http_client.get("/v1/next-session", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["model_version"] == "v0.3"
+
+
+async def test_next_session_ignores_user_id_query_param(http_client):
+    """Passing ?user_id=<other_user_id> must not escalate privileges.
+
+    The route must return a valid prescription for user A (the authenticated
+    caller) regardless of the user_id query param value.
+    """
+    # Register user A and user B
+    token_a = await _register_and_login(http_client, "user_a_isolation@test.com")
+    token_b = await _register_and_login(http_client, "user_b_isolation@test.com")
+
+    # Resolve user B's id by calling /auth/me as user B
+    me_resp = await http_client.get(
+        "/auth/me", headers={"Authorization": f"Bearer {token_b}"}
+    )
+    assert me_resp.status_code == 200, me_resp.text
+    user_b_id = me_resp.json()["id"]
+
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    # Call next-session as user A, passing user B's id as the query param
+    resp_with_param = await http_client.get(
+        f"/v1/next-session?user_id={user_b_id}", headers=headers_a
+    )
+    assert resp_with_param.status_code == 200, resp_with_param.text
+
+    data = resp_with_param.json()
+    for field in ("type", "focus", "rationale", "duration_min", "model_version", "exercises"):
+        assert field in data, f"Missing field: {field}"
+
+    # Call next-session as user A without the query param — must also succeed
+    resp_without_param = await http_client.get("/v1/next-session", headers=headers_a)
+    assert resp_without_param.status_code == 200, resp_without_param.text
+
+    data_plain = resp_without_param.json()
+    for field in ("type", "focus", "rationale", "duration_min", "model_version", "exercises"):
+        assert field in data_plain, f"Missing field: {field}"

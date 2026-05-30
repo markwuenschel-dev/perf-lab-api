@@ -34,6 +34,11 @@ async def onboard_athlete(
     profile.available_days_per_week = request.available_days_per_week
     profile.session_duration_minutes = request.session_duration_minutes
     profile.equipment = request.equipment
+    profile.squat_1rm     = request.squat_1rm_kg
+    profile.deadlift_1rm  = request.deadlift_1rm_kg
+    profile.bench_1rm     = request.bench_1rm_kg
+    profile.bodyweight_kg = request.bodyweight_kg
+    profile.run_5k_seconds = request.run_5k_seconds
 
     await db.commit()
     await db.refresh(profile)
@@ -56,6 +61,10 @@ async def onboard_athlete(
         user.id,
         experience_level=request.experience_level,
         squat_1rm_kg=request.squat_1rm_kg,
+        deadlift_1rm_kg=request.deadlift_1rm_kg,
+        bench_1rm_kg=request.bench_1rm_kg,
+        bodyweight_kg=request.bodyweight_kg,
+        run_5k_seconds=request.run_5k_seconds,
     )
 
     return OnboardResponse(

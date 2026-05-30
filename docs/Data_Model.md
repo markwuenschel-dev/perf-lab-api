@@ -1,41 +1,48 @@
-Performance Lab Data Model
-Purpose
+# Performance Lab Data Model
 
-This document explains how Performance Lab stores athlete identity, baseline information, workout history, internal state, planning data, weak-point signals, and exercise metadata.
+## Purpose
 
-The core rule is simple:
+This document explains how Performance Lab stores identity, profile setup, workout history, internal state, planning data, weak-point signals, benchmark observations, derived KPIs, exercise metadata, and prescription support data.
 
-Do not confuse what happened, what the system believes, and what the system plans next.
+The core rule is:
 
-That rule drives the entire schema.
+> Do not confuse what happened, what the system believes, what was planned, and what was measured.
 
-Data Model Principles
-1. Event data and state data are different
+That rule drives the schema.
 
-A workout log is a record of an event.
-An athlete state row is the model’s interpretation after processing events.
+## Data Model Principles
 
-Those should stay separate.
+### 1. Event data and state data are different
 
-2. State is historical, not mutable-in-place
+A workout log records what happened. An athlete state row records what the model believes after processing events or observations.
 
-The system stores a time series of athlete states rather than one current-state row.
+### 2. State is historical, not mutable-in-place
 
-3. Plans are not logs
+The system stores a time series of `AthleteState` rows. The latest row is the current state, but prior rows are retained.
 
-A planned session is an intended future slot.
-A workout log is what actually occurred.
+### 3. Plans are not logs
 
-4. Weak points are probabilistic signals
+A planned session is an intended future slot. A workout log is an observed completed event. The correct relationship is a fulfillment link, not overwriting the plan with observed data.
 
-Weakness is not stored as a single permanent trait.
-It is stored as a tagged signal with source and confidence.
+### 4. Weak points are probabilistic signals
 
-5. Exercise selection is metadata-driven
+Weakness is stored as tagged evidence with source and confidence, not as one permanent athlete trait.
 
-Concrete exercise prescription should come from structured tags rather than hard-coded branching.
+### 5. Exercise selection is metadata-driven
 
-Entity Overview
+Exercise rows carry movement, equipment, tissue, fatigue, adaptation, and weak-point tags so the prescriber can move from abstract intent to concrete exercise choices.
+
+### 6. Benchmarks are observations, not workouts by default
+
+Benchmarks can be linked to planned session flow or workout logs, but benchmark observations have their own schema and can nudge state through observation mappings.
+
+### 7. Derived KPIs are snapshots
+
+Derived metrics are computed from observations and profile context, then stored as time-stamped snapshots.
+
+## Entity Overview
+
+```text
 User
  └─ AthleteProfile (1:1)
 
@@ -43,7 +50,10 @@ User
  ├─ AthleteState (1:N)
  ├─ WorkoutLog (1:N)
  ├─ MesocycleBlock (1:N)
- └─ WeakPoint (1:N)
+ ├─ PlannedSession (1:N through blocks)
+ ├─ WeakPoint (1:N)
+ ├─ BenchmarkObservation (1:N)
+ └─ DerivedMetricSnapshot (1:N)
 
 MesocycleBlock
  └─ PlannedSession (1:N)
@@ -51,423 +61,643 @@ MesocycleBlock
 PlannedSession
  └─ WorkoutLog (0:1 fulfillment link)
 
+BenchmarkDefinition
+ ├─ BenchmarkObservation (1:N)
+ └─ ObservationMapping (1:N)
+
+DerivedMetricDefinition
+ └─ DerivedMetricSnapshot (1:N)
+
 Exercise
- └─ referenced by prescriber logic, not owned by user
-Entity Categories
-Identity and baseline
-User
-AthleteProfile
-Event history
-WorkoutLog
-Modeled internal history
-AthleteState
-Planning layer
-MesocycleBlock
-PlannedSession
-Bias / inference layer
-WeakPoint
-Prescription library
-Exercise
-User
+ └─ referenced by dose/prescription logic, not owned by user
+```
 
-Represents the account-level identity.
+## Entity Categories
 
-Key fields
-id
-email
-hashed_password
-is_active
-created_at
-Relationships
-one AthleteProfile
-many AthleteState
-many MesocycleBlock
-many WeakPoint
-Role in the system
+Identity and setup:
 
-User is the root owner for almost every athlete-specific object.
+- `User`
+- `AthleteProfile`
 
-Notes
+Event history:
 
-This is intentionally thin. Identity should stay separate from training logic.
+- `WorkoutLog`
+- `BenchmarkObservation`
 
-AthleteProfile
+Modeled internal history:
+
+- `AthleteState`
+
+Planning layer:
+
+- `MesocycleBlock`
+- `PlannedSession`
+
+Bias/inference layer:
+
+- `WeakPoint`
+
+Benchmark/KPI layer:
+
+- `BenchmarkDefinition`
+- `ObservationMapping`
+- `DerivedMetricDefinition`
+- `DerivedMetricSnapshot`
+
+Prescription library:
+
+- `Exercise`
+
+## User
+
+Represents account-level identity.
+
+Key fields:
+
+- `id`
+- `email`
+- `hashed_password`
+- `is_active`
+- `created_at`
+
+Relationships:
+
+- one `AthleteProfile`
+- many `AthleteState`
+- many `MesocycleBlock`
+- many `WeakPoint`
+
+Role:
+
+The root owner for athlete-specific data.
+
+## AthleteProfile
 
 Represents onboarding and relatively stable baseline information.
 
-Key fields
-experience years / level
-available days per week
-session duration
-equipment access
-baseline lifts / benchmarks
-bodyweight / height
-Relationship
-one-to-one with User
-Role in the system
+Key fields:
 
-This is the athlete’s baseline configuration layer. It seeds initial assumptions and constrains prescription.
+- `experience_years`
+- `experience_level`
+- `available_days_per_week`
+- `session_duration_minutes`
+- `equipment`
+- `squat_1rm`
+- `deadlift_1rm`
+- `bench_1rm`
+- `overhead_1rm`
+- `pullup_max_reps`
+- `run_5k_seconds`
+- `run_1p5mi_seconds`
+- `bodyweight_kg`
+- `height_cm`
 
-Why it matters
+Relationship:
 
-Without a profile layer, the prescriber has no durable source for:
+- one-to-one with `User`
 
-equipment constraints
-schedule reality
-baseline benchmark context
-Source of truth
+Role:
 
-This is the source of truth for relatively stable setup information, not the evolving athlete state.
+Durable configuration and baseline context. It constrains prescription and seeds assumptions.
 
-AthleteState
+Current caveat:
 
-Represents the persisted unified athlete state S(t).
+The uploaded onboarding route fills experience, schedule, and equipment. The request schema includes lift/bodyweight/run fields, and the ORM supports them, but the uploaded route does not currently assign all of those fields to the profile.
 
-Key fields
-Capacities
-c_met_aerobic
-c_nm_force
-c_struct
-Battery
-b_met_anaerobic
-Fatigues
-f_met_systemic
-f_nm_peripheral
-f_nm_central
-f_struct_damage
-Signals
-s_struct_signal
-Human factors
-habit_strength
-skill_state
-Relationship
-many states per user over time
-Role in the system
+## AthleteState
 
-This is the engine’s internal belief state after processing the athlete’s training history.
+Represents a persisted unified state vector `S(t)`.
 
-Source of truth
+Key legacy scalar fields:
 
-AthleteState is the source of truth for current modeled readiness and capacity.
+- `c_met_aerobic`
+- `c_nm_force`
+- `c_struct`
+- `b_met_anaerobic`
+- `f_met_systemic`
+- `f_nm_peripheral`
+- `f_nm_central`
+- `f_struct_damage`
+- `s_struct_signal`
+- `habit_strength`
+- `skill_state`
 
-Important design choice
+Key decomposed field:
 
-Each update creates a new row.
-That means this table is a state history, not a mutable profile snapshot.
+- `engine_state` JSONB with `x`, `f`, and `t`
 
-Why not store just one row?
+The bridge layer keeps legacy columns and decomposed vectors aligned.
 
-Because you lose:
+Current decomposed vectors:
 
-replayability
-auditability
-trend analysis
-model-version migration options
-WorkoutLog
+`capacity_x`:
 
-Represents a persisted workout event.
+- aerobic
+- glycolytic
+- max_strength
+- hypertrophy
+- power
+- skill
+- mobility
+- work_capacity
 
-Key fields
-user_id
-optional planned_session_id
-logged_at
-session_timestamp
-modality
-duration
-session RPE
-optional RIR
-optional distance
-optional volume
-sleep quality
-inverse life stress
-dose_snapshot
-benchmark flags / benchmark results
-Relationship
-belongs to User
-may fulfill one PlannedSession
-Role in the system
+`fatigue_f`:
 
-This is the event-history layer for what actually happened.
+- cns
+- muscular
+- metabolic
+- structural
+- tendon
+- grip
 
-Important design choice
+`tissue_t`:
 
-The table stores dose_snapshot.
+- shoulder
+- elbow
+- wrist
+- lumbar
+- hip
+- knee
+- ankle
+- finger
 
-That is useful because the dose engine can evolve over time. Storing the calculated dose at log time gives you an audit trail and supports later comparisons or replay strategies.
+Role:
 
-Distinction from DTO
+The engine's internal belief state after processing workouts or benchmark observations.
 
-There is both:
+Important design choice:
 
-a Pydantic WorkoutLog schema for API input
-a SQLAlchemy WorkoutLog model for persistence
+Each update creates a new row. This table is a historical state timeline.
 
-That distinction should stay explicit in docs and naming, because the name overlap can confuse new contributors.
+## WorkoutLog
 
-MesocycleBlock
+Represents a persisted workout event created by `POST /v1/log-workout`.
+
+Key fields:
+
+- `user_id`
+- `planned_session_id`
+- `logged_at`
+- `session_timestamp`
+- `modality`
+- `duration_minutes`
+- `session_rpe`
+- `avg_rir`
+- `distance_meters`
+- `total_volume_load`
+- `sleep_quality`
+- `life_stress_inverse`
+- `dose_snapshot`
+- `is_benchmark`
+- `benchmark_results`
+
+Role:
+
+Observed event history. It stores the stress dose calculated at log time for auditability and future replay.
+
+Distinction from DTO:
+
+There is both a Pydantic `WorkoutLog` input schema and a SQLAlchemy `WorkoutLog` persistence model. Keep the distinction explicit in docs and code reviews.
+
+## ExerciseEntry DTO
+
+A workout log can include per-exercise entries.
+
+Client-provided fields:
+
+- exercise ID or name
+- sets
+- reps
+- load
+- time/distance
+- RPE/RIR
+- tempo
+- rest
+
+Service-resolved fields:
+
+- phi adaptation/fatigue/tissue vectors
+- energy mix
+- modality
+- movement pattern
+- skill demand
+- impact level
+- recovery cost
+- weak-point tags
+- sport domains
+
+These are not currently persisted as separate workout-exercise rows in the uploaded migration set. They are used to calculate dose more accurately before storing the workout's aggregate dose snapshot.
+
+## MesocycleBlock
 
 Represents a macro training block.
 
-Key fields
-goal
-status
-duration weeks
-sessions per week
-start / end date
-modality_mix
-weekly_template
-rationale
-deload settings
-Relationship
-belongs to User
-has many PlannedSession
-Role in the system
+Key fields:
 
-This is the long-range planning container. It stores training intent over a multi-week period.
+- `goal`
+- `status`
+- `duration_weeks`
+- `sessions_per_week`
+- `start_date`
+- `end_date`
+- `modality_mix`
+- `weekly_template`
+- `rationale`
+- `deload_every_n_weeks`
+- `deload_volume_factor`
 
-Important fields
+Current block goals:
 
-weekly_template is especially important because it defines the recurring structure of the block.
-modality_mix defines the intended emphasis split.
+- Strength
+- Hypertrophy
+- Power
+- Hyrox
+- CrossFit
+- Running
+- Calisthenics
+- General
+- Recomp
 
-Why it exists
+Role:
 
-Without blocks, the engine can only react locally.
-With blocks, it can combine strategic direction with daily adaptation.
+Stores long-range training intent. The block defines structure; the prescriber adapts session content using the current state.
 
-PlannedSession
+## PlannedSession
 
 Represents a scheduled training slot inside a block.
 
-Key fields
-block_id
-user_id
-scheduled_date
-week_number
-day_of_week
-category
-modality
-status
-prescribed_content
-optional workout_log_id
-is_deload
-Relationship
-belongs to MesocycleBlock
-may be linked to a WorkoutLog
-Role in the system
+Key fields:
 
-This is the bridge between macro planning and daily prescription.
+- `block_id`
+- `user_id`
+- `scheduled_date`
+- `week_number`
+- `day_of_week`
+- `category`
+- `modality`
+- `status`
+- `prescribed_content`
+- `workout_log_id`
+- `is_deload`
+- `is_benchmark`
+- `benchmark_key`
+- `completed_at`
 
-Important design choice
+Status values:
 
-prescribed_content is populated lazily.
-That means the block can define session slots first, and the exact content can be generated later using fresh state data.
+- pending
+- completed
+- skipped
+- rescheduled
 
-That is the correct pattern for an adaptive training system.
+Role:
 
-WeakPoint
+The bridge between planning and daily prescription. The exact content is generated lazily when the athlete opens the session or requests a next session.
 
-Represents a flagged limitation for a user.
+Important design choice:
 
-Key fields
-tag
-source
-confidence
-note
-detected_at
-resolved_at
-optional source_session_id
-Source types
-self report
-benchmark
-inference
-performance data
-Relationship
-belongs to User
-Role in the system
+Do not overwrite the planned session with raw workout data. Link to `WorkoutLog` through `workout_log_id` / `planned_session_id`.
 
-This is the targeted-bias layer for prescription.
+## WeakPoint
 
-Why confidence matters
+Represents a flagged limitation.
 
-A self-reported weak point and a benchmark-derived weak point should not carry identical weight.
-Storing source and confidence lets the prescriber aggregate evidence instead of treating all weakness labels as equal.
+Key fields:
 
-Why separate rows instead of one merged row per tag?
+- `tag`
+- `source`
+- `confidence`
+- `note`
+- `detected_at`
+- `resolved_at`
+- `source_session_id`
 
-Because multiple independent signals can point to the same weak point over time.
+Source values:
 
-Exercise
+- self_report
+- benchmark
+- inference
+- performance_data
 
-Represents a library entry for movement selection.
+Canonical weak-point tags include movement patterns, physical qualities, energy systems, and sport-specific limitations such as `grip`, `posterior_chain`, `aerobic_base`, `lactate_threshold`, `running_economy`, `barbell_technique`, and `olympic_lifting`.
 
-Key fields
-name
-modality
-movement pattern
-muscles
-equipment requirements
-load type
-skill demand
-impact level
-weak-point tags
-benchmark flag
-coaching notes
-metadata
-Relationship
+Role:
 
-This is seed / library data, not user-owned data.
+Biases prescription without hijacking the main goal or safety constraints.
 
-Role in the system
+Benchmark feedback behavior:
 
-This table lets the prescriber turn abstract training goals into concrete exercise selections.
+- low normalized benchmark values can create or refresh benchmark-sourced weak points
+- sufficiently improved normalized values can resolve matching benchmark-sourced weak points
 
-Why it matters
+## Exercise
 
-The prescriber should not hard-code every exercise decision.
-This table makes exercise selection data-driven and easier to expand across modalities.
+Represents a movement library entry.
 
-Source of Truth by Layer
-User / AthleteProfile   = identity + stable setup
-WorkoutLog              = observed event history
-AthleteState            = modeled internal history
-MesocycleBlock          = strategic plan
-PlannedSession          = scheduled tactical slot
-WeakPoint               = targeted bias signals
-Exercise                = movement library for implementation
+Key fields:
 
-This separation should remain visible in both code and docs.
+- name
+- modality
+- movement pattern
+- pattern family
+- unilateral flag
+- ROM demand
+- contraction bias
+- primary/secondary muscles
+- equipment required
+- load type
+- sport domains
+- scalable_by
+- skill demand
+- technical ceiling
+- impact level
+- recovery cost
+- novelty penalty
+- `phi_adapt`
+- `phi_fatigue`
+- `phi_tissue`
+- `energy_mix`
+- weak-point tags
+- benchmark flag
+- coaching notes
+- metadata
 
-Typical Data Lifecycle
-1. Athlete onboarding
+Role:
+
+This is the movement library used by dose resolution and future exercise selection. It is seed/reference data, not user-owned data.
+
+## BenchmarkDefinition
+
+Represents a benchmark protocol or metric definition.
+
+Key fields:
+
+- `code`
+- `name`
+- `domain`
+- `metric_type`
+- `unit`
+- `is_primary_anchor`
+- `is_derived_only`
+- `is_validator_only`
+- `protocol_summary`
+- `standardization_rules`
+- `minimum_retest_interval_days`
+- `better_direction`
+- `observation_weight`
+- `state_targets`
+- `fatigue_targets`
+- `tissue_targets`
+- `provenance`
+
+Role:
+
+Defines what can be observed or computed. Some definitions are primary anchors; some are derived-only; some are validator-only.
+
+Constraints:
+
+A definition cannot be both primary anchor and derived-only, and cannot be both primary anchor and validator-only.
+
+## BenchmarkObservation
+
+Represents a user-specific benchmark result.
+
+Key fields:
+
+- `user_id`
+- `benchmark_definition_id`
+- `observed_at`
+- `raw_value`
+- `secondary_value`
+- `normalized_value`
+- `bodyweight_kg`
+- `rpe`
+- `heart_rate_avg`
+- `heart_rate_drift_pct`
+- `notes`
+- `protocol_metadata`
+- `validity_status`
+- `source`
+
+Role:
+
+Observed measurement history. Valid observations can affect state through observation mappings and can update weak-point signals.
+
+## ObservationMapping
+
+Maps benchmark observations to state-vector changes.
+
+Key fields:
+
+- `benchmark_definition_id`
+- `target_vector`
+- `target_key`
+- `mapping_type`
+- `coefficient`
+- `intercept`
+- `min_value`
+- `max_value`
+- `config`
+
+Supported mapping styles in the uploaded state update code include:
+
+- direct
+- inverse
+- logistic
+- ratio_threshold
+- bounded
+
+Role:
+
+This is the current bridge from benchmark observations into state assimilation. It is not a full EKF yet, but it is a weighted residual-style nudge.
+
+## DerivedMetricDefinition
+
+Defines a computed KPI.
+
+Key fields:
+
+- `code`
+- `name`
+- `domain`
+- `metric_type`
+- `unit`
+- `formula_type`
+- `formula_config`
+- `display_priority`
+- `is_dashboard_kpi`
+- `can_affect_prescriber_rules`
+- `provenance`
+
+Formula types supported in service logic:
+
+- sum
+- ratio
+- weighted_sum
+- custom_python_key
+
+## DerivedMetricSnapshot
+
+Stores a computed KPI value at a point in time.
+
+Key fields:
+
+- `user_id`
+- `derived_metric_definition_id`
+- `computed_at`
+- `value`
+- `confidence`
+- `contributing_observation_ids`
+- `notes`
+
+Role:
+
+A time-stamped KPI snapshot that can feed dashboards and prescriber context.
+
+## Source of Truth by Layer
+
+```text
+User / AthleteProfile        = identity + stable setup
+WorkoutLog                   = observed workout event history
+BenchmarkObservation          = observed test / measurement history
+AthleteState                  = modeled internal history
+MesocycleBlock                = strategic plan
+PlannedSession                = scheduled tactical slot
+WeakPoint                     = targeted bias signals
+Exercise                      = movement library
+BenchmarkDefinition           = measurement taxonomy
+ObservationMapping            = benchmark -> state update rule
+DerivedMetricDefinition       = KPI formula definition
+DerivedMetricSnapshot         = computed KPI history
+```
+
+## Typical Data Lifecycle
+
+### 1. Account creation
 
 Create:
 
-User
-AthleteProfile
+- `User`
+- empty `AthleteProfile`
 
-Optionally seed:
+### 2. Onboarding
 
-initial WeakPoint rows
-first MesocycleBlock
-2. State initialization
+Fill:
 
-Create baseline AthleteState if no history exists.
+- `AthleteProfile`
 
-3. Training day
+Optionally create:
 
-User opens today’s planned session or requests a next session.
+- self-reported `WeakPoint` rows
+
+Create:
+
+- baseline `AthleteState` S0
+
+### 3. Block planning
+
+Create:
+
+- `MesocycleBlock`
+- generated `PlannedSession` rows
+
+The planning service can mark deload weeks and periodic benchmark sessions.
+
+### 4. Training day
 
 The prescriber reads:
 
-latest AthleteState
-active block / planned session
-active weak points
-exercise library
-athlete profile constraints
-4. Workout completion
+- latest `AthleteState`
+- active block/session context
+- active weak points
+- recent workout summaries
+- KPI snapshots
+- equipment/profile constraints
 
-Create a WorkoutLog.
+Then it returns `WorkoutPrescription` and may write `prescribed_content` to today's planned session.
+
+### 5. Workout completion
+
+Create:
+
+- `WorkoutLog`
 
 Then:
 
-compute StressDose
-update state
-persist a new AthleteState
-optionally connect the log to the planned session
-5. Ongoing adaptation
+- compute `StressDose`
+- update state
+- persist new `AthleteState`
+- mark planned session completed when linked or same-day matched
 
-Weak points can be:
+### 6. Benchmark observation
 
-added
-reinforced from new evidence
-resolved when corrected
+Create:
 
-Blocks and planned sessions advance independently of raw event history.
+- `BenchmarkObservation`
 
-Why the Split Between WorkoutLog and AthleteState Is Correct
+Then, when valid and mappable:
 
-This is the most important data-model decision in the repo.
+- nudge state via `ObservationMapping`
+- persist new `AthleteState`
+- create/resolve benchmark weak points
+- recompute derived KPI snapshots
 
-A single table cannot cleanly represent both:
+## Migration Set
 
-what the athlete did
-what the model believes that did to the athlete
+Current uploaded migrations:
 
-Those are different things.
+- `a000_init` — users, profiles, exercises, mesocycle blocks, planned sessions, workout logs, weak points, athlete states
+- `a001_benchmark_kpi` — benchmark definitions, observations, derived metric definitions, derived metric snapshots, observation mappings
+- `a002_planned_bench_cols` — adds `is_benchmark` and `benchmark_key` to planned sessions
 
-Concrete failure case if they are merged:
+Run:
 
-You change the dose formula later
-now old rows are ambiguous
-you no longer know whether stored values are raw inputs or model outputs
-replay becomes painful or impossible
+```bash
+alembic upgrade head
+```
 
-Keeping logs and state separate avoids that trap.
+The application startup checks the Alembic version and logs if the database is behind head.
 
-Recommended Constraints and Conventions
-Naming
+## Conventions
 
-Be explicit when names overlap between DTOs and ORM models.
+### Naming
 
-Example:
+Be explicit about DTO vs ORM model names when they overlap.
 
-API schema: WorkoutLogIn
-DB model: WorkoutLog
+Examples:
 
-That is not required, but it would reduce confusion.
+- API schema: `WorkoutLog`
+- DB model: `WorkoutLogORM` alias in services
 
-Time
+### Time
 
-Use consistent semantics for:
+Keep these separate:
 
-event timestamp
-row creation timestamp
-modeled state timestamp
+- event timestamp (`session_timestamp`)
+- row creation time (`logged_at`, `created_at`)
+- modeled state timestamp (`AthleteState.timestamp`)
+- benchmark observation time (`observed_at`)
 
-Right now the schema already distinguishes these reasonably well.
+### Append-only state
 
-Append-only state
+Treat `AthleteState` rows as historical snapshots.
 
-Treat AthleteState rows as immutable historical snapshots.
+### Weak-point resolution
 
-Weak point resolution
+Do not delete resolved weak points. Set `resolved_at`.
 
-Do not delete resolved weak points; use resolved_at.
+### Planned vs completed
 
-Planned vs completed
+Do not overwrite planned sessions with raw completed work. Link to workout logs.
 
-Do not overwrite PlannedSession with raw observed session data.
-Link it to WorkoutLog instead.
+### Derived KPIs
 
-Open Model Questions
+Do not overwrite definitions. Write snapshots.
 
-These are worth documenting explicitly as the project grows:
+## Open Model Questions
 
-1. How should model versioning be tracked?
-
-As of v0.3, `model_version = "v0.3"` is stored as a field on both:
-
-- `UnifiedStateVector` (every persisted AthleteState row carries the engine version)
-- `WorkoutPrescription` (every prescription response carries the engine version)
-
-This gives a lightweight audit trail. If dose logic changes in a future version,
-consumers can detect which formula set produced each row by inspecting
-model_version. Full replay-from-logs and per-dose-snapshot versioning remain
-open questions as the project scales.
-2. How should active state be queried?
-
-Current pattern is “latest row by timestamp.”
-That is fine now, but eventually you may want:
-
-cached latest-state view
-materialized summary
-state-version tagging
-3. How should weak-point aggregation work?
-
-Multiple rows may point to one tag.
-The aggregation rule belongs in documented prescriber logic.
-
-4. How should planned sessions handle rescheduling?
-
-The current model supports status changes, but the behavioral rules should be documented.
+1. How much of benchmark assimilation should remain heuristic mapping versus a fuller state-estimation system?
+2. Should profile baseline lift fields be fully persisted by onboarding route?
+3. Should per-exercise workout entries be persisted as first-class child rows rather than only used during dose calculation?
+4. Should weak-point aggregation weight confidence/source before passing tags to the prescriber?
+5. Should latest state be exposed through a cached/materialized view once state history grows?

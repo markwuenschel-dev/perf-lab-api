@@ -1,494 +1,482 @@
-What the Prescriber Is
+# Performance Lab Prescriber Logic
 
-The prescriber is a decision engine.
+## What the Prescriber Is
+
+The prescriber is the decision engine that turns the athlete model into the next recommended session.
 
 It is not:
 
-a workout logger
-a state updater
-a static program lookup
-a random exercise picker
+- a workout logger
+- a state updater
+- a static program lookup
+- a random exercise picker
 
-It takes the athlete model as input and produces the next recommended session.
+It reads state and context, builds candidate sessions, scores them, validates the result, then returns a structured `WorkoutPrescription`.
 
-That makes it the part of the system that turns:
+```text
+S(t) + goal + recent history + KPIs + weak points + equipment + block context
+    -> candidate pool
+    -> safety/readiness redirects
+    -> scoring
+    -> validation / template enrichment
+    -> WorkoutPrescription u(t)
+```
 
-latent state
-into
-actionable training
-Inputs to the Prescriber
-1. Current athlete state S(t)
+## Inputs to the Prescriber
 
-The prescriber should always start with the latest UnifiedStateVector.
+### 1. Current athlete state `S(t)`
 
-Relevant state fields include:
+The prescriber starts with the latest `UnifiedStateVector`.
 
-Capacities
-c_met_aerobic
-c_nm_force
-c_struct
+Important state components:
 
-These describe what the athlete is broadly capable of.
+`capacity_x`:
 
-Battery
-b_met_anaerobic
+- aerobic
+- glycolytic
+- max_strength
+- hypertrophy
+- power
+- skill
+- mobility
+- work_capacity
 
-This affects tolerance for high-intensity work.
+`fatigue_f`:
 
-Fatigue channels
-f_met_systemic
-f_nm_peripheral
-f_nm_central
-f_struct_damage
+- cns
+- muscular
+- metabolic
+- structural
+- tendon
+- grip
 
-These constrain what is appropriate today.
+`tissue_t`:
 
-Signals
-s_struct_signal
+- shoulder
+- elbow
+- wrist
+- lumbar
+- hip
+- knee
+- ankle
+- finger
 
-This helps distinguish pure cost from productive stimulus.
+Legacy mirrors also remain available for compatibility:
 
-Human factors
-habit_strength
-skill_state
+- `c_met_aerobic`
+- `c_nm_force`
+- `c_struct`
+- `b_met_anaerobic`
+- `f_met_systemic`
+- `f_nm_peripheral`
+- `f_nm_central`
+- `f_struct_damage`
 
-These should influence session complexity, friction, and technical demands.
+### 2. Goal
 
-2. Goal
+The current API accepts these `TrainingGoal` values:
 
-The current API exposes goal as a query parameter to GET /v1/next-session.
-
-Visible values across the repo/model surface include:
-
+```text
 Strength
 Hypertrophy
 Power
 General
-Running
-Hyrox
-CrossFit
+OlympicLifts
+Powerlifting
+MetCon
 Calisthenics
-Recomp
+Gymnastics
+Grip
+Running
+Sprinting
+HalfMarathon
+FullMarathon
+```
 
-Goal determines the broad direction of the recommendation, but should not
-override readiness constraints.
+The goal determines the broad target. State determines what is tolerable now.
 
-The goal tells the prescriber what to aim for.
-The state tells it what is tolerable today.
+### 3. Recent workout context
 
-3. Block context
+The route gathers recent workout summaries from the last 14 days, capped at 40 rows.
 
-When a mesocycle/planning layer is active, the prescriber should use:
+Summaries include:
 
-active block goal
-weekly template
-planned session category
-deload flags
-current week within the block
+- modality
+- duration
+- RPE
+- timestamp
+- derived tags
+- intensity bucket
 
-This is already reflected in the schema comments:
+This helps avoid repeated stress patterns and supports template validation.
 
-MesocycleBlock defines weekly structure and emphasis mix
-PlannedSession is the daily slot
-prescribed_content is filled lazily when today’s session is opened
+### 4. KPI summary
 
-That means the prescriber should not invent each day from scratch if a block
-exists. It should respect the block and adapt within it.
+The route passes latest derived KPI values to the prescriber.
 
-4. Weak points
+Examples used in the current candidate logic include:
 
-Weak points are first-class bias signals.
+- `run_fatigue_factor`
+- `wl_snatch_cj_ratio`
+- `pl_relative_total`
+- `pl_projected_total`
+- `gym_pull_support_balance`
 
-Each weak point includes:
+KPI signals are soft context. State vectors remain the primary controller.
 
-canonical tag
-source
-confidence
-note
-resolution state
+### 5. Active weak points
 
-This is a strong design.
+Active unresolved weak-point tags are fetched from the database and passed to the prescriber.
 
-A prescriber should not treat “weakness” as one binary flag.
-It should aggregate evidence from:
+Current behavior:
 
-self report
-benchmark
-inference
-performance data
+- tags are appended to `why.constraints_applied` as `weak_point:{tag}`
+- candidate scoring has a weak-point coverage axis
+- weak points bias the recommendation but do not override hard safety rules
 
-Active unresolved weak points should bias selection, not blindly dominate it.
+### 6. Equipment/profile constraints
 
-Example:
+The athlete profile provides available equipment. The current prescriber uses a simple equipment-to-exercise mapping and falls back to bodyweight exercises when no matching equipment exists.
 
-if posterior_chain and grip are active, the session may include hinge or
-carry emphasis
-but not if current structural or peripheral fatigue makes that choice reckless
-5. Equipment and profile constraints
+Current equipment keys in the prescriber map include:
 
-The athlete profile provides durable constraints such as:
+- barbell
+- dumbbells
+- pullup_bar
+- bodyweight fallback
 
-experience level
-available days per week
-session duration
-equipment access
-baseline benchmarks
+The exercise library model supports deeper future selection using equipment requirements, phi vectors, skill demand, impact level, and weak-point tags.
 
-The exercise library provides the matching surface:
+### 7. Block and planned-session context
 
-modality
-movement pattern
-equipment requirements
-load type
-skill demand
-impact level
-weak-point tags
+When an active block and today's pending planned session exist, the route passes block context:
 
-This means the prescriber should not choose exercises in a vacuum.
-It should choose implementations the athlete can actually do.
+- block goal
+- session category
+- deload flag
+- benchmark flag
+- week number
 
-6. Most recent training context
+Current prescriber behavior:
 
-Even without a full explicit “training history summary” layer, the prescriber
-should still care about recent context such as:
+- adds a +0.15 score boost when candidate type matches `session_category`
+- appends `block:deload` to constraints when the planned session is a deload
+- appends `block:benchmark` when the planned session is a benchmark
+- route writes generated prescription content back to `PlannedSession.prescribed_content`
 
-what was prescribed recently
-what fatigue remains high
-whether the athlete is in a deload slot
-whether a benchmark was recently completed
+## Output
 
-This prevents repeated exposure to the same stress pattern when the state says
-recovery is incomplete.
+The API returns `WorkoutPrescription`.
 
-Output of the Prescriber
+Fields:
 
-The API currently exposes a WorkoutPrescription via GET /v1/next-session.
+- `type`
+- `focus`
+- `rationale`
+- `duration_min`
+- `model_version`
+- `exercises`
+- `why`
 
-From the current UI and PlannedSession.prescribed_content example, a useful
-prescription shape includes:
+`ExercisePrescription` includes:
 
-type
-focus
-duration_min
-rationale
-optional exercises
-optional progression / intensity detail
+- `name`
+- `sets`
+- `reps`
+- `load_note`
+- `weak_point_tags`
 
-Example conceptual shape:
+`PrescriptionExplanation` includes:
 
-{
-  "type": "Max Strength",
-  "focus": "Back Squat 5x3 @ RPE 8",
-  "duration_min": 60,
-  "rationale": "Lower-body strength emphasis while central fatigue is acceptable.",
-  "exercises": [
-    {
-      "name": "Back Squat",
-      "sets": 5,
-      "reps": 3,
-      "target_rpe": 8
-    }
-  ]
-}
+- `state_drivers`
+- `goal_alignment`
+- `constraints_applied`
+- `source_alignment`
+- `template_id`
+- `prescription_branch`
+- `validation`
+- `warnings`
+- `score`
+- `structured_template_name`
 
-The exact schema can evolve, but the output should always answer four questions:
+Every recommendation should answer:
 
-What kind of session is this?
-What is the main emphasis?
-How long should it take?
-Why was it chosen?
+1. What kind of session is this?
+2. What is the main emphasis?
+3. How long should it take?
+4. Why was it chosen now?
+5. What constraints shaped it?
 
-If it fails to answer the fourth question, it becomes a black box.
+## Decision Priorities
 
-Decision Priorities
+### 1. Safety / recoverability
 
-The prescriber should make decisions in this order.
+Hard safety overrides happen before normal scoring.
 
-1. Safety / recoverability
+Examples from current logic:
 
-First ask:
+- high lumbar or knee tissue stress -> low-impact recovery
+- high tendon or structural fatigue -> tissue deload
+- high structural damage scalar -> recovery
+- very high systemic metabolic fatigue -> passive recovery / sleep / nutrition
 
-What should the athlete not do today?
+Safety overrides bypass normal candidate scoring.
 
-If structural damage is high, do not prescribe high-impact or heavily loaded
-structural work just because it matches the long-term goal.
+### 2. Readiness redirects
 
-If central or peripheral fatigue is high, do not prescribe the most neurally
-expensive option available.
-
-This is the first gate, not a later tweak.
-
-2. Preserve goal direction
-
-Once unsafe or poorly timed options are removed, preserve the athlete’s
-training direction.
-
-Example:
-
-a strength block should still mostly feel like strength training
-a hypertrophy block should not drift into random conditioning
-a running goal should still preserve aerobic and economy development
-
-The prescriber should adapt within the goal, not abandon it at the first
-constraint.
-
-3. Respect block structure
-
-If a block and planned session exist, the prescriber should stay inside that slot.
+Soft fatigue shifts are added to the candidate pool and scored alongside goal candidates.
 
 Examples:
 
-“Heavy Lower” remains lower-body focused
-“Conditioning” remains conditioning
-deload weeks reduce volume and/or intensity rather than pretending recovery
-does not exist
+- high CNS fatigue can redirect toward Zone 2 cardio or technique/flow work
+- high peripheral fatigue can redirect toward active recovery or neural priming depending on goal
 
-The block gives direction. The current state tunes dosage.
+### 3. Goal-specific candidate generation
 
-4. Bias toward active weak points
+Each goal has candidate generators.
 
-Only after safety, goal, and slot alignment should weak points bias the session.
+Current goal families:
 
-This is where a lot of systems go wrong: they let a detected weakness hijack the
-whole day.
+- Strength
+- Hypertrophy
+- Power
+- Olympic lifting
+- Powerlifting
+- MetCon
+- Running / Sprinting / HalfMarathon / FullMarathon
+- Gymnastics / Calisthenics
+- Grip
+- General
 
-A weak point should influence exercise choice, assistance work, or emphasis.
-It should not always redefine the primary objective of the session.
+### 4. Block alignment
 
-5. Choose concrete exercises the athlete can actually perform
+If a planned session exists, candidate scoring gets a block-context boost when the candidate type matches the planned session category.
 
-Only after the abstract session is determined should the prescriber choose the
-exact exercise implementation.
+### 5. Weak-point bias
 
-The exercise library supports this by storing:
+Weak-point coverage contributes to candidate score and is included in the explanation.
 
-movement pattern
-required equipment
-skill demand
-impact level
-weak-point tags
-coaching notes
+### 6. Equipment-aware exercise payload
 
-This is the bridge from “what kind of stress do we want?” to “what movement
-should appear on the page?”
+After the session is chosen, the prescriber fills `rx.exercises` with equipment-compatible options or a bodyweight fallback.
 
-6. Explain the choice
+### 7. Validation and explainability
 
-Every recommendation should include rationale.
+`finalize_prescription()` enriches the output with template provenance, state drivers, validation results, warnings, and optional structured-template scoring.
 
-Not a generic motivational sentence.
-A real explanation.
+If hard constraints fail during finalization, the prescription is replaced with a safer recovery session.
 
-Good rationale example:
+## Candidate Model
 
-“Central fatigue is moderate but structural fatigue is low, so lower-body
-loading remains viable while sprint work is deprioritized.”
+`SessionCandidate` is the core scoring object.
 
-Bad rationale example:
+Fields include:
 
-“This workout will help you improve.”
+- type
+- focus
+- rationale
+- duration
+- branch ID
+- goal alignment
+- state fit
+- fatigue penalty
+- tissue penalty
+- novelty bonus
+- habit bonus
+- template bias
+- weak-point coverage
+- safety override flag
+- source
 
-One explains selection pressure. The other says nothing.
+Default scoring weights:
 
-Core Heuristics
+```text
+goal_alignment       +0.30
+state_fit            +0.25
+weak_point_coverage  +0.15
+fatigue_penalty      -0.15
+tissue_penalty       -0.08
+novelty_bonus        +0.04
+habit_bonus          +0.03
+template_bias        +0.05
+```
 
-These are the main heuristics the prescriber should follow.
+The score is clamped to `[0, 1]`.
 
-Heuristic 1: Fatigue channels constrain modality and intensity
+## Safety Overrides
 
-Different fatigue channels should block different choices.
+Current hard-stop triggers include:
 
-Examples:
+- `tissue_t.lumbar > 65` or `tissue_t.knee > 70`
+- `fatigue_f.tendon > 55` or `fatigue_f.structural > 65`
+- `f_struct_damage > 70`
+- `f_met_systemic > 80`
 
-high f_struct_damage → reduce plyometric/high-impact work
-high f_nm_central → reduce max-force / highly technical neural work
-high f_nm_peripheral → reduce local muscular stress in recently taxed areas
-high f_met_systemic → reduce long or metabolically dense sessions
+These return recovery/tissue-deload options before goal candidates matter.
 
-The exact thresholds can evolve, but the directional logic should remain.
+## Readiness Redirects
 
-Heuristic 2: Capacities shape ceiling, not just today’s readiness
+Current soft redirects include:
 
-Capacities should influence:
+- high central fatigue -> aerobic shift or technique flow
+- high peripheral fatigue -> neural priming for power/sprint/Olympic goals or active recovery otherwise
 
-expected session difficulty ceiling
-progression range
-benchmark suitability
-session density the athlete can tolerate
+These do not automatically override the program. They compete through scoring.
 
-Capacities are not the same as freshness.
-A strong but tired athlete and a weaker but fresh athlete should not get the
-same prescription.
+## Goal-Specific Current Behavior
 
-Heuristic 3: Skill demand must match skill state
+### Strength
 
-The system already tracks skill_state and the exercise library tracks
-skill_demand.
+Candidates include:
 
-That implies an obvious rule:
-high-skill movements should not be prescribed aggressively when the athlete’s
-skill state or readiness is poor.
+- Max Strength
+- Skill Acquisition for low squat skill
+- Strength Variety when habit is low
+- Strength Volume
 
-Otherwise the system will choose theoretically correct but practically bad sessions.
+### Hypertrophy
 
-Heuristic 4: Equipment is a hard constraint, not a preference
+Candidates include:
 
-If the athlete does not have the required equipment, the exercise should not be chosen.
+- High Volume Hypertrophy
+- Maintenance Volume
 
-This sounds trivial, but many recommendation systems fail here by treating
-constraints like soft suggestions.
+### Power
 
-Heuristic 5: Deloads should change dosage, not theme
+Candidates include:
 
-A deload week should usually preserve:
+- Power Development
+- Neural Priming
 
-movement pattern
-block intent
-session slot identity
+### OlympicLifts
 
-What changes is:
+Candidates include:
 
-volume
-intensity
-density
-exercise complexity if needed
+- Weightlifting Technique
+- Strength Pulls
 
-A deload should still feel like the same program, just with lower cost.
+KPI context can bias snatch work when snatch/C&J ratio is low.
 
-Heuristic 6: Weak points should bias assistance more than main lift selection
+### Powerlifting
 
-This is not a hard law, but it is usually the right default.
+Candidates include:
 
-Why:
-if a weak point always replaces the primary work, the block loses coherence.
+- SBD Strength
+- Accessory Focus
 
-Better pattern:
+KPI context can bias volume when relative total is low.
 
-main slot preserves goal
-accessories, variants, or secondary emphasis address weak points
-Recommended Decision Pipeline
+### MetCon
 
-The cleanest prescriber pipeline is:
+Candidates include:
 
-Step 1: Determine context
+- Metabolic Conditioning
+- Engine Work
 
-Gather:
+### Running
 
-latest state
-goal
-active block
-current planned session
-active weak points
-athlete profile
-exercise availability
-Step 2: Select abstract session type
+Candidates include:
 
-Examples:
+- Aerobic Base
+- Threshold Work for half/full marathon or elevated fatigue factor
+- Speed for Sprinting goal
 
-max strength
-upper hypertrophy
-threshold run
-aerobic base
-mixed conditioning
-recovery / low-cost technical work
-Step 3: Set dosage
+### Gymnastics / Calisthenics
 
-Decide:
+Candidates include:
 
-duration
-volume target
-intensity target
-density / rest profile
-Step 4: Choose exercise implementations
+- Gymnastics Skill
+- Bodyweight Strength for Calisthenics
 
-Map the abstract session onto concrete movements based on:
+### Grip
 
-equipment
-skill demand
-weak-point tags
-impact profile
-Step 5: Generate rationale
+Candidates include:
 
-Summarize why this session was selected now.
+- Grip & Support
+- Grip Recovery
 
-Step 6: Return structured prescription
+### General
 
-Return the session in a format the UI and future planning layer can consume.
+Candidate includes balanced GPP.
 
-What the Prescriber Should Avoid
-1. Chasing the last workout only
+## Finalization Layer
 
-The prescriber should use modeled state, not just “what happened yesterday.”
+`finalize_prescription()` adds:
 
-Otherwise it collapses back into reactive workout shuffling.
+- state drivers
+- goal alignment
+- constraints applied
+- source/provenance alignment
+- template ID
+- branch ID
+- validation summary
+- warnings
+- score
+- structured-template name when enabled
 
-2. Treating all fatigue as one number
+It uses:
 
-The project explicitly separates fatigue channels.
-Flattening them into one readiness score too early destroys useful information.
+- program templates
+- optional structured coaching templates
+- constraint context built from state and recent sessions
+- session draft encoding
+- legacy and structured validation
 
-3. Letting weak points hijack programming
+If hard domain constraints are triggered, finalization replaces the recommendation with:
 
-Weak-point biasing is useful.
-Weak-point obsession is destructive.
+```text
+Recovery — Easy movement + mobility (constraint override)
+```
 
-4. Picking exercises before deciding session intent
+## Explanation Quality Standard
 
-Exercise selection should come after session type and dosage, not before.
+Good rationale names the selection pressure.
 
-5. Giving opaque rationales
+Good:
 
-If the user cannot tell why the recommendation changed, trust drops fast.
+```text
+Central fatigue is elevated, so high-neural work is deprioritized and stress is shifted toward low-neural aerobic work.
+```
 
-Current Visible Behavior vs Intended Behavior
+Bad:
 
-As of v0.3 the following are implemented:
+```text
+This workout will help you improve.
+```
 
-Implemented
-there is a next-session endpoint
-the frontend treats it as the source of the next recommendation
-the response includes type, focus, duration_min, rationale, model_version,
-  exercises (ExercisePrescription list), and why (PrescriptionExplanation)
-recommend_next_session() accepts active_weak_points, available_equipment,
-  and block_context as optional parameters
-active unresolved WeakPoint tags are fetched from the DB and passed as
-  active_weak_points → annotated in why.constraints_applied as weak_point:{tag}
-active MesocycleBlock + today’s PlannedSession are fetched; block_context
-  applies a +0.15 score bias to candidates matching the planned session category
-PlannedSession.prescribed_content is written after generation
+The first explains the model's decision. The second does not.
 
-Still intended / not yet complete
-equipment-aware exercise selection (available_equipment parameter exists;
-  AthleteProfile.equipment query is planned but not yet wired in the route)
-deload flags should alter prescription intensity targets more explicitly
-block templates should inform session category selection more deeply
-exact threshold values for fatigue channel constraints — directional logic
-  exists but specific cutoffs are not fully documented
-whether generation is deterministic, LLM-based, or hybrid — currently
-  deterministic candidate scoring + selection
-exact conflict resolution when multiple fatigue channels are high
+## What the Prescriber Should Avoid
 
-Suggested Architecture for the Prescriber
+1. Chasing only the last workout.
+2. Flattening all fatigue into one number before decision-making.
+3. Letting weak points override safety or block identity.
+4. Picking exercises before deciding session intent.
+5. Giving opaque rationales.
+6. Treating equipment as a preference rather than a hard implementation constraint.
+7. Ignoring benchmark/KPI context when it is available.
 
-A strong implementation shape would be:
+## Current Limitations
 
-State + Context
-    ↓
-Constraint Filter
-    ↓
-Session Type Selector
-    ↓
-Dose / Intensity Tuner
-    ↓
-Exercise Selector
-    ↓
-Rationale Generator
-    ↓
-WorkoutPrescription
+Implemented:
 
-This is better than a single giant decision function because it separates:
+- candidate-based controller
+- hard safety overrides
+- readiness redirects
+- goal-specific candidate pools
+- block-context score boost
+- weak-point explanation tags
+- KPI summary input
+- recent workout context input
+- equipment-based exercise payload with fallback
+- finalization with validation and provenance fields
+- deload/benchmark explanation annotations
 
-what is forbidden
-what is desired
-how much stress is appropriate
-how the session is concretely expressed
+Still incomplete / likely next:
+
+- deeper exercise selection directly from the `Exercise` DB table
+- richer use of block templates beyond a simple category boost
+- stronger deload dosage tuning from `deload_volume_factor`
+- fuller weak-point aggregation by source/confidence
+- more complete benchmark-specific session generation
+- deterministic conflict rules when many fatigue channels are high

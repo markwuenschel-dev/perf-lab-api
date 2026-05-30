@@ -1,11 +1,14 @@
 """
-Session stress dose D(t): six-dimensional vector + legacy fatigue channels.
+Current production stress dose engine (v0.3+ refined math model).
 
-Exercise-aware: when WorkoutLog.exercises contains entries with resolved phi_*
-vectors, dose is aggregated from per-exercise contributions. Falls back to
-modality-level defaults (via default_phi_for_row) when phi vectors are absent.
+Converts a `WorkoutLog` (with per-exercise data) into a rich `StressDose`
+containing:
+- `dose_six`: 6-axis dose vector
+- `adaptation_contribution`: per-capacity adaptation signals
+- Legacy scalar channels for backward compatibility
 
-Uses parameter exponents from EngineParameters.
+This is the preferred implementation. The older dict-based version lives in
+`app.logic.dose_engine` (deprecated).
 """
 
 from __future__ import annotations

@@ -2,393 +2,381 @@
 
 ## Purpose
 
-This roadmap makes the project’s near-term and medium-term direction explicit.
+This roadmap captures the current project position and what should come next.
 
-It exists to answer three questions:
+It answers:
 
 1. what is already present
-2. what is clearly planned
-3. what should come next to make the system feel complete
+2. what has moved from planned to implemented
+3. what remains to make the system complete
 
-This is not a promise of dates.
-It is a map of architectural priorities.
-
----
+This is not a promise of dates. It is a map of architectural priorities.
 
 ## Current Position
 
-Performance Lab already has the core shape of a real training engine:
+Performance Lab now has the shape of a real adaptive training engine:
 
-- a FastAPI backend
-- a unified state model `S(t)`
-- a stress dose layer `D(t)`
-- a service loop for state updates
-- a next-session prescription surface
-- a frontend panel that already mirrors the control loop
+- FastAPI backend
+- JWT auth
+- Alembic-managed PostgreSQL schema
+- unified state model `S(t)`
+- stress dose layer `D(t)`
+- workout-to-state service loop
+- planning blocks and planned sessions
+- candidate-based prescription engine
+- weak-point signal layer
+- benchmark observation and KPI layer
+- React/TypeScript frontend control console
+- onboarding and planning UI surfaces
 
-That is the right foundation.
-
-What it does **not** yet have is a fully closed product loop across onboarding,
-planning, calibration, and production-hardening.
-
----
+The strongest foundation is the separation between event history, state history, planning, benchmark observations, weak points, and prescriptions.
 
 ## Roadmap Themes
 
-The project naturally breaks into five roadmap themes:
-
 1. Core engine hardening
-2. Onboarding and athlete setup
-3. Planning and prescriber enrichment
-4. Multi-modality expansion
-5. Frontend and product integration
-
----
+2. Onboarding/profile completeness
+3. Planning and calendar maturity
+4. Benchmark/KPI assimilation
+5. Prescriber and exercise selection quality
+6. Frontend product workflow
+7. Testing and production hardening
 
 ## 1. Core Engine Hardening
 
-## 1.1 Add Alembic migrations
-### Status ✅ COMPLETE
+### 1.1 Alembic migrations
 
-Two migrations are now in place:
+Status: complete for current uploaded schema.
 
-- `a000_init` — creates all 9 foundational tables in FK-dependency order
-  (users, athlete_profiles, exercises, mesocycle_blocks, planned_sessions,
-  workout_logs, weak_points, athlete_states)
-- `a001_benchmark_kpi_tables` — benchmark KPI tables, chains from a000
+Current migrations:
 
-Run `alembic upgrade head` on a fresh DB to create all tables.
+- `a000_init` — foundational tables
+- `a001_benchmark_kpi` — benchmark/KPI tables and observation mappings
+- `a002_planned_bench_cols` — planned-session benchmark columns
 
----
+App startup checks Alembic head and logs if DB schema is behind.
 
-## 1.2 Expand automated testing
-### Status ✅ SUBSTANTIALLY COMPLETE
+Remaining targets:
 
-Test files added in v0.3:
+- decide whether startup mismatch should raise in production rather than log
+- document migration workflow in deployment docs
 
-- `tests/test_dose_engine_v0.py` — 10 unit tests for `calculate_stress_dose`
-- `tests/test_state_update_unit.py` — 10 unit tests for `update_athlete_state`
-- `tests/test_orm_persistence.py` — 5 DB persistence tests
-- `tests/test_integration_flow.py` — 4 end-to-end scenario tests
-- `tests/conftest.py` — async DB fixture with `DROP SCHEMA CASCADE` isolation
+### 1.2 State-vector bridge
 
-### Remaining targets
-- route tests for ingest and prescribe paths
-- scenario tests for overload and deload behavior
-- weak-point emergence and resolution scenarios
+Status: implemented.
 
----
+`engine_state` JSONB stores decomposed vectors while legacy scalar columns remain available. Bridge helpers convert both directions.
 
-## 1.3 Improve configuration and local development ergonomics
-### Status
-Partly planned in README TODOs.
+Remaining targets:
 
-### Targets
-- sane local `.env` examples
-- `docker-compose` for Postgres-backed development
-- tighter production CORS defaults
-- clearer environment validation
+- stronger model-version persistence on ORM state rows if formula sets diverge
+- migration strategy for historical state rows when vector schemas change
 
----
+### 1.3 Deprecated module cleanup
 
-## 1.4 Add model/version traceability
-### Status ✅ INITIAL IMPLEMENTATION COMPLETE
+Status: transition in progress.
 
-`model_version = "v0.3"` is now a field on:
+Deprecated:
 
-- `UnifiedStateVector` — every persisted state row carries which engine version produced it
-- `WorkoutPrescription` — every prescription carries which engine version generated it
+- `app.logic.dose_engine`
+- `app.logic.state_update`
 
-### Remaining targets
-- migration strategy for historical states when formula changes
-- replay strategy from event logs where needed
+Preferred:
 
----
+- `app.logic.dose_engine_v0`
+- `app.logic.state_update_v0`
+- `app.services.state_service`
+
+Remaining targets:
+
+- remove old imports after dependent scripts/tests are migrated
+- make lints/tests fail on new deprecated imports
 
 ## 2. Onboarding and Athlete Setup
 
-## 2.1 Add explicit onboarding endpoints
-### Status ✅ COMPLETE
+### 2.1 Register + profile shell
 
-`POST /v1/onboard` is live. It:
+Status: implemented.
 
-- creates the AthleteProfile row
-- optionally creates self-reported WeakPoint rows
-- initializes baseline AthleteState S0 immediately
-- accepts `experience_level`, `squat_1rm_kg`, `deadlift_1rm_kg`, `bench_1rm_kg`,
-  `bodyweight_kg`, `run_5k_seconds` as optional inputs
+`POST /auth/register` creates both `User` and an empty `AthleteProfile`.
 
-The frontend onboarding form (`OnboardingForm.tsx`) calls this endpoint
-immediately after registration.
+### 2.2 Onboarding endpoint
 
----
+Status: implemented.
 
-## 2.2 Improve baseline state seeding
-### Status ✅ COMPLETE
+`POST /v1/onboard` fills the profile, creates self-reported weak points, and seeds baseline state.
 
-`initialize_athlete_state()` now accepts `experience_level` and `squat_1rm_kg`
-keyword arguments and seeds from a 4-tier capacity table:
+Remaining target:
 
-| Level        | c_met_aerobic | c_nm_force | c_struct | b_met_anaerobic |
-|-------------|--------------|-----------|---------|----------------|
-| beginner     | 180           | 500        | 60       | 8000            |
-| intermediate | 300           | 1000       | 100      | 15000           |
-| advanced     | 500           | 1800       | 160      | 25000           |
-| elite        | 650           | 2500       | 220      | 35000           |
+- persist all baseline request fields that the schema accepts, including deadlift, bench, bodyweight, and run 5K fields. The ORM supports them, but the uploaded onboarding route only assigns a subset.
 
-If `squat_1rm_kg` is provided, `c_nm_force = squat_1rm_kg * 10.0` overrides
-the table value.
+### 2.3 Baseline state seeding
 
-### Remaining targets
-- better initialize skill state from profile data
-- seed `habit_strength` from `experience_years`
+Status: implemented.
 
----
+Four-tier experience-level baseline table exists, with squat 1RM override for force capacity.
 
-## 2.3 Benchmark and assessment flow
-### Status ✅ PARTIALLY COMPLETE
+Remaining targets:
 
-Planning/session flow now supports benchmark session slots and log payloads:
+- seed `habit_strength` from experience years or adherence history
+- initialize skill state from profile and benchmark data
+- support baseline endurance estimates from run benchmarks
 
-- `PlannedSession.is_benchmark` and `benchmark_key` are surfaced
-- benchmark sessions can be scheduled via planning cadence
-- `WorkoutLog` accepts `is_benchmark` + `benchmark_results`
+## 3. Planning and Calendar
 
-### Targets
-- feed benchmark results into state and weak-point updates
-- richer benchmark type taxonomy beyond periodic retests
+### 3.1 Block creation and planned sessions
 
----
+Status: implemented.
 
-## 3. Planning and Prescriber Enrichment
+`POST /v1/planning/blocks` creates a block and generated planned sessions.
 
-## 3.1 Activate block and planned-session routes
-### Status ✅ COMPLETE (MVP ROUTER LIVE)
+Current behavior:
 
-`/v1/planning/*` is now implemented:
+- default templates for Strength and Running
+- Strength fallback for unsupported block goals
+- deload weeks by cadence
+- periodic benchmark sessions by cadence
 
-- create/list/update blocks
-- list/update planned sessions
-- retrieve today’s planned session slot with prescription context
+Remaining targets:
 
-### Why it matters
-The model already distinguishes long-range intent from daily adaptation.
-The product should expose that.
+- add default templates for every `BlockGoal`
+- let frontend define/edit custom weekly templates
+- use `deload_volume_factor` more directly in prescription dosage
+- improve block update fields beyond status/rationale
 
-### Completed behavior
-- block creation auto-generates session calendar rows
-- workout logs can link to planned sessions
-- `process_new_workout` auto-links same-day pending sessions when possible
-- completed sessions are marked with `workout_log_id` + completion status
+### 3.2 Planned session management
 
----
+Status: MVP implemented.
 
-## 3.2 Enrich prescriber logic
-### Status ✅ PARTIALLY COMPLETE
+The API can list sessions, update status, reschedule dates, and retrieve today's pending session with generated prescription content.
 
-Implemented in v0.3:
+Frontend has a `PlanningPanel` for block creation, block list, session list, complete/skip/reschedule actions.
 
-- `active_weak_points` parameter — prescriber receives active unresolved WeakPoint
-  tags from the DB; `constraints_applied` in the explanation is populated with
-  `weak_point:{tag}` entries
-- `block_context` parameter — when an active MesocycleBlock + today's PlannedSession
-  exist, a +0.15 score bias is applied to candidates matching the planned session
-  category; prescription is written back to `PlannedSession.prescribed_content`
-- `exercises` field on WorkoutPrescription — populated by the prescriber's finalize step
+Remaining targets:
 
-### Remaining targets
-- stronger constraint filtering by fatigue channel threshold values
-- deeper exercise selection from DB exercise library (beyond current equipment mapping)
-- benchmark-aware decision quality tuning
-- clearer rationale generation using block goal context
+- richer calendar view
+- better handling of rescheduled sessions beyond simple date/status patching
+- planned vs completed comparison view
+- explicit skip consequences for future recommendations
 
----
+## 4. Benchmark and KPI Assimilation
 
-## 3.3 Add exercise library seeding and management
-### Status
-Exercise model exists; seed/data workflow is not documented as complete.
+### 4.1 Benchmark definitions and observations
 
-### Targets
-- initial seed set for major modalities
-- benchmark exercise flags
-- standardized movement-pattern taxonomy
-- quality control for weak-point tags and coaching notes
+Status: implemented.
 
----
+The API supports listing definitions and posting observations.
 
-## 3.4 Deload and rescheduling behavior
-### Status
-Supported by schema shape, not fully documented as complete behavior.
+### 4.2 Observation mappings into state
 
-### Targets
-- explicit deload session generation
-- reschedule and skip handling
-- persistence of session history vs actual completion
+Status: implemented as weighted residual-style nudges.
 
----
+Valid benchmark observations can create new `AthleteState` rows using observation mappings.
 
-## 4. Multi-Modality Expansion
+Remaining targets:
 
-## 4.1 Move from tactical running roots to full modality coverage
-### Status
-Clearly stated in the README as a project direction.
+- stronger normalization rules per benchmark definition
+- retest interval enforcement or warnings
+- richer timestamp ordering safeguards for benchmark-driven state rows
 
-### Why it matters
-This is one of the project’s biggest strategic advantages: the engine is built
-to model the athlete, not just one sport.
+### 4.3 Weak-point feedback from benchmarks
 
-### Targets
-- strengthen support for endurance
-- strengthen support for strength and hypertrophy
-- extend support for Olympic lifting
-- extend support for calisthenics and mixed conditioning
-- unify modality-specific logic under one stateful framework
+Status: implemented.
 
----
+Current thresholds:
 
-## 4.2 Modality-aware APIs and policies
-### Status
-Explicitly planned in README.
+- normalized value `< 40` flags benchmark weak points
+- normalized value `> 65` resolves matching benchmark weak points
 
-### Targets
-- versioned modality-aware endpoint behavior
-- policy layers for different training domains
-- shared core state with modality-specific interpretation where needed
+Remaining targets:
 
----
+- calibrate thresholds by domain
+- aggregate multiple weak-point sources instead of passing raw active tags
+- expose standalone weak-point management routes
 
-## 4.3 Cross-talk refinement
-### Status
-Conceptually part of the architecture; not all internals are visible here.
+### 4.4 Derived KPI snapshots
 
-### Targets
-- improve interactions between metabolic, neuromuscular, and structural systems
-- refine how one modality affects another
-- better capture transfer and interference across training types
+Status: implemented.
 
----
+Derived metric formulas support sum, ratio, weighted_sum, and custom functions.
 
-## 5. Data Assimilation and Model Calibration
+Remaining targets:
 
-## 5.1 Add data assimilation / EKF-style correction
-### Status
-Explicitly identified in the README as future work.
+- frontend dashboard views for KPI history
+- confidence and staleness display
+- domain-specific KPI interpretations
 
-### Why it matters
-The current engine can drift if it only projects forward from training logs.
-Assimilation lets the model correct itself when real-world observations arrive.
+## 5. Prescriber Enrichment
 
-### Targets
-- incorporate benchmark/test observations back into state estimation
-- correct model drift
-- individualize parameter estimates over time
-- support athlete-specific calibration rather than generic priors
+### 5.1 Candidate-based controller
 
-### Long-term payoff
-This is the step that moves the engine from a good adaptive heuristic system
-closer to a true individualized digital twin.
+Status: implemented.
 
----
+The prescriber builds a candidate pool, applies safety overrides/readiness redirects, scores candidates, and finalizes with explainability.
 
-## 6. Frontend and Product Integration
+### 5.2 Safety and readiness behavior
 
-## 6.1 Mature the React frontend
-### Status
-Frontend v2 is explicitly planned; the current UI already demonstrates the core loop.
+Status: implemented.
 
-### Targets
-- connect the frontend to the preferred API surface only
-- move from demo panels to full athlete workflow
-- support onboarding, daily session view, and history view
-- expose rationale and state changes cleanly
+Hard safety overrides and soft readiness redirects are present.
 
----
+Remaining targets:
 
-## 6.2 Build the full athlete loop in the UI
-### Targets
-- onboarding flow
-- current state view
-- today’s session
+- tune thresholds with scenario tests
+- document expected behavior per fatigue/tissue channel
+- avoid over-conservatism under mixed signals
+
+### 5.3 Block context
+
+Status: partially implemented.
+
+A +0.15 score boost is applied when candidate type matches planned session category. Deload/benchmark flags are annotated in explanation.
+
+Remaining targets:
+
+- use block templates to shape candidate generation, not just scoring
+- use deload factor to scale duration/volume/intensity
+- make benchmark sessions prescribe benchmark-specific content
+
+### 5.4 Exercise selection
+
+Status: MVP fallback implemented.
+
+The prescriber currently returns equipment-mapped exercises with bodyweight fallback.
+
+Remaining targets:
+
+- select exercises from the `Exercise` database table
+- filter by equipment_required, skill demand, impact, weak-point tags, and sport domain
+- include coaching notes and scalable-by guidance in prescriptions
+- improve per-exercise dose feedback loop
+
+### 5.5 Provenance and structured templates
+
+Status: implemented at the finalization layer, depending on settings and registry data.
+
+Remaining targets:
+
+- complete template registry coverage across goals
+- expose provenance cleanly in UI
+- test hard/soft constraint behavior by domain
+
+## 6. Frontend Product Workflow
+
+### 6.1 Core twin loop
+
+Status: implemented.
+
+Frontend supports:
+
+- auth
+- onboarding gate
+- goal selection
+- next-session retrieval
+- dose simulation
 - workout logging
-- post-workout state delta summary
-- block/calendar view
-- benchmark and weak-point surfaces
+- state display
+- automatic prescription refresh
 
----
+### 6.2 Planning panel
 
-## 6.3 Coach and debugging surfaces
-### Targets
-- inspect current `S(t)`
-- inspect recent `D(t)` history
-- compare planned vs completed sessions
-- review active weak points and their sources
-- view rationale behind the current prescription
+Status: MVP implemented.
 
----
+Frontend supports:
 
-## 7. Nice-to-Have but Not First
+- block creation
+- block list
+- session list over date window
+- complete/skip/reschedule actions
+- deload/benchmark chips
 
-These are valuable, but should not outrank the core loop.
+Remaining targets:
 
-- polished deployment templates
-- public demo environments
-- multi-tenant admin tools
-- analytics dashboards beyond debugging needs
-- advanced collaboration features
+- full calendar layout
+- today's planned session execution flow
+- edit weekly templates
+- block history/detail view
 
-The project wins first by making the engine correct, legible, and adaptive.
+### 6.3 Dashboard / benchmark UI
 
----
+Status: backend implemented, frontend not confirmed in uploaded component set.
+
+Remaining targets:
+
+- benchmark definition list
+- benchmark observation entry
+- dashboard KPI display
+- readiness flags display
+- weak-point management surface
+
+### 6.4 Route model
+
+Status: still tab/surface-based in uploaded docs/source context, not URL-router driven.
+
+Remaining target:
+
+- introduce routing when product sections stabilize: twin, planning, dashboard, history, benchmarks.
+
+## 7. Testing
+
+### Current evidence
+
+The uploaded documentation references tests for dose, state update, ORM persistence, and integration flow. The latest uploaded source did not include the actual test files.
+
+### Priority targets
+
+1. route tests for auth, onboard, simulate, log, next-session
+2. planning route tests
+3. benchmark observation tests
+4. dashboard KPI tests
+5. prescriber safety override tests
+6. weak-point creation/resolution tests
+7. frontend type-check/build smoke tests
 
 ## Suggested Priority Order
 
-If effort has to be sequenced tightly, the strongest order is:
+### Phase 1 — Stabilize implemented backend surface
 
-### Phase 1 — Core Engine Hardening & First-Run Loop (✅ COMPLETE)
+- [x] auth routes
+- [x] onboarding route
+- [x] simulate/log routes
+- [x] next-session route
+- [x] planning routes
+- [x] benchmark/dashboard routes
+- [x] migrations through a002
+- [ ] persist all profile fields accepted by onboarding schema
+- [ ] remove or guard DEV ONLY `user_id` query override in next-session
 
-- [x] Alembic migrations: a000 (foundational) + a001 (benchmark KPI tables)
-- [x] `POST /v1/onboard` endpoint (creates profile + weak points + seeds S0)
-- [x] `GET /v1/next-session` auto-initializes baseline `AthleteState`
-- [x] `POST /v1/log-workout` → `process_new_workout` → `UnifiedStateVector`
-- [x] Profile-aware baseline seeding (4-tier experience_level + squat_1rm_kg)
-- [x] model_version traceability on all response DTOs
-- [x] Weak-point injection into prescriber (active unresolved tags from DB)
-- [x] Block context injection into prescriber (active block + today's planned session)
-- [x] Unit tests: dose engine (10), state update (10)
-- [x] Integration tests: ORM persistence (5), end-to-end flow (4)
-- [x] Import chain corrected: state_service imports from v0.3 engines
+### Phase 2 — Make planning and benchmark loops product-complete
 
-**Status**: The full quickstart flow from QUICKSTART_FLOW.md works end-to-end.
+- [ ] full goal default templates
+- [ ] proper benchmark session content generation
+- [ ] frontend benchmark observation UI
+- [ ] frontend dashboard KPI UI
+- [ ] weak-point management UI/API
 
-### Phase 2
-- [x] block creation and calendar-generation routes (`/v1/planning/*`)
-- [x] planned-session retrieval and completion linkage
-- [x] equipment-aware prescription fallback/constraints tags
-- [x] deload and benchmark planning flags in session flow
-- exercise library seed data across all modalities
+### Phase 3 — Improve prescription quality
 
-### Phase 3
-- EKF / data assimilation
-- multi-modality policy expansion
-- frontend workflow completion
+- [ ] DB-driven exercise selection
+- [ ] deeper block-template use
+- [ ] deload dosage scaling
+- [ ] confidence-weighted weak-point aggregation
+- [ ] richer recent-history constraints
 
-### Phase 4
-- coach/debugging surfaces
-- model version traceability improvements
-- broader production hardening
+### Phase 4 — Testing and production hardening
 
----
+- [ ] route-level contract tests
+- [ ] scenario tests for overload/deload/benchmarks
+- [ ] CORS/env hardening
+- [ ] structured logging and observability
+- [ ] deployment docs and migration checks
+
+### Phase 5 — Advanced model calibration
+
+- [ ] replace simple observation mappings with richer assimilation where justified
+- [ ] per-athlete parameter calibration
+- [ ] replay tooling from event and observation history
+- [ ] model-version migration strategy
 
 ## Short Version
 
-The biggest roadmap items are:
-
-1. harden the core engine
-2. close the onboarding loop
-3. expose planning and block logic
-4. expand multi-modality support
-5. add data assimilation / EKF correction
-6. complete the frontend athlete experience
-
-Those are the moves that turn Performance Lab from a promising engine into a
-coherent product.
+The biggest roadmap shift is that planning, benchmarks, dashboard KPIs, and candidate-based prescription are now implemented at MVP level. The next work should focus less on creating the loop and more on tightening correctness, UI completeness, exercise selection quality, and tests.
