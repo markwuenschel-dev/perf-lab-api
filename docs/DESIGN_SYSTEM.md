@@ -25,7 +25,8 @@ All surfaces use the Tailwind `zinc` scale:
 
 ### Neon Accents
 
-Defined in `tailwind.config.js` under `theme.extend.colors.neon`:
+Defined in `src/index.css` in the `@theme inline` block as `--color-neon-*`
+(Tailwind v4 is CSS-first — there is no `tailwind.config.js`):
 
 | Token | Hex | Semantic use |
 |---|---|---|

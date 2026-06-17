@@ -116,10 +116,10 @@ If the backend is not running, auth will silently time out.
 
 ## Tailwind v4 — Do Not Modify the @theme Block
 
-The project uses Tailwind CSS v4. The custom neon color tokens
-(`neon-cyan`, `neon-magenta`, `neon-violet`) are defined in `tailwind.config.js`
-under `theme.extend.colors.neon`. These are used extensively across all
-twin components.
+The project uses Tailwind CSS v4 (CSS-first; there is no `tailwind.config.js`).
+The custom neon color tokens (`neon-cyan`, `neon-magenta`, `neon-violet`) are
+defined in `src/index.css` inside the `@theme inline` block as `--color-neon-*`.
+These are used extensively across all twin components.
 
 If you are upgrading Tailwind or touching the config, verify that these
 class names still resolve:

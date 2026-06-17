@@ -260,3 +260,39 @@ export interface TodaySessionResponse {
   session: PlannedSessionRead | null;
   prescription: Record<string, unknown> | null;
 }
+
+/** POST /compute-metrics (legacy router — no /v1 prefix) */
+export interface ComputeMetricsRequest {
+  age: number;
+  sex: string;
+  time_300m: string;
+  time_1p5mi: string;
+}
+
+export interface Zone {
+  name: string;
+  slow_pace_sec: number;
+  fast_pace_sec: number;
+  notes: string;
+  // slow_offset_sec / fast_offset_sec exist on the backend but are not rendered.
+}
+
+export interface MetricsResponse {
+  vo2_max: number;
+  vo2_category: string;
+  result_category: string;
+  fatigue_percent: number;
+  fatigue_profile: string;
+  race_pace_sec_per_mile: number;
+  zones: Zone[];
+}
+
+/**
+ * Field Test → Digital Twin handoff. The Field Test tab builds a derived
+ * running session from the 1.5-mile test and hands it to the twin to prefill
+ * the log form (see App.tsx wiring, HeroFlowColumn, DigitalTwinPanel).
+ */
+export interface FieldTestHandoff {
+  log: Partial<WorkoutLog>;
+  summary: string;
+}

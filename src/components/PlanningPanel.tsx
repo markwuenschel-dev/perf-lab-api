@@ -9,10 +9,12 @@ import { useAuth } from "../auth/useAuth";
 import type {
   ApiError,
   BlockCreateRequest,
+  BlockGoal,
   BlockRead,
   PlannedSessionRead,
   SessionStatus,
 } from "../types";
+import { BLOCK_GOALS } from "../trainingGoals";
 import { toApiError } from "./twin/stateUtils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,10 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
-type PlanningGoal = "Strength" | "Running" | "Hypertrophy" | "Power" | "General";
-
-const GOALS: PlanningGoal[] = ["Strength", "Running", "Hypertrophy", "Power", "General"];
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -37,7 +35,7 @@ export function PlanningPanel() {
   const [blocks, setBlocks] = useState<BlockRead[]>([]);
   const [sessions, setSessions] = useState<PlannedSessionRead[]>([]);
 
-  const [goal, setGoal] = useState<PlanningGoal>("Strength");
+  const [goal, setGoal] = useState<BlockGoal>("Strength");
   const [startDate, setStartDate] = useState<string>(ymd(new Date()));
   const [durationWeeks, setDurationWeeks] = useState<number>(8);
   const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(3);
@@ -148,13 +146,13 @@ export function PlanningPanel() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label className="text-zinc-300">Goal</Label>
-              <Select value={goal} onValueChange={(v) => setGoal(v as PlanningGoal)}>
+              <Select value={goal} onValueChange={(v) => setGoal(v as BlockGoal)}>
                 <SelectTrigger className="bg-black/50 border-white/20 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {GOALS.map((g) => (
-                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                  {BLOCK_GOALS.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

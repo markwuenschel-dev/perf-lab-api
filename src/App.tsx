@@ -1,5 +1,4 @@
-﻿// src/App.tsx
-// UPGRADED: Full cyber-athletic command-center look with shadcn nova + Framer Motion + neon accents
+// src/App.tsx
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,6 +9,7 @@ import { HeroFlowColumn } from "./components/HeroFlowColumn";
 import { OnboardingForm } from "./components/OnboardingForm";
 import { PlanningPanel } from "./components/PlanningPanel";
 import { useAuth } from "./auth/useAuth";
+import type { FieldTestHandoff } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string;
 
@@ -18,7 +18,13 @@ type MainTab = "field" | "twin" | "planning";
 export default function App() {
   const year = new Date().getFullYear();
   const [mainTab, setMainTab] = useState<MainTab>("field");
+  const [fieldTestHandoff, setFieldTestHandoff] = useState<FieldTestHandoff | null>(null);
   const { isAuthenticated, onboardingPending } = useAuth();
+
+  function handleSendToTwin(handoff: FieldTestHandoff) {
+    setFieldTestHandoff(handoff);
+    setMainTab("twin");
+  }
 
   if (isAuthenticated && onboardingPending) {
     return <OnboardingForm />;
@@ -87,8 +93,13 @@ export default function App() {
           transition={{ duration: 0.4 }}
           className="mt-8"
         >
-          {mainTab === "field" && <HeroFlowColumn apiBase={API_BASE} />}
-          {mainTab === "twin" && <DigitalTwinPanel />}
+          {mainTab === "field" && <HeroFlowColumn onSendToTwin={handleSendToTwin} />}
+          {mainTab === "twin" && (
+            <DigitalTwinPanel
+              handoff={fieldTestHandoff}
+              onHandoffConsumed={() => setFieldTestHandoff(null)}
+            />
+          )}
           {mainTab === "planning" && <PlanningPanel />}
         </motion.div>
       </main>

@@ -25,9 +25,14 @@ This fires after `register()` succeeds. Once `completeOnboarding()` resolves
 (success or failure), `onboardingPending` is cleared and the main app renders.
 
 **Tab model:**
-- `"field"` → `HeroFlowColumn` (legacy VO₂ field test; no v1 API)
+- `"field"` → `HeroFlowColumn` (VO₂ field test via `computeMetrics`)
 - `"twin"` → `DigitalTwinPanel` (live training engine)
 - `"planning"` → `PlanningPanel` (block/session planning surface)
+
+**Field Test → Twin handoff:** `App` holds `fieldTestHandoff` state. `HeroFlowColumn`
+calls `onSendToTwin(handoff)`, which stores it and switches to the Twin tab;
+`DigitalTwinPanel` receives `handoff` + `onHandoffConsumed` to prefill its log form
+once. See ARCHITECTURE.md → Data Flow.
 
 ---
 
@@ -43,8 +48,9 @@ handlers defined in this component and passed to children as callbacks.
 
 | State var | Type | Purpose |
 |---|---|---|
-| `dtGoal` | `string` | Selected training goal |
+| `dtGoal` | `TrainingGoalValue` | Selected training goal |
 | `dtLog` | `WorkoutLog` | Workout form current values |
+| `handoffSummary` | `string \| null` | Banner text after a Field Test handoff |
 | `dtState` | `UnifiedStateVector \| null` | Latest athlete state |
 | `dtRx` | `WorkoutPrescription \| null` | Latest prescription |
 | `dtDose` | `StressDose \| null` | Latest simulated dose |

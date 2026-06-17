@@ -180,7 +180,12 @@ export async function createPlanningBlock(body: BlockCreateRequest, token: strin
 export async function listPlanningBlocks(token: string): Promise<BlockRead[]>
 export async function listPlannedSessions(token: string, params?): Promise<PlannedSessionRead[]>
 export async function getTodayPlannedSession(goal: string, token: string): Promise<TodaySessionResponse>
+export async function computeMetrics(req: ComputeMetricsRequest): Promise<MetricsResponse>
 ```
+
+> The field-test endpoint (`computeMetrics` → `POST /compute-metrics`) hits the
+> backend **legacy router, which has no `/v1` prefix**, so it uses `API_ROOT`
+> directly. `HeroFlowColumn` calls it through this client like everything else.
 
 **Key behaviors:**
 - All functions throw an `ApiError` (typed `{ message, status, details }`) on
@@ -224,6 +229,23 @@ The standard training loop in `DigitalTwinPanel`:
 This maps to the backend planning + twin design:
 `planning/*` (orchestration), `simulate-dose` (pure),
 `log-workout` (mutating), `next-session` (controller output).
+
+### Field Test → Twin handoff
+
+The Field Test and Digital Twin live in sibling tabs that share no state, so the
+"Send to Twin" continuity is wired through `App.tsx`:
+
+```
+1. HeroFlowColumn computes metrics → user clicks "Send to Twin →"
+   → builds a Partial<WorkoutLog> (Running, 1.5-mi distance, pace-derived duration)
+   → onSendToTwin(handoff)  [App lifts it to state + switches to the Twin tab]
+
+2. DigitalTwinPanel mounts with the handoff prop
+   → useEffect merges handoff.log into dtLog once, shows a banner
+   → onHandoffConsumed()  [App clears the handoff]
+
+3. User reviews the prefilled form → "Log & update S(t)" runs the normal loop.
+```
 
 ---
 

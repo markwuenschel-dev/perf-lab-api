@@ -1,5 +1,4 @@
 // src/components/HeroFlowColumn.tsx
-// UPGRADED: Premium dark glass cards, shadcn form components, Framer Motion metric reveals, neon accents
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,26 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { computeMetrics as computeMetricsApi } from "../api/perfLabClient";
+import { toApiError } from "./twin/stateUtils";
+import type { FieldTestHandoff, MetricsResponse, WorkoutLog } from "../types";
 
-type Zone = {
-  name: string;
-  slow_pace_sec: number;
-  fast_pace_sec: number;
-  notes: string;
-};
-
-type MetricsResponse = {
-  vo2_max: number;
-  vo2_category: string;
-  result_category: string;
-  fatigue_percent: number;
-  fatigue_profile: string;
-  race_pace_sec_per_mile: number;
-  zones: Zone[];
-};
+// 1.5 miles in meters — used to hand the field test to the twin as a run.
+const MILE_AND_A_HALF_METERS = 2414;
 
 interface HeroFlowColumnProps {
-  apiBase: string;
+  onSendToTwin: (handoff: FieldTestHandoff) => void;
 }
 
 function formatMMSS(sec: number) {
@@ -36,7 +24,7 @@ function formatMMSS(sec: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function HeroFlowColumn({ apiBase }: HeroFlowColumnProps) {
+export function HeroFlowColumn({ onSendToTwin }: HeroFlowColumnProps) {
   const [age, setAge] = useState(35);
   const [sex, setSex] = useState<"male" | "female">("male");
   const [time300, setTime300] = useState("0:55");
@@ -52,20 +40,32 @@ export function HeroFlowColumn({ apiBase }: HeroFlowColumnProps) {
     setMetricsError(null);
 
     try {
-      const res = await fetch(`${apiBase}/compute-metrics`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ age, sex, time_300m: time300, time_1p5mi: time15 }),
+      const data = await computeMetricsApi({
+        age,
+        sex,
+        time_300m: time300,
+        time_1p5mi: time15,
       });
-
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data = (await res.json()) as MetricsResponse;
       setMetrics(data);
     } catch (err: unknown) {
-      setMetricsError(err instanceof Error ? err.message : "Failed to compute metrics");
+      setMetricsError(toApiError(err).message);
     } finally {
       setLoading(false);
     }
+  }
+
+  function sendToTwin() {
+    if (!metrics) return;
+    const log: Partial<WorkoutLog> = {
+      modality: "Running",
+      duration_minutes: Math.max(1, Math.round((1.5 * metrics.race_pace_sec_per_mile) / 60)),
+      session_rpe: 9,
+      distance_meters: MILE_AND_A_HALF_METERS,
+      dominant_movement_pattern: "run",
+      novelty: 1,
+    };
+    const summary = `1.5-mi field test • VO₂ ${metrics.vo2_max.toFixed(1)} • ${metrics.fatigue_profile}`;
+    onSendToTwin({ log, summary });
   }
 
   useEffect(() => {
@@ -97,12 +97,12 @@ export function HeroFlowColumn({ apiBase }: HeroFlowColumnProps) {
                   <p className="font-semibold text-white">
                     {n === 1 && "Enter tactical test"}
                     {n === 2 && "Instant VO₂ + zones"}
-                    {n === 3 && "Feed into S(t) twin"}
+                    {n === 3 && "Send to your S(t) twin"}
                   </p>
                   <p className="text-sm text-zinc-100">
                     {n === 1 && "300 m + 1.5 mile times"}
                     {n === 2 && "See fatigue profile & pace zones"}
-                    {n === 3 && "Log sessions → adaptive prescription"}
+                    {n === 3 && "Push the test in as a run, then log to update state"}
                   </p>
                 </div>
               </motion.div>
@@ -145,11 +145,22 @@ export function HeroFlowColumn({ apiBase }: HeroFlowColumnProps) {
               <Input value={time15} onChange={(e) => setTime15(e.target.value)} className="bg-black/60 border-white/20 text-white font-mono" />
             </div>
 
-            <div className="md:col-span-4 flex items-center gap-4">
+            <div className="md:col-span-4 flex flex-wrap items-center gap-4">
               <Button type="submit" disabled={loading} size="lg" className="bg-gradient-to-r from-neon-cyan to-neon-violet text-black font-semibold">
                 {loading ? "COMPUTING…" : "COMPUTE METRICS"}
               </Button>
               <span className="text-xs text-zinc-100">Press Enter or click above</span>
+              {metrics && (
+                <Button
+                  type="button"
+                  onClick={sendToTwin}
+                  size="lg"
+                  variant="outline"
+                  className="ml-auto border-neon-cyan/40 text-neon-cyan hover:bg-neon-cyan/10"
+                >
+                  Send to Twin →
+                </Button>
+              )}
             </div>
           </form>
 
