@@ -1,11 +1,11 @@
 // src/components/twin/TwinConsoleHeader.tsx
 import { motion } from "framer-motion";
-import { TRAINING_GOALS } from "../../trainingGoals";
+import { TRAINING_GOALS, type TrainingGoalValue } from "../../trainingGoals";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type TwinConsoleHeaderProps = {
-  dtGoal: string;
-  onGoalChange: (goal: string) => void;
+  dtGoal: TrainingGoalValue;
+  onGoalChange: (goal: TrainingGoalValue) => void;
   onRefreshRx: () => void;
   token: string | null;
 };
@@ -32,7 +32,7 @@ export function TwinConsoleHeader({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-zinc-200">GOAL</span>
-            <Select value={dtGoal} onValueChange={onGoalChange}>
+            <Select value={dtGoal} onValueChange={(v) => onGoalChange(v as TrainingGoalValue)}>
               <SelectTrigger className="w-40 bg-black/60 border-white/20 text-white">
                 <SelectValue />
               </SelectTrigger>

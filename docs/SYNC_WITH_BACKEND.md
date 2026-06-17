@@ -30,6 +30,9 @@ This document exists to make that process predictable.
 | `BlockCreateRequest` / `BlockRead` / `BlockUpdateRequest` | `planning.py` schemas | `/v1/planning/blocks*` |
 | `PlannedSessionRead` / `PlannedSessionUpdateRequest` | `planning.py` schemas | `/v1/planning/sessions*` |
 | `TodaySessionResponse` | `planning.py :: TodaySessionResponse` | `/v1/planning/today` |
+| `ComputeMetricsRequest` / `MetricsResponse` / `Zone` | `app/api/v1/legacy.py` | `POST /compute-metrics` — **legacy router, no `/v1` prefix** |
+| `BLOCK_GOALS` (`src/trainingGoals.ts`) | `mesocycle.py :: BlockGoal` enum | Labeled list for the planning block dropdown |
+| `FieldTestHandoff` | _frontend-only_ | Field Test → Twin prefill payload; not a backend schema |
 
 ---
 
@@ -55,6 +58,7 @@ if a component ever accesses them.
 | `source_alignment` | `PrescriptionExplanation` | Not rendered |
 | `planned_session_id` | `WorkoutLog` request | Internal linkage field; not directly rendered |
 | `is_benchmark` / `benchmark_results` | `WorkoutLog` request | Only surfaced in benchmark flow UI |
+| `slow_offset_sec` / `fast_offset_sec` | `Zone` (`MetricsResponse`) | Only absolute paces are rendered in `HeroFlowColumn` |
 
 ---
 

@@ -13,12 +13,14 @@ import {
 
 import type {
   ApiError,
+  FieldTestHandoff,
   PlannedSessionRead,
   StressDose,
   UnifiedStateVector,
   WorkoutLog,
   WorkoutPrescription,
 } from "../types";
+import type { TrainingGoalValue } from "../trainingGoals";
 
 import { LogWorkoutForm } from "./twin/LogWorkoutForm";
 import { NextSessionCard } from "./twin/NextSessionCard";
@@ -46,10 +48,16 @@ const DEFAULT_DT_LOG: WorkoutLog = {
   novelty: 1,
 };
 
-export function DigitalTwinPanel() {
+type DigitalTwinPanelProps = {
+  handoff: FieldTestHandoff | null;
+  onHandoffConsumed: () => void;
+};
+
+export function DigitalTwinPanel({ handoff, onHandoffConsumed }: DigitalTwinPanelProps) {
   const { token, isAuthenticated: signedIn } = useAuth();
 
-  const [dtGoal, setDtGoal] = useState<string>("Strength");
+  const [dtGoal, setDtGoal] = useState<TrainingGoalValue>("Strength");
+  const [handoffSummary, setHandoffSummary] = useState<string | null>(null);
   const [dtLog, setDtLog] = useState<WorkoutLog>(DEFAULT_DT_LOG);
   const [dtState, setDtState] = useState<UnifiedStateVector | null>(null);
   const [dtRx, setDtRx] = useState<WorkoutPrescription | null>(null);
@@ -73,6 +81,14 @@ export function DigitalTwinPanel() {
     }
     prevModalityRef.current = dtLog.modality;
   }, [dtLog.modality, dtLog.dominant_movement_pattern]);
+
+  // Field Test → Twin handoff: prefill the log form once, then clear the handoff.
+  useEffect(() => {
+    if (!handoff) return;
+    setDtLog((prev) => ({ ...prev, ...handoff.log, timestamp: nowIso() }));
+    setHandoffSummary(handoff.summary);
+    onHandoffConsumed();
+  }, [handoff, onHandoffConsumed]);
 
   async function refreshTwinContext(goal: string, authToken: string): Promise<void> {
     const [rx, today] = await Promise.all([
@@ -103,7 +119,7 @@ export function DigitalTwinPanel() {
           setDtRx(rx);
           setTodaySession(today.session);
         }
-      } catch (err: unknown) {
+      } catch {
         // graceful fallback when planning endpoint is unavailable
         try {
           const rx = await getNextSession(dtGoal, token);
@@ -241,6 +257,19 @@ export function DigitalTwinPanel() {
           />
 
           <TwinSummaryStrip readiness={readiness} dtState={dtState} dtRx={dtRx} />
+
+          {handoffSummary && (
+            <div className="mx-6 mb-4 flex items-center justify-between gap-4 rounded-2xl border border-neon-cyan/40 bg-neon-cyan/5 p-4 text-sm text-neon-cyan">
+              <span>Prefilled from {handoffSummary}. Review the log below, then Log &amp; Update S(t).</span>
+              <button
+                type="button"
+                onClick={() => setHandoffSummary(null)}
+                className="shrink-0 text-xs text-zinc-400 hover:text-white"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
 
           {dtError && (
             <div className="mx-6 mb-4 rounded-2xl border border-rose-400/60 bg-rose-950/60 p-4 text-sm text-rose-200 font-mono font-medium">
