@@ -50,6 +50,7 @@ export interface PerfLabState {
   /** Last field-test result (cached so VO₂/Profile survive navigation and feed the Twin). */
   fieldTest: MetricsResponse | null;
   obStep: number;
+  authOpen: boolean;
   logOpen: boolean;
   logType: string;
   rpe: number;
@@ -102,6 +103,7 @@ export function initialState(): PerfLabState {
     ftDone: typeof sv.ftDone === "boolean" ? sv.ftDone : false,
     fieldTest: sv.fieldTest ?? null,
     obStep: 1,
+    authOpen: false,
     logOpen: false,
     logType: "tempo",
     rpe: 7,
@@ -194,6 +196,8 @@ export function reducer(state: PerfLabState, action: Action): PerfLabState {
 
 export interface PerfLabActions {
   setScreen: (s: Screen) => void;
+  openAuth: () => void;
+  closeAuth: () => void;
   ftCompute: (result: MetricsResponse) => void;
   ftRecompute: () => void;
   seedTwin: () => void;
@@ -246,6 +250,8 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
   const mergeFn = (fn: (s: PerfLabState) => Partial<PerfLabState>) => dispatch({ type: "mergeFn", fn });
   return {
     setScreen: (s) => merge({ screen: s }),
+    openAuth: () => merge({ authOpen: true }),
+    closeAuth: () => merge({ authOpen: false }),
     ftCompute: (result) => merge({ ftDone: true, fieldTest: result }),
     ftRecompute: () => merge({ ftDone: false, fieldTest: null }),
     seedTwin: () => merge({ ftDone: true, fresh: false, screen: "twin" }),
