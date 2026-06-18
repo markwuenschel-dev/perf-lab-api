@@ -12,6 +12,7 @@ import { HistoryScreen } from "./screens/HistoryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { GoalRaceScreen } from "./screens/GoalRaceScreen";
 import { SimulatorScreen } from "./screens/SimulatorScreen";
+import { AuthModal } from "./overlays/AuthModal";
 import { LogWorkoutModal } from "./overlays/LogWorkoutModal";
 import { CheckinModal } from "./overlays/CheckinModal";
 import { FeedbackModal } from "./overlays/FeedbackModal";
@@ -63,6 +64,7 @@ export function AppShell() {
     <div className="flex min-h-screen">
       <Sidebar />
       <main className="min-w-0 flex-1">{showEmpty ? <EmptyState screen={screen} /> : <ScreenComp />}</main>
+      <AuthModal />
       <LogWorkoutModal />
       <CheckinModal />
       <FeedbackModal />

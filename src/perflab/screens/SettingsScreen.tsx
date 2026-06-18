@@ -1,5 +1,6 @@
 // src/perflab/screens/SettingsScreen.tsx
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/auth/useAuth";
 import { usePerfLab } from "../store";
 import type { Settings } from "../store";
 import { Card, SectionLabel } from "../ui";
@@ -33,6 +34,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 
 export function SettingsScreen() {
   const { state, actions } = usePerfLab();
+  const auth = useAuth();
   const s = state.settings;
   const notif: [keyof Settings, string, string][] = [
     ["notifReadiness", "Readiness alerts", "When readiness crashes below 40."],
@@ -107,11 +109,31 @@ export function SettingsScreen() {
 
       <Card className="flex items-center justify-between p-[22px]">
         <div>
-          <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">Model version</div>
-          <div className="mt-[5px] font-mono text-[11px] leading-none text-faint">perf-lab-web · S(t) v0.3</div>
+          <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">Account</div>
+          <div className="mt-[5px] font-mono text-[11px] leading-none text-faint">
+            {auth.isAuthenticated
+              ? auth.user?.email ?? auth.email
+              : "Not connected — sign in to sync the live twin."}
+          </div>
         </div>
-        <button className="rounded-[9px] border border-hot/25 bg-hot/[0.08] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-hot">Sign out</button>
+        {auth.isAuthenticated ? (
+          <button
+            onClick={auth.logout}
+            className="rounded-[9px] border border-hot/25 bg-hot/[0.08] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-hot"
+          >
+            Sign out
+          </button>
+        ) : (
+          <button
+            onClick={actions.openAuth}
+            className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-[#0a0c10]"
+          >
+            Connect account →
+          </button>
+        )}
       </Card>
+
+      <div className="px-1 font-mono text-[11px] leading-none text-faint">perf-lab-web · S(t) v0.3</div>
     </section>
   );
 }
