@@ -9,7 +9,7 @@ import { createContext, useContext } from "react";
 import type { Dispatch } from "react";
 import { DAY_COUNT, PHASES } from "./sim";
 import type { CheckinState, SimParams } from "./sim";
-import type { MetricsResponse } from "../types";
+import type { MetricsResponse, UnifiedStateVector } from "../types";
 
 export type Screen =
   | "overview"
@@ -49,6 +49,8 @@ export interface PerfLabState {
   ftDone: boolean;
   /** Last field-test result (cached so VO₂/Profile survive navigation and feed the Twin). */
   fieldTest: MetricsResponse | null;
+  /** Last state vector returned by log-workout (cached: backend has no GET /v1/state). */
+  twinState: UnifiedStateVector | null;
   obStep: number;
   authOpen: boolean;
   logOpen: boolean;
@@ -83,6 +85,7 @@ interface Persisted {
   ftDone: boolean;
   fresh: boolean;
   fieldTest: MetricsResponse | null;
+  twinState: UnifiedStateVector | null;
 }
 
 export const STORAGE_KEY = "perflab_v1";
@@ -102,6 +105,7 @@ export function initialState(): PerfLabState {
     screen: "overview",
     ftDone: typeof sv.ftDone === "boolean" ? sv.ftDone : false,
     fieldTest: sv.fieldTest ?? null,
+    twinState: sv.twinState ?? null,
     obStep: 1,
     authOpen: false,
     logOpen: false,
@@ -200,6 +204,7 @@ export interface PerfLabActions {
   closeAuth: () => void;
   ftCompute: (result: MetricsResponse) => void;
   ftRecompute: () => void;
+  cacheTwinState: (sv: UnifiedStateVector) => void;
   seedTwin: () => void;
   obNext: () => void;
   obBack: () => void;
@@ -254,6 +259,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     closeAuth: () => merge({ authOpen: false }),
     ftCompute: (result) => merge({ ftDone: true, fieldTest: result }),
     ftRecompute: () => merge({ ftDone: false, fieldTest: null }),
+    cacheTwinState: (sv) => merge({ twinState: sv }),
     seedTwin: () => merge({ ftDone: true, fresh: false, screen: "twin" }),
     obNext: () => mergeFn((s) => ({ obStep: Math.min(3, s.obStep + 1) })),
     obBack: () => mergeFn((s) => ({ obStep: Math.max(1, s.obStep - 1) })),
