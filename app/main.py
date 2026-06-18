@@ -109,6 +109,7 @@ app.include_router(onboard_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
+    allow_origin_regex=settings.allowed_origin_regex,  # Netlify prod + previews
     allow_credentials=True,           # Required for JWT Bearer tokens
     allow_methods=["*"],
     allow_headers=["*"],
