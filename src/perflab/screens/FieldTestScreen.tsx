@@ -17,12 +17,13 @@ const fmtKmPace = (secPerMile: number) => {
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 export function FieldTestScreen() {
-  const { actions } = usePerfLab();
+  const { state, actions } = usePerfLab();
   const [t300, setT300] = useState("0:52");
   const [t15, setT15] = useState("9:18");
   const [age, setAge] = useState("28");
   const [sex, setSex] = useState("Female");
-  const [result, setResult] = useState<MetricsResponse | null>(null);
+  // Seed from the cached result so a prior field test survives navigation.
+  const [result, setResult] = useState<MetricsResponse | null>(state.fieldTest);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +33,7 @@ export function FieldTestScreen() {
     try {
       const r = await computeMetrics({ age: Number(age) || 0, sex, time_300m: t300, time_1p5mi: t15 });
       setResult(r);
-      actions.ftCompute();
+      actions.ftCompute(r);
     } catch (e) {
       setError((e as ApiError)?.message ?? "Compute failed — check the backend is reachable.");
     } finally {
