@@ -1,4 +1,6 @@
 // src/perflab/screens/OnboardingScreen.tsx
+import { useState } from "react";
+import { useAuth } from "@/auth/useAuth";
 import { usePerfLab } from "../store";
 
 const labelCls = "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-[#9aa0ab]";
@@ -16,8 +18,23 @@ const STEPS = [
 
 export function OnboardingScreen() {
   const { state, actions } = usePerfLab();
+  const { completeOnboarding } = useAuth();
+  const [seeding, setSeeding] = useState(false);
   const ob = state.obStep;
   const goOverview = () => actions.setScreen("overview");
+
+  // Seed the backend athlete profile, then enter the app. The running-themed
+  // form above doesn't map onto the strength-oriented OnboardRequest yet
+  // (docs/SYNC_WITH_BACKEND.md Gap #6), so we send only the email completeOnboarding
+  // already fills in — enough to create the profile + baseline state. The field
+  // test (Field Test screen → /compute-metrics) is what actually seeds S(t).
+  // completeOnboarding is best-effort and never throws; enter the app regardless.
+  async function finish() {
+    if (seeding) return;
+    setSeeding(true);
+    await completeOnboarding({});
+    goOverview();
+  }
 
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[minmax(0,440px)_1fr]">
@@ -104,7 +121,7 @@ export function OnboardingScreen() {
             </div>
             <div className="mt-[30px] flex justify-between">
               <button onClick={actions.obBack} className={btnBack}>← Back</button>
-              <button onClick={goOverview} className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-[26px] py-[13px] text-[13.5px] font-semibold leading-none text-[#0a0c10]">Enter Perf Lab →</button>
+              <button onClick={finish} disabled={seeding} className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-[26px] py-[13px] text-[13.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">{seeding ? "Seeding twin…" : "Enter Perf Lab →"}</button>
             </div>
           </div>
         )}
