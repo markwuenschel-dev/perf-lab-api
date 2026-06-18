@@ -29,12 +29,22 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # CORS — comma-separated list of allowed origins.
-    # Defaults to local dev origins only. Override via ALLOWED_ORIGINS env var.
+    # Defaults to local dev origins only. Override via ALLOWED_ORIGINS env var
+    # (e.g. add a custom production domain here).
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    # Regex of additional allowed origins, matched by CORSMiddleware. Defaults to
+    # any Netlify site (production + deploy previews), since the web frontend is
+    # deployed there. Override via ALLOWED_ORIGIN_REGEX; set to "" to disable.
+    ALLOWED_ORIGIN_REGEX: str = r"https://.*\.netlify\.app"
 
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def allowed_origin_regex(self) -> str | None:
+        return self.ALLOWED_ORIGIN_REGEX or None
 
     # Future features
     USE_STRUCTURED_COACHING_TEMPLATES: bool = True
