@@ -35,6 +35,13 @@ export function TwinScreen() {
   const tWhen = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
   const rc = readinessColor(D.readiness);
 
+  // VO₂ / Profile tiles read the cached field test when viewing today; the sim
+  // backs the historical days (and the case where no field test has been run).
+  const ft = isToday ? state.fieldTest : null;
+  const tVo2 = ft ? ft.vo2_max : D.vo2;
+  const tProfileVal = ft ? ft.fatigue_percent : D.profile;
+  const tProfileFoot = ft ? ft.fatigue_profile : "endurance-biased";
+
   // top sparkline
   const Wv = 560, Hv = 46;
   const xsf = (i: number) => 10 + (i / (N - 1)) * (Wv - 20);
@@ -136,8 +143,8 @@ export function TwinScreen() {
           </div>
         </Card>
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
-          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — your aerobic ceiling, derived from the 1.5-mile split. Age/sex not yet wired into v0.3." label="VO₂max" value={D.vo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="field test" footColor="text-teal" />
-          <MiniTile tip="Speed↔endurance bias. Negative leans endurance, positive leans speed. A style index, not a fitness score — don't read negative as bad." label="Profile" value={D.profile.toFixed(1)} sub="speed ↔ endurance" foot="endurance-biased" footColor="text-info" />
+          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — your aerobic ceiling, derived from the 1.5-mile split. Age/sex not yet wired into v0.3." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="field test" footColor="text-teal" />
+          <MiniTile tip="Speed↔endurance bias. Negative leans endurance, positive leans speed. A style index, not a fitness score — don't read negative as bad." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot={tProfileFoot} footColor="text-info" />
           <MiniTile label="Habit" value={<>{D.habit}<span className="text-[16px] text-faint">%</span></>} sub="adherence" bar={D.habit} />
           <MiniTile tip="Structural adaptation drive — how strongly recent load is stimulating tissue remodelling. Higher = actively building structure." label="Struct. signal" value={D.signal.toFixed(1)} sub="adaptation drive" foot={tSignalTrend} footColor="text-teal" />
         </div>
