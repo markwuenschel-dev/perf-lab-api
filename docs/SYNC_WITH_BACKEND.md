@@ -8,6 +8,151 @@ This document exists to make that process predictable.
 
 ---
 
+## Redesign (Perf Lab "Performance OS") → Backend Wiring Plan
+
+> **Status:** the redesigned UI (`src/perflab/`) currently runs entirely on the
+> client-side simulation in `src/perflab/sim.ts` — **no backend calls**. This
+> section is the plan for re-wiring the four screens that map to real endpoints.
+> The per-component references *later in this document* (`StateSnapshot`,
+> `LogWorkoutForm`, `HeroFlowColumn`, `OnboardingForm`, `PlanningPanel`,
+> `DigitalTwinPanel`, `NextSessionCard`, `stateUtils.ts`, `trainingGoals.ts`) are
+> **pre-redesign and have been removed** — they are superseded by `src/perflab/`.
+> `src/types.ts` and `src/api/perfLabClient.ts` are unchanged (parked) and the
+> client already has a typed function for every endpoint below.
+
+### Backend reality (probed live 2026-06-18, `https://perf-lab-api.onrender.com`)
+
+- `/ping` → `{"version":"0.2.0","project":"Performance Lab API"}`. **Backend is
+  v0.2.0**; the UI labels say "S(t) · v0.3" — cosmetic, reconcile later.
+- `GET /openapi.json` → **500** (backend schema-gen bug; `/docs` HTML loads but
+  the spec doesn't). Until fixed, treat `types.ts` + live probes as the source of
+  truth.
+- Routes confirmed to exist: `POST /compute-metrics` (no auth), `POST
+  /auth/register`, `POST /auth/token`, `GET /auth/me` (auth), `POST /v1/onboard`,
+  `POST /v1/log-workout` (auth), `POST /v1/simulate-dose`, `GET /v1/next-session`
+  (auth), `GET /v1/planning/{today,blocks,sessions}` (auth).
+- **No GET current-state route** — `/v1/state`, `/v1/twin`, `/v1/me`,
+  `/v1/state/current` all return **404**. A `UnifiedStateVector` is only returned
+  as the **response body of `POST /v1/log-workout`**. ⇒ see Gap #1.
+
+### 1. Field Test → `POST /compute-metrics` (unauthenticated) — ✅ fully backable
+
+Request (`ComputeMetricsRequest`):
+
+| UI input (`FieldTestScreen`) | Field | Notes |
+|---|---|---|
+| 300 m time | `time_300m` | string `"M:SS"` |
+| 1.5 mi time | `time_1p5mi` | string `"MM:SS"` |
+| Age | `age` | number |
+| Sex | `sex` | `"Female"` / `"Male"` |
+
+Response (`MetricsResponse`, verified against a live call):
+
+| UI element | Field | Notes |
+|---|---|---|
+| VO₂max value | `vo2_max` | currently hardcoded `58.4` |
+| VO₂ category caption | `vo2_category` | e.g. `"Above Average"` |
+| "Speed ↔ Endurance" value | `fatigue_percent` | negative = endurance-biased |
+| "endurance-biased" tag | `fatigue_profile` | label string |
+| Pace zones Z1–Z5 | `zones[0..4]` | `name` + `slow_pace_sec`/`fast_pace_sec` |
+| (not shown) | `race_pace_sec_per_mile` | |
+
+⚠️ **Units:** backend zone paces are **seconds per *mile***; the UI labels zones
+"min/km". Either relabel to `/mi` or convert (`÷ 1.609`). Backend zone names
+(`Easy / Recovery`, `Steady State`, `Tempo`, `Interval / VO₂`, `Fast Repeats /
+Speed`) → Z1–Z5; the UI also shows a short tag (recovery/endurance/tempo/
+threshold/VO₂max). "Send to Twin" has no distinct seed endpoint — see Gap #1.
+
+### 2. Onboarding → `/auth/register` + `/auth/token` + `POST /v1/onboard`
+
+`OnboardRequest` is **strength-oriented**; the redesign onboarding is
+**running-oriented** — partial mismatch:
+
+| UI field (`OnboardingScreen`) | `OnboardRequest` field | Notes |
+|---|---|---|
+| (missing) email + password | `email` + register/login | UI has **no auth fields yet** — must add |
+| Primary sport | `goal` | map sport → goal (Distance running → `"Running"`) |
+| Weekly volume | — | no direct field |
+| 1.5 mi seed | `run_5k_seconds` (approx) | or omit; onboard seeds baseline state |
+| First/last name, DOB, sex, units | — | **not in `OnboardRequest`** (frontend-only profile) |
+| — | `experience_level`, `experience_years`, `available_days_per_week`, `equipment[]`, `self_reported_weak_points[]`, 1RMs, `bodyweight_kg` | not collected by the running UI; send defaults / omit |
+
+**Decision:** either (a) extend the UI to collect auth + the key `OnboardRequest`
+fields, or (b) ask the backend for a running-profile onboard variant.
+
+### 3. Digital Twin (+ Log Workout overlay) → `UnifiedStateVector`
+
+| UI (`TwinScreen`) | Backend field | Notes |
+|---|---|---|
+| Fatigue F(t) — 6 bars | `fatigue_f` {cns,muscular,metabolic,structural,tendon,grip} | exact 6-axis match; **confirm 0–100 vs 0–1 scale** |
+| Tissue T(t) — 8 regions | `tissue_t` {shoulder,elbow,wrist,lumbar,hip,knee,ankle,finger} | exact 8-region match |
+| Capacities X(t) — 5 bars/radar | `capacity_x` | UI 5 ⊂ backend 8: aerobic→`aerobic`, glyco→`glycolytic`, strength→`max_strength`, power→`power`, workcap→`work_capacity` (omits `hypertrophy`/`skill`/`mobility`) |
+| Readiness ring / score | **derived (frontend)** | `100 − 0.55·mean(F) − 0.45·max(T)` — backend has no readiness field |
+| Struct. signal | `s_struct_signal` | |
+| Habit | `habit_strength` | |
+| Skill-state bars | `skill_state` (`Record<string,number>`) | map by keys present; current UI labels are placeholders |
+| VO₂max + Profile tiles | from **last field test** (`MetricsResponse`), *not* the state vector | cache the last `compute-metrics` result |
+| Time-travel slider + 22-day sparkline | **no backend** | needs a state-history endpoint — see Gap #2 |
+
+Log Workout overlay:
+
+| UI | Endpoint | Notes |
+|---|---|---|
+| Projected dose D(t) — 6 bars (preview) | `POST /v1/simulate-dose` → `StressDose.dose_six` {volume,intensity,density,impact,skill,metabolic} | **exact 6-axis match** |
+| "Apply to twin →" | `POST /v1/log-workout` → new `UnifiedStateVector` | cache the response as current state (Gap #1 workaround) |
+| chips / duration / distance / pace / RPE | build a `WorkoutLog` | `modality:"Running"`, `duration_minutes`, `session_rpe`, `distance_meters`, + required `sleep_quality`, `life_stress_inverse` |
+| Resulting S(t) shift | diff cached-current vs returned state | |
+
+### 4. Planning → `/v1/planning/*` + `/v1/next-session`
+
+| UI (`PlanningScreen`) | Endpoint / field | Notes |
+|---|---|---|
+| "This week" 7-day strip | `GET /v1/planning/sessions?start_date&end_date` → `PlannedSessionRead[]` | `scheduled_date`, `day_of_week`, `category`, `modality`, `status` |
+| "Block · Mid-base wk 3/7" (+ sidebar block card) | `GET /v1/planning/blocks` → active `BlockRead` | `goal`, `start_date`, `duration_weeks`, `sessions_per_week` |
+| "Wednesday · prescribed" detail | `GET /v1/planning/today?goal=` → `TodaySessionResponse` {session, prescription} | or `GET /v1/next-session?goal=` → `WorkoutPrescription` |
+| Stress dose D(t) bars (prescribed) | `POST /v1/simulate-dose` for the prescribed session | not part of the prescription payload |
+| Readiness line on chart | **derived** | no backend series |
+| Projected impact (after) | diff vs simulate-dose / cached state | derived |
+| "Start session" → Session Player | frontend-only | no live-session backend |
+
+### Gaps / decisions to resolve before (or alongside) implementation
+
+1. **No current-state GET endpoint.** Twin + Overview readiness need `S(t)` on
+   load. Options: (a) **recommend backend add `GET /v1/state`** (best); (b) cache
+   the last `log-workout` response in `localStorage`; (c) seed from the onboard
+   response. **Interim: (b), and request (a).**
+2. **No state history / trends.** Twin 22-day time-travel and History
+   readiness/load/VO₂ trends have **no backend source** → keep sim-only or add a
+   history endpoint.
+3. **Auth UI is missing.** Every `/v1/*` call needs a bearer token from
+   `/auth/token`. The redesign has no login/register UI (the parked `auth/`
+   context still exists). A minimal auth entry is a prerequisite for Twin/Planning.
+4. **Scale/units to confirm:** `fatigue_f`/`tissue_t` 0–100 vs 0–1; zone paces
+   sec/mile vs the UI's `/km` label.
+5. **Capacity axes:** UI shows 5, backend has 8 — decide whether to surface all.
+6. **Onboarding field mismatch** (running UI vs strength-oriented `OnboardRequest`).
+7. **Version drift:** backend `0.2.0` vs UI "v0.3"; `/openapi.json` 500 (file a
+   backend bug).
+
+### Stays client-side (`sim.ts`) — no endpoints exist
+
+Simulator (`buildProjection`), Goal Race (predicted-time math), History (trends),
+and the live Session Player remain pure simulation.
+
+### Suggested implementation order
+
+1. **Auth shell** (login/register + token storage via parked `auth/`) — unblocks
+   all `/v1/*`.
+2. **Field Test** → `compute-metrics` (no auth; smallest real slice; cache the
+   result to feed the Twin's VO₂/Profile tiles).
+3. **Log Workout** → `simulate-dose` (preview) + `log-workout` (apply) — exact
+   dose-axis match; cache the returned state.
+4. **Twin** ← cached state (Gap #1) + cached field test; readiness derived.
+5. **Planning** ← blocks / sessions / today.
+6. Leave Simulator / Goal Race / History / Session Player on `sim.ts`.
+
+---
+
 ## Type Mapping Table
 
 | Frontend (`src/types.ts`) | Backend schema (`app/schemas/`) | Notes |
