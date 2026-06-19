@@ -1,0 +1,4 @@
+# The committed OpenAPI contract is byte-compared by `export_openapi --check`
+# (the CI drift gate). Force LF on every platform so a CRLF checkout on Windows
+# can't report false drift.
+openapi.json text eol=lf
