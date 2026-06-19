@@ -17,6 +17,10 @@ function buildWorkoutLog(
   mood: number,
 ): WorkoutLog {
   const modality: Modality = logType === "strength" ? "Strength" : "Running";
+  // We send only what the form captures; the backend fills server-side defaults
+  // for omitted fields (is_benchmark, novelty, total_volume_load, …). `satisfies`
+  // still type-checks the fields we DO set against the contract; the cast covers
+  // the server-defaulted remainder.
   return {
     timestamp: new Date().toISOString(),
     modality,
@@ -26,7 +30,7 @@ function buildWorkoutLog(
     sleep_quality: sleepQ,
     life_stress_inverse: mood,
     ...(modality === "Running" ? { distance_meters: Math.round(distanceKm * 1000) } : {}),
-  };
+  } satisfies Partial<WorkoutLog> as WorkoutLog;
 }
 
 export function LogWorkoutModal() {
@@ -52,7 +56,7 @@ export function LogWorkoutModal() {
         .then((d) => {
           if (cancelled) return;
           const s = d.dose_six;
-          setDoseSix([s.volume, s.intensity, s.density, s.impact, s.skill, s.metabolic]);
+          setDoseSix(s ? [s.volume, s.intensity, s.density, s.impact, s.skill, s.metabolic] : null);
         })
         .catch(() => {
           if (!cancelled) setDoseSix(null);

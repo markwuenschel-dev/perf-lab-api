@@ -90,16 +90,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = useCallback(
     async (req: Partial<OnboardRequest>) => {
-      const emailToUse = req.email ?? email;
       try {
-        await api.onboard({ email: emailToUse, ...req });
+        // Identity comes from the auth token, so OnboardRequest has no `email`.
+        // The backend fills server-side defaults for any field we omit, so a
+        // partial (even `{}`) is a valid payload.
+        await api.onboard(req as OnboardRequest);
       } catch {
         // Best-effort: baseline state seeds on first /next-session anyway
       } finally {
         setOnboardingPending(false);
       }
     },
-    [email],
+    [],
   );
 
   const value = useMemo<AuthContextValue>(
