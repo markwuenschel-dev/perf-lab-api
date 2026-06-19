@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     Run `alembic upgrade head` (or your deployment migration step)
     before starting the application against a real database.
     """
-    logger.info("🚀 Starting Performance Lab API (app.main:app v0.2.0)...")
+    logger.info("🚀 Starting Performance Lab API (app.main:app v0.3.0)...")
 
     # Optional: lightweight connectivity check (does not mutate schema)
     try:
@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -149,7 +149,7 @@ async def ping():
     return {
         "status": "ok",
         "system": "running",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "project": settings.PROJECT_NAME,
     }
 

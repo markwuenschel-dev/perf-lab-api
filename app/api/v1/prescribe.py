@@ -22,7 +22,7 @@ router = APIRouter(tags=["Prescription"])
 
 @router.get("/next-session", response_model=WorkoutPrescription)
 async def get_next_session(
-    goal: TrainingGoal = Query(TRAINING_GOAL_DEFAULT, description=...),
+    goal: TrainingGoal = Query(TRAINING_GOAL_DEFAULT, description="Training goal to prescribe for; defaults to the athlete's primary goal."),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkoutPrescription:

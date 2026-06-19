@@ -21,6 +21,7 @@ from app.logic.constraint_engine.candidate import (
     max_tissue_load,
     overall_readiness,
 )
+from app.logic.constraint_engine.candidates import encode_session_candidate
 from app.logic.constraint_engine.context_builder import build_constraint_context
 from app.logic.constraint_engine.types import (
     ConstraintContext,
@@ -40,6 +41,7 @@ __all__ = [
     "mean_fatigue",
     "max_tissue_load",
     "overall_readiness",
+    "encode_session_candidate",
     "ConstraintContext",
     "ConstraintResult",
     "Severity",
