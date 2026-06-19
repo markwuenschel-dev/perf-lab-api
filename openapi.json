@@ -1,0 +1,3828 @@
+{
+  "components": {
+    "schemas": {
+      "AdaptationContribution": {
+        "description": "Per-session adaptation signal by capacity axis.\n\nComputed by the dose engine from aggregated phi_adapt vectors and session\nload. Consumed by state_update to drive explicit capacity gains.",
+        "properties": {
+          "aerobic": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Aerobic",
+            "type": "number"
+          },
+          "glycolytic": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Glycolytic",
+            "type": "number"
+          },
+          "hypertrophy": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Hypertrophy",
+            "type": "number"
+          },
+          "max_strength": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Max Strength",
+            "type": "number"
+          },
+          "mobility": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Mobility",
+            "type": "number"
+          },
+          "power": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Power",
+            "type": "number"
+          },
+          "skill": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Skill",
+            "type": "number"
+          },
+          "work_capacity": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Work Capacity",
+            "type": "number"
+          }
+        },
+        "title": "AdaptationContribution",
+        "type": "object"
+      },
+      "AnchorObservationOut": {
+        "properties": {
+          "benchmark_code": {
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "is_primary_anchor": {
+            "title": "Is Primary Anchor",
+            "type": "boolean"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "raw_value": {
+            "title": "Raw Value",
+            "type": "number"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "benchmark_code",
+          "name",
+          "domain",
+          "is_primary_anchor",
+          "metric_type",
+          "unit",
+          "raw_value",
+          "observed_at"
+        ],
+        "title": "AnchorObservationOut",
+        "type": "object"
+      },
+      "BenchmarkDefinitionRead": {
+        "properties": {
+          "better_direction": {
+            "title": "Better Direction",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "fatigue_targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fatigue Targets"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_derived_only": {
+            "title": "Is Derived Only",
+            "type": "boolean"
+          },
+          "is_primary_anchor": {
+            "title": "Is Primary Anchor",
+            "type": "boolean"
+          },
+          "is_validator_only": {
+            "title": "Is Validator Only",
+            "type": "boolean"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "observation_weight": {
+            "title": "Observation Weight",
+            "type": "number"
+          },
+          "protocol_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Summary"
+          },
+          "state_targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Targets"
+          },
+          "tissue_targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tissue Targets"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "domain",
+          "metric_type",
+          "unit",
+          "is_primary_anchor",
+          "is_derived_only",
+          "is_validator_only",
+          "protocol_summary",
+          "better_direction",
+          "observation_weight",
+          "state_targets",
+          "fatigue_targets",
+          "tissue_targets"
+        ],
+        "title": "BenchmarkDefinitionRead",
+        "type": "object"
+      },
+      "BenchmarkObservationCreate": {
+        "properties": {
+          "benchmark_code": {
+            "description": "Stable code from benchmark_definitions",
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "bodyweight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodyweight Kg"
+          },
+          "heart_rate_avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heart Rate Avg"
+          },
+          "heart_rate_drift_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heart Rate Drift Pct"
+          },
+          "normalized_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Value"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "protocol_metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Metadata"
+          },
+          "raw_value": {
+            "title": "Raw Value",
+            "type": "number"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "secondary_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Value"
+          },
+          "source": {
+            "default": "manual",
+            "title": "Source",
+            "type": "string"
+          },
+          "validity_status": {
+            "default": "valid",
+            "title": "Validity Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "benchmark_code",
+          "raw_value"
+        ],
+        "title": "BenchmarkObservationCreate",
+        "type": "object"
+      },
+      "BenchmarkObservationRead": {
+        "properties": {
+          "benchmark_code": {
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "benchmark_definition_id": {
+            "title": "Benchmark Definition Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "normalized_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Value"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "raw_value": {
+            "title": "Raw Value",
+            "type": "number"
+          },
+          "secondary_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Value"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "validity_status": {
+            "title": "Validity Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "benchmark_definition_id",
+          "benchmark_code",
+          "observed_at",
+          "raw_value",
+          "secondary_value",
+          "normalized_value",
+          "validity_status",
+          "source"
+        ],
+        "title": "BenchmarkObservationRead",
+        "type": "object"
+      },
+      "BlockCreateRequest": {
+        "properties": {
+          "benchmark_every_n_weeks": {
+            "anyOf": [
+              {
+                "maximum": 12.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "title": "Benchmark Every N Weeks"
+          },
+          "deload_every_n_weeks": {
+            "default": 4,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Deload Every N Weeks",
+            "type": "integer"
+          },
+          "deload_volume_factor": {
+            "default": 0.6,
+            "exclusiveMinimum": 0.1,
+            "maximum": 1.0,
+            "title": "Deload Volume Factor",
+            "type": "number"
+          },
+          "duration_weeks": {
+            "default": 8,
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/BlockGoal"
+          },
+          "modality_mix": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Modality Mix",
+            "type": "object"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "sessions_per_week": {
+            "default": 3,
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Sessions Per Week",
+            "type": "integer"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "weekly_template": {
+            "items": {
+              "$ref": "#/components/schemas/WeeklyTemplateSlot"
+            },
+            "title": "Weekly Template",
+            "type": "array"
+          }
+        },
+        "required": [
+          "goal",
+          "start_date"
+        ],
+        "title": "BlockCreateRequest",
+        "type": "object"
+      },
+      "BlockGoal": {
+        "enum": [
+          "Strength",
+          "Hypertrophy",
+          "Power",
+          "Hyrox",
+          "CrossFit",
+          "Running",
+          "Calisthenics",
+          "General",
+          "Recomp"
+        ],
+        "title": "BlockGoal",
+        "type": "string"
+      },
+      "BlockRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deload_every_n_weeks": {
+            "title": "Deload Every N Weeks",
+            "type": "integer"
+          },
+          "deload_volume_factor": {
+            "title": "Deload Volume Factor",
+            "type": "number"
+          },
+          "duration_weeks": {
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/BlockGoal"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "modality_mix": {
+            "additionalProperties": true,
+            "title": "Modality Mix",
+            "type": "object"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "sessions_per_week": {
+            "title": "Sessions Per Week",
+            "type": "integer"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BlockStatus"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "weekly_template": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Weekly Template",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "goal",
+          "status",
+          "start_date",
+          "end_date",
+          "duration_weeks",
+          "sessions_per_week",
+          "weekly_template",
+          "modality_mix",
+          "rationale",
+          "deload_every_n_weeks",
+          "deload_volume_factor",
+          "created_at"
+        ],
+        "title": "BlockRead",
+        "type": "object"
+      },
+      "BlockStatus": {
+        "enum": [
+          "active",
+          "completed",
+          "abandoned"
+        ],
+        "title": "BlockStatus",
+        "type": "string"
+      },
+      "BlockUpdateRequest": {
+        "properties": {
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "BlockUpdateRequest",
+        "type": "object"
+      },
+      "Body_login_auth_token_post": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          },
+          "grant_type": {
+            "anyOf": [
+              {
+                "pattern": "^password$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "password": {
+            "format": "password",
+            "title": "Password",
+            "type": "string"
+          },
+          "scope": {
+            "default": "",
+            "title": "Scope",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_login_auth_token_post",
+        "type": "object"
+      },
+      "CapacityState": {
+        "description": "X_t \u2014 capacity / adaptation ceiling components (higher = better).",
+        "properties": {
+          "aerobic": {
+            "default": 300.0,
+            "description": "Aerobic / CS\u2013VO2 proxy",
+            "minimum": 0.0,
+            "title": "Aerobic",
+            "type": "number"
+          },
+          "glycolytic": {
+            "default": 50.0,
+            "description": "Glycolytic / W\u2032-style reserve",
+            "minimum": 0.0,
+            "title": "Glycolytic",
+            "type": "number"
+          },
+          "hypertrophy": {
+            "default": 50.0,
+            "minimum": 0.0,
+            "title": "Hypertrophy",
+            "type": "number"
+          },
+          "max_strength": {
+            "default": 100.0,
+            "minimum": 0.0,
+            "title": "Max Strength",
+            "type": "number"
+          },
+          "mobility": {
+            "default": 50.0,
+            "minimum": 0.0,
+            "title": "Mobility",
+            "type": "number"
+          },
+          "power": {
+            "default": 50.0,
+            "minimum": 0.0,
+            "title": "Power",
+            "type": "number"
+          },
+          "skill": {
+            "default": 50.0,
+            "minimum": 0.0,
+            "title": "Skill",
+            "type": "number"
+          },
+          "work_capacity": {
+            "default": 50.0,
+            "minimum": 0.0,
+            "title": "Work Capacity",
+            "type": "number"
+          }
+        },
+        "title": "CapacityState",
+        "type": "object"
+      },
+      "DashboardBundleOut": {
+        "description": "Latest primary-anchor observations plus derived KPI snapshots.",
+        "properties": {
+          "kpis": {
+            "items": {
+              "$ref": "#/components/schemas/KPIValueOut"
+            },
+            "title": "Kpis",
+            "type": "array"
+          },
+          "primary_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/AnchorObservationOut"
+            },
+            "title": "Primary Anchors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kpis",
+          "primary_anchors"
+        ],
+        "title": "DashboardBundleOut",
+        "type": "object"
+      },
+      "DomainSummaryOut": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "kpis": {
+            "items": {
+              "$ref": "#/components/schemas/KPIValueOut"
+            },
+            "title": "Kpis",
+            "type": "array"
+          },
+          "primary_anchors": {
+            "items": {
+              "$ref": "#/components/schemas/AnchorObservationOut"
+            },
+            "title": "Primary Anchors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain",
+          "kpis",
+          "primary_anchors"
+        ],
+        "title": "DomainSummaryOut",
+        "type": "object"
+      },
+      "ExerciseEntry": {
+        "description": "A single exercise within a session log.\n\n`phi_*` and `energy_mix` are resolved from the Exercise DB row by the\nservice layer before the dose engine runs. They are left blank in\nclient-submitted logs; the engine falls back to modality defaults when absent.",
+        "properties": {
+          "avg_rir": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Rir"
+          },
+          "avg_rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Rpe"
+          },
+          "distance_meters": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Meters"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "energy_mix": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Energy Mix"
+          },
+          "exercise_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Id"
+          },
+          "exercise_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Name"
+          },
+          "impact_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact Level"
+          },
+          "load_kg": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Kg"
+          },
+          "modality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality"
+          },
+          "movement_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement Pattern"
+          },
+          "phi_adapt": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phi Adapt"
+          },
+          "phi_fatigue": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phi Fatigue"
+          },
+          "phi_tissue": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phi Tissue"
+          },
+          "recovery_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Cost"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rest_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Seconds"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "skill_demand": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Demand"
+          },
+          "sport_domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Domains"
+          },
+          "tempo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo"
+          },
+          "weak_point_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weak Point Tags"
+          }
+        },
+        "title": "ExerciseEntry",
+        "type": "object"
+      },
+      "ExercisePrescription": {
+        "description": "A single prescribed exercise within a session.",
+        "properties": {
+          "load_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Note"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "weak_point_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Weak Point Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ExercisePrescription",
+        "type": "object"
+      },
+      "FatigueState": {
+        "description": "F_t \u2014 multi-component fatigue (0\u2013100). Higher = more fatigued.",
+        "properties": {
+          "cns": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Cns",
+            "type": "number"
+          },
+          "grip": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Grip",
+            "type": "number"
+          },
+          "metabolic": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Metabolic",
+            "type": "number"
+          },
+          "muscular": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Muscular",
+            "type": "number"
+          },
+          "structural": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Structural",
+            "type": "number"
+          },
+          "tendon": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Tendon",
+            "type": "number"
+          }
+        },
+        "title": "FatigueState",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "KPIValueOut": {
+        "properties": {
+          "can_affect_prescriber_rules": {
+            "title": "Can Affect Prescriber Rules",
+            "type": "boolean"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "computed_at": {
+            "format": "date-time",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "is_dashboard_kpi": {
+            "title": "Is Dashboard Kpi",
+            "type": "boolean"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "domain",
+          "metric_type",
+          "unit",
+          "value",
+          "confidence",
+          "computed_at",
+          "is_dashboard_kpi",
+          "can_affect_prescriber_rules"
+        ],
+        "title": "KPIValueOut",
+        "type": "object"
+      },
+      "MetricsRequest": {
+        "properties": {
+          "age": {
+            "title": "Age",
+            "type": "integer"
+          },
+          "sex": {
+            "title": "Sex",
+            "type": "string"
+          },
+          "time_1p5mi": {
+            "title": "Time 1P5Mi",
+            "type": "string"
+          },
+          "time_300m": {
+            "title": "Time 300M",
+            "type": "string"
+          }
+        },
+        "required": [
+          "age",
+          "sex",
+          "time_300m",
+          "time_1p5mi"
+        ],
+        "title": "MetricsRequest",
+        "type": "object"
+      },
+      "MetricsResponse": {
+        "properties": {
+          "fatigue_percent": {
+            "title": "Fatigue Percent",
+            "type": "number"
+          },
+          "fatigue_profile": {
+            "title": "Fatigue Profile",
+            "type": "string"
+          },
+          "race_pace_sec_per_mile": {
+            "title": "Race Pace Sec Per Mile",
+            "type": "number"
+          },
+          "result_category": {
+            "title": "Result Category",
+            "type": "string"
+          },
+          "vo2_category": {
+            "title": "Vo2 Category",
+            "type": "string"
+          },
+          "vo2_max": {
+            "title": "Vo2 Max",
+            "type": "number"
+          },
+          "zones": {
+            "items": {
+              "$ref": "#/components/schemas/Zone"
+            },
+            "title": "Zones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vo2_max",
+          "vo2_category",
+          "result_category",
+          "fatigue_percent",
+          "fatigue_profile",
+          "race_pace_sec_per_mile",
+          "zones"
+        ],
+        "title": "MetricsResponse",
+        "type": "object"
+      },
+      "OnboardRequest": {
+        "properties": {
+          "available_days_per_week": {
+            "default": 3,
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Available Days Per Week",
+            "type": "integer"
+          },
+          "bench_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench 1Rm Kg"
+          },
+          "bodyweight_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodyweight Kg"
+          },
+          "deadlift_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadlift 1Rm Kg"
+          },
+          "equipment": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Equipment",
+            "type": "array"
+          },
+          "experience_level": {
+            "default": "intermediate",
+            "title": "Experience Level",
+            "type": "string"
+          },
+          "experience_years": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Experience Years",
+            "type": "number"
+          },
+          "goal": {
+            "default": "Strength",
+            "title": "Goal",
+            "type": "string"
+          },
+          "run_5k_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run 5K Seconds"
+          },
+          "self_reported_weak_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Self Reported Weak Points",
+            "type": "array"
+          },
+          "session_duration_minutes": {
+            "default": 60,
+            "title": "Session Duration Minutes",
+            "type": "integer"
+          },
+          "squat_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squat 1Rm Kg"
+          }
+        },
+        "title": "OnboardRequest",
+        "type": "object"
+      },
+      "OnboardResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "next_step": {
+            "default": "Call GET /v1/next-session?goal=Strength to get first prescription",
+            "title": "Next Step",
+            "type": "string"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "integer"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "profile_id",
+          "message"
+        ],
+        "title": "OnboardResponse",
+        "type": "object"
+      },
+      "PlannedSessionRead": {
+        "properties": {
+          "benchmark_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Key"
+          },
+          "block_id": {
+            "title": "Block Id",
+            "type": "integer"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "day_of_week": {
+            "title": "Day Of Week",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_benchmark": {
+            "title": "Is Benchmark",
+            "type": "boolean"
+          },
+          "is_deload": {
+            "title": "Is Deload",
+            "type": "boolean"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "prescribed_content": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prescribed Content"
+          },
+          "scheduled_date": {
+            "format": "date",
+            "title": "Scheduled Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "week_number": {
+            "title": "Week Number",
+            "type": "integer"
+          },
+          "workout_log_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workout Log Id"
+          }
+        },
+        "required": [
+          "id",
+          "block_id",
+          "user_id",
+          "scheduled_date",
+          "week_number",
+          "day_of_week",
+          "category",
+          "modality",
+          "status",
+          "is_deload",
+          "is_benchmark"
+        ],
+        "title": "PlannedSessionRead",
+        "type": "object"
+      },
+      "PlannedSessionUpdateRequest": {
+        "properties": {
+          "scheduled_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Date"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PlannedSessionUpdateRequest",
+        "type": "object"
+      },
+      "PrescriptionExplanation": {
+        "description": "Why this session \u2014 state drivers, constraints, sources.",
+        "properties": {
+          "constraints_applied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraints Applied",
+            "type": "array"
+          },
+          "goal_alignment": {
+            "default": "",
+            "title": "Goal Alignment",
+            "type": "string"
+          },
+          "prescription_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Internal prescriber branch id (safety, readiness, goal path)",
+            "title": "Prescription Branch"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Template-aligned fit score vs twin state (0\u20131)",
+            "title": "Score"
+          },
+          "source_alignment": {
+            "description": "Human-readable: templates + primitives + models",
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Alignment",
+            "type": "array"
+          },
+          "state_drivers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "State Drivers",
+            "type": "array"
+          },
+          "structured_template_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for structured coaching template (v2)",
+            "title": "Structured Template Name"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "description": "Soft constraint / template warnings (non-blocking)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "PrescriptionExplanation",
+        "type": "object"
+      },
+      "ReadinessOut": {
+        "properties": {
+          "kpi_flags": {
+            "additionalProperties": true,
+            "description": "Soft signals from KPIs (e.g. elevated run fatigue factor)",
+            "title": "Kpi Flags",
+            "type": "object"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnifiedStateVector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ReadinessOut",
+        "type": "object"
+      },
+      "RecomputeDerivedResponse": {
+        "properties": {
+          "codes_computed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Codes Computed",
+            "type": "array"
+          },
+          "snapshots_written": {
+            "title": "Snapshots Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "snapshots_written",
+          "codes_computed"
+        ],
+        "title": "RecomputeDerivedResponse",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RunSession": {
+        "properties": {
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "focus": {
+            "title": "Focus",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rpe": {
+            "title": "Rpe",
+            "type": "string"
+          },
+          "session": {
+            "title": "Session",
+            "type": "integer"
+          },
+          "week": {
+            "title": "Week",
+            "type": "integer"
+          },
+          "zone": {
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "week",
+          "session",
+          "day",
+          "name",
+          "focus",
+          "zone",
+          "rpe"
+        ],
+        "title": "RunSession",
+        "type": "object"
+      },
+      "SessionStatus": {
+        "enum": [
+          "pending",
+          "completed",
+          "skipped",
+          "rescheduled"
+        ],
+        "title": "SessionStatus",
+        "type": "string"
+      },
+      "StrengthSession": {
+        "properties": {
+          "accessory": {
+            "title": "Accessory",
+            "type": "string"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "main_lifts": {
+            "title": "Main Lifts",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "week": {
+            "title": "Week",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "week",
+          "day",
+          "phase",
+          "main_lifts",
+          "accessory",
+          "notes"
+        ],
+        "title": "StrengthSession",
+        "type": "object"
+      },
+      "StressDose": {
+        "description": "Stress dose: six-dimensional engine vector plus legacy scalars for clients.\n\n`adaptation_contribution` is the session's positive adaptation signal per\ncapacity axis. Used by state_update for explicit capacity gains.",
+        "properties": {
+          "adaptation_contribution": {
+            "$ref": "#/components/schemas/AdaptationContribution"
+          },
+          "d_met_systemic": {
+            "default": 0.0,
+            "title": "D Met Systemic",
+            "type": "number"
+          },
+          "d_nm_central": {
+            "default": 0.0,
+            "title": "D Nm Central",
+            "type": "number"
+          },
+          "d_nm_peripheral": {
+            "default": 0.0,
+            "title": "D Nm Peripheral",
+            "type": "number"
+          },
+          "d_struct_damage": {
+            "default": 0.0,
+            "title": "D Struct Damage",
+            "type": "number"
+          },
+          "d_struct_signal": {
+            "default": 0.0,
+            "title": "D Struct Signal",
+            "type": "number"
+          },
+          "dose_six": {
+            "$ref": "#/components/schemas/StressDoseSix"
+          }
+        },
+        "title": "StressDose",
+        "type": "object"
+      },
+      "StressDoseSix": {
+        "description": "D_t \u2014 session stress dose in six dimensions (non-negative).",
+        "properties": {
+          "density": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Density",
+            "type": "number"
+          },
+          "impact": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Impact",
+            "type": "number"
+          },
+          "intensity": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Intensity",
+            "type": "number"
+          },
+          "metabolic": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Metabolic",
+            "type": "number"
+          },
+          "skill": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Skill",
+            "type": "number"
+          },
+          "volume": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "title": "StressDoseSix",
+        "type": "object"
+      },
+      "TissueState": {
+        "description": "T_t \u2014 accumulated tissue / structural stress (0\u2013100).",
+        "properties": {
+          "ankle": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Ankle",
+            "type": "number"
+          },
+          "elbow": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Elbow",
+            "type": "number"
+          },
+          "finger": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Finger",
+            "type": "number"
+          },
+          "hip": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Hip",
+            "type": "number"
+          },
+          "knee": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Knee",
+            "type": "number"
+          },
+          "lumbar": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Lumbar",
+            "type": "number"
+          },
+          "shoulder": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Shoulder",
+            "type": "number"
+          },
+          "wrist": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Wrist",
+            "type": "number"
+          }
+        },
+        "title": "TissueState",
+        "type": "object"
+      },
+      "TodaySessionResponse": {
+        "properties": {
+          "prescription": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prescription"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannedSessionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "TodaySessionResponse",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "UnifiedStateVector": {
+        "description": "Digital twin snapshot S(t): legacy scalars + decomposed engine vectors.\n\nLegacy fields remain for backward-compatible API clients; they are derived\nfrom (capacity_x, fatigue_f, tissue_t) on each update.",
+        "properties": {
+          "b_met_anaerobic": {
+            "description": "Anaerobic work capacity (W'/D')",
+            "title": "B Met Anaerobic",
+            "type": "number"
+          },
+          "c_met_aerobic": {
+            "description": "Aerobic capacity (e.g. CS / VO2 proxy)",
+            "title": "C Met Aerobic",
+            "type": "number"
+          },
+          "c_nm_force": {
+            "description": "Maximal strength / force capacity",
+            "title": "C Nm Force",
+            "type": "number"
+          },
+          "c_struct": {
+            "description": "Structural capacity / CSA proxy",
+            "title": "C Struct",
+            "type": "number"
+          },
+          "capacity_x": {
+            "$ref": "#/components/schemas/CapacityState"
+          },
+          "f_met_systemic": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Met Systemic",
+            "type": "number"
+          },
+          "f_nm_central": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Nm Central",
+            "type": "number"
+          },
+          "f_nm_peripheral": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Nm Peripheral",
+            "type": "number"
+          },
+          "f_struct_damage": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Struct Damage",
+            "type": "number"
+          },
+          "fatigue_f": {
+            "$ref": "#/components/schemas/FatigueState"
+          },
+          "habit_strength": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Habit Strength",
+            "type": "number"
+          },
+          "model_version": {
+            "default": "v0.3",
+            "description": "State engine version",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "s_struct_signal": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "S Struct Signal",
+            "type": "number"
+          },
+          "skill_state": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Skill State",
+            "type": "object"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "tissue_t": {
+            "$ref": "#/components/schemas/TissueState"
+          }
+        },
+        "required": [
+          "timestamp",
+          "c_met_aerobic",
+          "c_nm_force",
+          "c_struct",
+          "b_met_anaerobic"
+        ],
+        "title": "UnifiedStateVector",
+        "type": "object"
+      },
+      "UserResponse": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "is_active"
+        ],
+        "title": "UserResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationSummary": {
+        "description": "Result of validate_session checks.",
+        "properties": {
+          "failed_checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed Checks",
+            "type": "array"
+          },
+          "hard_violations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hard Violations",
+            "type": "array"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "passed"
+        ],
+        "title": "ValidationSummary",
+        "type": "object"
+      },
+      "WeakPointOut": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "detected_at": {
+            "format": "date-time",
+            "title": "Detected At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "tag": {
+            "title": "Tag",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tag",
+          "source",
+          "confidence",
+          "note",
+          "detected_at",
+          "resolved_at",
+          "is_active"
+        ],
+        "title": "WeakPointOut",
+        "type": "object"
+      },
+      "WeakPointPatch": {
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          }
+        },
+        "title": "WeakPointPatch",
+        "type": "object"
+      },
+      "WeeklyTemplateSlot": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "day_of_week": {
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Day Of Week",
+            "type": "integer"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day_of_week",
+          "category",
+          "modality"
+        ],
+        "title": "WeeklyTemplateSlot",
+        "type": "object"
+      },
+      "WorkoutLog": {
+        "description": "Raw input log (Sensor Data).",
+        "properties": {
+          "avg_rir": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Rir"
+          },
+          "benchmark_results": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional benchmark key/value payload for benchmark sessions.",
+            "title": "Benchmark Results"
+          },
+          "distance_meters": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0.0,
+            "title": "Distance Meters"
+          },
+          "dominant_movement_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "e.g. squat | hinge | run \u2014 defaults inferred from modality",
+            "title": "Dominant Movement Pattern"
+          },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "number"
+          },
+          "estimated_sets": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "If set, refines volume term in dose law",
+            "title": "Estimated Sets"
+          },
+          "exercises": {
+            "description": "Per-exercise breakdown. When present, dose reflects actual exercise phi vectors.",
+            "items": {
+              "$ref": "#/components/schemas/ExerciseEntry"
+            },
+            "title": "Exercises",
+            "type": "array"
+          },
+          "is_benchmark": {
+            "default": false,
+            "title": "Is Benchmark",
+            "type": "boolean"
+          },
+          "life_stress_inverse": {
+            "default": 5.0,
+            "description": "1 = Very high life stress, 10 = No life stress",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Life Stress Inverse",
+            "type": "number"
+          },
+          "modality": {
+            "enum": [
+              "Running",
+              "Strength",
+              "Hypertrophy",
+              "Power",
+              "Mixed"
+            ],
+            "title": "Modality",
+            "type": "string"
+          },
+          "novelty": {
+            "default": 1.0,
+            "description": ">1 = novel / high coordination demand for this athlete",
+            "maximum": 3.0,
+            "minimum": 0.1,
+            "title": "Novelty",
+            "type": "number"
+          },
+          "planned_session_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "If provided, marks this log as fulfillment of the planned session.",
+            "title": "Planned Session Id"
+          },
+          "session_rpe": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Session Rpe",
+            "type": "number"
+          },
+          "sleep_quality": {
+            "default": 5.0,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Sleep Quality",
+            "type": "number"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "total_volume_load": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0.0,
+            "title": "Total Volume Load"
+          }
+        },
+        "required": [
+          "timestamp",
+          "modality",
+          "duration_minutes",
+          "session_rpe"
+        ],
+        "title": "WorkoutLog",
+        "type": "object"
+      },
+      "WorkoutPrescription": {
+        "description": "Next-session recommendation. Legacy fields required; `why` optional for old clients.",
+        "properties": {
+          "duration_min": {
+            "title": "Duration Min",
+            "type": "integer"
+          },
+          "exercises": {
+            "items": {
+              "$ref": "#/components/schemas/ExercisePrescription"
+            },
+            "title": "Exercises",
+            "type": "array"
+          },
+          "focus": {
+            "title": "Focus",
+            "type": "string"
+          },
+          "model_version": {
+            "default": "v0.3",
+            "description": "Prescription engine version",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrescriptionExplanation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "focus",
+          "rationale",
+          "duration_min"
+        ],
+        "title": "WorkoutPrescription",
+        "type": "object"
+      },
+      "Zone": {
+        "properties": {
+          "fast_offset_sec": {
+            "title": "Fast Offset Sec",
+            "type": "number"
+          },
+          "fast_pace_sec": {
+            "title": "Fast Pace Sec",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "slow_offset_sec": {
+            "title": "Slow Offset Sec",
+            "type": "number"
+          },
+          "slow_pace_sec": {
+            "title": "Slow Pace Sec",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "slow_pace_sec",
+          "fast_pace_sec",
+          "slow_offset_sec",
+          "fast_offset_sec",
+          "notes"
+        ],
+        "title": "Zone",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/auth/token"
+          }
+        },
+        "type": "oauth2"
+      }
+    }
+  },
+  "info": {
+    "title": "Performance Lab API",
+    "version": "0.3.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/auth/me": {
+      "get": {
+        "operationId": "me_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "description": "Create new user + empty AthleteProfile.",
+        "operationId": "register_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "operationId": "login_auth_token_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_auth_token_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/compute-metrics": {
+      "post": {
+        "operationId": "compute_metrics_compute_metrics_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compute Metrics",
+        "tags": [
+          "Legacy"
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "description": "Simple health check endpoint.",
+        "operationId": "ping_ping_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ping",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/program/run": {
+      "get": {
+        "operationId": "get_run_program_program_run_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunSession"
+                  },
+                  "title": "Response Get Run Program Program Run Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Run Program",
+        "tags": [
+          "Legacy"
+        ]
+      }
+    },
+    "/program/strength": {
+      "get": {
+        "operationId": "get_strength_program_program_strength_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StrengthSession"
+                  },
+                  "title": "Response Get Strength Program Program Strength Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Strength Program",
+        "tags": [
+          "Legacy"
+        ]
+      }
+    },
+    "/v1/benchmarks/definitions": {
+      "get": {
+        "operationId": "get_benchmark_definitions_v1_benchmarks_definitions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BenchmarkDefinitionRead"
+                  },
+                  "title": "Response Get Benchmark Definitions V1 Benchmarks Definitions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Benchmark Definitions",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
+    "/v1/benchmarks/observations": {
+      "get": {
+        "operationId": "get_benchmark_observations_v1_benchmarks_observations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "benchmark_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Benchmark Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BenchmarkObservationRead"
+                  },
+                  "title": "Response Get Benchmark Observations V1 Benchmarks Observations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Benchmark Observations",
+        "tags": [
+          "Benchmarks"
+        ]
+      },
+      "post": {
+        "operationId": "post_benchmark_observation_v1_benchmarks_observations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BenchmarkObservationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkObservationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Post Benchmark Observation",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
+    "/v1/benchmarks/recompute-derived": {
+      "post": {
+        "operationId": "post_recompute_derived_v1_benchmarks_recompute_derived_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecomputeDerivedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Post Recompute Derived",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
+    "/v1/dashboard/domain-summary": {
+      "get": {
+        "operationId": "get_domain_summary_v1_dashboard_domain_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "maxLength": 50,
+              "minLength": 2,
+              "title": "Domain",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainSummaryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Domain Summary",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/v1/dashboard/kpis": {
+      "get": {
+        "operationId": "get_dashboard_kpis_v1_dashboard_kpis_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardBundleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Dashboard Kpis",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/v1/dashboard/readiness": {
+      "get": {
+        "operationId": "get_readiness_v1_dashboard_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Readiness",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/v1/log-workout": {
+      "post": {
+        "operationId": "log_workout_v1_log_workout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutLog"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedStateVector"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Log Workout",
+        "tags": [
+          "Ingest"
+        ]
+      }
+    },
+    "/v1/next-session": {
+      "get": {
+        "description": "DEV-friendly version that auto-initializes baseline state.",
+        "operationId": "get_next_session_v1_next_session_get",
+        "parameters": [
+          {
+            "description": "Training goal to prescribe for; defaults to the athlete's primary goal.",
+            "in": "query",
+            "name": "goal",
+            "required": false,
+            "schema": {
+              "default": "Strength",
+              "description": "Training goal to prescribe for; defaults to the athlete's primary goal.",
+              "enum": [
+                "Strength",
+                "Hypertrophy",
+                "Power",
+                "General",
+                "OlympicLifts",
+                "Powerlifting",
+                "MetCon",
+                "Calisthenics",
+                "Gymnastics",
+                "Grip",
+                "Running",
+                "Sprinting",
+                "HalfMarathon",
+                "FullMarathon"
+              ],
+              "title": "Goal",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkoutPrescription"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Next Session",
+        "tags": [
+          "Prescription"
+        ]
+      }
+    },
+    "/v1/onboard": {
+      "post": {
+        "operationId": "onboard_athlete_v1_onboard_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Onboard Athlete",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/planning/blocks": {
+      "get": {
+        "operationId": "list_blocks_v1_planning_blocks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BlockRead"
+                  },
+                  "title": "Response List Blocks V1 Planning Blocks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Blocks",
+        "tags": [
+          "Planning"
+        ]
+      },
+      "post": {
+        "operationId": "create_block_v1_planning_blocks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Block",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/blocks/{block_id}": {
+      "patch": {
+        "operationId": "update_block_v1_planning_blocks__block_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "block_id",
+            "required": true,
+            "schema": {
+              "title": "Block Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Block",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/sessions": {
+      "get": {
+        "operationId": "list_sessions_v1_planning_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlannedSessionRead"
+                  },
+                  "title": "Response List Sessions V1 Planning Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Sessions",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/sessions/{session_id}": {
+      "patch": {
+        "operationId": "update_session_v1_planning_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlannedSessionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedSessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Session",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/today": {
+      "get": {
+        "operationId": "get_today_v1_planning_today_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "goal",
+            "required": false,
+            "schema": {
+              "default": "Strength",
+              "title": "Goal",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodaySessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Today",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/simulate-dose": {
+      "post": {
+        "operationId": "simulate_dose_v1_simulate_dose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkoutLog"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressDose"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Dose",
+        "tags": [
+          "Ingest"
+        ]
+      }
+    },
+    "/v1/weak-points/": {
+      "get": {
+        "description": "Return all weak-point rows for the current user.\n\nBy default only active (unresolved) rows are returned.\nPass active_only=false to include resolved rows.",
+        "operationId": "list_weak_points_v1_weak_points__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WeakPointOut"
+                  },
+                  "title": "Response List Weak Points V1 Weak Points  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Weak Points",
+        "tags": [
+          "Weak Points"
+        ]
+      }
+    },
+    "/v1/weak-points/{weak_point_id}": {
+      "delete": {
+        "description": "Hard-delete a weak-point row owned by the current user.\n\nReturns 204 No Content on success, 404 if not found or wrong user.",
+        "operationId": "delete_weak_point_v1_weak_points__weak_point_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "weak_point_id",
+            "required": true,
+            "schema": {
+              "title": "Weak Point Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Delete Weak Point",
+        "tags": [
+          "Weak Points"
+        ]
+      },
+      "patch": {
+        "description": "Update confidence, note, and/or resolved_at on a weak-point row.\n\nOnly fields explicitly present in the request body are applied.\nSending resolved_at=null re-opens a resolved weak point.",
+        "operationId": "patch_weak_point_v1_weak_points__weak_point_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "weak_point_id",
+            "required": true,
+            "schema": {
+              "title": "Weak Point Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeakPointPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeakPointOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Patch Weak Point",
+        "tags": [
+          "Weak Points"
+        ]
+      }
+    }
+  }
+}
