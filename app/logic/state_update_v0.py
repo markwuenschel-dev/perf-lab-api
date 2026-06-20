@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.engine.parameters import default_parameters
+from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic import cross_talk
@@ -179,14 +179,14 @@ def _tissue_impulse_from_dose(dose: StressDose, log: WorkoutLog) -> dict[str, fl
     return {k: float(pt.get(k, 0.05)) * scale * 9.0 for k in TissueState.KEYS}
 
 
-def _adaptation_efficiency(state: UnifiedStateVector, p) -> float:
+def _adaptation_efficiency(state: UnifiedStateVector, p: EngineParameters) -> float:
     """
     Compute adaptation efficiency multiplier [0.3, 1.0] based on mean fatigue.
 
     High fatigue suppresses adaptation: the body is in repair mode, not supercompensation.
     """
     f = state.fatigue_f
-    f_values = [getattr(f, k) for k in FatigueState.KEYS]
+    f_values: list[float] = [float(getattr(f, k)) for k in FatigueState.KEYS]
     mean_f = sum(f_values) / max(1, len(f_values))
 
     thr = p.adapt_fatigue_suppress_threshold
@@ -202,7 +202,7 @@ def _adaptation_efficiency(state: UnifiedStateVector, p) -> float:
 def _apply_adaptation_gains(
     s: UnifiedStateVector,
     dose: StressDose,
-    p,
+    p: EngineParameters,
 ) -> UnifiedStateVector:
     """
     Apply explicit per-axis capacity gains from dose.adaptation_contribution.

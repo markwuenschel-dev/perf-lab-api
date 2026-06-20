@@ -89,8 +89,9 @@ async def patch_weak_point(
     if wp is None:
         raise HTTPException(status_code=404, detail="Weak point not found")
 
-    # Only apply fields that were explicitly set in the request body
-    if "confidence" in patch.model_fields_set:
+    # Only apply fields that were explicitly set in the request body.
+    # confidence maps to a NOT NULL column, so guard against an explicit null.
+    if "confidence" in patch.model_fields_set and patch.confidence is not None:
         wp.confidence = patch.confidence
     if "note" in patch.model_fields_set:
         wp.note = patch.note

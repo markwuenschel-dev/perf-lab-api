@@ -1,11 +1,15 @@
 import enum
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class WeakPointSource(str, enum.Enum):
@@ -73,14 +77,18 @@ class WeakPoint(Base):
     """
     __tablename__ = "weak_points"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
 
     # The canonical tag — must be one of WEAK_POINT_TAGS (enforced in schema layer)
-    tag = Column(String, nullable=False, index=True)
+    tag: Mapped[str] = mapped_column(String, nullable=False, index=True)
 
     # How this was detected
-    source = Column(SAEnum(WeakPointSource), nullable=False)
+    source: Mapped[WeakPointSource] = mapped_column(
+        SAEnum(WeakPointSource), nullable=False
+    )
 
     # 0.0–1.0. Higher = more confident signal.
     # Typical values by source:
@@ -88,19 +96,23 @@ class WeakPoint(Base):
     #   benchmark: 0.9 (objective measurement)
     #   inference: 0.6 (LLM-derived, plausible but not verified)
     #   performance_data: 0.75 (statistical pattern over time)
-    confidence = Column(Float, default=0.5, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
 
     # Optional human-readable note (e.g. "grip failed before legs on deadlift")
-    note = Column(Text, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    detected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    resolved_at = Column(DateTime, nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # If source=benchmark, link to the planned session that produced this signal
-    source_session_id = Column(Integer, ForeignKey("planned_sessions.id"), nullable=True)
+    source_session_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("planned_sessions.id"), nullable=True
+    )
 
     # Relationship
-    user = relationship("User", back_populates="weak_points")
+    user: Mapped["User"] = relationship("User", back_populates="weak_points")
 
     @property
     def is_active(self) -> bool:

@@ -9,6 +9,7 @@ candidate *generators* (in prescriber.py) and the template *validators*
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.schemas.state import UnifiedStateVector
 
@@ -74,7 +75,7 @@ def score_candidate(
 
 def apply_block_context_boost(
     candidate: SessionCandidate,
-    block_context: dict | None,
+    block_context: dict[str, Any] | None,
     boost: float = 0.15,
 ) -> float:
     """Helper used by prescriber to apply block-level bias."""

@@ -1,12 +1,16 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class BlockGoal(str, enum.Enum):
@@ -55,37 +59,51 @@ class MesocycleBlock(Base):
     """
     __tablename__ = "mesocycle_blocks"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
 
-    goal = Column(SAEnum(BlockGoal), nullable=False)
-    status = Column(SAEnum(BlockStatus), default=BlockStatus.ACTIVE, nullable=False)
+    goal: Mapped[BlockGoal] = mapped_column(SAEnum(BlockGoal), nullable=False)
+    status: Mapped[BlockStatus] = mapped_column(
+        SAEnum(BlockStatus), default=BlockStatus.ACTIVE, nullable=False
+    )
 
-    duration_weeks = Column(Integer, nullable=False, default=8)
-    sessions_per_week = Column(Integer, nullable=False, default=3)
+    duration_weeks: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    sessions_per_week: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
 
-    start_date = Column(Date, nullable=False)
-    end_date = Column(Date, nullable=True)  # computed: start_date + duration_weeks * 7
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True
+    )  # computed: start_date + duration_weeks * 7
 
     # Modality emphasis split (sum should ~ 1.0)
-    modality_mix = Column(JSONB, default=dict, nullable=False)
+    modality_mix: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
 
     # Ordered list of session slot dicts (see docstring)
-    weekly_template = Column(JSONB, default=list, nullable=False)
+    weekly_template: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
 
     # Block-level notes / LLM rationale for the generated plan
-    rationale = Column(String, nullable=True)
+    rationale: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Deload configuration
-    deload_every_n_weeks = Column(Integer, default=4)
-    deload_volume_factor = Column(Float, default=0.6, comment="Volume multiplier during deload week")
+    deload_every_n_weeks: Mapped[int] = mapped_column(Integer, default=4)
+    deload_volume_factor: Mapped[float] = mapped_column(
+        Float, default=0.6, comment="Volume multiplier during deload week"
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     # Relationships
-    user = relationship("User", back_populates="blocks")
-    planned_sessions = relationship(
+    user: Mapped["User"] = relationship("User", back_populates="blocks")
+    planned_sessions: Mapped[list["PlannedSession"]] = relationship(
         "PlannedSession",
         back_populates="block",
         cascade="all, delete-orphan"
@@ -112,33 +130,53 @@ class PlannedSession(Base):
     """
     __tablename__ = "planned_sessions"
 
-    id = Column(Integer, primary_key=True, index=True)
-    block_id = Column(Integer, ForeignKey("mesocycle_blocks.id"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    block_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("mesocycle_blocks.id"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False, index=True
+    )
 
-    scheduled_date = Column(Date, nullable=False, index=True)
-    week_number = Column(Integer, nullable=False, comment="1-indexed week within the block")
-    day_of_week = Column(Integer, nullable=False, comment="1=Mon, 7=Sun")
+    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    week_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="1-indexed week within the block"
+    )
+    day_of_week: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="1=Mon, 7=Sun"
+    )
 
     # Slot descriptor from weekly_template (denormalized for query convenience)
-    category = Column(String, nullable=False, comment="e.g. 'Heavy Lower', 'Conditioning'")
-    modality = Column(String, nullable=False)
+    category: Mapped[str] = mapped_column(
+        String, nullable=False, comment="e.g. 'Heavy Lower', 'Conditioning'"
+    )
+    modality: Mapped[str] = mapped_column(String, nullable=False)
 
-    status = Column(SAEnum(SessionStatus), default=SessionStatus.PENDING, nullable=False)
+    status: Mapped[SessionStatus] = mapped_column(
+        SAEnum(SessionStatus), default=SessionStatus.PENDING, nullable=False
+    )
 
     # Populated when prescriber is called for this session
-    prescribed_content = Column(JSONB, nullable=True)
+    prescribed_content: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     # Populated when user logs the session
-    workout_log_id = Column(Integer, ForeignKey("workout_logs.id"), nullable=True)
+    workout_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("workout_logs.id"), nullable=True
+    )
 
     # Whether this is a deload session (affects prescriber intensity targets)
-    is_deload = Column(Boolean, default=False)
-    is_benchmark = Column(Boolean, default=False)
-    benchmark_key = Column(String, nullable=True, comment="e.g. periodic_retest, block_exit")
+    is_deload: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_benchmark: Mapped[bool] = mapped_column(Boolean, default=False)
+    benchmark_key: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="e.g. periodic_retest, block_exit"
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
-    block = relationship("MesocycleBlock", back_populates="planned_sessions")
+    block: Mapped["MesocycleBlock"] = relationship(
+        "MesocycleBlock", back_populates="planned_sessions"
+    )

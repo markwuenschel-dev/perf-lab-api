@@ -17,7 +17,7 @@ async def onboard_athlete(
     request: OnboardRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> OnboardResponse:
     user = current_user
 
     # Upsert profile: register creates an empty shell; onboard fills it in.

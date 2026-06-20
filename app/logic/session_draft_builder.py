@@ -69,7 +69,7 @@ def build_session_draft(
     return SessionDraft(
         session_kind=kind,
         primary_modality=_guess_modality(rx, goal),
-        intensity_band=band,  # type: ignore[arg-type]
+        intensity_band=band,
         technical_emphasis=tech,
         metabolic_emphasis=meta,
         neural_emphasis=neural,

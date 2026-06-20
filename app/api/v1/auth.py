@@ -86,7 +86,7 @@ async def register(
 async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> dict[str, str]:
     result = await db.execute(select(User).where(User.email == form.username))
     user = result.scalars().first()
 

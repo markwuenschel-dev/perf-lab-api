@@ -27,9 +27,10 @@ def _parse_engine_state(raw: Any) -> dict[str, Any] | None:
         return raw
     if isinstance(raw, str):
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
         except json.JSONDecodeError:
             return None
+        return parsed if isinstance(parsed, dict) else None
     return None
 
 

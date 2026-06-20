@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -29,10 +29,10 @@ class ExerciseEntry(BaseModel):
     rest_seconds: float | None = Field(default=None, ge=0)
 
     # Resolved phi vectors (populated by service layer from Exercise DB row)
-    phi_adapt: dict | None = None
-    phi_fatigue: dict | None = None
-    phi_tissue: dict | None = None
-    energy_mix: dict | None = None
+    phi_adapt: dict[str, Any] | None = None
+    phi_fatigue: dict[str, Any] | None = None
+    phi_tissue: dict[str, Any] | None = None
+    energy_mix: dict[str, Any] | None = None
 
     # Resolved exercise metadata (populated by service layer)
     modality: str | None = None
@@ -96,7 +96,7 @@ class WorkoutLog(BaseModel):
         description="If provided, marks this log as fulfillment of the planned session.",
     )
     is_benchmark: bool = False
-    benchmark_results: dict | None = Field(
+    benchmark_results: dict[str, Any] | None = Field(
         default=None,
         description="Optional benchmark key/value payload for benchmark sessions.",
     )

@@ -8,6 +8,8 @@ Legacy v0.1 endpoints preserved for frontend compatibility.
 """
 
 
+from typing import Any
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -74,15 +76,15 @@ def fatigue_profile(ff_percent: float) -> str:
     return "Balanced"
 
 
-def pace_zone_bounds(base_pace_sec: float):
-    zones = [
+def pace_zone_bounds(base_pace_sec: float) -> list[dict[str, Any]]:
+    zones: list[dict[str, Any]] = [
         {"name": "Easy / Recovery",     "slow_offset_sec": 150, "fast_offset_sec": 210, "notes": "Very easy; conversational. RPE 3–4"},
         {"name": "Steady State",         "slow_offset_sec": 60,  "fast_offset_sec": 90,  "notes": "Comfortable but purposeful. RPE 5"},
         {"name": "Tempo",                "slow_offset_sec": 0,   "fast_offset_sec": 30,  "notes": "Comfortably hard; 20–40 min sustained. RPE 6–7"},
         {"name": "Interval / VO₂",       "slow_offset_sec": -30, "fast_offset_sec": 0,   "notes": "Hard; 3–8 min reps. RPE 7–8"},
         {"name": "Fast Repeats / Speed", "slow_offset_sec": -60, "fast_offset_sec": -30, "notes": "Very hard; short reps. RPE 8–9"},
     ]
-    result = []
+    result: list[dict[str, Any]] = []
     for z in zones:
         result.append({
             "name": z["name"],
@@ -191,7 +193,7 @@ for _wk in range(8, 11):
 # ---------------------------------------------------------------------------
 
 @router.post("/compute-metrics", response_model=MetricsResponse)
-def compute_metrics(payload: MetricsRequest):
+def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
     t300 = parse_time_to_seconds(payload.time_300m)
     t15 = parse_time_to_seconds(payload.time_1p5mi)
     vo2 = vo2_from_1p5(t15)
@@ -211,10 +213,10 @@ def compute_metrics(payload: MetricsRequest):
 
 
 @router.get("/program/run", response_model=list[RunSession])
-def get_run_program():
+def get_run_program() -> list[RunSession]:
     return RUN_SESSIONS
 
 
 @router.get("/program/strength", response_model=list[StrengthSession])
-def get_strength_program():
+def get_strength_program() -> list[StrengthSession]:
     return STRENGTH_SESSIONS

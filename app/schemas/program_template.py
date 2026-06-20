@@ -1,5 +1,7 @@
 """Encoded coaching decomposition (not a verbatim copyrighted program)."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -12,9 +14,9 @@ class ProgramTemplate(BaseModel):
         description="TrainingGoal values this template applies to",
     )
     principles: list[str] = Field(default_factory=list)
-    load_distribution: dict = Field(default_factory=dict)
-    fatigue_profile: dict = Field(default_factory=dict)
-    exercise_bias: dict = Field(default_factory=dict)
+    load_distribution: dict[str, Any] = Field(default_factory=dict)
+    fatigue_profile: dict[str, Any] = Field(default_factory=dict)
+    exercise_bias: dict[str, Any] = Field(default_factory=dict)
     constraint_rule_ids: list[str] = Field(default_factory=list)
     source_name: str = Field(
         ...,

@@ -14,6 +14,7 @@ This file is kept only for backward compatibility with older scripts and noteboo
 It will be removed after the transition period.
 """
 import warnings
+from typing import Any
 
 import numpy as np
 
@@ -27,7 +28,9 @@ warnings.warn(
 )
 
 
-def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
+def calculate_stress_doses(
+    workout: dict[str, Any], athlete_state: dict[str, Any]
+) -> dict[str, Any]:
     """Legacy non-linear dose mapping (old dict interface)."""
     T = workout["duration_minutes"]
     RPE = workout["session_rpe"]

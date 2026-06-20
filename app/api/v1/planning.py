@@ -46,7 +46,7 @@ async def list_blocks(
         .where(MesocycleBlock.user_id == current_user.id)
         .order_by(MesocycleBlock.created_at.desc())
     )
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 @router.patch("/blocks/{block_id}", response_model=BlockRead)
@@ -90,7 +90,7 @@ async def list_sessions(
         stmt = stmt.where(PlannedSession.scheduled_date <= end_date)
     stmt = stmt.order_by(PlannedSession.scheduled_date.asc(), PlannedSession.id.asc())
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
 @router.patch("/sessions/{session_id}", response_model=PlannedSessionRead)

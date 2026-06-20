@@ -11,6 +11,7 @@ Covers: Strength, Hypertrophy, Power, Running, Conditioning,
 """
 
 import asyncio
+from typing import Any
 
 from sqlalchemy.future import select
 
@@ -43,7 +44,7 @@ def _pattern_family(movement_pattern: str) -> str:
     return "general"
 
 
-def _enrich_exercise_row(data: dict) -> dict:
+def _enrich_exercise_row(data: dict[str, Any]) -> dict[str, Any]:
     row = dict(data)
     sd = float(row.get("skill_demand", 0.5))
     il = float(row.get("impact_level", 0.5))

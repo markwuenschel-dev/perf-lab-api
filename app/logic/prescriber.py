@@ -16,6 +16,8 @@ The constraint_engine package also provides template-driven validation
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
     max_tissue_load,
@@ -41,7 +43,7 @@ from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 # Candidate generation per goal
 # ---------------------------------------------------------------------------
 
-def _weak_point_coverage(tags: list[str], state: UnifiedStateVector, kpi: dict) -> float:
+def _weak_point_coverage(tags: list[str], state: UnifiedStateVector, kpi: dict[str, float]) -> float:
     """
     Fraction of state-flagged capacity deficits covered by this candidate's tags.
     Simple heuristic: low capacity axes → weak point; candidate addresses it.
@@ -73,8 +75,8 @@ def _weak_point_coverage(tags: list[str], state: UnifiedStateVector, kpi: dict) 
 
 def _gen_strength_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     x = state.capacity_x
     f = state.fatigue_f
@@ -149,8 +151,8 @@ def _gen_strength_candidates(
 
 def _gen_hypertrophy_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
     readiness = _readiness(state)
@@ -186,8 +188,8 @@ def _gen_hypertrophy_candidates(
 
 def _gen_power_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
     readiness = _readiness(state)
@@ -223,8 +225,8 @@ def _gen_power_candidates(
 
 def _gen_olympic_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     ratio = kpi.get("wl_snatch_cj_ratio")
     f = state.fatigue_f
@@ -271,8 +273,8 @@ def _gen_olympic_candidates(
 
 def _gen_powerlifting_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     rel = kpi.get("pl_relative_total")
     f = state.fatigue_f
@@ -314,8 +316,8 @@ def _gen_powerlifting_candidates(
 
 def _gen_metcon_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
     readiness = _readiness(state)
@@ -352,8 +354,8 @@ def _gen_metcon_candidates(
 
 def _gen_running_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
     goal: TrainingGoal,
 ) -> list[SessionCandidate]:
     ff = kpi.get("run_fatigue_factor")
@@ -420,8 +422,8 @@ def _gen_running_candidates(
 
 def _gen_gymnastics_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
     goal: TrainingGoal,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
@@ -463,8 +465,8 @@ def _gen_gymnastics_candidates(
 
 def _gen_grip_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
     readiness = _readiness(state)
@@ -500,8 +502,8 @@ def _gen_grip_candidates(
 
 def _gen_general_candidates(
     state: UnifiedStateVector,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     readiness = _readiness(state)
 
@@ -587,7 +589,7 @@ def _safety_candidates(state: UnifiedStateVector) -> list[SessionCandidate]:
 def _readiness_redirect(
     state: UnifiedStateVector,
     goal: TrainingGoal,
-    kpi: dict,
+    kpi: dict[str, float],
 ) -> list[SessionCandidate]:
     """
     Soft readiness shifts — not hard stops, but significant fatigue redirects.
@@ -670,8 +672,8 @@ def _readiness_redirect(
 def _generate_candidates(
     state: UnifiedStateVector,
     goal: TrainingGoal,
-    kpi: dict,
-    recent: list[dict] | None,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
     if goal == "Strength":
         return _gen_strength_candidates(state, kpi, recent)
@@ -702,7 +704,7 @@ def _finalize(
     candidate: SessionCandidate,
     state: UnifiedStateVector,
     goal: TrainingGoal,
-    recent_sessions: list[dict] | None,
+    recent_sessions: list[dict[str, Any]] | None,
 ) -> WorkoutPrescription:
     rx = WorkoutPrescription(
         type=candidate.type,
@@ -756,11 +758,11 @@ def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[
 def recommend_next_session(
     state: UnifiedStateVector,
     goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
-    recent_sessions: list[dict] | None = None,
+    recent_sessions: list[dict[str, Any]] | None = None,
     kpi_summary: dict[str, float] | None = None,
     active_weak_points: list[str] | None = None,
     available_equipment: list[str] | None = None,
-    block_context: dict | None = None,
+    block_context: dict[str, Any] | None = None,
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.

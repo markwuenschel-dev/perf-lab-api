@@ -122,13 +122,14 @@ target-version = ["py311"]
 
 [tool.mypy]
 python_version = "3.11"
+plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["alembic.*", "passlib.*", "python_jose.*"]
+module = ["alembic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
