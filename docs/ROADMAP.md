@@ -45,7 +45,7 @@ The strongest foundation is the separation between event history, state history,
 
 ### 1.1 Alembic migrations
 
-Status: complete for current uploaded schema.
+Status: complete.
 
 Current migrations:
 
@@ -53,23 +53,15 @@ Current migrations:
 - `a001_benchmark_kpi` — benchmark/KPI tables and observation mappings
 - `a002_planned_bench_cols` — planned-session benchmark columns
 
-App startup checks Alembic head and logs if DB schema is behind.
-
-Remaining targets:
-
-- decide whether startup mismatch should raise in production rather than log
-- document migration workflow in deployment docs
+App startup checks the Alembic head: on a confirmed mismatch it fails fast
+(raises) when `ENVIRONMENT=production`, and logs loudly otherwise. The migration
+workflow is documented in `docs/DEPLOYMENT.md`.
 
 ### 1.2 State-vector bridge
 
-Status: implemented.
+Status: complete.
 
-`engine_state` JSONB stores decomposed vectors while legacy scalar columns remain available. Bridge helpers convert both directions.
-
-Remaining targets:
-
-- stronger model-version persistence on ORM state rows if formula sets diverge
-- migration strategy for historical state rows when vector schemas change
+`engine_state` JSONB stores decomposed vectors while legacy scalar columns remain available. Bridge helpers convert both directions. Each `engine_state` payload is stamped with `ENGINE_STATE_SCHEMA_VERSION`, and historical rows migrate lazily on read via `_migrate_engine_state` (keyed on the stored version) — so evolving the vector schema needs no Alembic migration.
 
 ### 1.3 Deprecated module cleanup
 
