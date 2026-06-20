@@ -1,5 +1,5 @@
-from typing import Literal, Optional
 from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,33 +15,33 @@ class ExerciseEntry(BaseModel):
     client-submitted logs; the engine falls back to modality defaults when absent.
     """
 
-    exercise_id: Optional[int] = None
-    exercise_name: Optional[str] = None
+    exercise_id: int | None = None
+    exercise_name: str | None = None
 
-    sets: Optional[float] = Field(default=None, ge=1)
-    reps: Optional[float] = Field(default=None, ge=0)
-    load_kg: Optional[float] = Field(default=None, ge=0)
-    duration_seconds: Optional[float] = Field(default=None, ge=0)
-    distance_meters: Optional[float] = Field(default=None, ge=0)
-    avg_rpe: Optional[float] = Field(default=None, ge=1, le=10)
-    avg_rir: Optional[float] = Field(default=None, ge=0, le=10)
-    tempo: Optional[str] = None
-    rest_seconds: Optional[float] = Field(default=None, ge=0)
+    sets: float | None = Field(default=None, ge=1)
+    reps: float | None = Field(default=None, ge=0)
+    load_kg: float | None = Field(default=None, ge=0)
+    duration_seconds: float | None = Field(default=None, ge=0)
+    distance_meters: float | None = Field(default=None, ge=0)
+    avg_rpe: float | None = Field(default=None, ge=1, le=10)
+    avg_rir: float | None = Field(default=None, ge=0, le=10)
+    tempo: str | None = None
+    rest_seconds: float | None = Field(default=None, ge=0)
 
     # Resolved phi vectors (populated by service layer from Exercise DB row)
-    phi_adapt: Optional[dict] = None
-    phi_fatigue: Optional[dict] = None
-    phi_tissue: Optional[dict] = None
-    energy_mix: Optional[dict] = None
+    phi_adapt: dict[str, Any] | None = None
+    phi_fatigue: dict[str, Any] | None = None
+    phi_tissue: dict[str, Any] | None = None
+    energy_mix: dict[str, Any] | None = None
 
     # Resolved exercise metadata (populated by service layer)
-    modality: Optional[str] = None
-    movement_pattern: Optional[str] = None
-    skill_demand: Optional[float] = None
-    impact_level: Optional[float] = None
-    recovery_cost: Optional[float] = None
-    weak_point_tags: Optional[list[str]] = None
-    sport_domains: Optional[list[str]] = None
+    modality: str | None = None
+    movement_pattern: str | None = None
+    skill_demand: float | None = None
+    impact_level: float | None = None
+    recovery_cost: float | None = None
+    weak_point_tags: list[str] | None = None
+    sport_domains: list[str] | None = None
 
 
 class WorkoutLog(BaseModel):
@@ -55,12 +55,12 @@ class WorkoutLog(BaseModel):
     duration_minutes: float
     session_rpe: float = Field(..., ge=1, le=10)
 
-    avg_rir: Optional[float] = None
-    distance_meters: Optional[float] = 0.0
-    total_volume_load: Optional[float] = 0.0
+    avg_rir: float | None = None
+    distance_meters: float | None = 0.0
+    total_volume_load: float | None = 0.0
 
     # Optional execution hints for dose law
-    dominant_movement_pattern: Optional[str] = Field(
+    dominant_movement_pattern: str | None = Field(
         default=None,
         description="e.g. squat | hinge | run — defaults inferred from modality",
     )
@@ -70,7 +70,7 @@ class WorkoutLog(BaseModel):
         le=3.0,
         description=">1 = novel / high coordination demand for this athlete",
     )
-    estimated_sets: Optional[float] = Field(
+    estimated_sets: float | None = Field(
         default=None,
         ge=1.0,
         description="If set, refines volume term in dose law",
@@ -91,12 +91,12 @@ class WorkoutLog(BaseModel):
     )
 
     # Optional linkage to planning layer
-    planned_session_id: Optional[int] = Field(
+    planned_session_id: int | None = Field(
         default=None,
         description="If provided, marks this log as fulfillment of the planned session.",
     )
     is_benchmark: bool = False
-    benchmark_results: Optional[dict] = Field(
+    benchmark_results: dict[str, Any] | None = Field(
         default=None,
         description="Optional benchmark key/value payload for benchmark sessions.",
     )

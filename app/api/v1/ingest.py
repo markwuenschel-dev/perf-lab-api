@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import get_db
 from app.core.auth import get_current_user
-from app.models.user import User
-from app.schemas.workouts import WorkoutLog, StressDose
-from app.schemas.state import UnifiedStateVector
+from app.core.db import get_db
 from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.models.user import User
+from app.schemas.state import UnifiedStateVector
+from app.schemas.workouts import StressDose, WorkoutLog
 from app.services import state_service
 
 router = APIRouter(tags=["Ingest"])
@@ -28,4 +28,4 @@ async def log_workout(
             db, user_id=current_user.id, log=log
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to update state: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to update state: {str(e)}") from e

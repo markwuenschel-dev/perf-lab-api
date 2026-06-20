@@ -5,8 +5,8 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.engine.state_bridge import unified_from_athlete_row
-from app.schemas.state import UnifiedStateVector
 from app.logic.derived_metric_formulas import CUSTOM_FORMULAS
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -14,6 +14,7 @@ from app.models.benchmark_observation import BenchmarkObservation
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot
 from app.models.user import AthleteProfile
+from app.schemas.state import UnifiedStateVector
 
 # Derived metrics that depend on other KPIs must run after their inputs.
 _DERIVED_ORDER: dict[str, int] = {

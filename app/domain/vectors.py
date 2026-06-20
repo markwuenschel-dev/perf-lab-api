@@ -9,10 +9,10 @@ See PROJECT_AGENT_BRIEF.md for the long-term vision.
 """
 from __future__ import annotations
 
-from typing import ClassVar, Literal, Mapping
+from collections.abc import Mapping
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 # Type Aliases (for documentation and future stricter typing)
@@ -92,7 +92,7 @@ class TissueState(BaseModel):
 # =============================================================================
 
 class StressDoseSix(BaseModel):
-    """D_t — session stress dose decomposed into six primary dimensions."""
+    """D_t — session stress dose in six dimensions (non-negative)."""
 
     volume: float = Field(0.0, ge=0.0)
     intensity: float = Field(0.0, ge=0.0)
@@ -123,9 +123,10 @@ class StressDoseSix(BaseModel):
 
 class AdaptationContribution(BaseModel):
     """
-    Per-capacity adaptation signal produced by a session.
+    Per-session adaptation signal by capacity axis.
 
-    This is the 'B·φ_adapt(D_t)' term in the state update equations.
+    Computed by the dose engine from aggregated phi_adapt vectors and session
+    load. Consumed by state_update to drive explicit capacity gains.
     """
     aerobic: float = Field(0.0, ge=0.0)
     glycolytic: float = Field(0.0, ge=0.0)
@@ -135,6 +136,24 @@ class AdaptationContribution(BaseModel):
     skill: float = Field(0.0, ge=0.0)
     mobility: float = Field(0.0, ge=0.0)
     work_capacity: float = Field(0.0, ge=0.0)
+
+    KEYS: ClassVar[tuple[str, ...]] = (
+        "aerobic", "glycolytic", "max_strength", "hypertrophy",
+        "power", "skill", "mobility", "work_capacity",
+    )
+
+    def scaled(self, factor: float) -> AdaptationContribution:
+        f = max(0.0, factor)
+        return AdaptationContribution(
+            aerobic=self.aerobic * f,
+            glycolytic=self.glycolytic * f,
+            max_strength=self.max_strength * f,
+            hypertrophy=self.hypertrophy * f,
+            power=self.power * f,
+            skill=self.skill * f,
+            mobility=self.mobility * f,
+            work_capacity=self.work_capacity * f,
+        )
 
 
 # =============================================================================
@@ -150,7 +169,7 @@ class PhiVectors(BaseModel):
     @field_validator("adapt", "fatigue", "tissue")
     @classmethod
     def non_negative_values(cls, v: Mapping[str, float]) -> dict[str, float]:
-        return {k: max(0.0, float(x)) for k, v in v.items()}
+        return {k: max(0.0, float(x)) for k, x in v.items()}
 
 
 class EnergyMix(BaseModel):

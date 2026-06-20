@@ -1,6 +1,7 @@
+import warnings
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import warnings
 
 from app.core.config import settings
 
@@ -12,8 +13,7 @@ warnings.warn(
     stacklevel=2,
 )
 
-from app.api.v1 import auth, ingest, prescribe, dashboard, benchmarks, legacy  # noqa: E402
-
+from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, prescribe  # noqa: E402
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

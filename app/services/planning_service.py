@@ -14,7 +14,6 @@ from app.models.mesocycle import (
 )
 from app.schemas.planning import BlockCreateRequest, WeeklyTemplateSlot
 
-
 _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
     BlockGoal.STRENGTH: [
         WeeklyTemplateSlot(day_of_week=1, category="Max Strength", modality="Strength"),

@@ -10,7 +10,6 @@ from app.models.user import AthleteProfile, User
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
 from app.services.state_service import initialize_athlete_state
 
-
 pytestmark = pytest.mark.asyncio
 
 

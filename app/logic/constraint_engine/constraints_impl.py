@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.logic.constraint_engine.types import ConstraintContext, ConstraintResult, Severity
@@ -37,7 +37,7 @@ def _parse_ts(row: dict[str, Any]) -> datetime | None:
     if ts is None:
         return None
     if isinstance(ts, datetime):
-        return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+        return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts
     if isinstance(ts, str):
         try:
             s = ts.replace("Z", "+00:00")
@@ -50,23 +50,23 @@ def _parse_ts(row: dict[str, Any]) -> datetime | None:
 def _within_hours(ts: datetime | None, hours: float) -> bool:
     if ts is None:
         return False
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+        ts = ts.replace(tzinfo=UTC)
     return (now - ts) <= timedelta(hours=hours)
 
 
 def _sessions_in_window(
     sessions: list[dict[str, Any]], days: int
 ) -> list[dict[str, Any]]:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     out: list[dict[str, Any]] = []
     for s in sessions:
         ts = _parse_ts(s)
         if ts is None:
             continue
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
         if ts >= cutoff:
             out.append(s)
     return out

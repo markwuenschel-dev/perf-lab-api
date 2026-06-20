@@ -10,7 +10,7 @@ Verifies:
 - Deload state overrides distribution to recovery sessions
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.planning import (
@@ -43,7 +43,7 @@ def _state(
     t = TissueState(lumbar=lumbar, knee=knee)
     leg = sync_legacy_from_vectors(cx, f, t)
     return UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         capacity_x=cx,
         fatigue_f=f,
         tissue_t=t,
@@ -152,20 +152,19 @@ def test_deload_triggered_on_high_fatigue_axis():
 
 def test_deload_triggered_on_high_mean_fatigue():
     # All 6 fatigue axes at ~47 → mean ≈ 47 > threshold of 45, but no single axis > 60
-    s = _state(cns=47.0, muscular=47.0, metabolic=47.0, structural=47.0, tendon=47.0)
     # FatigueState has 6 keys; grip defaults to 0, mean = (47*5)/6 ≈ 39.2 — use higher values
     # Set all accessible axes high enough: cns=50, muscular=50, metabolic=50, structural=50, tendon=50
     # grip=0 (not in _state helper) → mean = (50*5)/6 ≈ 41.7 — still below 45
     # Need to also set grip or use the state directly
-    from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
     from app.engine.state_bridge import sync_legacy_from_vectors
+    from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
     cx = CapacityState()
     f = FatigueState(cns=50.0, muscular=50.0, metabolic=50.0, structural=50.0, tendon=50.0, grip=50.0)
     t = TissueState()
     leg = sync_legacy_from_vectors(cx, f, t)
-    from datetime import datetime, timezone
+    from datetime import datetime
     s2 = UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         capacity_x=cx, fatigue_f=f, tissue_t=t,
         s_struct_signal=0.0, habit_strength=0.5, skill_state={}, **leg,
     )

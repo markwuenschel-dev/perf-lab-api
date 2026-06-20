@@ -5,10 +5,10 @@ One-time migration script to install the v0.3 literature-refined math model
 from "Mathematical Refinement of Digital Twin Dose-to-State Modeling.pdf"
 """
 
-from pathlib import Path
-import shutil
 import json
+import shutil
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent  # repo root
 SCRIPT_DIR = ROOT / "app/scripts"

@@ -1,5 +1,7 @@
 """Attach provenance, validation, explainability, and structured-template scoring."""
 
+from typing import Any
+
 from app.core.config import settings
 from app.logic.coaching_template_registry import get_structured_template_for_goal
 from app.logic.constraint_engine import (
@@ -29,7 +31,7 @@ def finalize_prescription(
     state: UnifiedStateVector | None,
     goal: TrainingGoal,
     branch_id: str,
-    recent_sessions: list[dict] | None = None,
+    recent_sessions: list[dict[str, Any]] | None = None,
 ) -> WorkoutPrescription:
     """
     Enrich prescription with `why`. If state is None (no athlete row), minimal explanation only.

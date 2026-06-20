@@ -4,23 +4,22 @@ Extended scenario tests covering multi-session dynamics and prescriber context i
 These are service-layer tests (no HTTP) — they test the full control loop over
 multiple sessions in a way that exercises behaviour not covered by unit tests.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
+from app.engine.state_bridge import unified_from_athlete_row
+from app.logic.prescriber import recommend_next_session
 from app.models.athlete_state import AthleteState
 from app.models.user import User
-from app.models.weak_point import WeakPoint, WeakPointSource
-from app.schemas.workouts import WorkoutLog
 from app.schemas.training_goals import TrainingGoal
+from app.schemas.workouts import WorkoutLog
 from app.services.state_service import initialize_athlete_state, process_new_workout
-from app.logic.prescriber import recommend_next_session
-from app.engine.state_bridge import unified_from_athlete_row
 
 pytestmark = pytest.mark.asyncio
 
-_T0 = datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc)
+_T0 = datetime(2026, 1, 1, 9, 0, 0, tzinfo=UTC)
 
 
 async def _user(db, email: str) -> User:
@@ -144,7 +143,7 @@ async def test_weak_point_tags_appear_in_prescription_constraints(async_db):
     'weak_point:{tag}' entries in constraints_applied.
     """
     user = await _user(async_db, "weak_point_rx@test.com")
-    baseline = await initialize_athlete_state(async_db, user.id)
+    await initialize_athlete_state(async_db, user.id)
     state = unified_from_athlete_row(
         (await async_db.execute(
             select(AthleteState)

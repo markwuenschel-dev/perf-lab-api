@@ -1,14 +1,19 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
-from app.models.mesocycle import BlockGoal, BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
+from app.models.mesocycle import (
+    BlockGoal,
+    BlockStatus,
+    MesocycleBlock,
+    PlannedSession,
+    SessionStatus,
+)
 from app.models.user import User
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.schemas.workouts import WorkoutLog
 from app.services.state_service import initialize_athlete_state, process_new_workout
-
 
 pytestmark = pytest.mark.asyncio
 
@@ -55,7 +60,7 @@ async def test_log_workout_links_to_pending_planned_session(async_db):
     await async_db.refresh(ps)
 
     log = WorkoutLog(
-        timestamp=datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc),
+        timestamp=datetime.combine(d, datetime.min.time(), tzinfo=UTC),
         modality="Strength",
         duration_minutes=60,
         session_rpe=7,

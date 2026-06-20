@@ -33,13 +33,11 @@ jobs:
       - name: OpenAPI is committed and current
         run: python -m app.scripts.export_openapi --check
 
-  # NOTE: non-blocking for now. The suite is pre-existingly red; the job still
-  # runs so the failures stay visible. Flip continue-on-error off once the suite
-  # is green on Python 3.11.
+  # Blocking: the suite is green on Python 3.11. DB-backed tests are deselected
+  # here (no Postgres service in CI) and covered separately.
   tests:
     name: Tests (pytest)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -52,3 +50,22 @@ jobs:
           pip install ".[dev]"
       - name: Run test suite (excluding DB-backed tests)
         run: python -m pytest -q -m "not requires_db"
+
+  # Lint + strict type gate. Both are clean (ruff 0, mypy --strict 0) — keep them so.
+  lint:
+    name: Lint & types (ruff + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+      - name: Ruff (lint)
+        run: ruff check .
+      - name: Mypy (strict type-check)
+        run: mypy app

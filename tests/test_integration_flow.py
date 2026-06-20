@@ -3,16 +3,15 @@
 Requires a live PostgreSQL instance (uses async_db fixture from conftest.py).
 Tests the full control loop: init → log workout → state evolution.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 
 from app.models.athlete_state import AthleteState
 from app.models.user import User
-from app.services.state_service import initialize_athlete_state, process_new_workout
 from app.schemas.workouts import WorkoutLog
-
+from app.services.state_service import initialize_athlete_state, process_new_workout
 
 pytestmark = pytest.mark.asyncio
 
@@ -151,10 +150,11 @@ async def test_onboard_persists_all_baseline_fields(async_db):
       bodyweight_kg  → profile.bodyweight_kg
       run_5k_seconds → profile.run_5k_seconds
     """
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
     from sqlalchemy import select as sa_select
-    from app.main import app
+
     from app.core.db import get_db
+    from app.main import app
     from app.models.user import AthleteProfile
 
     async def _override_get_db():
@@ -222,9 +222,10 @@ async def test_register_onboard_token_nextsession_roundtrip(async_db):
     Validates that the onboard endpoint works with a real user and that
     the user can obtain a token and receive a prescription.
     """
-    from httpx import AsyncClient, ASGITransport
-    from app.main import app
+    from httpx import ASGITransport, AsyncClient
+
     from app.core.db import get_db
+    from app.main import app
 
     async def _override_get_db():
         yield async_db

@@ -14,6 +14,7 @@ This file is kept only for backward compatibility with older scripts and noteboo
 It will be removed after the transition period.
 """
 import warnings
+from typing import Any
 
 import numpy as np
 
@@ -27,7 +28,9 @@ warnings.warn(
 )
 
 
-def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
+def calculate_stress_doses(
+    workout: dict[str, Any], athlete_state: dict[str, Any]
+) -> dict[str, Any]:
     """Legacy non-linear dose mapping (old dict interface)."""
     T = workout["duration_minutes"]
     RPE = workout["session_rpe"]
@@ -63,8 +66,4 @@ def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
 
 # Legacy alias (kept for scripts that expect this name)
 calculate_stress_dose = calculate_stress_doses
-
-
-# Re-export the modern engine for convenience during transition
-from app.logic.dose_engine_v0 import calculate_stress_dose as calculate_stress_dose_v0  # noqa: F401,E402
 

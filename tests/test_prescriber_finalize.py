@@ -1,6 +1,6 @@
 """Prescription finalize + template linkage."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.logic.prescriber import recommend_next_session
 from app.logic.prescription_finalize import finalize_prescription
@@ -10,7 +10,7 @@ from app.schemas.state import UnifiedStateVector
 
 def _healthy_state() -> UnifiedStateVector:
     return UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         c_met_aerobic=50.0,
         c_nm_force=50.0,
         c_struct=50.0,

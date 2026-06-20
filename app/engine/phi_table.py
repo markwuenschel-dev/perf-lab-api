@@ -40,7 +40,7 @@ def default_phi_for_row(
         "tendon": impact_level * 0.2,
         "grip": 0.05,
     }
-    tissue = {k: 0.05 for k in ("shoulder", "elbow", "wrist", "lumbar", "hip", "knee", "ankle", "finger")}
+    tissue = dict.fromkeys(("shoulder", "elbow", "wrist", "lumbar", "hip", "knee", "ankle", "finger"), 0.05)
 
     mp = movement_pattern.lower()
     if "squat" in mp or mp == "single_leg":

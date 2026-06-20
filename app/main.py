@@ -4,17 +4,18 @@ app/main.py
 Main FastAPI application entrypoint for Performance Lab API.
 """
 
-from contextlib import asynccontextmanager
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.config import settings
-from app.core.db import engine
-
 from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, planning, prescribe, weak_points
 from app.api.v1.onboard import router as onboard_router
+from app.core.config import settings
+from app.core.db import engine
 
 logger = logging.getLogger("perflab")
 
@@ -63,7 +64,7 @@ async def _check_alembic_head() -> None:
         logger.warning("Could not verify Alembic head (may be first run): %s", exc)
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan.
 
     IMPORTANT: Schema management is handled exclusively by Alembic.
@@ -143,8 +144,8 @@ app.include_router(weak_points.router, prefix=settings.API_V1_STR)
 # Health check
 # ----------------------------------------------------------------------
 
-@app.get("/ping", tags=["Health"])
-async def ping():
+@app.get("/ping", tags=["Health"], response_model=None)
+async def ping() -> dict[str, str]:
     """Simple health check endpoint."""
     return {
         "status": "ok",
@@ -159,7 +160,7 @@ async def ping():
 # ----------------------------------------------------------------------
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Catch any unhandled exception and return clean JSON."""
     return JSONResponse(
         status_code=500,

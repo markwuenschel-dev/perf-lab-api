@@ -4,8 +4,8 @@ from typing import cast
 
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.program_template import ProgramTemplate
-from app.schemas.state import UnifiedStateVector
 from app.schemas.session_draft import IntensityBand, SessionDraft
+from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TrainingGoal
 
 
@@ -69,7 +69,7 @@ def build_session_draft(
     return SessionDraft(
         session_kind=kind,
         primary_modality=_guess_modality(rx, goal),
-        intensity_band=band,  # type: ignore[arg-type]
+        intensity_band=band,
         technical_emphasis=tech,
         metabolic_emphasis=meta,
         neural_emphasis=neural,

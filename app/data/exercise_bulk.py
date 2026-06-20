@@ -4,6 +4,18 @@ Additional exercise rows (250+ target with base seed). Template-generated varian
 
 from __future__ import annotations
 
+from typing import Any
+
+# Seed-row tuple shapes. The base row is a fixed 10-tuple; some variant lists
+# carry optional trailing fields (benchmark / notes / unilateral / sport_domains)
+# unpacked via ``*rest``. Spelling the position types out keeps the unpacked
+# locals precisely typed when passed to ``_row``.
+_BaseRow = tuple[
+    str, str, str, list[str], list[str], list[str], str, float, float, list[str]
+]
+# Variant rows append optional fields after the base 10 positions.
+_VariantRow = tuple[Any, ...]
+
 
 def _row(
     name: str,
@@ -20,7 +32,7 @@ def _row(
     notes: str | None = None,
     unilateral: bool = False,
     sport_domains: list[str] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "name": name,
         "modality": modality,
@@ -39,8 +51,8 @@ def _row(
     }
 
 
-def bulk_exercises() -> list[dict]:
-    out: list[dict] = []
+def bulk_exercises() -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
 
     # Powerlifting / strength variants
     squat_variants = [
@@ -205,7 +217,7 @@ def bulk_exercises() -> list[dict]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["running"]))
 
     # Hypertrophy machines / accessories (volume)
-    hypo = [
+    hypo: list[_BaseRow] = [
         ("Pec Deck", "Hypertrophy", "push_horizontal", ["pecs"], [], ["machine"], "machine", 0.2, 0.2, ["hypertrophy"]),
         ("Leg Extension", "Hypertrophy", "squat", ["quads"], [], ["machine"], "machine", 0.2, 0.25, ["anterior_chain"]),
         ("Leg Curl", "Hypertrophy", "hinge", ["hamstrings"], [], ["machine"], "machine", 0.2, 0.25, ["posterior_chain"]),
@@ -313,7 +325,7 @@ def bulk_exercises() -> list[dict]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["running", "conditioning"]))
 
     # Dumbbell compound / multi-joint
-    db_compound = [
+    db_compound: list[_VariantRow] = [
         ("Dumbbell Thruster", "Mixed", "squat", ["quads", "shoulders"], ["core", "glutes"], ["dumbbells"], "dumbbell", 0.6, 0.52, ["work_capacity", "squat_pattern", "push_vertical"]),
         ("Renegade Row", "Strength", "pull_horizontal", ["upper_back", "core"], ["shoulders"], ["dumbbells"], "dumbbell", 0.68, 0.42, ["core_stability", "pull_horizontal"]),
         ("Dumbbell Clean", "Power", "hinge", ["hips", "traps"], ["core"], ["dumbbells"], "dumbbell", 0.72, 0.55, ["hip_hinge", "power"]),
@@ -343,7 +355,7 @@ def bulk_exercises() -> list[dict]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, benchmark=bm, notes=notes, unilateral=uni, sport_domains=sd))
 
     # Prehab / structural
-    prehab = [
+    prehab: list[_VariantRow] = [
         ("Cossack Squat", "Strength", "single_leg", ["adductors", "quads"], ["glutes"], [], "bodyweight", 0.52, 0.3, ["hip_mobility", "squat_pattern"]),
         ("90/90 Hip Switch", "Strength", "core", ["hip_flexors", "adductors"], [], [], "time", 0.3, 0.1, ["hip_mobility"]),
         ("Jefferson Curl", "Strength", "hinge", ["hamstrings", "erectors"], [], [], "bodyweight", 0.55, 0.35, ["posterior_chain", "hip_hinge"]),

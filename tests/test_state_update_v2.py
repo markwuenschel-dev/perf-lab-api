@@ -8,23 +8,24 @@ Tests for state_update v2:
 - Tissue impulse from dose
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.state_update_v0 import (
+    _adaptation_efficiency,
     apply_benchmark_observation,
     update_athlete_state,
-    _adaptation_efficiency,
 )
 from app.schemas.engine_vectors import (
     AdaptationContribution,
     CapacityState,
     FatigueState,
+    StressDoseSix,
     TissueState,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
-from app.schemas.engine_vectors import StressDoseSix
 
 
 def _state(
@@ -54,7 +55,7 @@ def _state(
     t = TissueState()
     leg = sync_legacy_from_vectors(cx, f, t)
     return UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         capacity_x=cx,
         fatigue_f=f,
         tissue_t=t,
@@ -102,7 +103,7 @@ def _dose(
 
 def _log() -> WorkoutLog:
     return WorkoutLog(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         modality="Strength",
         duration_minutes=60.0,
         session_rpe=7.0,
@@ -204,7 +205,7 @@ def test_heavy_impact_increases_tissue_stress():
         d_struct_signal=5.0,
     )
     log = WorkoutLog(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         modality="Running",
         duration_minutes=45.0,
         session_rpe=8.0,
@@ -222,7 +223,6 @@ def test_heavy_impact_increases_tissue_stress():
 
 def test_fatigue_decays_over_time():
     s0 = _state(cns=50.0, muscular=40.0, metabolic=30.0)
-    d = _dose()
     # Use a "rest" dose — no real training signal
     d_rest = StressDose(
         dose_six=StressDoseSix(),
@@ -256,7 +256,6 @@ def test_legacy_mirrors_sync_after_update():
 # Benchmark timestamp fix
 # ---------------------------------------------------------------------------
 
-from types import SimpleNamespace
 
 
 def _mapping() -> SimpleNamespace:
@@ -274,7 +273,7 @@ def _mapping() -> SimpleNamespace:
 
 
 def test_benchmark_uses_observed_at_timestamp():
-    obs_time = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
+    obs_time = datetime(2024, 6, 15, 10, 0, 0, tzinfo=UTC)
     s0 = _state()
     s1 = apply_benchmark_observation(
         s0,
@@ -290,7 +289,7 @@ def test_benchmark_uses_observed_at_timestamp():
 
 def test_benchmark_without_observed_at_uses_utcnow():
     """When observed_at is None, timestamp should be set to current time (not prev state time)."""
-    old_time = datetime(2023, 1, 1, tzinfo=timezone.utc)
+    old_time = datetime(2023, 1, 1, tzinfo=UTC)
     s0 = _state()
     s0 = s0.model_copy(update={"timestamp": old_time})
 
@@ -309,8 +308,8 @@ def test_benchmark_without_observed_at_uses_utcnow():
 
 def test_benchmark_observation_state_ordered_chronologically():
     """Benchmark states from older tests should have older timestamps."""
-    obs_old = datetime(2024, 3, 1, tzinfo=timezone.utc)
-    obs_new = datetime(2024, 6, 1, tzinfo=timezone.utc)
+    obs_old = datetime(2024, 3, 1, tzinfo=UTC)
+    obs_new = datetime(2024, 6, 1, tzinfo=UTC)
     m = _mapping()
 
     s0 = _state()

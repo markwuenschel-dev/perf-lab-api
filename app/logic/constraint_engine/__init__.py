@@ -15,14 +15,17 @@ Long-term these should converge further.
 
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
-    score_candidate,
     apply_block_context_boost,
-    mean_fatigue,
     max_tissue_load,
+    mean_fatigue,
     overall_readiness,
+    score_candidate,
 )
 from app.logic.constraint_engine.candidates import encode_session_candidate
 from app.logic.constraint_engine.context_builder import build_constraint_context
+
+# Legacy re-exports (will be cleaned up later)
+from app.logic.constraint_engine.scoring import simple_session_scorer  # noqa: F401
 from app.logic.constraint_engine.types import (
     ConstraintContext,
     ConstraintResult,
@@ -30,9 +33,6 @@ from app.logic.constraint_engine.types import (
     ValidationReport,
 )
 from app.logic.constraint_engine.validator import SessionValidator
-
-# Legacy re-exports (will be cleaned up later)
-from app.logic.constraint_engine.scoring import simple_session_scorer  # noqa: F401
 
 __all__ = [
     "SessionCandidate",

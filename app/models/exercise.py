@@ -1,13 +1,15 @@
+from typing import Any
+
 from sqlalchemy import (
-    Column,
-    Integer,
-    String,
+    ARRAY,
     Boolean,
     Float,
-    ARRAY,
+    Integer,
+    String,
     Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
@@ -26,98 +28,108 @@ class Exercise(Base):
     """
     __tablename__ = "exercises"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
 
     # Classification
-    modality = Column(
+    modality: Mapped[str] = mapped_column(
         String,
         nullable=False,
         index=True,
         comment="Strength | Hypertrophy | Power | Running | Conditioning | Calisthenics | Mixed"
     )
-    movement_pattern = Column(
+    movement_pattern: Mapped[str] = mapped_column(
         String,
         nullable=False,
         index=True,
         comment="squat | hinge | push_horizontal | push_vertical | pull_horizontal | "
                 "pull_vertical | carry | run | row | bike | jump | rotation | core | mixed"
     )
-    pattern_family = Column(
+    pattern_family: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         index=True,
         comment="e.g. squat_family | hinge_family | press_family | pull_family | locomotion"
     )
-    unilateral = Column(Boolean, default=False, comment="True if single-limb emphasis")
-    rom_demand = Column(Float, nullable=True, comment="0–1 normalized ROM requirement")
-    contraction_bias = Column(
+    unilateral: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="True if single-limb emphasis"
+    )
+    rom_demand: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="0–1 normalized ROM requirement"
+    )
+    contraction_bias: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="eccentric | concentric | isometric | mixed"
     )
 
     # Muscles
-    primary_muscles = Column(ARRAY(String), default=list)
-    secondary_muscles = Column(ARRAY(String), default=list)
+    primary_muscles: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    secondary_muscles: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
 
     # Equipment
-    equipment_required = Column(
+    equipment_required: Mapped[list[str]] = mapped_column(
         ARRAY(String),
         default=list,
         comment="Tags must match AthleteProfile.equipment. Empty = bodyweight."
     )
 
     # Load / prescription type
-    load_type = Column(
+    load_type: Mapped[str] = mapped_column(
         String,
         nullable=False,
         comment="barbell | dumbbell | bodyweight | machine | cable | "
                 "kettlebell | distance | time | reps"
     )
-    sport_domains = Column(
+    sport_domains: Mapped[list[str]] = mapped_column(
         ARRAY(String),
         default=list,
         comment="e.g. powerlifting | weightlifting | hyrox | crossfit | gymnastics"
     )
-    scalable_by = Column(
+    scalable_by: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="load | band | elevation | tempo | duration | distance"
     )
 
     # Difficulty
-    skill_demand = Column(
+    skill_demand: Mapped[float] = mapped_column(
         Float,
         default=0.5,
         comment="0–1. High = Olympic lifts, complex gymnastics. Low = machine isolation."
     )
-    technical_ceiling = Column(
+    technical_ceiling: Mapped[float] = mapped_column(
         Float,
         default=0.5,
         comment="0–1. Movement complexity cap before regressions recommended"
     )
-    impact_level = Column(
+    impact_level: Mapped[float] = mapped_column(
         Float,
         default=0.5,
         comment="0–1. Structural impact. High = heavy running, plyometrics. Low = bike."
     )
-    recovery_cost = Column(
+    recovery_cost: Mapped[float] = mapped_column(
         Float,
         default=0.5,
         comment="0–1. Expected systemic cost between sessions"
     )
-    novelty_penalty = Column(
+    novelty_penalty: Mapped[float] = mapped_column(
         Float,
         default=0.1,
         comment="0–1. Novelty / coordination tax for dose model"
     )
 
     # Vector ontology (see PROJECT_AGENT_BRIEF.md)
-    phi_adapt = Column(JSONB, default=dict, comment="φ_adapt weights")
-    phi_fatigue = Column(JSONB, default=dict, comment="φ_fatigue weights")
-    phi_tissue = Column(JSONB, default=dict, comment="φ_tissue joint stress weights")
-    energy_mix = Column(
+    phi_adapt: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, comment="φ_adapt weights"
+    )
+    phi_fatigue: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, comment="φ_fatigue weights"
+    )
+    phi_tissue: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, comment="φ_tissue joint stress weights"
+    )
+    energy_mix: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         default=dict,
         comment='{"aerobic","glycolytic","alactic"} fractions'
@@ -125,21 +137,21 @@ class Exercise(Base):
 
     # Weak-point targeting tags
     # e.g. ["grip", "posterior_chain", "aerobic_base", "hip_hinge"]
-    weak_point_tags = Column(
+    weak_point_tags: Mapped[list[str]] = mapped_column(
         ARRAY(String),
         default=list,
         comment="Used to bias exercise selection toward flagged weak points"
     )
 
     # Benchmark flag
-    is_benchmark = Column(
+    is_benchmark: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         comment="If True, this exercise is used in periodic re-test / assessment protocols"
     )
 
     # Optional notes for the prescriber / LLM context
-    coaching_notes = Column(
+    coaching_notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Cue notes, common errors, scaling options — fed to LLM prescriber"
@@ -147,4 +159,4 @@ class Exercise(Base):
 
     # Arbitrary extra metadata (tempo, rest guidelines, etc.)
     # Optional: {"provenance_primitive_ids": ["twin_state_engine", ...]} — see training_primitives.json
-    meta = Column(JSONB, default=dict)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)

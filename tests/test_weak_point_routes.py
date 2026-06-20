@@ -9,9 +9,9 @@ Six test functions covering all three routes × two status-code paths each:
   PATCH /v1/weak-points/{id}     → 200 (valid update), 404 (missing id)
   DELETE /v1/weak-points/{id}    → 204 (success), 404 (missing id)
 """
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -42,7 +42,7 @@ async def _mk_weak_point(db, user_id: int) -> WeakPoint:
         source=WeakPointSource.SELF_REPORT,
         confidence=0.5,
         note=None,
-        detected_at=datetime.now(timezone.utc),
+        detected_at=datetime.now(UTC),
     )
     db.add(wp)
     await db.commit()

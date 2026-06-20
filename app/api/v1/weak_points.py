@@ -6,7 +6,6 @@ Allows the frontend to list, update, and delete weak-point rows
 without going through benchmark observations.
 """
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,16 +31,16 @@ class WeakPointOut(BaseModel):
     tag: str
     source: str          # WeakPointSource value as string
     confidence: float
-    note: Optional[str]
+    note: str | None
     detected_at: datetime
-    resolved_at: Optional[datetime]
+    resolved_at: datetime | None
     is_active: bool
 
 
 class WeakPointPatch(BaseModel):
-    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    note: Optional[str] = None
-    resolved_at: Optional[datetime] = None   # pass datetime to resolve; pass null to re-open
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    note: str | None = None
+    resolved_at: datetime | None = None   # pass datetime to resolve; pass null to re-open
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +89,9 @@ async def patch_weak_point(
     if wp is None:
         raise HTTPException(status_code=404, detail="Weak point not found")
 
-    # Only apply fields that were explicitly set in the request body
-    if "confidence" in patch.model_fields_set:
+    # Only apply fields that were explicitly set in the request body.
+    # confidence maps to a NOT NULL column, so guard against an explicit null.
+    if "confidence" in patch.model_fields_set and patch.confidence is not None:
         wp.confidence = patch.confidence
     if "note" in patch.model_fields_set:
         wp.note = patch.note

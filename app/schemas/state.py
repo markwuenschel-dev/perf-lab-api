@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Dict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,7 +35,7 @@ class UnifiedStateVector(BaseModel):
     s_struct_signal: float = Field(0.0, ge=0.0)
 
     habit_strength: float = Field(0.0, ge=0.0, le=1.0)
-    skill_state: Dict[str, float] = Field(default_factory=dict)
+    skill_state: dict[str, float] = Field(default_factory=dict)
     model_version: str = Field("v0.3", description="State engine version")
 
     model_config = ConfigDict(from_attributes=True)

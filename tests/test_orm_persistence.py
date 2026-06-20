@@ -7,17 +7,15 @@ These tests verify the critical DB-layer invariants:
 - Workout logs are in a separate table from athlete states (Decision 2)
 - simulate-dose does not create DB rows (Decision 9)
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import func, select
 
 from app.models.athlete_state import AthleteState
 from app.models.user import User
-from app.services.state_service import initialize_athlete_state, process_new_workout
 from app.schemas.workouts import WorkoutLog
-
+from app.services.state_service import initialize_athlete_state, process_new_workout
 
 pytestmark = pytest.mark.asyncio
 
@@ -146,7 +144,7 @@ async def test_simulate_dose_does_not_create_state_row(async_db):
         select(func.count()).where(AthleteState.user_id == user.id)
     )).scalar()
 
-    t0 = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
     calculate_stress_dose(_log(t0))  # pure function — no DB interaction
 
     count_after = (await async_db.execute(

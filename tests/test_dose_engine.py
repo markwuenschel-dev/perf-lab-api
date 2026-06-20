@@ -9,24 +9,22 @@ Verifies:
 - Different exercises (squat vs snatch vs run) produce different dose signatures
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import pytest
-
-from app.logic.dose_engine import calculate_stress_dose
+from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.schemas.workouts import ExerciseEntry, WorkoutLog
 
 
 def _log_base(**kwargs) -> WorkoutLog:
-    defaults = dict(
-        timestamp=datetime.now(timezone.utc),
-        modality="Strength",
-        duration_minutes=60.0,
-        session_rpe=7.0,
-        novelty=1.0,
-        sleep_quality=7.0,
-        life_stress_inverse=7.0,
-    )
+    defaults = {
+        "timestamp": datetime.now(UTC),
+        "modality": "Strength",
+        "duration_minutes": 60.0,
+        "session_rpe": 7.0,
+        "novelty": 1.0,
+        "sleep_quality": 7.0,
+        "life_stress_inverse": 7.0,
+    }
     defaults.update(kwargs)
     return WorkoutLog(**defaults)
 
