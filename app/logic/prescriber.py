@@ -38,6 +38,16 @@ from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 # app.logic.constraint_engine.candidate for better separation of concerns.
 # We import them at the top of this file.
 
+# Default volume multiplier applied to a deload session's prescribed duration
+# when the active block does not carry its own `deload_volume_factor`. Mirrors
+# the MesocycleBlock.deload_volume_factor column default (app.models.mesocycle).
+DEFAULT_DELOAD_VOLUME_FACTOR = 0.6
+
+# When an athlete has skipped this many recent planned sessions, bias the
+# prescription toward lighter/variety/recovery work to rebuild adherence.
+RECENT_SKIPS_BIAS_THRESHOLD = 2
+_ADHERENCE_FRIENDLY_TYPE_KEYWORDS = ("variety", "recovery", "maintenance", "skill")
+
 
 # ---------------------------------------------------------------------------
 # Candidate generation per goal
@@ -794,11 +804,18 @@ def recommend_next_session(
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
 
     # --- 3. Score and sort ---
+    recent_skips = int(block.get("recent_skips", 0) or 0)
+
     def _score_with_context(c: SessionCandidate) -> float:
         base = _score_candidate(c)
         # Boost candidates whose type matches the planned session category
         if block.get("session_category") and c.type == block["session_category"]:
             base += 0.15
+        # Repeated recent skips → bias toward lighter/variety/recovery work.
+        if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and any(
+            k in c.type.lower() for k in _ADHERENCE_FRIENDLY_TYPE_KEYWORDS
+        ):
+            base += min(0.3, 0.1 * recent_skips)
         return base
 
     scored = sorted(all_candidates, key=_score_with_context, reverse=True)
@@ -815,10 +832,20 @@ def recommend_next_session(
         rx.why.constraints_applied.extend(
             [f"weak_point:{tag}" for tag in weak_points]
         )
-    if block.get("is_deload") and rx.why:
-        rx.why.constraints_applied.append("block:deload")
+    if block.get("is_deload"):
+        # Scale the prescribed session volume (duration) by the block's deload
+        # factor so deload weeks actually lighten the load, not just annotate it.
+        factor = block.get("deload_volume_factor")
+        factor = DEFAULT_DELOAD_VOLUME_FACTOR if factor is None else float(factor)
+        factor = max(0.1, min(1.0, factor))
+        if rx.duration_min > 0:
+            rx.duration_min = max(1, round(rx.duration_min * factor))
+        if rx.why:
+            rx.why.constraints_applied.append(f"block:deload(×{factor:.2f})")
     if block.get("is_benchmark") and rx.why:
         rx.why.constraints_applied.append("block:benchmark")
+    if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and rx.why:
+        rx.why.constraints_applied.append(f"adherence:recent_skips={recent_skips}")
 
     # Equipment-aware exercise payload with bodyweight fallback.
     rx.exercises = _exercise_list_for_equipment(available_equipment)

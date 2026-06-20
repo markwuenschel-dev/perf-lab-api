@@ -1,5 +1,15 @@
 """
 ORM ↔ UnifiedStateVector: engine_state JSONB and legacy scalar columns stay aligned.
+
+Versioning / migration strategy
+-------------------------------
+Each persisted ``engine_state`` payload carries a ``version`` key
+(``ENGINE_STATE_SCHEMA_VERSION``). When the decomposed-vector schema changes,
+bump that constant and add an upgrade branch in ``_migrate_engine_state`` keyed
+on the stored version. Historical rows then migrate **lazily on read** — the
+version lives inside the JSONB column, so evolving the schema needs no Alembic
+migration. Payloads without the x/f/t vectors fall back to the legacy scalar
+columns.
 """
 
 from __future__ import annotations
@@ -11,13 +21,39 @@ from typing import Any
 from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 
+# Schema version of the engine_state JSONB payload. Bump when the x/f/t vector
+# shapes change, and add a matching upgrade branch in _migrate_engine_state.
+ENGINE_STATE_SCHEMA_VERSION = 1
+
 
 def default_engine_state_dict() -> dict[str, Any]:
     return {
+        "version": ENGINE_STATE_SCHEMA_VERSION,
         "x": CapacityState().model_dump(),
         "f": FatigueState().model_dump(),
         "t": TissueState().model_dump(),
     }
+
+
+def _migrate_engine_state(eng: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Upgrade a persisted engine_state payload to the current schema version.
+
+    Historical rows migrate lazily on read. Unversioned payloads (written before
+    this stamp existed) are treated as v1. When the vector schema changes, bump
+    ``ENGINE_STATE_SCHEMA_VERSION`` and add an upgrade branch here, e.g.::
+
+        if version < 2:
+            eng = _upgrade_v1_to_v2(eng)
+
+    Returns None when the payload lacks the x/f/t vectors, so the caller falls
+    back to the legacy scalar columns.
+    """
+    if not ("x" in eng and "f" in eng and "t" in eng):
+        return None
+    # version = int(eng.get("version", 1) or 1)  # add upgrade branches above
+    # Ensure the (possibly legacy/unversioned) payload carries a current stamp.
+    return {**eng, "version": ENGINE_STATE_SCHEMA_VERSION}
 
 
 def _parse_engine_state(raw: Any) -> dict[str, Any] | None:
@@ -109,9 +145,10 @@ def sync_legacy_from_vectors(
 
 def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
     """Build UnifiedStateVector from SQLAlchemy AthleteState row."""
-    eng = _parse_engine_state(getattr(row, "engine_state", None))
+    raw_eng = _parse_engine_state(getattr(row, "engine_state", None))
+    eng = _migrate_engine_state(raw_eng) if raw_eng is not None else None
 
-    if eng and "x" in eng and "f" in eng and "t" in eng:
+    if eng is not None:
         x = CapacityState.model_validate(eng["x"])
         f = FatigueState.model_validate(eng["f"])
         t = TissueState.model_validate(eng["t"])
@@ -155,6 +192,7 @@ def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
 def athlete_state_kwargs_from_unified(s: UnifiedStateVector) -> dict[str, Any]:
     """Keyword args for inserting AthleteState ORM row."""
     eng = {
+        "version": ENGINE_STATE_SCHEMA_VERSION,
         "x": s.capacity_x.model_dump(),
         "f": s.fatigue_f.model_dump(),
         "t": s.tissue_t.model_dump(),

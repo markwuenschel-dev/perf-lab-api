@@ -139,6 +139,8 @@ class PlannedSession(Base):
     )
 
     scheduled_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Set the first time a session is moved, so the original plan date is not lost.
+    original_scheduled_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     week_number: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="1-indexed week within the block"
     )

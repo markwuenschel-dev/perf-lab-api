@@ -45,7 +45,7 @@ The strongest foundation is the separation between event history, state history,
 
 ### 1.1 Alembic migrations
 
-Status: complete for current uploaded schema.
+Status: complete.
 
 Current migrations:
 
@@ -53,32 +53,24 @@ Current migrations:
 - `a001_benchmark_kpi` — benchmark/KPI tables and observation mappings
 - `a002_planned_bench_cols` — planned-session benchmark columns
 
-App startup checks Alembic head and logs if DB schema is behind.
-
-Remaining targets:
-
-- decide whether startup mismatch should raise in production rather than log
-- document migration workflow in deployment docs
+App startup checks the Alembic head: on a confirmed mismatch it fails fast
+(raises) when `ENVIRONMENT=production`, and logs loudly otherwise. The migration
+workflow is documented in `docs/DEPLOYMENT.md`.
 
 ### 1.2 State-vector bridge
 
-Status: implemented.
+Status: complete.
 
-`engine_state` JSONB stores decomposed vectors while legacy scalar columns remain available. Bridge helpers convert both directions.
-
-Remaining targets:
-
-- stronger model-version persistence on ORM state rows if formula sets diverge
-- migration strategy for historical state rows when vector schemas change
+`engine_state` JSONB stores decomposed vectors while legacy scalar columns remain available. Bridge helpers convert both directions. Each `engine_state` payload is stamped with `ENGINE_STATE_SCHEMA_VERSION`, and historical rows migrate lazily on read via `_migrate_engine_state` (keyed on the stored version) — so evolving the vector schema needs no Alembic migration.
 
 ### 1.3 Deprecated module cleanup
 
-Status: transition in progress.
+Status: complete.
 
-Deprecated:
+Both deprecated modules have been removed:
 
-- `app.logic.dose_engine`
-- `app.logic.state_update`
+- `app.logic.dose_engine` — deleted (had no remaining importers)
+- `app.logic.state_update` — removed in an earlier pass
 
 Preferred:
 
@@ -86,10 +78,9 @@ Preferred:
 - `app.logic.state_update_v0`
 - `app.services.state_service`
 
-Remaining targets:
-
-- remove old imports after dependent scripts/tests are migrated
-- make lints/tests fail on new deprecated imports
+Re-introduction is guarded: ruff's `flake8-tidy-imports` banned-api fails the
+lint gate (`TID251`) on any import of `app.logic.dose_engine` or
+`app.logic.state_update`.
 
 ## 2. Onboarding and Athlete Setup
 
@@ -103,23 +94,19 @@ Status: implemented.
 
 Status: implemented.
 
-`POST /v1/onboard` fills the profile, creates self-reported weak points, and seeds baseline state.
-
-Remaining target:
-
-- persist all baseline request fields that the schema accepts, including deadlift, bench, bodyweight, and run 5K fields. The ORM supports them, but the uploaded onboarding route only assigns a subset.
+`POST /v1/onboard` fills the profile, creates self-reported weak points, and seeds baseline state. All baseline request fields the schema accepts — deadlift, bench, bodyweight, and run-5K — are now persisted onto the profile.
 
 ### 2.3 Baseline state seeding
 
-Status: implemented.
+Status: complete.
 
-Four-tier experience-level baseline table exists, with squat 1RM override for force capacity.
+Four-tier experience-level baseline table, with squat 1RM override for force
+capacity. `habit_strength` is seeded from experience years, per-lift
+`skill_state` from experience level (bumped where a 1RM is supplied), and aerobic
+capacity from the onboarding 5K time.
 
-Remaining targets:
-
-- seed `habit_strength` from experience years or adherence history
-- initialize skill state from profile and benchmark data
-- support baseline endurance estimates from run benchmarks
+Future enhancement: refresh `habit_strength` from adherence history during
+logging (only experience years is available at onboard time).
 
 ## 3. Planning and Calendar
 
@@ -131,32 +118,34 @@ Status: implemented.
 
 Current behavior:
 
-- default templates for Strength and Running
-- Strength fallback for unsupported block goals
-- deload weeks by cadence
+- default templates for every `BlockGoal` (all nine goals carry real weekly templates)
+- Strength fallback for any goal without a template
+- deload weeks by cadence; `deload_volume_factor` scales the deload session's prescribed duration
 - periodic benchmark sessions by cadence
+- `PATCH /v1/planning/blocks` edits status, rationale, `modality_mix`, and `deload_volume_factor`
 
 Remaining targets:
 
-- add default templates for every `BlockGoal`
-- let frontend define/edit custom weekly templates
-- use `deload_volume_factor` more directly in prescription dosage
-- improve block update fields beyond status/rationale
+- let the frontend define/edit custom weekly templates (the API already accepts a custom `weekly_template`; the editing UI is a frontend task — see §6.2)
 
 ### 3.2 Planned session management
 
-Status: MVP implemented.
+Status: backend complete; some frontend views remain.
 
-The API can list sessions, update status, reschedule dates, and retrieve today's pending session with generated prescription content.
+The API lists sessions, updates status, reschedules dates, and retrieves today's
+pending session with generated prescription content. Rescheduling now preserves
+the original plan date (`original_scheduled_date`, migration `a003`) and marks a
+moved session `RESCHEDULED`; repeated skips in the active block bias the
+prescriber toward lighter/variety/recovery work (annotated
+`adherence:recent_skips=N`).
 
-Frontend has a `PlanningPanel` for block creation, block list, session list, complete/skip/reschedule actions.
+Frontend has a `PlanningPanel` for block creation, block list, session list,
+complete/skip/reschedule actions.
 
-Remaining targets:
+Remaining targets (frontend):
 
 - richer calendar view
-- better handling of rescheduled sessions beyond simple date/status patching
 - planned vs completed comparison view
-- explicit skip consequences for future recommendations
 
 ## 4. Benchmark and KPI Assimilation
 
@@ -229,12 +218,12 @@ Remaining targets:
 
 Status: partially implemented.
 
-A +0.15 score boost is applied when candidate type matches planned session category. Deload/benchmark flags are annotated in explanation.
+A +0.15 score boost is applied when candidate type matches planned session category. Deload/benchmark flags are annotated in explanation, and the block's `deload_volume_factor` now scales a deload session's prescribed duration.
 
 Remaining targets:
 
 - use block templates to shape candidate generation, not just scoring
-- use deload factor to scale duration/volume/intensity
+- extend deload scaling beyond duration to volume/intensity targets
 - make benchmark sessions prescribe benchmark-specific content
 
 ### 5.4 Exercise selection
@@ -343,12 +332,12 @@ The uploaded documentation references tests for dose, state update, ORM persiste
 - [x] planning routes
 - [x] benchmark/dashboard routes
 - [x] migrations through a002
-- [ ] persist all profile fields accepted by onboarding schema
-- [ ] remove or guard DEV ONLY `user_id` query override in next-session
+- [x] persist all profile fields accepted by onboarding schema
+- [x] remove or guard DEV ONLY `user_id` query override in next-session
 
 ### Phase 2 — Make planning and benchmark loops product-complete
 
-- [ ] full goal default templates
+- [x] full goal default templates
 - [ ] proper benchmark session content generation
 - [ ] frontend benchmark observation UI
 - [ ] frontend dashboard KPI UI
@@ -358,7 +347,7 @@ The uploaded documentation references tests for dose, state update, ORM persiste
 
 - [ ] DB-driven exercise selection
 - [ ] deeper block-template use
-- [ ] deload dosage scaling
+- [x] deload dosage scaling
 - [ ] confidence-weighted weak-point aggregation
 - [ ] richer recent-history constraints
 

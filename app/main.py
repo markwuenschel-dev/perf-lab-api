@@ -20,12 +20,27 @@ from app.core.db import engine
 logger = logging.getLogger("perflab")
 
 
+def _on_schema_mismatch(message: str) -> None:
+    """
+    Handle a confirmed schema-vs-migrations mismatch.
+
+    In production we fail fast (raise) so a stale schema can never silently
+    serve traffic; elsewhere we log loudly so it surfaces in dev without
+    blocking local/test boots.
+    """
+    logger.error(message)
+    if settings.is_production:
+        raise RuntimeError(message)
+
+
 async def _check_alembic_head() -> None:
     """
     Lightweight check that the database is at the expected Alembic head.
 
-    Fails fast if the DB schema is behind (or has no migrations applied).
-    This is much safer than create_all and catches deployment mistakes early.
+    On a *confirmed* mismatch (DB reachable but not at head, or no migrations
+    applied) this fails fast in production via ``_on_schema_mismatch``. Errors
+    that merely mean we couldn't verify (connectivity, missing table on a fresh
+    DB, test setups) stay non-fatal warnings so they don't block first boots.
     """
     from sqlalchemy import text
 
@@ -36,10 +51,6 @@ async def _check_alembic_head() -> None:
             )
             current_rev = result.scalar()
 
-        if not current_rev:
-            logger.warning("No alembic_version row found. Run `alembic upgrade head`.")
-            return
-
         # Compare against the latest revision in the migrations folder
         from alembic.config import Config
         from alembic.script import ScriptDirectory
@@ -47,21 +58,24 @@ async def _check_alembic_head() -> None:
         alembic_cfg = Config("alembic.ini")
         script = ScriptDirectory.from_config(alembic_cfg)
         head_rev = script.get_current_head()
-
-        if current_rev != head_rev:
-            logger.error(
-                "Database is not at Alembic head! "
-                f"Current: {current_rev}, Expected head: {head_rev}. "
-                "Run `alembic upgrade head` before starting the app."
-            )
-            # In production you might want to raise here.
-            # For now we log loudly so it shows up in logs / monitoring.
-        else:
-            logger.info("✅ Database at expected Alembic head (%s)", current_rev)
-
     except Exception as exc:
-        # Table might not exist yet on fresh DBs
+        # Table might not exist yet on fresh DBs / connectivity not ready.
         logger.warning("Could not verify Alembic head (may be first run): %s", exc)
+        return
+
+    if not current_rev:
+        _on_schema_mismatch(
+            "No Alembic version applied to the database. "
+            "Run `alembic upgrade head` before starting the app."
+        )
+    elif current_rev != head_rev:
+        _on_schema_mismatch(
+            "Database is not at Alembic head! "
+            f"Current: {current_rev}, Expected head: {head_rev}. "
+            "Run `alembic upgrade head` before starting the app."
+        )
+    else:
+        logger.info("✅ Database at expected Alembic head (%s)", current_rev)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:

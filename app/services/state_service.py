@@ -27,6 +27,56 @@ _BASELINE_CAPACITIES = {
     "elite":        {"c_met_aerobic": 650.0,  "c_nm_force": 2500.0,  "c_struct": 220.0, "b_met_anaerobic": 35000.0},
 }
 
+# Per-lift skill seed by experience level (0–1). The prescriber triggers a
+# Skill-Acquisition session when squat skill < 0.55, so a flat default would
+# mask that path — seed from experience instead.
+_SKILL_BY_LEVEL = {
+    "beginner": 0.35,
+    "intermediate": 0.55,
+    "advanced": 0.70,
+    "elite": 0.85,
+}
+
+
+def _habit_strength_from_experience(experience_years: float) -> float:
+    """Seed adherence/habit from training history. Clamped to the schema's 0–1
+    bound; an adherence-driven refresh happens later in process_new_workout."""
+    return max(0.0, min(0.85, 0.3 + 0.1 * experience_years))
+
+
+def _baseline_skill_state(
+    experience_level: str,
+    squat_1rm_kg: float | None,
+    deadlift_1rm_kg: float | None,
+    bench_1rm_kg: float | None,
+) -> dict[str, float]:
+    """Seed per-lift skill from experience level, bumped where a 1RM is supplied
+    (a known 1RM implies the athlete already performs the pattern)."""
+    base = _SKILL_BY_LEVEL.get(experience_level, _SKILL_BY_LEVEL["intermediate"])
+
+    def lift(one_rm: float | None) -> float:
+        return round(min(0.95, base + 0.10) if one_rm is not None else base, 3)
+
+    return {
+        "squat": lift(squat_1rm_kg),
+        "deadlift": lift(deadlift_1rm_kg),
+        "bench": lift(bench_1rm_kg),
+    }
+
+
+def _aerobic_from_run_5k(run_5k_seconds: float) -> float:
+    """Seed aerobic capacity from a 5K time: faster → higher. Linear between a
+    ~15:00 5K (engine aerobic ceiling) and a ~35:00 5K (a modest base), clamped
+    to the engine's [180, 650] aerobic range."""
+    fast_s, fast_cap = 900.0, 650.0    # ~15:00 → engine aerobic ceiling
+    slow_s, slow_cap = 2100.0, 180.0   # ~35:00 → beginner-ish base
+    if run_5k_seconds <= fast_s:
+        return fast_cap
+    if run_5k_seconds >= slow_s:
+        return slow_cap
+    frac = (run_5k_seconds - fast_s) / (slow_s - fast_s)
+    return fast_cap - frac * (fast_cap - slow_cap)
+
 
 def _build_baseline_vector(
     user_id: int,
@@ -36,12 +86,19 @@ def _build_baseline_vector(
     bench_1rm_kg: float | None = None,
     bodyweight_kg: float | None = None,
     run_5k_seconds: float | None = None,
+    experience_years: float = 0.0,
 ) -> tuple[UnifiedStateVector, AthleteState]:
     """Build S0 and the matching ORM row — does NOT touch the DB."""
     caps = _BASELINE_CAPACITIES.get(experience_level, _BASELINE_CAPACITIES["intermediate"])
     c_nm_force = squat_1rm_kg * 10.0 if squat_1rm_kg is not None else caps["c_nm_force"]
+    # A supplied 5K time seeds aerobic capacity directly; otherwise use the table.
+    c_met_aerobic = (
+        _aerobic_from_run_5k(run_5k_seconds)
+        if run_5k_seconds is not None
+        else caps["c_met_aerobic"]
+    )
     x = capacity_from_legacy(
-        caps["c_met_aerobic"],
+        c_met_aerobic,
         c_nm_force,
         caps["c_struct"],
         caps["b_met_anaerobic"],
@@ -56,8 +113,10 @@ def _build_baseline_vector(
         fatigue_f=f,
         tissue_t=t,
         s_struct_signal=0.0,
-        habit_strength=0.5,
-        skill_state={"squat": 0.5, "deadlift": 0.5},
+        habit_strength=_habit_strength_from_experience(experience_years),
+        skill_state=_baseline_skill_state(
+            experience_level, squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg
+        ),
         **leg,
     )
     row = AthleteState(user_id=user_id, **athlete_state_kwargs_from_unified(u))
@@ -74,6 +133,7 @@ async def initialize_athlete_state(
     bench_1rm_kg: float | None = None,
     bodyweight_kg: float | None = None,
     run_5k_seconds: float | None = None,
+    experience_years: float = 0.0,
 ) -> UnifiedStateVector:
     """Creates baseline S0 for a new user and commits it."""
     _, row = _build_baseline_vector(
@@ -84,6 +144,7 @@ async def initialize_athlete_state(
         bench_1rm_kg,
         bodyweight_kg,
         run_5k_seconds,
+        experience_years,
     )
     db.add(row)
     await db.commit()

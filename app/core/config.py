@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost/dbname"
     DEBUG: bool = True
 
+    # Deployment environment. Set ENVIRONMENT=production in real deployments so
+    # safety checks (e.g. the Alembic-head check) fail fast instead of only
+    # logging. Anything other than production/prod is treated as non-production.
+    ENVIRONMENT: str = "development"
+
     # Auth
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
@@ -45,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def allowed_origin_regex(self) -> str | None:
         return self.ALLOWED_ORIGIN_REGEX or None
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() in {"production", "prod"}
 
     # Future features
     USE_STRUCTURED_COACHING_TEMPLATES: bool = True

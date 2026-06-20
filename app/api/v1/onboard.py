@@ -65,6 +65,7 @@ async def onboard_athlete(
         bench_1rm_kg=request.bench_1rm_kg,
         bodyweight_kg=request.bodyweight_kg,
         run_5k_seconds=request.run_5k_seconds,
+        experience_years=request.experience_years,
     )
 
     return OnboardResponse(

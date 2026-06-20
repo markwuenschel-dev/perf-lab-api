@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mesocycle import (
@@ -118,6 +118,27 @@ async def create_block_with_sessions(
     await db.commit()
     await db.refresh(block)
     return block
+
+
+async def count_block_skips(
+    db: AsyncSession,
+    user_id: int,
+    block_id: int,
+) -> int:
+    """Count SKIPPED planned sessions in a block — an adherence signal the
+    prescriber uses to bias toward lighter/variety work after repeated skips."""
+    result = await db.execute(
+        select(func.count())
+        .select_from(PlannedSession)
+        .where(
+            and_(
+                PlannedSession.user_id == user_id,
+                PlannedSession.block_id == block_id,
+                PlannedSession.status == SessionStatus.SKIPPED,
+            )
+        )
+    )
+    return int(result.scalar_one() or 0)
 
 
 async def get_today_session(
