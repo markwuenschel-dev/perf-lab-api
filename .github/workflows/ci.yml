@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Newer pushes to the same branch/PR cancel in-flight runs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The contract gate: the app must import (catches the un-bootable-main class of
+  # bug that left main un-deployable for ~3 weeks), the OpenAPI schema must
+  # generate, and the committed openapi.json must match the code. This is what
+  # keeps the web app's generated types (src/types.gen.ts) honest.
+  contract:
+    name: API contract (boot + OpenAPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+      - name: App boots (import smoke test)
+        run: python -c "import app.main; print('app.main imported OK')"
+      - name: OpenAPI is committed and current
+        run: python -m app.scripts.export_openapi --check
+
+  # NOTE: non-blocking for now. The suite is pre-existingly red; the job still
+  # runs so the failures stay visible. Flip continue-on-error off once the suite
+  # is green on Python 3.11.
+  tests:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+      - name: Run test suite (excluding DB-backed tests)
+        run: python -m pytest -q -m "not requires_db"
