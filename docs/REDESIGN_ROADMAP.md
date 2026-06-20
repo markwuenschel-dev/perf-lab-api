@@ -4,6 +4,11 @@
 > portions of `docs/ROADMAP.md` (which still describes the pre-redesign frontend).
 > It is the phased plan for wiring the redesigned `perf-lab-web` (`src/perflab/`)
 > to `perf-lab-api` and building the engine out to match the product thesis.
+>
+> **Decisions now live as records.** The product decisions below are
+> [`docs/pdr/`](pdr/); architecture decisions are [`docs/adr/`](adr/). This file keeps
+> the *phasing, status, and how-to* and links the decisions out — it is no longer the
+> home for the decisions themselves.
 
 ## Context — why this work exists
 
@@ -23,6 +28,14 @@ framing is what must broaden.
 
 ### The six spine decisions
 
+*Recorded as [PDR-0001](pdr/0001-concurrent-multidomain-thesis.md) (#1),
+[PDR-0002](pdr/0002-domain-as-lens-over-one-body.md) (#2),
+[PDR-0003](pdr/0003-benchmarks-are-the-measurement-layer.md) (#3),
+[PDR-0004](pdr/0004-objectives-first-class.md) (#4),
+[PDR-0005](pdr/0005-one-backend-owned-readiness-number.md) (#5),
+[PDR-0006](pdr/0006-wearable-sync-cloud-api-first.md) (#6). The narrative stays here for
+context.*
+
 1. **Multi-sport now**, not running-first. Broaden the UI; keep the general engine.
 2. **Domain = lens over one body.** Concurrent training is first-class; Twin shows
    all axes always; readiness is whole-body and cross-talk-aware; blocks are hybrid.
@@ -39,8 +52,9 @@ framing is what must broaden.
    OAuth + nightly pull; manual entry is the universal fallback. Apple Health /
    Garmin deferred (web-only stack can't read HealthKit without a native shell).
 
-Plus a cross-cutting engineering decision: **generate the web's TypeScript types
-from the backend's OpenAPI schema** to end the hand-mirrored `types.ts` drift.
+Plus a cross-cutting engineering decision ([ADR-0025](adr/0025-generate-ts-types-from-openapi.md)):
+**generate the web's TypeScript types from the backend's OpenAPI schema** to end the
+hand-mirrored `types.ts` drift (supersedes [ADR-0020](adr/0020-frontend-types-manual-mirror.md)).
 
 ---
 
@@ -236,6 +250,29 @@ land first, or Railway boot-crashes identically to Render.
    real data worth keeping; otherwise schema (alembic) + reseed is enough.
 8. **P6 nightly wearable pull** maps onto a Railway **Cron Job** (a service on a cron
    schedule that runs a command and exits) — no celery/redis required.
+
+## Decision records & tracked cleanups
+
+This pass moved decisions into [`docs/adr/`](adr/) + [`docs/pdr/`](pdr/) and resolved
+two long-open calls:
+
+- **Accepted:** [ADR-0023](adr/0023-eight-capacity-axes-everywhere.md) — eight capacity
+  axes everywhere (engine→UI, no rollup); [ADR-0024](adr/0024-canonical-units-imperial-pace.md)
+  — pace stored as sec/mile, fatigue/tissue on 0–100.
+- **Proposed (revisit in-phase):** readiness combine rule
+  [ADR-0026](adr/0026-readiness-combine-rule.md) (P5) · scheduler
+  [ADR-0027](adr/0027-background-job-scheduler.md) (P6) · hosting
+  [ADR-0028](adr/0028-hosting-platform.md) (lean Railway, P6) · first wearable provider
+  [PDR-0007](pdr/0007-first-wearable-provider.md) (P6).
+
+**Tracked cleanups (tasks, not ADRs — they don't clear the "real trade-off" bar):**
+
+- [ ] Add a CI gate (import app + generate OpenAPI + run pytest on every PR) — would
+  have caught the ~3-week un-bootable `main`.
+- [ ] Reconcile version drift to **0.3.0** (`pyproject` / `app.main` / `/ping`).
+- [ ] Delete legacy root `main.py` + `requirements.txt` once the legacy router is
+  confirmed to cover `/compute-metrics`.
+- [ ] Consolidate `constraint_engine/candidate.py` ↔ `candidates.py` duplication.
 
 ## Open design questions (resolve within their phase)
 
