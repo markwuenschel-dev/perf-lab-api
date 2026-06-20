@@ -98,15 +98,15 @@ Status: implemented.
 
 ### 2.3 Baseline state seeding
 
-Status: implemented.
+Status: complete.
 
-Four-tier experience-level baseline table exists, with squat 1RM override for force capacity.
+Four-tier experience-level baseline table, with squat 1RM override for force
+capacity. `habit_strength` is seeded from experience years, per-lift
+`skill_state` from experience level (bumped where a 1RM is supplied), and aerobic
+capacity from the onboarding 5K time.
 
-Remaining targets:
-
-- seed `habit_strength` from experience years or adherence history
-- initialize skill state from profile and benchmark data
-- support baseline endurance estimates from run benchmarks
+Future enhancement: refresh `habit_strength` from adherence history during
+logging (only experience years is available at onboard time).
 
 ## 3. Planning and Calendar
 
