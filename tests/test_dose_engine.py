@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.logic.dose_engine import calculate_stress_dose
+from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.schemas.workouts import ExerciseEntry, WorkoutLog
 
 
