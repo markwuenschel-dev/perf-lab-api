@@ -43,6 +43,11 @@ from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 # the MesocycleBlock.deload_volume_factor column default (app.models.mesocycle).
 DEFAULT_DELOAD_VOLUME_FACTOR = 0.6
 
+# When an athlete has skipped this many recent planned sessions, bias the
+# prescription toward lighter/variety/recovery work to rebuild adherence.
+RECENT_SKIPS_BIAS_THRESHOLD = 2
+_ADHERENCE_FRIENDLY_TYPE_KEYWORDS = ("variety", "recovery", "maintenance", "skill")
+
 
 # ---------------------------------------------------------------------------
 # Candidate generation per goal
@@ -799,11 +804,18 @@ def recommend_next_session(
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
 
     # --- 3. Score and sort ---
+    recent_skips = int(block.get("recent_skips", 0) or 0)
+
     def _score_with_context(c: SessionCandidate) -> float:
         base = _score_candidate(c)
         # Boost candidates whose type matches the planned session category
         if block.get("session_category") and c.type == block["session_category"]:
             base += 0.15
+        # Repeated recent skips → bias toward lighter/variety/recovery work.
+        if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and any(
+            k in c.type.lower() for k in _ADHERENCE_FRIENDLY_TYPE_KEYWORDS
+        ):
+            base += min(0.3, 0.1 * recent_skips)
         return base
 
     scored = sorted(all_candidates, key=_score_with_context, reverse=True)
@@ -832,6 +844,8 @@ def recommend_next_session(
             rx.why.constraints_applied.append(f"block:deload(×{factor:.2f})")
     if block.get("is_benchmark") and rx.why:
         rx.why.constraints_applied.append("block:benchmark")
+    if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and rx.why:
+        rx.why.constraints_applied.append(f"adherence:recent_skips={recent_skips}")
 
     # Equipment-aware exercise payload with bodyweight fallback.
     rx.exercises = _exercise_list_for_equipment(available_equipment)

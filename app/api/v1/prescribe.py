@@ -16,6 +16,7 @@ from app.models.weak_point import WeakPoint
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import dashboard_service
+from app.services.planning_service import count_block_skips
 
 router = APIRouter(tags=["Prescription"])
 
@@ -93,6 +94,7 @@ async def get_next_session(
             "is_benchmark": planned_session.is_benchmark,
             "week_number": planned_session.week_number,
             "deload_volume_factor": active_block.deload_volume_factor,
+            "recent_skips": await count_block_skips(db, current_user.id, active_block.id),
         }
 
     profile_result = await db.execute(

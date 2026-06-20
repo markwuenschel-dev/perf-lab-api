@@ -61,6 +61,7 @@ class PlannedSessionRead(BaseModel):
     block_id: int
     user_id: int
     scheduled_date: date
+    original_scheduled_date: date | None = None
     week_number: int
     day_of_week: int
     category: str

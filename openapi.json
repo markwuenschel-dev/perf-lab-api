@@ -1573,6 +1573,18 @@
             "title": "Modality",
             "type": "string"
           },
+          "original_scheduled_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Scheduled Date"
+          },
           "prescribed_content": {
             "anyOf": [
               {

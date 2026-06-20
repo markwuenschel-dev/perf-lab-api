@@ -130,18 +130,22 @@ Remaining targets:
 
 ### 3.2 Planned session management
 
-Status: MVP implemented.
+Status: backend complete; some frontend views remain.
 
-The API can list sessions, update status, reschedule dates, and retrieve today's pending session with generated prescription content.
+The API lists sessions, updates status, reschedules dates, and retrieves today's
+pending session with generated prescription content. Rescheduling now preserves
+the original plan date (`original_scheduled_date`, migration `a003`) and marks a
+moved session `RESCHEDULED`; repeated skips in the active block bias the
+prescriber toward lighter/variety/recovery work (annotated
+`adherence:recent_skips=N`).
 
-Frontend has a `PlanningPanel` for block creation, block list, session list, complete/skip/reschedule actions.
+Frontend has a `PlanningPanel` for block creation, block list, session list,
+complete/skip/reschedule actions.
 
-Remaining targets:
+Remaining targets (frontend):
 
 - richer calendar view
-- better handling of rescheduled sessions beyond simple date/status patching
 - planned vs completed comparison view
-- explicit skip consequences for future recommendations
 
 ## 4. Benchmark and KPI Assimilation
 

@@ -11,7 +11,7 @@ from app.core.db import get_db
 from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
 from app.models.athlete_state import AthleteState
-from app.models.mesocycle import MesocycleBlock, PlannedSession
+from app.models.mesocycle import MesocycleBlock, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile, User
 from app.schemas.planning import (
     BlockCreateRequest,
@@ -115,10 +115,21 @@ async def update_session(
     session = result.scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # A genuine date move preserves the original plan date (first move only) and,
+    # unless the caller set an explicit status, marks the session RESCHEDULED.
+    moved = False
+    if body.scheduled_date is not None and body.scheduled_date != session.scheduled_date:
+        if session.original_scheduled_date is None:
+            session.original_scheduled_date = session.scheduled_date
+        session.scheduled_date = body.scheduled_date
+        moved = True
+
     if body.status is not None:
         session.status = body.status
-    if body.scheduled_date is not None:
-        session.scheduled_date = body.scheduled_date
+    elif moved:
+        session.status = SessionStatus.RESCHEDULED
+
     await db.commit()
     await db.refresh(session)
     return session

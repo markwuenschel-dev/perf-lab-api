@@ -85,3 +85,19 @@ def test_deload_uses_default_factor_when_unspecified():
         block_context={"is_deload": True},
     )
     assert deload.duration_min == max(1, round(base.duration_min * 0.6))
+
+
+def test_recent_skips_annotated_in_explanation():
+    rx = recommend_next_session(
+        _healthy_state(), goal="Running", block_context={"recent_skips": 3}
+    )
+    assert rx.why is not None
+    assert "adherence:recent_skips=3" in rx.why.constraints_applied
+
+
+def test_few_skips_not_annotated():
+    rx = recommend_next_session(
+        _healthy_state(), goal="Running", block_context={"recent_skips": 1}
+    )
+    assert rx.why is not None
+    assert not any("adherence:recent_skips" in c for c in rx.why.constraints_applied)
