@@ -637,6 +637,33 @@
       },
       "BlockUpdateRequest": {
         "properties": {
+          "deload_volume_factor": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.1,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deload Volume Factor"
+          },
+          "modality_mix": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modality Mix"
+          },
           "rationale": {
             "anyOf": [
               {

@@ -30,6 +30,10 @@ class BlockCreateRequest(BaseModel):
 class BlockUpdateRequest(BaseModel):
     status: BlockStatus | None = None
     rationale: str | None = None
+    # Read dynamically at prescription time, so editing them does not desync
+    # already-generated planned sessions.
+    modality_mix: dict[str, float] | None = None
+    deload_volume_factor: float | None = Field(None, gt=0.1, le=1.0)
 
 
 class BlockRead(BaseModel):

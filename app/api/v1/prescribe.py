@@ -92,6 +92,7 @@ async def get_next_session(
             "is_deload": planned_session.is_deload,
             "is_benchmark": planned_session.is_benchmark,
             "week_number": planned_session.week_number,
+            "deload_volume_factor": active_block.deload_volume_factor,
         }
 
     profile_result = await db.execute(

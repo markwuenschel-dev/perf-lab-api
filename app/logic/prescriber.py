@@ -38,6 +38,11 @@ from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 # app.logic.constraint_engine.candidate for better separation of concerns.
 # We import them at the top of this file.
 
+# Default volume multiplier applied to a deload session's prescribed duration
+# when the active block does not carry its own `deload_volume_factor`. Mirrors
+# the MesocycleBlock.deload_volume_factor column default (app.models.mesocycle).
+DEFAULT_DELOAD_VOLUME_FACTOR = 0.6
+
 
 # ---------------------------------------------------------------------------
 # Candidate generation per goal
@@ -815,8 +820,16 @@ def recommend_next_session(
         rx.why.constraints_applied.extend(
             [f"weak_point:{tag}" for tag in weak_points]
         )
-    if block.get("is_deload") and rx.why:
-        rx.why.constraints_applied.append("block:deload")
+    if block.get("is_deload"):
+        # Scale the prescribed session volume (duration) by the block's deload
+        # factor so deload weeks actually lighten the load, not just annotate it.
+        factor = block.get("deload_volume_factor")
+        factor = DEFAULT_DELOAD_VOLUME_FACTOR if factor is None else float(factor)
+        factor = max(0.1, min(1.0, factor))
+        if rx.duration_min > 0:
+            rx.duration_min = max(1, round(rx.duration_min * factor))
+        if rx.why:
+            rx.why.constraints_applied.append(f"block:deload(×{factor:.2f})")
     if block.get("is_benchmark") and rx.why:
         rx.why.constraints_applied.append("block:benchmark")
 

@@ -71,6 +71,10 @@ async def update_block(
         block.status = body.status
     if body.rationale is not None:
         block.rationale = body.rationale
+    if body.modality_mix is not None:
+        block.modality_mix = body.modality_mix
+    if body.deload_volume_factor is not None:
+        block.deload_volume_factor = body.deload_volume_factor
     await db.commit()
     await db.refresh(block)
     return block
@@ -143,6 +147,15 @@ async def get_today(
 
     profile_result = await db.execute(select(AthleteProfile).where(AthleteProfile.user_id == current_user.id))
     profile = profile_result.scalars().first()
+
+    # Deload sessions scale prescribed volume by the parent block's factor.
+    deload_volume_factor: float | None = None
+    if session.is_deload:
+        factor_result = await db.execute(
+            select(MesocycleBlock.deload_volume_factor).where(MesocycleBlock.id == session.block_id)
+        )
+        deload_volume_factor = factor_result.scalar_one_or_none()
+
     rx = recommend_next_session(
         state,
         goal=goal,  # type: ignore[arg-type]
@@ -151,6 +164,7 @@ async def get_today(
             "is_deload": session.is_deload,
             "is_benchmark": session.is_benchmark,
             "week_number": session.week_number,
+            "deload_volume_factor": deload_volume_factor,
         },
         available_equipment=(profile.equipment if profile else None),
     )

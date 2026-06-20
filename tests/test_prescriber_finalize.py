@@ -57,3 +57,31 @@ def test_gymnastics_overrides_on_wrist_stress():
     assert rx.why is not None
     assert rx.why.validation is not None
     assert rx.why.validation.hard_violations
+
+
+def test_deload_scales_prescribed_duration():
+    state = _healthy_state()
+    base = recommend_next_session(state, goal="Running")
+    assert base.duration_min > 0
+
+    # is_deload does not change candidate selection, only post-finalize volume.
+    deload = recommend_next_session(
+        state,
+        goal="Running",
+        block_context={"is_deload": True, "deload_volume_factor": 0.5},
+    )
+    assert deload.duration_min == max(1, round(base.duration_min * 0.5))
+    assert deload.duration_min < base.duration_min
+    assert deload.why is not None
+    assert any(c.startswith("block:deload") for c in deload.why.constraints_applied)
+
+
+def test_deload_uses_default_factor_when_unspecified():
+    state = _healthy_state()
+    base = recommend_next_session(state, goal="Running")
+    deload = recommend_next_session(
+        state,
+        goal="Running",
+        block_context={"is_deload": True},
+    )
+    assert deload.duration_min == max(1, round(base.duration_min * 0.6))
