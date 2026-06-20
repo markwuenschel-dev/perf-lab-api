@@ -1,0 +1,239 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Perf Lab design tokens (dark "Performance OS" theme).
+   Recurring palette from the redesign, exposed as Tailwind
+   color/font tokens so screens use utilities (bg-tile, text-mute,
+   text-ac …) instead of inline styles. The accent `--ac` is
+   user-selectable at runtime (Settings) and mapped to `text/bg-ac`.
+   ============================================================ */
+@theme {
+  --font-sans: "Geist", "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  --color-canvas: #06070a; /* page background */
+  --color-panel: #0c0e13; /* sidebar / inputs */
+  --color-surface: #0e1116; /* modals / drawers */
+  --color-tile: #111419; /* cards */
+
+  --color-ink: #eef0f3; /* primary text */
+  --color-soft: #cfd4dd; /* secondary text */
+  --color-mute: #9aa0ab; /* muted labels */
+  --color-faint: #6a7180; /* faint labels */
+  --color-dim: #565d69; /* dimmest text */
+
+  --color-ac: var(--ac); /* dynamic accent (default lime) */
+  --color-teal: #7bd6c0;
+  --color-mint: #45d6c4;
+  --color-good: #5fd08a;
+  --color-warn: #f5c451;
+  --color-hot: #ff8a5c;
+  --color-info: #86b8ff;
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --ac: #c6f135;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::placeholder {
+    color: var(--color-dim);
+  }
+
+  input,
+  select {
+    font-family: var(--font-sans);
+  }
+
+  input:focus,
+  select:focus {
+    outline: none;
+    border-color: color-mix(in srgb, var(--ac) 50%, transparent) !important;
+  }
+
+  /* Behavioral styling ported verbatim from the prototype so screens
+     only need the `data-card` / `data-tile` / `data-tip` attributes. */
+  button {
+    transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+  }
+  button:not(:disabled):hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  button:not(:disabled):active {
+    transform: translateY(0);
+    filter: brightness(0.96);
+  }
+
+  [data-card] {
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  [data-card]:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    box-shadow: 0 16px 34px -20px rgba(0, 0, 0, 0.7);
+  }
+  [data-tile] {
+    transition: transform 0.13s ease, border-color 0.13s ease, box-shadow 0.13s ease;
+  }
+  [data-tile]:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 10px 22px -14px rgba(0, 0, 0, 0.6);
+  }
+
+  nav a:hover {
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateX(2px);
+    box-shadow: inset 2px 0 0 var(--ac);
+  }
+
+  /* Hover tooltip (data-tip="…") */
+  [data-tip] {
+    position: relative;
+    cursor: help;
+  }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 9px);
+    z-index: 90;
+    width: max-content;
+    max-width: 240px;
+    background: #1b212b;
+    color: #cfd4dd;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 9px;
+    padding: 9px 11px;
+    font: 500 11px/1.5 var(--font-sans);
+    text-transform: none;
+    letter-spacing: 0;
+    box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.75);
+    white-space: normal;
+    pointer-events: none;
+  }
+  [data-tip]:hover::before {
+    content: "";
+    position: absolute;
+    left: 13px;
+    bottom: calc(100% + 4px);
+    z-index: 90;
+    border: 5px solid transparent;
+    border-top-color: #1b212b;
+  }
+
+  /* Collapsible sidebar rail */
+  aside {
+    transition: width 0.2s ease;
+  }
+  aside[data-rail="1"] .nav-label,
+  aside[data-rail="1"] .nav-section,
+  aside[data-rail="1"] .brand-text,
+  aside[data-rail="1"] .side-extra {
+    display: none !important;
+  }
+  aside[data-rail="1"] nav a {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  aside[data-rail="1"] .brand-row {
+    justify-content: center;
+  }
+}
+
+@keyframes pl-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@layer utilities {
+  .animate-pl-pulse {
+    animation: pl-pulse 2s infinite;
+  }
+}
+
+/* ---- shadcn token scaffold (kept for parked ui/* primitives) ---- */
+@theme inline {
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.85 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 20%);
+  --input: oklch(1 0 0 / 20%);
+  --ring: oklch(0.556 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
