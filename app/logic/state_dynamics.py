@@ -1,5 +1,7 @@
 import numpy as np
-from app.engine.config import TIME_CONSTANTS, CROSS_TALK_MATRIX
+
+from app.engine.config import CROSS_TALK_MATRIX, TIME_CONSTANTS
+
 
 def update_state(prev_state: dict, doses: dict, dt_hours: float) -> dict:
     """Multi-timescale state update with cross-talk (PDF Section 4.3)."""

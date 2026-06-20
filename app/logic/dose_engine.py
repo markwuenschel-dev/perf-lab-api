@@ -64,7 +64,3 @@ def calculate_stress_doses(workout: dict, athlete_state: dict) -> dict:
 # Legacy alias (kept for scripts that expect this name)
 calculate_stress_dose = calculate_stress_doses
 
-
-# Re-export the modern engine for convenience during transition
-from app.logic.dose_engine_v0 import calculate_stress_dose as calculate_stress_dose_v0  # noqa: F401,E402
-

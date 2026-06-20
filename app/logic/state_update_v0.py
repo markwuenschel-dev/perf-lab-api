@@ -17,8 +17,9 @@ This is the preferred module for state updates. See also:
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
-from typing import Any, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from app.engine.parameters import default_parameters
 from app.engine.phi_table import default_phi_for_row
@@ -135,7 +136,7 @@ def apply_benchmark_observation(
     if observed_at is not None:
         s.timestamp = observed_at
     else:
-        s.timestamp = datetime.now(timezone.utc)
+        s.timestamp = datetime.now(UTC)
 
     return s
 
@@ -236,13 +237,13 @@ def _apply_adaptation_gains(
         setattr(s.capacity_x, key, min(ceiling, cur + gain))
 
     # Cross-talk: aerobic improvement nudges work_capacity
-    aerobic_gain = getattr(ac, "aerobic") * p.adapt_coef.get("aerobic", 0.015) * efficiency
+    aerobic_gain = ac.aerobic * p.adapt_coef.get("aerobic", 0.015) * efficiency
     if aerobic_gain > 0:
         wc_xgain = aerobic_gain * p.crosstalk_aerobic_on_work_capacity / max(1e-6, p.adapt_coef.get("aerobic", 0.015))
         s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_xgain)
 
     # Cross-talk: hypertrophy slowly supports max_strength
-    hyp_gain = getattr(ac, "hypertrophy") * p.adapt_coef.get("hypertrophy", 0.018) * efficiency
+    hyp_gain = ac.hypertrophy * p.adapt_coef.get("hypertrophy", 0.018) * efficiency
     if hyp_gain > 0:
         ms_xgain = hyp_gain * p.crosstalk_hypertrophy_on_max_strength / max(1e-6, p.adapt_coef.get("hypertrophy", 0.018))
         s.capacity_x.max_strength = min(100.0, s.capacity_x.max_strength + ms_xgain)

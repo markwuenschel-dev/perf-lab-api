@@ -10,22 +10,21 @@ Improved strategy (v0.3+):
 - Tables are created via Alembic migrations (not Base.metadata.create_all).
   This catches migration drift and keeps test schema faithful to production.
 """
-import os
 import asyncio
+import os
 
 import httpx
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from alembic.config import Config
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from alembic.config import Config
-from alembic import command
-
 # Still import models for relationship wiring if needed, but we no longer rely on create_all
 import app.models  # noqa: F401
+from alembic import command
 from app.core.db import get_db
 
 TEST_DATABASE_URL = os.environ.get(

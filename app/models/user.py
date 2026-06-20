@@ -1,13 +1,13 @@
 # app/models/user.py
 from datetime import datetime
-from typing import List
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     ARRAY,
     Boolean,
     Column,
     DateTime,
-    Float,          # ← was missing
+    Float,  # ← was missing
     ForeignKey,
     Integer,
     String,
@@ -15,6 +15,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, relationship
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    # Imported only for SQLAlchemy Mapped[...] forward refs; the relationship
+    # strings are resolved at runtime via SQLAlchemy's class registry.
+    from app.models.athlete_state import AthleteState
+    from app.models.mesocycle import MesocycleBlock
+    from app.models.weak_point import WeakPoint
 
 
 class User(Base):
@@ -35,7 +42,7 @@ class User(Base):
     )
 
     # Historical athlete states (one-to-many)
-    athlete_states: Mapped[List["AthleteState"]] = relationship(
+    athlete_states: Mapped[list["AthleteState"]] = relationship(
         "AthleteState",
         back_populates="user",
         cascade="all, delete-orphan",
@@ -43,10 +50,10 @@ class User(Base):
     )
 
     # Other relationships
-    blocks: Mapped[List["MesocycleBlock"]] = relationship(
+    blocks: Mapped[list["MesocycleBlock"]] = relationship(
         "MesocycleBlock", back_populates="user"
     )
-    weak_points: Mapped[List["WeakPoint"]] = relationship(
+    weak_points: Mapped[list["WeakPoint"]] = relationship(
         "WeakPoint", back_populates="user"
     )
 

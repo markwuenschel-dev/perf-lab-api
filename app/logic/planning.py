@@ -24,11 +24,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TrainingGoal
-
 
 # ---------------------------------------------------------------------------
 # Block types

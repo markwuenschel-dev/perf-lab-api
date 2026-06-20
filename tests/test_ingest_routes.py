@@ -1,11 +1,11 @@
 """Route tests for POST /v1/simulate-dose and POST /v1/log-workout."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 pytestmark = pytest.mark.asyncio
 
-_NOW = datetime.now(timezone.utc).isoformat()
+_NOW = datetime.now(UTC).isoformat()
 _WORKOUT_BODY = {
     "timestamp": _NOW,
     "modality": "Strength",

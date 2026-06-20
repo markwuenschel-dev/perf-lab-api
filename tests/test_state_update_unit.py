@@ -9,27 +9,22 @@ All tests are pure — no DB required. Tests verify:
 - Zero time-delta still applies dose impulses
 - Legacy mirror scalars stay consistent with engine vectors
 """
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import pytest
-
-from app.engine.state_bridge import capacity_from_legacy, sync_legacy_from_vectors
+from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.state_update_v0 import _adaptation_efficiency, update_athlete_state
 from app.schemas.engine_vectors import (
-    AdaptationContribution,
     CapacityState,
     FatigueState,
-    StressDoseSix,
     TissueState,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-_T0 = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+_T0 = datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
 _T1 = _T0 + timedelta(hours=24)
 
 

@@ -9,10 +9,10 @@ See PROJECT_AGENT_BRIEF.md for the long-term vision.
 """
 from __future__ import annotations
 
-from typing import ClassVar, Literal, Mapping
+from collections.abc import Mapping
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 # Type Aliases (for documentation and future stricter typing)

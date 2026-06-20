@@ -1,21 +1,21 @@
 """Constraint engine + scorer (mock context)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from app.logic.coaching_template_registry import get_structured_template_by_id
 from app.logic.constraint_engine import (
     SessionValidator,
     build_constraint_context,
     encode_session_candidate,
     simple_session_scorer,
 )
-from app.logic.coaching_template_registry import get_structured_template_by_id
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
 
 
 def _state() -> UnifiedStateVector:
     return UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         c_met_aerobic=50.0,
         c_nm_force=50.0,
         c_struct=50.0,

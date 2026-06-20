@@ -88,13 +88,33 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "TID"]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+    "E501",   # line length handled by the formatter
+    "UP042",  # keep `(str, Enum)` mixins — StrEnum changes str()/SAEnum semantics for enums serialized to the API + DB
+]
 
 [tool.ruff.lint.flake8-tidy-imports]
 banned-module-level-imports = []
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "app.logic.dose_engine".msg = "Use app.logic.dose_engine_v0 instead — dose_engine is deprecated"
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection helpers are idiomatic as argument defaults.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exported names
 
 [tool.black]
 line-length = 100

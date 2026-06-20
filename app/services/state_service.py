@@ -3,13 +3,15 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
     capacity_from_legacy,
     sync_legacy_from_vectors,
     unified_from_athlete_row,
 )
-from app.engine.phi_table import default_phi_for_row
+from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
 from app.models.exercise import Exercise
 from app.models.mesocycle import PlannedSession, SessionStatus
@@ -17,15 +19,12 @@ from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import WorkoutLog
-from app.logic.dose_engine_v0 import calculate_stress_dose
-from app.logic.state_update_v0 import update_athlete_state
-
 
 _BASELINE_CAPACITIES = {
-    "beginner":     dict(c_met_aerobic=180.0,  c_nm_force=500.0,   c_struct=60.0,  b_met_anaerobic=8000.0),
-    "intermediate": dict(c_met_aerobic=300.0,  c_nm_force=1000.0,  c_struct=100.0, b_met_anaerobic=15000.0),
-    "advanced":     dict(c_met_aerobic=500.0,  c_nm_force=1800.0,  c_struct=160.0, b_met_anaerobic=25000.0),
-    "elite":        dict(c_met_aerobic=650.0,  c_nm_force=2500.0,  c_struct=220.0, b_met_anaerobic=35000.0),
+    "beginner":     {"c_met_aerobic": 180.0,  "c_nm_force": 500.0,   "c_struct": 60.0,  "b_met_anaerobic": 8000.0},
+    "intermediate": {"c_met_aerobic": 300.0,  "c_nm_force": 1000.0,  "c_struct": 100.0, "b_met_anaerobic": 15000.0},
+    "advanced":     {"c_met_aerobic": 500.0,  "c_nm_force": 1800.0,  "c_struct": 160.0, "b_met_anaerobic": 25000.0},
+    "elite":        {"c_met_aerobic": 650.0,  "c_nm_force": 2500.0,  "c_struct": 220.0, "b_met_anaerobic": 35000.0},
 }
 
 

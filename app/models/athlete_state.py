@@ -1,8 +1,8 @@
 # app/models/athlete_state.py
 from datetime import datetime
 from typing import TYPE_CHECKING
-from pydantic import Field
 
+from pydantic import Field
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, relationship

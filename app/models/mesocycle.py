@@ -1,12 +1,10 @@
+import enum
 from datetime import datetime
 
-from sqlalchemy import (
-    Column, Integer, String, Float, Boolean,
-    DateTime, Date, ForeignKey, Enum as SAEnum
-)
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-import enum
 
 from app.core.db import Base
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +11,6 @@ from app.logic.state_update_v0 import apply_benchmark_observation
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
-from app.models.observation_mapping import ObservationMapping
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
 from app.services import state_service
@@ -58,7 +56,7 @@ async def _apply_weak_point_feedback(
     if not tags:
         return
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if normalized_value < _DEFICIT_THRESHOLD:
         # Flag each tag as a benchmark-sourced weakness (skip if already active)

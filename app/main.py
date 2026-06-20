@@ -4,17 +4,17 @@ app/main.py
 Main FastAPI application entrypoint for Performance Lab API.
 """
 
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.config import settings
-from app.core.db import engine
-
 from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, planning, prescribe, weak_points
 from app.api.v1.onboard import router as onboard_router
+from app.core.config import settings
+from app.core.db import engine
 
 logger = logging.getLogger("perflab")
 

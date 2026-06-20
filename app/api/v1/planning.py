@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
 from app.models.athlete_state import AthleteState
 from app.models.mesocycle import MesocycleBlock, PlannedSession
@@ -22,7 +23,6 @@ from app.schemas.planning import (
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
 from app.services.planning_service import create_block_with_sessions, get_today_session
-from app.engine.state_bridge import unified_from_athlete_row
 
 router = APIRouter(prefix="/planning", tags=["Planning"])
 

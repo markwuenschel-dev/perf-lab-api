@@ -7,8 +7,6 @@ Legacy v0.1 endpoints preserved for frontend compatibility.
     GET  /program/strength
 """
 
-import math
-from typing import List
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -124,7 +122,7 @@ class MetricsResponse(BaseModel):
     fatigue_percent: float
     fatigue_profile: str
     race_pace_sec_per_mile: float
-    zones: List[Zone]
+    zones: list[Zone]
 
 
 class RunSession(BaseModel):
@@ -150,7 +148,7 @@ class StrengthSession(BaseModel):
 # Program data
 # ---------------------------------------------------------------------------
 
-RUN_SESSIONS: List[RunSession] = [
+RUN_SESSIONS: list[RunSession] = [
     RunSession(week=1, session=1, day="Mon", name="Intro Tempo Intervals", focus="3×4 min Tempo w/ 2 min easy jog", zone="Tempo", rpe="6–7"),
     RunSession(week=1, session=2, day="Thu", name="Pace Ladder 200–800–200", focus="200/400/600/800/600/400/200m @ RPE 6.5, easy jog between (total 4200m)", zone="Interval", rpe="6.5"),
     RunSession(week=2, session=1, day="Mon", name="Broken Tempo", focus="4×5 min Tempo w/ 90s easy jog", zone="Tempo", rpe="6–7"),
@@ -173,7 +171,7 @@ RUN_SESSIONS: List[RunSession] = [
     RunSession(week=10, session=2, day="Sat/Sun", name="Race of Truth – 1.5 Mile Test", focus="Structured warm-up then 1.5 miles all-out, record time", zone="Race", rpe="9–10"),
 ]
 
-STRENGTH_SESSIONS: List[StrengthSession] = []
+STRENGTH_SESSIONS: list[StrengthSession] = []
 
 for _wk in range(1, 4):
     STRENGTH_SESSIONS.append(StrengthSession(week=_wk, day="Tue", phase="Base", main_lifts="Back Squat 3×8; Walking Lunges 3×10/leg; Glute Bridge 3×12", accessory="Plank 3×:30; Side Plank 3×:20/side", notes="Controlled tempo; leave 2–3 reps in tank"))
@@ -212,11 +210,11 @@ def compute_metrics(payload: MetricsRequest):
     )
 
 
-@router.get("/program/run", response_model=List[RunSession])
+@router.get("/program/run", response_model=list[RunSession])
 def get_run_program():
     return RUN_SESSIONS
 
 
-@router.get("/program/strength", response_model=List[StrengthSession])
+@router.get("/program/strength", response_model=list[StrengthSession])
 def get_strength_program():
     return STRENGTH_SESSIONS

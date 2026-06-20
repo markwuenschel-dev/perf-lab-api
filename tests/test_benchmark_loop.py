@@ -10,7 +10,7 @@ Unit-level tests (no DB):
 Integration behavior (service layer) is covered by test_benchmark_state.py.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.engine.state_bridge import sync_legacy_from_vectors
@@ -25,7 +25,7 @@ def _state(aerobic: float = 300.0, max_strength: float = 50.0) -> UnifiedStateVe
     t = TissueState()
     leg = sync_legacy_from_vectors(cx, f, t)
     return UnifiedStateVector(
-        timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2024, 1, 1, tzinfo=UTC),
         capacity_x=cx,
         fatigue_f=f,
         tissue_t=t,
@@ -69,7 +69,7 @@ def _aerobic_mapping() -> SimpleNamespace:
 # ---------------------------------------------------------------------------
 
 def test_single_observation_uses_observed_at():
-    obs_ts = datetime(2024, 6, 1, tzinfo=timezone.utc)
+    obs_ts = datetime(2024, 6, 1, tzinfo=UTC)
     s0 = _state()
     s1 = apply_benchmark_observation(
         s0,
@@ -84,9 +84,9 @@ def test_single_observation_uses_observed_at():
 
 
 def test_sequential_observations_maintain_chronological_order():
-    t1 = datetime(2024, 3, 1, tzinfo=timezone.utc)
-    t2 = datetime(2024, 6, 1, tzinfo=timezone.utc)
-    t3 = datetime(2024, 9, 1, tzinfo=timezone.utc)
+    t1 = datetime(2024, 3, 1, tzinfo=UTC)
+    t2 = datetime(2024, 6, 1, tzinfo=UTC)
+    t3 = datetime(2024, 9, 1, tzinfo=UTC)
     m = _strength_mapping()
 
     s0 = _state()
@@ -105,7 +105,7 @@ def test_sequential_observations_maintain_chronological_order():
 
 def test_observation_timestamp_does_not_use_utcnow_when_provided():
     """The result timestamp must exactly match observed_at, not the current time."""
-    precise_ts = datetime(2024, 4, 15, 8, 30, 0, tzinfo=timezone.utc)
+    precise_ts = datetime(2024, 4, 15, 8, 30, 0, tzinfo=UTC)
     s0 = _state()
     s1 = apply_benchmark_observation(
         s0,
@@ -187,7 +187,7 @@ def test_unknown_target_vector_skipped_gracefully():
         better_direction="higher",
         observation_weight=1.0,
         mappings=[m],
-        observed_at=datetime.now(timezone.utc),
+        observed_at=datetime.now(UTC),
     )
     # State should be unchanged (no crash)
     assert s1.capacity_x.max_strength == s0.capacity_x.max_strength

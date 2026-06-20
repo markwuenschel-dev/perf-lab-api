@@ -3,13 +3,12 @@ app/core/db.py
 Async database engine and session management.
 """
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import settings
-
 
 # Create the async engine
 engine = create_async_engine(

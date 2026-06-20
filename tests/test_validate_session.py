@@ -1,6 +1,6 @@
 """Constraint validation tests."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.logic.validate_session import validate_session
 from app.schemas.program_template import ProgramTemplate
@@ -10,7 +10,7 @@ from app.schemas.state import UnifiedStateVector
 
 def _minimal_state(**kwargs: float) -> UnifiedStateVector:
     base = UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         c_met_aerobic=50.0,
         c_nm_force=50.0,
         c_struct=50.0,

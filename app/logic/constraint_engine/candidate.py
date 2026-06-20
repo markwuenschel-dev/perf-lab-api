@@ -8,11 +8,9 @@ candidate *generators* (in prescriber.py) and the template *validators*
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from app.schemas.state import UnifiedStateVector
-from app.schemas.training_goals import TrainingGoal
 
 
 @dataclass

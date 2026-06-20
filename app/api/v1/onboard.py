@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.models.user import User, AthleteProfile
+from app.models.user import AthleteProfile, User
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.onboarding import OnboardRequest, OnboardResponse
 from app.services.state_service import initialize_athlete_state

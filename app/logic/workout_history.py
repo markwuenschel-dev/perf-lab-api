@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -41,7 +41,7 @@ def _derive_tags(row: WorkoutLog) -> list[str]:
 def workout_log_to_summary(row: WorkoutLog) -> dict[str, Any]:
     ts = row.session_timestamp
     if isinstance(ts, datetime) and ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+        ts = ts.replace(tzinfo=UTC)
     iso = ts.isoformat() if isinstance(ts, datetime) else str(ts)
     return {
         "modality": row.modality,

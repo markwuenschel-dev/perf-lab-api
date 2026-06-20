@@ -21,7 +21,6 @@ from app.engine.phi_table import default_phi_for_row
 from app.schemas.engine_vectors import AdaptationContribution, StressDoseSix
 from app.schemas.workouts import ExerciseEntry, StressDose, WorkoutLog
 
-
 # ---------------------------------------------------------------------------
 # Internal per-exercise dose bundle (not exposed in API)
 # ---------------------------------------------------------------------------
@@ -144,7 +143,7 @@ def _compute_adaptation_contribution(
     """
     from app.logic.domain_vocab import PHI_ADAPT_TO_CAPACITY
 
-    ac: dict[str, float] = {k: 0.0 for k in AdaptationContribution.KEYS}
+    ac: dict[str, float] = dict.fromkeys(AdaptationContribution.KEYS, 0.0)
     for phi_key, weight in phi_adapt.items():
         cap_key = PHI_ADAPT_TO_CAPACITY.get(phi_key)
         if cap_key and cap_key in ac:
@@ -187,7 +186,6 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
         )
         phi_adapt = phi_pack["phi_adapt"]
         phi_fatigue = phi_pack["phi_fatigue"]
-        phi_tissue = phi_pack["phi_tissue"]
         energy_mix = phi_pack["energy_mix"]
 
     # ------------------------------------------------------------------

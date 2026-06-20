@@ -1,10 +1,10 @@
 from sqlalchemy import (
+    ARRAY,
+    Boolean,
     Column,
+    Float,
     Integer,
     String,
-    Boolean,
-    Float,
-    ARRAY,
     Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB

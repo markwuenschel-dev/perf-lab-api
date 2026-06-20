@@ -1,6 +1,6 @@
 """Benchmark observation assimilation + derived KPI helpers."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.engine.state_bridge import sync_legacy_from_vectors
@@ -16,7 +16,7 @@ def _state() -> UnifiedStateVector:
     t = TissueState()
     leg = sync_legacy_from_vectors(cx, f, t)
     return UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         capacity_x=cx,
         fatigue_f=f,
         tissue_t=t,

@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 SourceType = Literal["literature", "coach_system", "derived"]
 EvidenceLevel = Literal["high", "moderate", "heuristic"]
 

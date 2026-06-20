@@ -1,8 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, ForeignKey, Boolean
-)
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 

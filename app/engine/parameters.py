@@ -7,7 +7,6 @@ Tunable constants; future: load from DB or YAML.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict
 
 
 @dataclass
@@ -19,7 +18,7 @@ class EngineParameters:
     dose_rho: float = 1.0  # proximity-to-failure exponent
 
     # Fatigue decay Λ — half-life style hours (approx exp decay tau in cross_talk)
-    tau_fatigue_hours: Dict[str, float] = field(
+    tau_fatigue_hours: dict[str, float] = field(
         default_factory=lambda: {
             "cns": 360.0,  # slow (~15d)
             "muscular": 72.0,  # medium (~3d)
@@ -31,7 +30,7 @@ class EngineParameters:
     )
 
     # Tissue decay Γ (same interpretation as fatigue — hours to decay stress)
-    tau_tissue_hours: Dict[str, float] = field(
+    tau_tissue_hours: dict[str, float] = field(
         default_factory=lambda: {
             "shoulder": 168.0,
             "elbow": 168.0,
@@ -60,7 +59,7 @@ class EngineParameters:
     # These scale how strongly a dose unit of phi_adapt drives capacity gain.
     # Interpretation: capacity_gain = adapt_coef[key] * phi_adapt[key] * base_dose
     # Kept small so gains accumulate gradually (Banister-style slow integration).
-    adapt_coef: Dict[str, float] = field(
+    adapt_coef: dict[str, float] = field(
         default_factory=lambda: {
             "aerobic": 0.015,        # Aerobic base builds slowly
             "glycolytic": 0.020,     # Glycolytic responds faster

@@ -5,7 +5,7 @@ JWT + bcrypt utilities. Production-ready, Render-safe.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -46,7 +46,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 def create_access_token(
     subject: Any,
-    expires_delta: Optional[timedelta] = None,
+    expires_delta: timedelta | None = None,
 ) -> str:
     """Create JWT access token."""
     expire = datetime.utcnow() + (
@@ -75,7 +75,7 @@ async def get_current_user(
         if user_id is None:
             raise credentials_exception
     except JWTError:
-        raise credentials_exception
+        raise credentials_exception from None
 
     result = await db.execute(select(User).where(User.id == int(user_id)))
     user = result.scalars().first()

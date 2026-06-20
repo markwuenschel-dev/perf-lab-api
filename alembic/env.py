@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
@@ -9,23 +10,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.core.config import settings
-from app.models import *  # noqa — triggers all model imports for autodiscovery
-from app.core.db import Base
-
-from app.models.user import User, AthleteProfile
-from app.models.athlete_state import AthleteState
-from app.models.workout_log import WorkoutLog
-from app.models.mesocycle import MesocycleBlock, PlannedSession
-from app.models.weak_point import WeakPoint
-from app.models.exercise import Exercise
-from app.models.benchmark_definition import BenchmarkDefinition
-from app.models.benchmark_observation import BenchmarkObservation
-from app.models.observation_mapping import ObservationMapping
-from app.models.derived_metric_definition import DerivedMetricDefinition
-from app.models.derived_metric_snapshot import DerivedMetricSnapshot
-
 from alembic import context
+from app.core.config import settings
+from app.core.db import Base
+from app.models import *  # noqa — triggers all model imports for autodiscovery
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

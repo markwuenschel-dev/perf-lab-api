@@ -4,8 +4,8 @@ from typing import cast
 
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.program_template import ProgramTemplate
-from app.schemas.state import UnifiedStateVector
 from app.schemas.session_draft import IntensityBand, SessionDraft
+from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TrainingGoal
 
 

@@ -2,16 +2,16 @@
 app/api/v1/auth.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.core.auth import create_access_token, get_current_user, hash_password, verify_password
 from app.core.db import get_db
-from app.models.user import User, AthleteProfile
+from app.models.user import AthleteProfile, User
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -71,7 +71,7 @@ async def register(
 
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=409, detail="Email already registered") from None
 
     except Exception as exc:
         await db.rollback()

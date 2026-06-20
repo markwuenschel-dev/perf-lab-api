@@ -17,13 +17,13 @@ Longer term this package should own:
 """
 
 from app.domain.vectors import (
-    CapacityState,
-    FatigueState,
-    TissueState,
-    StressDoseSix,
     AdaptationContribution,
-    PhiVectors,
+    CapacityState,
     EnergyMix,
+    FatigueState,
+    PhiVectors,
+    StressDoseSix,
+    TissueState,
 )
 
 __all__ = [

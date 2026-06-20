@@ -8,23 +8,21 @@ All tests are pure — no DB required. Tests verify:
 - Non-mutation guarantee (simulate-dose invariant, Decision 9)
 - Near-zero dose for trivial sessions
 """
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from app.logic.dose_engine_v0 import calculate_stress_dose
-from app.schemas.workouts import WorkoutLog, StressDose
+from app.schemas.workouts import StressDose, WorkoutLog
 
 
 def _log(**kwargs) -> WorkoutLog:
-    defaults = dict(
-        timestamp=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
-        modality="Strength",
-        duration_minutes=60.0,
-        session_rpe=7.0,
-        sleep_quality=7.0,
-        life_stress_inverse=7.0,
-    )
+    defaults = {
+        "timestamp": datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+        "modality": "Strength",
+        "duration_minutes": 60.0,
+        "session_rpe": 7.0,
+        "sleep_quality": 7.0,
+        "life_stress_inverse": 7.0,
+    }
     defaults.update(kwargs)
     return WorkoutLog(**defaults)
 

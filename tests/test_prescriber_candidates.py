@@ -10,13 +10,14 @@ Verifies:
 - All 14 goals return a valid prescription
 """
 
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
 
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.prescriber import (
-    _gen_strength_candidates,
     _gen_running_candidates,
+    _gen_strength_candidates,
     _safety_candidates,
     _score_candidate,
     recommend_next_session,
@@ -53,7 +54,7 @@ def _state(
     leg["f_struct_damage"] = f_struct_damage
     leg["f_met_systemic"] = f_met_systemic
     return UnifiedStateVector(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         capacity_x=cx,
         fatigue_f=f,
         tissue_t=t,

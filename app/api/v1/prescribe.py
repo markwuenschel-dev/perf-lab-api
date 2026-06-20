@@ -1,22 +1,21 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from datetime import date
-
-from app.core.db import get_db
 from app.core.auth import get_current_user
-from app.models.user import AthleteProfile, User
-from app.models.athlete_state import AthleteState
-from app.models.weak_point import WeakPoint
-from app.models.mesocycle import MesocycleBlock, BlockStatus, PlannedSession, SessionStatus
+from app.core.db import get_db
 from app.engine.state_bridge import unified_from_athlete_row
-from app.logic.prescription_finalize import finalize_prescription
 from app.logic.prescriber import recommend_next_session
 from app.logic.workout_history import recent_workout_summaries
-from app.services import dashboard_service
+from app.models.athlete_state import AthleteState
+from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
+from app.models.user import AthleteProfile, User
+from app.models.weak_point import WeakPoint
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
+from app.services import dashboard_service
 
 router = APIRouter(tags=["Prescription"])
 
@@ -126,4 +125,4 @@ async def get_next_session(
             await db.commit()
         return rx
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to generate prescription: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to generate prescription: {str(e)}") from e

@@ -16,22 +16,21 @@ The constraint_engine package also provides template-driven validation
 
 from __future__ import annotations
 
-from typing import Optional
-
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
-    score_candidate as _score_candidate,
-    apply_block_context_boost,
-    mean_fatigue,
     max_tissue_load,
+    mean_fatigue,
+)
+from app.logic.constraint_engine.candidate import (
     overall_readiness as _readiness,
 )
-from app.logic.domain_vocab import GOAL_TO_DOMAIN
+from app.logic.constraint_engine.candidate import (
+    score_candidate as _score_candidate,
+)
 from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -191,7 +190,6 @@ def _gen_power_candidates(
     recent: list[dict] | None,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
-    x = state.capacity_x
     readiness = _readiness(state)
 
     return [
@@ -320,7 +318,6 @@ def _gen_metcon_candidates(
     recent: list[dict] | None,
 ) -> list[SessionCandidate]:
     f = state.fatigue_f
-    x = state.capacity_x
     readiness = _readiness(state)
 
     return [
@@ -361,7 +358,6 @@ def _gen_running_candidates(
 ) -> list[SessionCandidate]:
     ff = kpi.get("run_fatigue_factor")
     f = state.fatigue_f
-    x = state.capacity_x
     readiness = _readiness(state)
     threshold_priority = ff is not None and ff > 14.0
 
@@ -507,7 +503,6 @@ def _gen_general_candidates(
     kpi: dict,
     recent: list[dict] | None,
 ) -> list[SessionCandidate]:
-    f = state.fatigue_f
     readiness = _readiness(state)
 
     return [
