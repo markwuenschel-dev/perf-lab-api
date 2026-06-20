@@ -69,3 +69,27 @@ jobs:
         run: ruff check .
       - name: Mypy (strict type-check)
         run: mypy app
+
+  # Frontend gate: the production build (tsc -b + vite build) must be green.
+  # Lint is non-blocking — 3 pre-existing react-refresh warnings in generated
+  # shadcn UI files are known / out of scope (keep regressions visible, don't block).
+  web:
+    name: Web (build + lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Build (tsc + vite)
+        run: npm run build
+      - name: Lint (non-blocking)
+        run: npm run lint
+        continue-on-error: true

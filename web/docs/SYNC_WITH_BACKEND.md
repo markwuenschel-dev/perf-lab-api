@@ -11,7 +11,7 @@
 perf-lab-api/app/schemas/*.py   (Pydantic — source of truth)
         │  FastAPI → OpenAPI document
         ▼
-perf-lab-api/openapi.json        (committed in the API repo)
+perf-lab-api/openapi.json        (committed at the monorepo root)
         │  npm run gen:types      (openapi-typescript)
         ▼
 src/types.gen.ts                 (generated — never hand-edit)
@@ -31,15 +31,15 @@ src/types.ts                     (thin adapter — what app code imports)
 
 ## Regenerating after a backend change
 
-The backend repo (`perf-lab-api`) must be checked out as a **sibling directory**
-(`../perf-lab-api`) — the script reads its committed `openapi.json` directly:
+The backend now lives in **this same repo** (monorepo); `gen:types` reads the
+committed `openapi.json` at the repo root (`../openapi.json` from `web/`):
 
 ```bash
 # 1. In perf-lab-api: regenerate + commit the contract
 #    python -m app.scripts.export_openapi
 
 # 2. In perf-lab-web: regenerate the TypeScript types
-npm run gen:types        # rewrites src/types.gen.ts from ../perf-lab-api/openapi.json
+npm run gen:types        # rewrites src/types.gen.ts from ../openapi.json
 npm run check:types      # tsc --noEmit — every break in consumers surfaces here
 ```
 

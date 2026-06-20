@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "gen:types": "openapi-typescript ../perf-lab-api/openapi.json -o src/types.gen.ts",
+    "gen:types": "openapi-typescript ../openapi.json -o src/types.gen.ts",
     "check:types": "tsc --noEmit"
   },
   "dependencies": {
