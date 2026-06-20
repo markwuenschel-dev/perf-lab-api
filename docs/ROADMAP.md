@@ -73,12 +73,12 @@ Remaining targets:
 
 ### 1.3 Deprecated module cleanup
 
-Status: transition in progress.
+Status: complete.
 
-Deprecated:
+Both deprecated modules have been removed:
 
-- `app.logic.dose_engine`
-- `app.logic.state_update`
+- `app.logic.dose_engine` — deleted (had no remaining importers)
+- `app.logic.state_update` — removed in an earlier pass
 
 Preferred:
 
@@ -86,10 +86,9 @@ Preferred:
 - `app.logic.state_update_v0`
 - `app.services.state_service`
 
-Remaining targets:
-
-- remove old imports after dependent scripts/tests are migrated
-- make lints/tests fail on new deprecated imports
+Re-introduction is guarded: ruff's `flake8-tidy-imports` banned-api fails the
+lint gate (`TID251`) on any import of `app.logic.dose_engine` or
+`app.logic.state_update`.
 
 ## 2. Onboarding and Athlete Setup
 
@@ -103,11 +102,7 @@ Status: implemented.
 
 Status: implemented.
 
-`POST /v1/onboard` fills the profile, creates self-reported weak points, and seeds baseline state.
-
-Remaining target:
-
-- persist all baseline request fields that the schema accepts, including deadlift, bench, bodyweight, and run 5K fields. The ORM supports them, but the uploaded onboarding route only assigns a subset.
+`POST /v1/onboard` fills the profile, creates self-reported weak points, and seeds baseline state. All baseline request fields the schema accepts — deadlift, bench, bodyweight, and run-5K — are now persisted onto the profile.
 
 ### 2.3 Baseline state seeding
 
@@ -131,17 +126,15 @@ Status: implemented.
 
 Current behavior:
 
-- default templates for Strength and Running
-- Strength fallback for unsupported block goals
-- deload weeks by cadence
+- default templates for every `BlockGoal` (all nine goals carry real weekly templates)
+- Strength fallback for any goal without a template
+- deload weeks by cadence; `deload_volume_factor` scales the deload session's prescribed duration
 - periodic benchmark sessions by cadence
+- `PATCH /v1/planning/blocks` edits status, rationale, `modality_mix`, and `deload_volume_factor`
 
 Remaining targets:
 
-- add default templates for every `BlockGoal`
-- let frontend define/edit custom weekly templates
-- use `deload_volume_factor` more directly in prescription dosage
-- improve block update fields beyond status/rationale
+- let the frontend define/edit custom weekly templates (the API already accepts a custom `weekly_template`; the editing UI is a frontend task — see §6.2)
 
 ### 3.2 Planned session management
 
@@ -229,12 +222,12 @@ Remaining targets:
 
 Status: partially implemented.
 
-A +0.15 score boost is applied when candidate type matches planned session category. Deload/benchmark flags are annotated in explanation.
+A +0.15 score boost is applied when candidate type matches planned session category. Deload/benchmark flags are annotated in explanation, and the block's `deload_volume_factor` now scales a deload session's prescribed duration.
 
 Remaining targets:
 
 - use block templates to shape candidate generation, not just scoring
-- use deload factor to scale duration/volume/intensity
+- extend deload scaling beyond duration to volume/intensity targets
 - make benchmark sessions prescribe benchmark-specific content
 
 ### 5.4 Exercise selection
@@ -343,12 +336,12 @@ The uploaded documentation references tests for dose, state update, ORM persiste
 - [x] planning routes
 - [x] benchmark/dashboard routes
 - [x] migrations through a002
-- [ ] persist all profile fields accepted by onboarding schema
-- [ ] remove or guard DEV ONLY `user_id` query override in next-session
+- [x] persist all profile fields accepted by onboarding schema
+- [x] remove or guard DEV ONLY `user_id` query override in next-session
 
 ### Phase 2 — Make planning and benchmark loops product-complete
 
-- [ ] full goal default templates
+- [x] full goal default templates
 - [ ] proper benchmark session content generation
 - [ ] frontend benchmark observation UI
 - [ ] frontend dashboard KPI UI
@@ -358,7 +351,7 @@ The uploaded documentation references tests for dose, state update, ORM persiste
 
 - [ ] DB-driven exercise selection
 - [ ] deeper block-template use
-- [ ] deload dosage scaling
+- [x] deload dosage scaling
 - [ ] confidence-weighted weak-point aggregation
 - [ ] richer recent-history constraints
 
