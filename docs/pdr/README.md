@@ -23,3 +23,5 @@ implies an architectural one, write both and cross-link them
 | [0005](0005-one-backend-owned-readiness-number.md) | One backend-owned readiness number | accepted |
 | [0006](0006-wearable-sync-cloud-api-first.md) | Wearable sync is cloud-API providers first | accepted |
 | [0007](0007-first-wearable-provider.md) | First wearable provider to integrate | proposed |
+| [0008](0008-plan-is-a-seed-not-a-rail.md) | The training plan is a seed, not a rail | proposed |
+| [0009](0009-onboarding-benchmark-onramp.md) | Onboarding establishes baselines through a benchmark onramp | proposed |
