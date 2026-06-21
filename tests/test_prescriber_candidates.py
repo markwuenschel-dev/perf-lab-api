@@ -16,8 +16,11 @@ import pytest
 
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.prescriber import (
+    _candidate_domain,
+    _gen_mixed_candidates,
     _gen_running_candidates,
     _gen_strength_candidates,
+    _generate_candidates,
     _safety_candidates,
     _score_candidate,
     recommend_next_session,
@@ -244,3 +247,45 @@ def test_equipment_aware_exercises_use_available_equipment():
     rx = recommend_next_session(s, goal="Strength", available_equipment=["barbell"])
     assert len(rx.exercises) > 0
     assert any("equipment:filtered" in c for c in (rx.why.constraints_applied if rx.why else []))
+
+
+# ---------------------------------------------------------------------------
+# Canonical domain dispatch (ADR-0038)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "goal,domain",
+    [
+        ("Strength", "strength"),
+        ("Powerlifting", "powerlifting"),
+        ("OlympicLifts", "weightlifting"),
+        ("MetCon", "mixed"),
+        ("HalfMarathon", "running"),
+        ("Calisthenics", "calisthenics"),
+        ("Hyrox", "mixed"),      # BlockGoal, not a TrainingGoal
+        ("CrossFit", "mixed"),   # BlockGoal
+        ("Recomp", "general"),   # BlockGoal
+    ],
+)
+def test_candidate_domain_resolves(goal, domain):
+    assert _candidate_domain(goal) == domain
+
+
+def test_mixed_pool_has_conditioning_and_strength():
+    cands = _gen_mixed_candidates(_healthy_state(), {}, None)
+    types = [c.type for c in cands]
+    assert any("Conditioning" in t for t in types)
+    assert any("Strength Endurance" in t for t in types)
+
+
+def test_block_goal_hyrox_yields_real_session():
+    """A Hyrox block goal (not in TrainingGoal) still reaches the mixed pool, not general."""
+    cands = _generate_candidates(_healthy_state(), "Hyrox", {}, None)  # type: ignore[arg-type]
+    types = [c.type for c in cands]
+    assert any("Conditioning" in t or "Strength Endurance" in t for t in types)
+
+
+def test_metcon_default_not_strength_dominated():
+    """MetCon → mixed must stay conditioning-primary, not collapse to a strength session."""
+    rx = recommend_next_session(_healthy_state(), goal="MetCon")
+    assert rx.type != "Strength Endurance"

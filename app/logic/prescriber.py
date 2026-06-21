@@ -29,6 +29,7 @@ from app.logic.constraint_engine.candidate import (
 from app.logic.constraint_engine.candidate import (
     score_candidate as _score_candidate,
 )
+from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
 from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
@@ -679,30 +680,70 @@ def _readiness_redirect(
 # Goal → candidate generator dispatch
 # ---------------------------------------------------------------------------
 
+def _gen_mixed_candidates(
+    state: UnifiedStateVector,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
+) -> list[SessionCandidate]:
+    """Concurrent / mixed-modal pool (MetCon, Hyrox, CrossFit).
+
+    Conditioning-primary (the MetCon candidates) plus one strength-endurance
+    option, so concurrent blocks have a real strength day. The planned-session
+    category boost (ADR-0030) selects the right one per scheduled slot.
+    """
+    f = state.fatigue_f
+    cands = _gen_metcon_candidates(state, kpi, recent)
+    cands.append(
+        SessionCandidate(
+            type="Strength Endurance",
+            focus="Compound lifts in circuit — moderate load, short rest (e.g. 5×8 @ RPE 7)",
+            rationale="The strength side of concurrent work — strength expressed under fatigue.",
+            duration_min=45,
+            branch_id="mixed_strength_endurance",
+            goal_alignment=0.9,
+            state_fit=_readiness(state),
+            fatigue_penalty=f.muscular / 100.0 * 0.6,
+            tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.4,
+            weak_point_coverage=_weak_point_coverage(["work_capacity", "max_strength"], state, kpi),
+            habit_bonus=state.habit_strength * 0.7,
+        )
+    )
+    return cands
+
+
+def _candidate_domain(goal: str) -> str:
+    """Resolve a goal / block-goal to the canonical domain the prescriber keys on (ADR-0038)."""
+    return GOAL_TO_DOMAIN.get(goal) or canonical_domain(str(goal))
+
+
 def _generate_candidates(
     state: UnifiedStateVector,
     goal: TrainingGoal,
     kpi: dict[str, float],
     recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
-    if goal == "Strength":
+    # Dispatch on canonical domain, not the raw goal, so BlockGoal-derived intent
+    # (e.g. Hyrox/CrossFit → "mixed") reaches a real candidate pool. Running and
+    # gymnastics also take the original goal for sub-distinctions.
+    domain = _candidate_domain(goal)
+    if domain == "strength":
         return _gen_strength_candidates(state, kpi, recent)
-    if goal == "Hypertrophy":
+    if domain == "hypertrophy":
         return _gen_hypertrophy_candidates(state, kpi, recent)
-    if goal == "Power":
+    if domain == "power":
         return _gen_power_candidates(state, kpi, recent)
-    if goal == "OlympicLifts":
+    if domain == "weightlifting":
         return _gen_olympic_candidates(state, kpi, recent)
-    if goal == "Powerlifting":
+    if domain == "powerlifting":
         return _gen_powerlifting_candidates(state, kpi, recent)
-    if goal == "MetCon":
-        return _gen_metcon_candidates(state, kpi, recent)
-    if goal in ("Running", "Sprinting", "HalfMarathon", "FullMarathon"):
+    if domain == "running":
         return _gen_running_candidates(state, kpi, recent, goal)
-    if goal in ("Gymnastics", "Calisthenics"):
+    if domain in ("gymnastics", "calisthenics"):
         return _gen_gymnastics_candidates(state, kpi, recent, goal)
-    if goal == "Grip":
+    if domain == "grip":
         return _gen_grip_candidates(state, kpi, recent)
+    if domain == "mixed":
+        return _gen_mixed_candidates(state, kpi, recent)
     return _gen_general_candidates(state, kpi, recent)
 
 
