@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified, unified_from_athlete_row
-from app.logic.state_update_v0 import apply_benchmark_observation
+from app.logic.state_update_v0 import apply_benchmark_observation, normalize_score01
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -171,13 +171,21 @@ async def create_observation(
     if definition.is_derived_only:
         raise ValueError("Observations cannot target derived-only benchmark definitions")
 
+    # Backend-owned normalization (ADR-0034): derive a [0,1] score from the
+    # definition's standardization_rules; expose it as a 0-100 normalized_value when
+    # the client didn't supply one. score01 drives the residual capacity anchor.
+    score01 = normalize_score01(definition.better_direction, body.raw_value, definition.standardization_rules)
+    normalized_value = body.normalized_value
+    if normalized_value is None and score01 is not None:
+        normalized_value = round(score01 * 100.0, 2)
+
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
         observed_at=body.observed_at or datetime.utcnow(),
         raw_value=body.raw_value,
         secondary_value=body.secondary_value,
-        normalized_value=body.normalized_value,
+        normalized_value=normalized_value,
         bodyweight_kg=body.bodyweight_kg,
         rpe=body.rpe,
         heart_rate_avg=body.heart_rate_avg,
@@ -210,19 +218,20 @@ async def create_observation(
         new_state = apply_benchmark_observation(
             current,
             raw_value=body.raw_value,
-            normalized_value=body.normalized_value,
+            normalized_value=normalized_value,
             better_direction=definition.better_direction,
             observation_weight=float(definition.observation_weight),
             mappings=mappings,
             observed_at=observation_time,
+            score01=score01,
         )
         kwargs = athlete_state_kwargs_from_unified(new_state)
         db.add(AthleteState(user_id=user_id, **kwargs))
 
     # Weak-point feedback: flag deficits, resolve improvements
-    if body.validity_status == "valid" and body.normalized_value is not None:
+    if body.validity_status == "valid" and normalized_value is not None:
         await _apply_weak_point_feedback(
-            db, user_id, definition, body.normalized_value, obs.id
+            db, user_id, definition, normalized_value, obs.id
         )
 
     await db.commit()

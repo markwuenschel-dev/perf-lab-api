@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
 ---
 # Benchmark correction is residual-based; the backend owns normalization
