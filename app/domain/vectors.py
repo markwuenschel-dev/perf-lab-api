@@ -54,6 +54,33 @@ class CapacityState(BaseModel):
     )
 
 
+# Weak-prior seed: high uncertainty about an un-measured capacity axis. A benchmark
+# shrinks this; time grows it. Relative scale — see ADR-0036.
+SEED_CAPACITY_VARIANCE = 1.0
+
+
+class CapacityConfidence(BaseModel):
+    """Per-axis model uncertainty about ``CapacityState``, as a variance proxy.
+
+    Higher variance ⇒ the model is less sure ⇒ a benchmark corrects that axis more
+    (scalar Kalman gain). The seed prior is high-variance — a weak prior that yields
+    to data — benchmarks shrink it and time grows it. Tracked for capacity axes only
+    (fatigue/tissue are transient, re-driven each session). See ADR-0036; the scalar
+    here generalizes to the EKF's covariance later (ADR-0015).
+    """
+
+    aerobic: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    glycolytic: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    max_strength: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    hypertrophy: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    power: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    skill: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    mobility: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    work_capacity: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+
+    KEYS: ClassVar[tuple[str, ...]] = CapacityState.KEYS
+
+
 class FatigueState(BaseModel):
     """F_t — multi-component fatigue (0–100). Higher = more fatigued."""
 

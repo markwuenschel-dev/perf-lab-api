@@ -748,6 +748,61 @@
         "title": "Body_login_auth_token_post",
         "type": "object"
       },
+      "CapacityConfidence": {
+        "description": "Per-axis model uncertainty about ``CapacityState``, as a variance proxy.\n\nHigher variance \u21d2 the model is less sure \u21d2 a benchmark corrects that axis more\n(scalar Kalman gain). The seed prior is high-variance \u2014 a weak prior that yields\nto data \u2014 benchmarks shrink it and time grows it. Tracked for capacity axes only\n(fatigue/tissue are transient, re-driven each session). See ADR-0036; the scalar\nhere generalizes to the EKF's covariance later (ADR-0015).",
+        "properties": {
+          "aerobic": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Aerobic",
+            "type": "number"
+          },
+          "glycolytic": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Glycolytic",
+            "type": "number"
+          },
+          "hypertrophy": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Hypertrophy",
+            "type": "number"
+          },
+          "max_strength": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Max Strength",
+            "type": "number"
+          },
+          "mobility": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Mobility",
+            "type": "number"
+          },
+          "power": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Power",
+            "type": "number"
+          },
+          "skill": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Skill",
+            "type": "number"
+          },
+          "work_capacity": {
+            "default": 1.0,
+            "minimum": 0.0,
+            "title": "Work Capacity",
+            "type": "number"
+          }
+        },
+        "title": "CapacityConfidence",
+        "type": "object"
+      },
       "CapacityState": {
         "description": "X_t \u2014 capacity / adaptation ceiling components (higher = better).",
         "properties": {
@@ -2139,6 +2194,9 @@
             "description": "Structural capacity / CSA proxy",
             "title": "C Struct",
             "type": "number"
+          },
+          "capacity_confidence": {
+            "$ref": "#/components/schemas/CapacityConfidence"
           },
           "capacity_x": {
             "$ref": "#/components/schemas/CapacityState"

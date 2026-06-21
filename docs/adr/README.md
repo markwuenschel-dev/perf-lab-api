@@ -84,7 +84,7 @@ and die with their PR.
 | [0033](0033-training-builds-and-loses-capacity.md) | Workout-driven adaptation must move capacity; capacities detrain | proposed |
 | [0034](0034-residual-based-benchmark-anchor.md) | Benchmark correction is residual-based; backend owns normalization | proposed |
 | [0035](0035-benchmark-seeded-initial-state.md) | Initial state is benchmark-seeded; experience level is a weak prior | proposed |
-| [0036](0036-per-axis-confidence-scalar.md) | Per-axis capacity confidence: a scalar now, EKF covariance later | proposed |
+| [0036](0036-per-axis-confidence-scalar.md) | Per-axis capacity confidence: a scalar now, EKF covariance later | accepted |
 | [0037](0037-model-concurrent-interference.md) | Model concurrent-training interference (negative cross-talk) | proposed |
 | [0038](0038-canonical-domain-taxonomy.md) | Canonical domain is the one taxonomy; the prescriber keys on it | accepted |
 | [0039](0039-dose-law-external-load-vs-effort.md) | Dose-law intensity splits external load from internal effort | proposed |
