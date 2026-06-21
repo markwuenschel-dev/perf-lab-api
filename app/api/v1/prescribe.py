@@ -93,6 +93,8 @@ async def get_next_session(
             "is_deload": planned_session.is_deload,
             "is_benchmark": planned_session.is_benchmark,
             "week_number": planned_session.week_number,
+            "duration_weeks": active_block.duration_weeks,
+            "deload_every_n_weeks": active_block.deload_every_n_weeks,
             "deload_volume_factor": active_block.deload_volume_factor,
             "recent_skips": await count_block_skips(db, current_user.id, active_block.id),
         }

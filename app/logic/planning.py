@@ -506,3 +506,49 @@ def weekly_session_distribution(
         "Metabolic Conditioning": 1,
         "Active Recovery": 1,
     }
+
+
+# ---------------------------------------------------------------------------
+# Live periodization envelope (ADR-0029)
+#
+# The single source of truth the prescriber uses to make `week_number` actually
+# shape a prescription: it maps a week within a block to a phase + volume modifier
+# + RPE target. The PlanTemplate machinery above is goal-specific reference
+# structure; this function is what the live engine consults.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PhaseEnvelope:
+    phase: str
+    volume_modifier: float
+    rpe_low: float
+    rpe_high: float
+
+
+def periodization_envelope(
+    duration_weeks: int,
+    week_number: int,
+    deload_every_n_weeks: int = 4,
+) -> PhaseEnvelope:
+    """Resolve a block week to its periodization envelope (ADR-0029).
+
+    A generic accumulation → intensification → peak progression with periodic
+    deloads and an end taper. The prescriber applies ``volume_modifier`` to the
+    session and targets ``rpe_low..rpe_high``; state may pull the prescription
+    *down* within this envelope but never above it.
+    """
+    weeks = max(1, int(duration_weeks))
+    wk = max(1, int(week_number))
+    deload_n = max(0, int(deload_every_n_weeks))
+
+    if wk >= weeks and weeks >= 3:
+        return PhaseEnvelope("taper", 0.55, 6.0, 8.0)
+    if deload_n and wk % deload_n == 0:
+        return PhaseEnvelope("deload", 0.5, 5.0, 6.5)
+
+    frac = wk / weeks
+    if frac <= 0.4:
+        return PhaseEnvelope("accumulation", 1.15, 6.5, 7.5)
+    if frac <= 0.75:
+        return PhaseEnvelope("intensification", 0.9, 7.5, 8.5)
+    return PhaseEnvelope("peak", 0.7, 8.5, 9.5)
