@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.domain_vocab import canonical_domain
 from app.models.mesocycle import (
     BlockGoal,
     BlockStatus,
@@ -68,12 +70,85 @@ def _default_template_for_goal(goal: BlockGoal, sessions_per_week: int) -> list[
     return slots[:sessions_per_week]
 
 
+# Canonical domain → a representative weekly slot (category, modality).
+_DOMAIN_SLOT: dict[str, tuple[str, str]] = {
+    "running": ("Aerobic Base", "Running"),
+    "strength": ("Max Strength", "Strength"),
+    "powerlifting": ("SBD Strength", "Strength"),
+    "hypertrophy": ("High Volume", "Hypertrophy"),
+    "power": ("Power Development", "Power"),
+    "weightlifting": ("Weightlifting Technique", "Power"),
+    "conditioning": ("Metabolic Conditioning", "Conditioning"),
+    "mixed": ("Mixed Modal", "Mixed"),
+    "calisthenics": ("Bodyweight Strength", "Calisthenics"),
+    "gymnastics": ("Gymnastics Skill", "Calisthenics"),
+    "grip": ("Grip & Support", "Strength"),
+    "general": ("Full-Body GPP", "General"),
+}
+_WEEK_DAY_ORDER = (1, 3, 5, 2, 4, 6, 7)
+
+
+def _template_from_modality_mix(
+    modality_mix: dict[str, Any] | None,
+    sessions_per_week: int,
+) -> list[WeeklyTemplateSlot] | None:
+    """Build a weekly template by distributing sessions across a domain mix (ADR-0030).
+
+    `modality_mix` is a ``canonical-domain → weight`` map; sessions are allocated by
+    largest remainder and spread across the week. Returns None when no usable mix is
+    given, so the caller falls back to the goal default. This makes `modality_mix` the
+    driver of concurrent multi-domain blocks rather than inert metadata.
+    """
+    if not modality_mix:
+        return None
+    weights = {canonical_domain(k): float(v) for k, v in modality_mix.items() if float(v) > 0}
+    total = sum(weights.values())
+    if total <= 0 or sessions_per_week <= 0:
+        return None
+
+    alloc: dict[str, int] = {}
+    remainders: list[tuple[float, str]] = []
+    assigned = 0
+    for dom, w in weights.items():
+        exact = sessions_per_week * w / total
+        alloc[dom] = int(exact)
+        assigned += alloc[dom]
+        remainders.append((exact - int(exact), dom))
+
+    remainders.sort(reverse=True)
+    i = 0
+    while assigned < sessions_per_week and remainders:
+        alloc[remainders[i % len(remainders)][1]] += 1
+        assigned += 1
+        i += 1
+
+    slots: list[WeeklyTemplateSlot] = []
+    day_i = 0
+    for dom, n in alloc.items():
+        category, modality = _DOMAIN_SLOT.get(dom, _DOMAIN_SLOT["general"])
+        for _ in range(n):
+            slots.append(
+                WeeklyTemplateSlot(
+                    day_of_week=_WEEK_DAY_ORDER[day_i % len(_WEEK_DAY_ORDER)],
+                    category=category,
+                    modality=modality,
+                )
+            )
+            day_i += 1
+    slots.sort(key=lambda s: s.day_of_week)
+    return slots[:sessions_per_week] or None
+
+
 async def create_block_with_sessions(
     db: AsyncSession,
     user_id: int,
     req: BlockCreateRequest,
 ) -> MesocycleBlock:
-    weekly_template = req.weekly_template or _default_template_for_goal(req.goal, req.sessions_per_week)
+    weekly_template = (
+        req.weekly_template
+        or _template_from_modality_mix(req.modality_mix, req.sessions_per_week)
+        or _default_template_for_goal(req.goal, req.sessions_per_week)
+    )
     end_date = req.start_date + timedelta(days=req.duration_weeks * 7 - 1)
 
     block = MesocycleBlock(

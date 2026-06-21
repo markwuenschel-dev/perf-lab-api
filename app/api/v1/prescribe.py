@@ -102,12 +102,17 @@ async def get_next_session(
     )
     profile = profile_result.scalars().first()
 
+    # ADR-0030: when a block is active, the day's training intent comes from the block
+    # (resolved to a canonical domain by the prescriber, ADR-0038); the `goal` query
+    # param is the fallback for athletes with no active block.
+    effective_goal = active_block.goal.value if active_block is not None else goal
+
     try:
         recent = await recent_workout_summaries(db, current_user.id)
         kpi_summary = await dashboard_service.latest_kpi_values(db, current_user.id)
         rx = recommend_next_session(
             state,
-            goal=goal,
+            goal=effective_goal,
             recent_sessions=recent,
             kpi_summary=kpi_summary or None,
             active_weak_points=active_weak_points or None,

@@ -1,4 +1,6 @@
+import re
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -18,7 +20,7 @@ from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
-from app.schemas.workouts import WorkoutLog
+from app.schemas.workouts import ExerciseEntry, WorkoutLog
 
 _BASELINE_CAPACITIES = {
     "beginner":     {"c_met_aerobic": 180.0,  "c_nm_force": 500.0,   "c_struct": 60.0,  "b_met_anaerobic": 8000.0},
@@ -239,6 +241,79 @@ async def _resolve_exercise_phis(
     return log.model_copy(update={"exercises": resolved_entries})
 
 
+def _parse_sets(value: Any, default: float = 3.0) -> float:
+    try:
+        return max(1.0, float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_reps(value: Any, default: float = 8.0) -> float:
+    """Reps may be a string range like '4-6' or '8-12/side' — take the first integer."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        m = re.search(r"\d+", value)
+        if m:
+            return float(m.group())
+    return default
+
+
+def _seed_exercises_from_prescription(
+    log: WorkoutLog, planned_session: PlannedSession
+) -> WorkoutLog:
+    """Seed log.exercises from a planned session's prescribed content (ADR-0031).
+
+    Gives planned work an exercise-aware dose (phi resolved by name) without the
+    athlete re-entering every movement. Only fills when the client sent none.
+    """
+    content = planned_session.prescribed_content or {}
+    prescribed = content.get("exercises") or []
+    entries: list[ExerciseEntry] = []
+    for ex in prescribed:
+        name = ex.get("name") if isinstance(ex, dict) else None
+        if not name:
+            continue
+        entries.append(
+            ExerciseEntry(
+                exercise_name=name,
+                sets=_parse_sets(ex.get("sets")),
+                reps=_parse_reps(ex.get("reps")),
+            )
+        )
+    if not entries:
+        return log
+    return log.model_copy(update={"exercises": entries})
+
+
+async def _match_planned_session(
+    db: AsyncSession, user_id: int, log: WorkoutLog
+) -> PlannedSession | None:
+    """The planned session this log fulfills: explicit id, else same-day pending."""
+    if log.planned_session_id is not None:
+        res = await db.execute(
+            select(PlannedSession).where(
+                PlannedSession.id == log.planned_session_id,
+                PlannedSession.user_id == user_id,
+            )
+        )
+        return res.scalars().first()
+    session_day = (
+        log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+    ).date()
+    res = await db.execute(
+        select(PlannedSession)
+        .where(
+            PlannedSession.user_id == user_id,
+            PlannedSession.scheduled_date == session_day,
+            PlannedSession.status == SessionStatus.PENDING,
+        )
+        .order_by(PlannedSession.id.asc())
+        .limit(1)
+    )
+    return res.scalars().first()
+
+
 async def process_new_workout(
     db: AsyncSession,
     user_id: int,
@@ -262,6 +337,13 @@ async def process_new_workout(
         db.add(baseline_row)
     else:
         current_state = unified_from_athlete_row(last_record)
+
+    # ADR-0031: a planned session's prescription seeds the log's exercises, so planned
+    # work gets an exercise-aware dose without re-entry. Match the session up front
+    # (also reused below for completion linkage).
+    planned_session = await _match_planned_session(db, user_id, log)
+    if not log.exercises and planned_session is not None:
+        log = _seed_exercises_from_prescription(log, planned_session)
 
     # Resolve exercise phi vectors from DB so dose engine is exercise-aware
     log = await _resolve_exercise_phis(db, log)
@@ -287,30 +369,6 @@ async def process_new_workout(
     )
     db.add(workout_row)
     await db.flush()
-
-    # If no explicit planned_session_id was provided, best-effort match by date.
-    planned_session = None
-    if log.planned_session_id is not None:
-        ps_result = await db.execute(
-            select(PlannedSession).where(
-                PlannedSession.id == log.planned_session_id,
-                PlannedSession.user_id == user_id,
-            )
-        )
-        planned_session = ps_result.scalars().first()
-    else:
-        session_day = workout_row.session_timestamp.date()
-        ps_result = await db.execute(
-            select(PlannedSession)
-            .where(
-                PlannedSession.user_id == user_id,
-                PlannedSession.scheduled_date == session_day,
-                PlannedSession.status == SessionStatus.PENDING,
-            )
-            .order_by(PlannedSession.id.asc())
-            .limit(1)
-        )
-        planned_session = ps_result.scalars().first()
 
     if planned_session is not None:
         planned_session.workout_log_id = workout_row.id

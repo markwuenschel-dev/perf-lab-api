@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
 ---
 # Training intent is block-derived; modality_mix is the concurrency driver
