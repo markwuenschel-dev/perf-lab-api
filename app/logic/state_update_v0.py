@@ -80,6 +80,68 @@ def _mapping_delta(
     return 0.0
 
 
+def normalize_score01(
+    better_direction: str,
+    raw_value: float,
+    rules: dict[str, Any] | None,
+) -> float | None:
+    """Backend normalization: raw measurement → performance score in [0, 1] (higher = better).
+
+    Uses per-definition anchors in ``standardization_rules`` —
+    ``{"floor": <worst raw>, "cap": <best raw>}`` — and is direction-aware. Returns
+    None when anchors are missing so the caller can fall back. The backend, not the
+    client, owns this conversion (ADR-0034).
+    """
+    if not rules:
+        return None
+    floor = rules.get("floor")
+    cap = rules.get("cap")
+    if floor is None or cap is None or float(floor) == float(cap):
+        return None
+    if better_direction == "lower":
+        frac = (float(floor) - float(raw_value)) / (float(floor) - float(cap))
+    else:
+        frac = (float(raw_value) - float(floor)) / (float(cap) - float(floor))
+    return max(0.0, min(1.0, frac))
+
+
+def _apply_capacity_residual(
+    s: UnifiedStateVector,
+    mapping: Any,
+    score01: float,
+    observation_weight: float,
+    p: EngineParameters,
+) -> None:
+    """Signed, confidence-scaled residual correction of a capacity axis (ADR-0034).
+
+    The model's expectation for the axis is its current value (as a fraction of the
+    axis ceiling); the measurement is ``score01``. We move the axis toward the
+    measurement by a Kalman gain set by how unsure we are (low confidence → big move),
+    then shrink that axis's variance. A below-expectation test pulls the axis *down*.
+    """
+    key = mapping.target_key
+    try:
+        cur = _read_axis(s, "capacity", key)
+    except AttributeError:
+        return
+    ceiling = _capacity_ceiling(key)
+    expected01 = cur / ceiling if ceiling > 0 else 0.0
+    residual01 = score01 - expected01
+    weight = max(0.0, float(mapping.coefficient))  # mapping informativeness, ~[0, 1]
+    meas_var = p.confidence_measured_variance / max(0.1, float(observation_weight))
+    prior_var = float(getattr(s.capacity_confidence, key, 1.0))
+    gain = kalman_gain(prior_var, meas_var)
+
+    new_v = cur + weight * gain * residual01 * ceiling
+    if mapping.min_value is not None:
+        new_v = max(new_v, float(mapping.min_value))
+    if mapping.max_value is not None:
+        new_v = min(new_v, float(mapping.max_value))
+    _write_axis(s, "capacity", key, new_v)
+    # A measurement reduces uncertainty about the axis.
+    setattr(s.capacity_confidence, key, max(0.0, (1.0 - gain) * prior_var))
+
+
 def apply_benchmark_observation(
     prev_state: UnifiedStateVector,
     *,
@@ -89,27 +151,41 @@ def apply_benchmark_observation(
     observation_weight: float,
     mappings: Sequence[Any],
     observed_at: datetime | None = None,
+    score01: float | None = None,
 ) -> UnifiedStateVector:
     """
-    Weighted residual-style nudge on capacity / fatigue / tissue axes from
-    `observation_mappings` (no full EKF in phase 1).
+    Assimilate a benchmark observation into state (no full EKF — ADR-0015).
 
-    `observed_at` is used as the state timestamp when provided.
-    This ensures chronological correctness: benchmark-driven states are anchored
-    to when the test was performed, not when the API call was made.
+    Capacity axes use a signed residual against the model's expectation, scaled by
+    per-axis confidence (ADR-0034/0036): when the caller supplies ``score01`` (a
+    backend-normalized [0, 1] score from the definition's standardization_rules), the
+    correction is bidirectional and discriminative. Falling back, a 0-100
+    ``normalized_value`` is treated as a score; lacking both, capacity (and all
+    fatigue/tissue) maps use the legacy additive nudge so un-normalized definitions
+    still move state.
+
+    `observed_at` anchors the state timestamp to when the test was performed.
     """
     s = prev_state.model_copy(deep=True)
+    p = default_parameters()
+
+    if score01 is None and normalized_value is not None:
+        score01 = max(0.0, min(1.0, float(normalized_value) / 100.0))
+
+    # Legacy signal (with lower-is-better inversion) for non-residual maps.
     base = normalized_value if normalized_value is not None else raw_value
     if better_direction == "lower":
         signal = 1.0 / max(float(base), 1e-9)
-    elif better_direction == "higher":
-        signal = float(base)
     else:
         signal = float(base)
 
     for m in mappings:
         if m.target_vector not in _VECTOR_ATTR:
             continue
+        if m.target_vector == "capacity" and score01 is not None:
+            _apply_capacity_residual(s, m, score01, observation_weight, p)
+            continue
+        # Legacy additive nudge: fatigue/tissue, or capacity without normalization.
         try:
             cur = _read_axis(s, m.target_vector, m.target_key)
         except AttributeError:
