@@ -17,8 +17,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from app.engine.simulate import (
     aerobic_log,
     apply_benchmark,
@@ -101,10 +99,9 @@ def test_benchmark_moves_target_axis():
 
 
 # ---------------------------------------------------------------------------
-# Future behavior — flip these green as each ADR lands
+# Engine-math behavior (ADR-0033 rebalance + detraining, ADR-0037 interference)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="ADR-0033: training must move capacity a visible amount", strict=True)
 def test_productive_block_yields_visible_capacity_gain():
     s0 = baseline_state(max_strength=50.0)
     traj = run_schedule(s0, weekly_block(_STRENGTH_3X, weeks=4))
@@ -112,14 +109,12 @@ def test_productive_block_yields_visible_capacity_gain():
     assert capacity_gain(traj, "max_strength") >= 2.0
 
 
-@pytest.mark.xfail(reason="ADR-0033: capacities detrain with disuse", strict=True)
 def test_detraining_lowers_capacity_after_layoff():
     s0 = baseline_state(max_strength=70.0, aerobic=350.0)
     after = rest_for(s0, days=120.0)[-1]
     assert after.capacity_x.max_strength < s0.capacity_x.max_strength
 
 
-@pytest.mark.xfail(reason="ADR-0037: concurrent endurance blunts strength adaptation", strict=True)
 def test_concurrent_endurance_blunts_strength_gain():
     s0 = baseline_state(max_strength=50.0)
     gain_strength_only = capacity_gain(

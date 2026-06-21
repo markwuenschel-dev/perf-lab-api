@@ -47,28 +47,45 @@ class EngineParameters:
     recovery_sleep_scale: float = 0.08
     recovery_stress_scale: float = 0.06
 
-    # Capacity adaptation (very slow Banister-style bump from hypertrophy signal)
+    # Capacity adaptation (Banister-style bump from hypertrophy signal)
     capacity_signal_threshold: float = 20.0
-    capacity_struct_bump: float = 0.02
-    capacity_hypertrophy_bump: float = 0.03
+    capacity_struct_bump: float = 0.05
+    capacity_hypertrophy_bump: float = 0.08
 
     # Cross-talk G on capacity (small off-diagonal nudges)
     crosstalk_metabolic_on_work_capacity: float = 0.02
 
     # --- Adaptation gain coefficients (W_adapt per capacity axis) ---
-    # These scale how strongly a dose unit of phi_adapt drives capacity gain.
-    # Interpretation: capacity_gain = adapt_coef[key] * phi_adapt[key] * base_dose
-    # Kept small so gains accumulate gradually (Banister-style slow integration).
+    # capacity_gain = adapt_coef[key] * phi_adapt[key] * base_dose. Sized (ADR-0033)
+    # so a productive block yields a visible few-point gain while still net-positive
+    # against the inter-session detraining decay below. Tuned via the sim harness.
     adapt_coef: dict[str, float] = field(
         default_factory=lambda: {
-            "aerobic": 0.015,        # Aerobic base builds slowly
-            "glycolytic": 0.020,     # Glycolytic responds faster
-            "max_strength": 0.012,   # Strength very slow
-            "hypertrophy": 0.018,    # Hypertrophy moderate
-            "power": 0.014,
-            "skill": 0.025,          # Skill can improve quickly with quality work
-            "mobility": 0.020,
-            "work_capacity": 0.016,
+            "aerobic": 0.45,         # on the 0–650 scale, needs a larger coefficient
+            "glycolytic": 0.28,
+            "max_strength": 0.22,    # strength builds slowly but visibly
+            "hypertrophy": 0.26,
+            "power": 0.20,
+            "skill": 0.36,           # skill responds fastest to quality work
+            "mobility": 0.28,
+            "work_capacity": 0.24,
+        }
+    )
+
+    # --- Detraining: capacities decay toward baseline with disuse (ADR-0033) ---
+    # Proportional per-day decay; per-session loss must stay below per-session gain so
+    # training nets positive, while a layoff visibly erodes fitness. Aerobic/glycolytic
+    # detrain fastest, max strength slowest.
+    capacity_decay_per_day: dict[str, float] = field(
+        default_factory=lambda: {
+            "aerobic": 0.0005,
+            "glycolytic": 0.0012,
+            "max_strength": 0.0006,
+            "hypertrophy": 0.0012,
+            "power": 0.0009,
+            "skill": 0.0005,
+            "mobility": 0.0009,
+            "work_capacity": 0.0015,
         }
     )
 
