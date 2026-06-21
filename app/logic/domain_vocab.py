@@ -64,12 +64,25 @@ DOMAIN_ALIASES: dict[str, str] = {
     "hyrox": "mixed",
     "triathlon": "running",
     "track": "running",
+    # Block goals (MesocycleBlock.BlockGoal) not 1:1 with TrainingGoal
+    "Hyrox": "mixed",
+    "CrossFit": "mixed",
+    "Recomp": "general",
 }
 
 
 def canonical_domain(value: str) -> str:
     """Return canonical domain for any alias; falls back to lowercase input."""
     return DOMAIN_ALIASES.get(value, value.lower())
+
+
+def block_goal_to_domain(block_goal: str) -> str:
+    """Canonical domain for a MesocycleBlock goal (a `BlockGoal` enum value).
+
+    Bridges the planning vocabulary (BlockGoal) to the single canonical domain
+    taxonomy the prescriber dispatches on. See ADR-0038.
+    """
+    return canonical_domain(block_goal)
 
 
 # ---------------------------------------------------------------------------

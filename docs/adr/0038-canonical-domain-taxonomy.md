@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
 ---
 # Canonical domain is the one taxonomy; the prescriber keys on it
