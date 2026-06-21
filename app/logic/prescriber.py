@@ -30,6 +30,7 @@ from app.logic.constraint_engine.candidate import (
     score_candidate as _score_candidate,
 )
 from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
+from app.logic.planning import periodization_envelope
 from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
@@ -873,9 +874,31 @@ def recommend_next_session(
         rx.why.constraints_applied.extend(
             [f"weak_point:{tag}" for tag in weak_points]
         )
-    if block.get("is_deload"):
-        # Scale the prescribed session volume (duration) by the block's deload
-        # factor so deload weeks actually lighten the load, not just annotate it.
+    # ADR-0029: apply the week's periodization envelope (volume modifier + RPE target).
+    # week_number shapes the prescription within an envelope; state pulls down, not up.
+    week_n = int(block.get("week_number") or 0)
+    weeks_total = int(block.get("duration_weeks") or 0)
+    if week_n and weeks_total:
+        env = periodization_envelope(
+            weeks_total, week_n, int(block.get("deload_every_n_weeks") or 4)
+        )
+        vol = env.volume_modifier
+        phase = env.phase
+        if block.get("is_deload"):
+            # Honor the block's configured deload factor on flagged weeks.
+            factor = block.get("deload_volume_factor")
+            vol = DEFAULT_DELOAD_VOLUME_FACTOR if factor is None else float(factor)
+            phase = "deload"
+        vol = max(0.1, min(1.2, vol))
+        if rx.duration_min > 0:
+            rx.duration_min = max(1, round(rx.duration_min * vol))
+        if rx.why:
+            rx.why.constraints_applied.append(f"block:phase={phase}(×{vol:.2f})")
+            rx.why.constraints_applied.append(
+                f"block:rpe_target={env.rpe_low:.1f}-{env.rpe_high:.1f}"
+            )
+    elif block.get("is_deload"):
+        # No periodization context — fall back to plain deload scaling.
         factor = block.get("deload_volume_factor")
         factor = DEFAULT_DELOAD_VOLUME_FACTOR if factor is None else float(factor)
         factor = max(0.1, min(1.0, factor))

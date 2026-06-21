@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
 ---
 # Periodization lives as an intent envelope on the block
