@@ -25,7 +25,7 @@ from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic import cross_talk
-from app.schemas.engine_vectors import FatigueState, TissueState
+from app.schemas.engine_vectors import CapacityConfidence, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
 
@@ -145,6 +145,36 @@ def _exp_decay(value: float, hours: float, tau: float) -> float:
     if value <= 0.01:
         return 0.0
     return value * math.exp(-hours / max(1e-6, tau))
+
+
+def kalman_gain(prior_variance: float, measurement_variance: float) -> float:
+    """Scalar Kalman gain in [0, 1): how much a measurement moves the estimate.
+
+    Higher prior variance (less confident) or lower measurement variance (more
+    trustworthy test) ⇒ larger correction. Used by the residual benchmark anchor
+    (ADR-0034); confidence dynamics defined in ADR-0036.
+    """
+    pv = max(0.0, prior_variance)
+    return pv / (pv + max(1e-9, measurement_variance))
+
+
+def _grow_confidence_variance(
+    confidence: CapacityConfidence,
+    hours: float,
+    p: EngineParameters,
+) -> None:
+    """Grow per-axis capacity variance with elapsed time (process noise), in place.
+
+    Training moves the capacity *mean* but does not *measure* it, so it does not
+    increase confidence — only time passing (uncertainty accrues) and, elsewhere,
+    benchmarks (which reduce it). See ADR-0036.
+    """
+    growth = p.confidence_process_noise_per_day * (hours / 24.0)
+    if growth <= 0.0:
+        return
+    for key in CapacityConfidence.KEYS:
+        v = getattr(confidence, key) + growth
+        setattr(confidence, key, min(p.confidence_max_variance, v))
 
 
 def _fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
@@ -329,6 +359,9 @@ def update_athlete_state(
     s.f_nm_peripheral = legacy["f_nm_peripheral"]
     s.f_nm_central = legacy["f_nm_central"]
     s.f_struct_damage = legacy["f_struct_damage"]
+
+    # --- 9. Confidence: uncertainty about capacity accrues with elapsed time ---
+    _grow_confidence_variance(s.capacity_confidence, hours, p)
 
     s.timestamp = prev_state.timestamp + time_delta
     return s

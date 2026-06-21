@@ -81,6 +81,14 @@ class EngineParameters:
     crosstalk_hypertrophy_on_max_strength: float = 0.004  # Long-term cross-support
     crosstalk_skill_suppressed_above_cns: float = 55.0    # CNS fatigue above this → skill gains halved
 
+    # --- Capacity confidence dynamics (ADR-0036) ---
+    # Per-axis variance grows with elapsed time (process noise) and is capped, so a
+    # long-unmeasured axis becomes a weak prior that the next benchmark corrects hard.
+    confidence_process_noise_per_day: float = 0.004
+    confidence_max_variance: float = 1.5
+    # Measurement variance for a full-weight benchmark (lower ⇒ trusts the test more).
+    confidence_measured_variance: float = 0.08
+
 
 def default_parameters() -> EngineParameters:
     return EngineParameters()

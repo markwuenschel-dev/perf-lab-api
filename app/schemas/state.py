@@ -3,7 +3,12 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 # Prefer domain layer as source of truth (schemas re-export for compatibility)
-from app.domain.vectors import CapacityState, FatigueState, TissueState
+from app.domain.vectors import (
+    CapacityConfidence,
+    CapacityState,
+    FatigueState,
+    TissueState,
+)
 
 
 class UnifiedStateVector(BaseModel):
@@ -19,6 +24,10 @@ class UnifiedStateVector(BaseModel):
     capacity_x: CapacityState = Field(default_factory=CapacityState)
     fatigue_f: FatigueState = Field(default_factory=FatigueState)
     tissue_t: TissueState = Field(default_factory=TissueState)
+
+    # Per-axis model uncertainty about capacity_x (variance proxy). Seeded as a
+    # weak prior, shrunk by benchmarks, grown by elapsed time. See ADR-0036.
+    capacity_confidence: CapacityConfidence = Field(default_factory=CapacityConfidence)
 
     # Legacy capacities (mirrors of X / batteries)
     c_met_aerobic: float = Field(..., description="Aerobic capacity (e.g. CS / VO2 proxy)")

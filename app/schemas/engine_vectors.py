@@ -17,7 +17,9 @@ from __future__ import annotations
 # Re-export everything from the domain layer so existing imports continue to
 # work AND resolve to the same class objects (no shadowing / duplicate models).
 from app.domain.vectors import (  # noqa: F401
+    SEED_CAPACITY_VARIANCE,
     AdaptationContribution,
+    CapacityConfidence,
     CapacityKey,
     CapacityState,
     EnergyMix,
@@ -30,7 +32,9 @@ from app.domain.vectors import (  # noqa: F401
 )
 
 __all__ = [
+    "SEED_CAPACITY_VARIANCE",
     "AdaptationContribution",
+    "CapacityConfidence",
     "CapacityKey",
     "CapacityState",
     "EnergyMix",

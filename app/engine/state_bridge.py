@@ -18,12 +18,18 @@ import json
 from datetime import datetime
 from typing import Any
 
-from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
+from app.schemas.engine_vectors import (
+    CapacityConfidence,
+    CapacityState,
+    FatigueState,
+    TissueState,
+)
 from app.schemas.state import UnifiedStateVector
 
 # Schema version of the engine_state JSONB payload. Bump when the x/f/t vector
 # shapes change, and add a matching upgrade branch in _migrate_engine_state.
-ENGINE_STATE_SCHEMA_VERSION = 1
+#   v2: added "c" — per-axis capacity confidence (ADR-0036).
+ENGINE_STATE_SCHEMA_VERSION = 2
 
 
 def default_engine_state_dict() -> dict[str, Any]:
@@ -32,6 +38,7 @@ def default_engine_state_dict() -> dict[str, Any]:
         "x": CapacityState().model_dump(),
         "f": FatigueState().model_dump(),
         "t": TissueState().model_dump(),
+        "c": CapacityConfidence().model_dump(),
     }
 
 
@@ -51,9 +58,13 @@ def _migrate_engine_state(eng: dict[str, Any]) -> dict[str, Any] | None:
     """
     if not ("x" in eng and "f" in eng and "t" in eng):
         return None
-    # version = int(eng.get("version", 1) or 1)  # add upgrade branches above
+    migrated = dict(eng)
+    # v1 → v2: seed a weak-prior capacity confidence when absent (ADR-0036).
+    if "c" not in migrated:
+        migrated["c"] = CapacityConfidence().model_dump()
     # Ensure the (possibly legacy/unversioned) payload carries a current stamp.
-    return {**eng, "version": ENGINE_STATE_SCHEMA_VERSION}
+    migrated["version"] = ENGINE_STATE_SCHEMA_VERSION
+    return migrated
 
 
 def _parse_engine_state(raw: Any) -> dict[str, Any] | None:
@@ -152,6 +163,7 @@ def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
         x = CapacityState.model_validate(eng["x"])
         f = FatigueState.model_validate(eng["f"])
         t = TissueState.model_validate(eng["t"])
+        c = CapacityConfidence.model_validate(eng.get("c") or CapacityConfidence().model_dump())
     else:
         x = capacity_from_legacy(
             row.c_met_aerobic,
@@ -166,6 +178,7 @@ def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
             row.f_struct_damage,
         )
         t = tissue_from_legacy(row.f_struct_damage)
+        c = CapacityConfidence()  # legacy scalar rows → weak prior
 
     legacy = sync_legacy_from_vectors(x, f, t)
 
@@ -175,6 +188,7 @@ def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
         capacity_x=x,
         fatigue_f=f,
         tissue_t=t,
+        capacity_confidence=c,
         c_met_aerobic=legacy["c_met_aerobic"],
         c_nm_force=legacy["c_nm_force"],
         c_struct=legacy["c_struct"],
@@ -196,6 +210,7 @@ def athlete_state_kwargs_from_unified(s: UnifiedStateVector) -> dict[str, Any]:
         "x": s.capacity_x.model_dump(),
         "f": s.fatigue_f.model_dump(),
         "t": s.tissue_t.model_dump(),
+        "c": s.capacity_confidence.model_dump(),
     }
     return {
         "timestamp": s.timestamp,
