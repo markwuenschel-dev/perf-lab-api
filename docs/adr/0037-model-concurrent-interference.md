@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
 ---
 # Model concurrent-training interference (negative cross-talk)

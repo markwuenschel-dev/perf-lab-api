@@ -95,10 +95,29 @@ def _entry_intensity(entry: ExerciseEntry, session_rpe: float) -> float:
 
 
 def _entry_failure_proximity(entry: ExerciseEntry, session_rpe: float) -> float:
-    """Proximity to failure 0–1."""
+    """Proximity to failure 0–1 (internal effort, F)."""
     if entry.avg_rir is not None:
         return max(0.15, min(1.0, (10.0 - entry.avg_rir) / 10.0))
     return max(0.2, session_rpe / 10.0)
+
+
+def _external_intensity_from_reps(
+    reps: float | None,
+    rir: float | None,
+) -> float:
+    """External load as a fraction of 1RM, estimated from reps + reps-in-reserve (ADR-0039).
+
+    This is the *external* intensity term I — independent of internal effort F: a heavy
+    triple and a set of twelve to failure carry different loads at the same effort.
+    Epley: %1RM = 1 / (1 + reps_to_failure / 30). Falls back to a neutral 1.0 when reps
+    are unknown (so the dose degrades to effort-only rather than squaring effort).
+    """
+    if reps is None:
+        return 1.0
+    reserve = rir if rir is not None else 0.0
+    reps_to_failure = max(1.0, float(reps) + float(reserve))
+    pct = 1.0 / (1.0 + reps_to_failure / 30.0)
+    return max(0.3, min(1.0, pct))
 
 
 def _aggregate_phi(
@@ -207,10 +226,14 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
 
     w_phi = max(0.25, sum(phi_fatigue.values()) / max(1, len(phi_fatigue)))
 
+    # ADR-0039: separate external load (I) from internal effort (F). A session log has
+    # no per-exercise load, so I=1 (effort-only via F) — this stops the old double-count
+    # where intensity (RPE) and proximity-to-failure (also RPE-derived) were multiplied.
+    external_intensity = 1.0
     base = (
         w_phi
         * math.log1p(V)
-        * (intensity_u ** p.dose_alpha)
+        * (external_intensity ** p.dose_alpha)
         * (Delta ** p.dose_beta)
         * (N ** p.dose_gamma)
         * (F ** p.dose_rho)
@@ -240,7 +263,12 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
     d_nm_peripheral = six.volume * 0.55 + six.intensity * 9.0
     d_nm_central = six.intensity * 11.0 + six.skill * 7.0
     d_struct_damage = six.impact * 18.0 + six.volume * 0.35
-    if log.avg_rir is not None and log.avg_rir <= 3:
+    if log.modality == "Running":
+        # Endurance drives ~no hypertrophy/strength structural (mTOR) signal, so it must
+        # not feed the Banister strength bump — otherwise concurrent endurance would
+        # *raise* strength (the opposite of interference, ADR-0037).
+        d_struct_signal = 0.0
+    elif log.avg_rir is not None and log.avg_rir <= 3:
         d_struct_signal = log.duration_minutes * 1.5 + six.intensity * 4.0
     else:
         d_struct_signal = log.duration_minutes * 0.25 + six.intensity * 1.0
@@ -266,7 +294,8 @@ def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_Exercis
     for entry in log.exercises:
         phi_pack = _phi_for_entry(entry, log.modality)
         vol_proxy = _entry_volume_proxy(entry)
-        intensity = _entry_intensity(entry, log.session_rpe)
+        # ADR-0039: external load from reps+RIR (I), independent of effort (F).
+        external_intensity = _external_intensity_from_reps(entry.reps, entry.avg_rir)
         fp = _entry_failure_proximity(entry, log.session_rpe)
 
         N = max(0.2, log.novelty)
@@ -276,7 +305,7 @@ def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_Exercis
         base = (
             w_phi
             * math.log1p(max(0.1, vol_proxy))
-            * (intensity ** p.dose_alpha)
+            * (external_intensity ** p.dose_alpha)
             * (Delta ** p.dose_beta)
             * (N ** p.dose_gamma)
             * (fp ** p.dose_rho)
