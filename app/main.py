@@ -12,7 +12,17 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import auth, benchmarks, dashboard, ingest, legacy, planning, prescribe, weak_points
+from app.api.v1 import (
+    auth,
+    benchmarks,
+    dashboard,
+    ingest,
+    legacy,
+    planning,
+    prescribe,
+    weak_points,
+    wellness,
+)
 from app.api.v1.onboard import router as onboard_router
 from app.core.config import settings
 from app.core.db import engine
@@ -147,6 +157,7 @@ app.include_router(prescribe.router, prefix=settings.API_V1_STR)
 app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(planning.router, prefix=settings.API_V1_STR)
+app.include_router(wellness.router, prefix=settings.API_V1_STR)
 
 # Future routers (uncomment when ready)
 # app.include_router(blocks.router, prefix=settings.API_V1_STR)

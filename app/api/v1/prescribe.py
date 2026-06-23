@@ -1,4 +1,5 @@
 from datetime import date
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,7 +115,9 @@ async def get_next_session(
         kpi_summary = await dashboard_service.latest_kpi_values(db, current_user.id)
         rx = recommend_next_session(
             state,
-            goal=effective_goal,
+            # Block goals aren't 1:1 with TrainingGoal; the prescriber resolves any
+            # goal string to a canonical domain (ADR-0038), so the cast is safe.
+            goal=cast(TrainingGoal, effective_goal),
             recent_sessions=recent,
             kpi_summary=kpi_summary or None,
             active_weak_points=active_weak_points or None,
