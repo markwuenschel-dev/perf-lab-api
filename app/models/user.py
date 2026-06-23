@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from app.models.athlete_state import AthleteState
     from app.models.mesocycle import MesocycleBlock
     from app.models.weak_point import WeakPoint
+    from app.models.wellness import WellnessSample
 
 
 class User(Base):
@@ -54,6 +55,9 @@ class User(Base):
     )
     weak_points: Mapped[list["WeakPoint"]] = relationship(
         "WeakPoint", back_populates="user"
+    )
+    wellness_samples: Mapped[list["WellnessSample"]] = relationship(
+        "WellnessSample", back_populates="user", cascade="all, delete-orphan"
     )
 
 

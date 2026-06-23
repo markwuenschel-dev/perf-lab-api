@@ -210,3 +210,8 @@ __marimo__/
 .agents/
 .claude/skills/
 skills-lock.json
+
+# External datasets (Kaggle, etc.) — pulled locally, not versioned
+data/kaggle/
+# Generated seed data (regenerable from loaders in app/scripts/)
+data/seeds/
