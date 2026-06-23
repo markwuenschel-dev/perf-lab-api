@@ -52,6 +52,12 @@ export type PlannedSessionRead = Schemas["PlannedSessionRead"];
 export type PlannedSessionUpdateRequest = Schemas["PlannedSessionUpdateRequest"];
 export type TodaySessionResponse = Schemas["TodaySessionResponse"];
 
+/* ---------- Wellness / readiness (P5, PDR-0005) ---------- */
+export type WellnessSampleIn = Schemas["WellnessSampleIn"];
+export type WellnessSampleOut = Schemas["WellnessSampleOut"];
+export type ReadinessComponent = Schemas["ReadinessComponent"];
+export type ReadinessScore = Schemas["ReadinessScore"];
+
 /* ---------- Legacy field test (POST /compute-metrics, no /v1 prefix) ---------- */
 // The backend schema is named `MetricsRequest`; the app calls it ComputeMetricsRequest.
 export type ComputeMetricsRequest = Schemas["MetricsRequest"];

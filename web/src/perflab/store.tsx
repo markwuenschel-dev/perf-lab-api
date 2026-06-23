@@ -9,7 +9,7 @@ import { createContext, useContext } from "react";
 import type { Dispatch } from "react";
 import { DAY_COUNT, PHASES } from "./sim";
 import type { CheckinState, SimParams } from "./sim";
-import type { MetricsResponse, UnifiedStateVector } from "../types";
+import type { MetricsResponse, ReadinessScore, UnifiedStateVector } from "../types";
 
 export type Screen =
   | "overview"
@@ -51,6 +51,8 @@ export interface PerfLabState {
   fieldTest: MetricsResponse | null;
   /** Last state vector returned by log-workout (cached: backend has no GET /v1/state). */
   twinState: UnifiedStateVector | null;
+  /** Last backend-owned readiness (GET /v1/readiness), cached after a check-in. */
+  readiness: ReadinessScore | null;
   obStep: number;
   authOpen: boolean;
   logOpen: boolean;
@@ -86,6 +88,7 @@ interface Persisted {
   fresh: boolean;
   fieldTest: MetricsResponse | null;
   twinState: UnifiedStateVector | null;
+  readiness: ReadinessScore | null;
 }
 
 export const STORAGE_KEY = "perflab_v1";
@@ -106,6 +109,7 @@ export function initialState(): PerfLabState {
     ftDone: typeof sv.ftDone === "boolean" ? sv.ftDone : false,
     fieldTest: sv.fieldTest ?? null,
     twinState: sv.twinState ?? null,
+    readiness: sv.readiness ?? null,
     obStep: 1,
     authOpen: false,
     logOpen: false,
@@ -205,6 +209,7 @@ export interface PerfLabActions {
   ftCompute: (result: MetricsResponse) => void;
   ftRecompute: () => void;
   cacheTwinState: (sv: UnifiedStateVector) => void;
+  cacheReadiness: (r: ReadinessScore | null) => void;
   seedTwin: () => void;
   obNext: () => void;
   obBack: () => void;
@@ -260,6 +265,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     ftCompute: (result) => merge({ ftDone: true, fieldTest: result }),
     ftRecompute: () => merge({ ftDone: false, fieldTest: null }),
     cacheTwinState: (sv) => merge({ twinState: sv }),
+    cacheReadiness: (r) => merge({ readiness: r }),
     seedTwin: () => merge({ ftDone: true, fresh: false, screen: "twin" }),
     obNext: () => mergeFn((s) => ({ obStep: Math.min(3, s.obStep + 1) })),
     obBack: () => mergeFn((s) => ({ obStep: Math.max(1, s.obStep - 1) })),

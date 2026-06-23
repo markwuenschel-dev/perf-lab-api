@@ -372,6 +372,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Readiness */
+        get: operations["get_readiness_v1_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/simulate-dose": {
         parameters: {
             query?: never;
@@ -439,6 +456,24 @@ export interface paths {
          *     Sending resolved_at=null re-opens a resolved weak point.
          */
         patch: operations["patch_weak_point_v1_weak_points__weak_point_id__patch"];
+        trace?: never;
+    };
+    "/v1/wellness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Wellness */
+        get: operations["list_wellness_v1_wellness_get"];
+        put?: never;
+        /** Ingest Wellness */
+        post: operations["ingest_wellness_v1_wellness_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -708,6 +743,12 @@ export interface components {
         BlockStatus: "active" | "completed" | "abandoned";
         /** BlockUpdateRequest */
         BlockUpdateRequest: {
+            /** Deload Volume Factor */
+            deload_volume_factor?: number | null;
+            /** Modality Mix */
+            modality_mix?: {
+                [key: string]: number;
+            } | null;
             /** Rationale */
             rationale?: string | null;
             status?: components["schemas"]["BlockStatus"] | null;
@@ -735,6 +776,58 @@ export interface components {
             scope: string;
             /** Username */
             username: string;
+        };
+        /**
+         * CapacityConfidence
+         * @description Per-axis model uncertainty about ``CapacityState``, as a variance proxy.
+         *
+         *     Higher variance ⇒ the model is less sure ⇒ a benchmark corrects that axis more
+         *     (scalar Kalman gain). The seed prior is high-variance — a weak prior that yields
+         *     to data — benchmarks shrink it and time grows it. Tracked for capacity axes only
+         *     (fatigue/tissue are transient, re-driven each session). See ADR-0036; the scalar
+         *     here generalizes to the EKF's covariance later (ADR-0015).
+         */
+        CapacityConfidence: {
+            /**
+             * Aerobic
+             * @default 1
+             */
+            aerobic: number;
+            /**
+             * Glycolytic
+             * @default 1
+             */
+            glycolytic: number;
+            /**
+             * Hypertrophy
+             * @default 1
+             */
+            hypertrophy: number;
+            /**
+             * Max Strength
+             * @default 1
+             */
+            max_strength: number;
+            /**
+             * Mobility
+             * @default 1
+             */
+            mobility: number;
+            /**
+             * Power
+             * @default 1
+             */
+            power: number;
+            /**
+             * Skill
+             * @default 1
+             */
+            skill: number;
+            /**
+             * Work Capacity
+             * @default 1
+             */
+            work_capacity: number;
         };
         /**
          * CapacityState
@@ -1052,6 +1145,8 @@ export interface components {
             is_deload: boolean;
             /** Modality */
             modality: string;
+            /** Original Scheduled Date */
+            original_scheduled_date?: string | null;
             /** Prescribed Content */
             prescribed_content?: {
                 [key: string]: unknown;
@@ -1118,6 +1213,26 @@ export interface components {
              */
             warnings?: string[];
         };
+        /**
+         * ReadinessComponent
+         * @description How a single acute-wellness signal nudged readiness.
+         */
+        ReadinessComponent: {
+            /**
+             * Baseline
+             * @description Personal rolling baseline, or the default anchor
+             */
+            baseline: number;
+            /**
+             * Contribution
+             * @description Direction-signed, clamped deviation in [-1, 1] (1 = a full unit better than baseline)
+             */
+            contribution: number;
+            /** Signal */
+            signal: string;
+            /** Value */
+            value: number;
+        };
         /** ReadinessOut */
         ReadinessOut: {
             /**
@@ -1128,6 +1243,41 @@ export interface components {
                 [key: string]: unknown;
             };
             state: components["schemas"]["UnifiedStateVector"] | null;
+        };
+        /**
+         * ReadinessScore
+         * @description The one backend-owned readiness number (PDR-0005) + its breakdown.
+         *
+         *     ``readiness`` is ``None`` only when there is no modeled ``AthleteState`` to
+         *     anchor against — wellness modulates the model, it is not a standalone score.
+         */
+        ReadinessScore: {
+            /**
+             * As Of
+             * @description Timestamp of the modeled state used
+             */
+            as_of?: string | null;
+            /** Components */
+            components?: components["schemas"]["ReadinessComponent"][];
+            /**
+             * Modeled
+             * @description Modeled-only readiness from fatigue state, 0–100
+             */
+            modeled?: number | null;
+            /** Note */
+            note?: string | null;
+            /**
+             * Readiness
+             * @description Combined readiness, 0–100 (1 = fully fresh)
+             */
+            readiness?: number | null;
+            /**
+             * Wellness Delta
+             * @description Signed acute-wellness adjustment applied, in 0–100 points (0 if no sample)
+             * @default 0
+             */
+            wellness_delta: number;
+            wellness_sample?: components["schemas"]["WellnessSampleOut"] | null;
         };
         /** RecomputeDerivedResponse */
         RecomputeDerivedResponse: {
@@ -1347,6 +1497,7 @@ export interface components {
              * @description Structural capacity / CSA proxy
              */
             c_struct: number;
+            capacity_confidence?: components["schemas"]["CapacityConfidence"];
             capacity_x?: components["schemas"]["CapacityState"];
             /**
              * F Met Systemic
@@ -1469,6 +1620,86 @@ export interface components {
             day_of_week: number;
             /** Modality */
             modality: string;
+        };
+        /**
+         * WellnessSampleIn
+         * @description One acute daily-wellness reading to ingest (manual entry or provider pull).
+         */
+        WellnessSampleIn: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /**
+             * Hrv Ms
+             * @description rMSSD-style HRV (ms)
+             */
+            hrv_ms?: number | null;
+            /**
+             * Mood
+             * @description 0–10, higher = better
+             */
+            mood?: number | null;
+            /**
+             * Raw
+             * @description Source payload for provenance
+             */
+            raw?: {
+                [key: string]: unknown;
+            } | null;
+            /** Resting Hr */
+            resting_hr?: number | null;
+            /** Sleep Hours */
+            sleep_hours?: number | null;
+            /** Sleep Quality */
+            sleep_quality?: number | null;
+            /**
+             * Soreness
+             * @description 0–10, higher = worse
+             */
+            soreness?: number | null;
+            /**
+             * Source
+             * @description manual | google_fit | oura | …
+             * @default manual
+             */
+            source: string;
+        };
+        /** WellnessSampleOut */
+        WellnessSampleOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Hrv Ms */
+            hrv_ms: number | null;
+            /** Id */
+            id: number;
+            /** Mood */
+            mood: number | null;
+            /** Raw */
+            raw: {
+                [key: string]: unknown;
+            } | null;
+            /** Resting Hr */
+            resting_hr: number | null;
+            /** Sleep Hours */
+            sleep_hours: number | null;
+            /** Sleep Quality */
+            sleep_quality: number | null;
+            /** Soreness */
+            soreness: number | null;
+            /** Source */
+            source: string;
+            /** User Id */
+            user_id: number;
         };
         /**
          * WorkoutLog
@@ -2237,6 +2468,26 @@ export interface operations {
             };
         };
     };
+    get_readiness_v1_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessScore"];
+                };
+            };
+        };
+    };
     simulate_dose_v1_simulate_dose_post: {
         parameters: {
             query?: never;
@@ -2352,6 +2603,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WeakPointOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_wellness_v1_wellness_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WellnessSampleOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_wellness_v1_wellness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WellnessSampleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WellnessSampleOut"];
                 };
             };
             /** @description Validation Error */

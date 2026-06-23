@@ -11,11 +11,14 @@ import type {
   OnboardResponse,
   PlannedSessionRead,
   PlannedSessionUpdateRequest,
+  ReadinessScore,
   StressDose,
   TokenResponse,
   TodaySessionResponse,
   UnifiedStateVector,
   UserResponse,
+  WellnessSampleIn,
+  WellnessSampleOut,
   WorkoutLog,
   WorkoutPrescription,
 } from "../types";
@@ -296,4 +299,47 @@ export async function getTodayPlannedSession(
   const url = `${API_V1_BASE}/planning/today?goal=${encodeURIComponent(goal)}`;
   const res = await fetch(url, { headers: { ...authHeaders(token) } });
   return handleResponse<TodaySessionResponse>(res, { sessionOn401: true });
+}
+
+/**
+ * Wellness (P5): ingest one acute daily-wellness sample. Idempotent on
+ * (date, source) — re-posting the same day/source replaces it.
+ */
+export async function ingestWellness(
+  body: WellnessSampleIn,
+  token: string,
+): Promise<WellnessSampleOut> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/wellness`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<WellnessSampleOut>(res, { sessionOn401: true });
+}
+
+/** Wellness (P5): recent daily-wellness samples (most recent first). */
+export async function listWellness(
+  token: string,
+  limit?: number,
+): Promise<WellnessSampleOut[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = limit != null ? `?limit=${limit}` : "";
+  const res = await fetch(`${API_V1_BASE}/wellness${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<WellnessSampleOut[]>(res, { sessionOn401: true });
+}
+
+/**
+ * Readiness (P5): the one backend-owned readiness number — modeled fatigue
+ * combined with acute wellness (ADR-0026). `readiness` is null when there is
+ * no modeled state to anchor against.
+ */
+export async function getReadiness(token: string): Promise<ReadinessScore> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/readiness`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<ReadinessScore>(res, { sessionOn401: true });
 }

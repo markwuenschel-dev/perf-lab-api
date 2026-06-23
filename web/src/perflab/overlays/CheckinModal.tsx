@@ -1,10 +1,31 @@
 // src/perflab/overlays/CheckinModal.tsx
+import { useState } from "react";
 import type { InputHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/auth/useAuth";
+import { getReadiness, ingestWellness } from "@/api/perfLabClient";
+import type { ApiError, WellnessSampleIn } from "@/types";
 import { usePerfLab } from "../store";
 import { buildCheckin, readinessColor, readinessWord } from "../sim";
+import type { CheckinState } from "../sim";
 import { ReadinessRing } from "../ui";
 import { CloseBtn } from "./LogWorkoutModal";
+
+const SORE_TO_0_10: Record<string, number> = { none: 0, mild: 3, moderate: 6, high: 9 };
+
+/** Map the morning check-in form to a backend WellnessSample (POST /v1/wellness). */
+function buildWellnessSample(c: CheckinState): WellnessSampleIn {
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    source: "manual",
+    hrv_ms: c.hrv,
+    sleep_hours: c.sleepH,
+    sleep_quality: c.sleepQ * 20, // 1–5 → 0–100
+    resting_hr: c.rhr,
+    soreness: SORE_TO_0_10[c.soreness] ?? 0, // 0–10, higher = worse
+    mood: c.mood * 2, // 1–5 → 0–10
+  } satisfies Partial<WellnessSampleIn> as WellnessSampleIn;
+}
 
 function Slider({ label, display, ...rest }: { label: string; display: string } & InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -27,10 +48,37 @@ const SORE: ["none" | "mild" | "moderate" | "high", string][] = [
 
 export function CheckinModal() {
   const { state, actions } = usePerfLab();
+  const auth = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   if (!state.checkinOpen) return null;
   const ci = state.checkin;
   const r = buildCheckin(ci);
   const color = readinessColor(r.readiness);
+
+  // Signed in: persist the check-in (POST /v1/wellness) and pull the backend-owned
+  // readiness (GET /v1/readiness) so the rest of the app shows the real number.
+  // Signed out: keep the simulated, local-only behaviour.
+  async function save() {
+    if (!auth.token) {
+      actions.applyCheckin();
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await ingestWellness(buildWellnessSample(ci), auth.token);
+      actions.cacheReadiness(await getReadiness(auth.token));
+      actions.applyCheckin();
+    } catch (e) {
+      setSaveError(
+        (e as ApiError)?.message ??
+          "Couldn't sync your check-in — check you're signed in and the backend is reachable.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[62] flex items-center justify-center p-8 backdrop-blur-[4px]" style={{ background: "rgba(4,5,8,.7)" }}>
@@ -85,10 +133,17 @@ export function CheckinModal() {
         </div>
 
         <div className="flex items-center justify-between gap-[9px] border-t border-white/[0.06] px-6 py-4">
-          <span className="max-w-[330px] text-[11px] font-medium leading-[1.4] text-dim">Readiness seeds today's recommended session and your twin's starting state.</span>
+          <span className={cn("max-w-[330px] text-[11px] font-medium leading-[1.4]", saveError ? "text-hot" : "text-dim")}>
+            {saveError ??
+              (auth.token
+                ? "Syncs to your wellness log and recomputes your backend readiness."
+                : "Readiness seeds today's recommended session and your twin's starting state.")}
+          </span>
           <div className="flex flex-none gap-[9px]">
             <button onClick={actions.closeCheckin} className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-[11px] text-[12.5px] font-semibold leading-none text-soft">Cancel</button>
-            <button onClick={actions.applyCheckin} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Set today's readiness →</button>
+            <button onClick={save} disabled={saving} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">
+              {saving ? "Saving…" : "Set today's readiness →"}
+            </button>
           </div>
         </div>
       </div>
