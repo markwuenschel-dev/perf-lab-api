@@ -23,7 +23,10 @@ export function OverviewScreen() {
 
   const N = DAY_COUNT;
   const todayD = DAYS[N - 1];
-  const ovVal = ci.done ? ciReady : todayD.readiness;
+  // Prefer the backend-owned readiness (cached after a signed-in check-in); fall
+  // back to the simulated value when it's unavailable (signed out / no state yet).
+  const backendReady = state.readiness?.readiness;
+  const ovVal = backendReady != null ? Math.round(backendReady) : ci.done ? ciReady : todayD.readiness;
   const ovColor = readinessColor(ovVal);
   const ovWord = readinessWord(ovVal);
 
