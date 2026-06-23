@@ -31,11 +31,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-import itertools
 import random
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 
@@ -116,7 +116,7 @@ def _round_plate(kg: float) -> float:
 async def seed(n_users: int = 25, runs_per_athlete: int = 3) -> None:
     # --- gather source data (no DB yet) ---
     samples = load_google_fit_wellness(GF_CSV, limit_users=n_users)
-    by_uid: dict[int, list] = {}
+    by_uid: dict[int, list[Any]] = {}
     for s in samples:
         by_uid.setdefault(s.user_id, []).append(s)
     uids = sorted(by_uid)
@@ -132,7 +132,7 @@ async def seed(n_users: int = 25, runs_per_athlete: int = 3) -> None:
                 BenchmarkDefinition.code.in_(codes)
             )
         )
-        def_id = dict(res.all())
+        def_id: dict[str, int] = dict(res.tuples().all())
         missing = [c for c in codes if c not in def_id]
         if missing:
             raise SystemExit(f"Missing benchmark definitions {missing}; run seed_benchmarks first.")

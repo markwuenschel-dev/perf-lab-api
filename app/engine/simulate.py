@@ -78,7 +78,7 @@ def make_log(
 ) -> WorkoutLog:
     return WorkoutLog(
         timestamp=when,
-        modality=modality,  # type: ignore[arg-type]
+        modality=modality,
         duration_minutes=duration_minutes,
         session_rpe=session_rpe,
         avg_rir=avg_rir,
