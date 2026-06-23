@@ -1823,6 +1823,37 @@
         "title": "PrescriptionExplanation",
         "type": "object"
       },
+      "ReadinessComponent": {
+        "description": "How a single acute-wellness signal nudged readiness.",
+        "properties": {
+          "baseline": {
+            "description": "Personal rolling baseline, or the default anchor",
+            "title": "Baseline",
+            "type": "number"
+          },
+          "contribution": {
+            "description": "Direction-signed, clamped deviation in [-1, 1] (1 = a full unit better than baseline)",
+            "title": "Contribution",
+            "type": "number"
+          },
+          "signal": {
+            "title": "Signal",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "signal",
+          "value",
+          "baseline",
+          "contribution"
+        ],
+        "title": "ReadinessComponent",
+        "type": "object"
+      },
       "ReadinessOut": {
         "properties": {
           "kpi_flags": {
@@ -1846,6 +1877,84 @@
           "state"
         ],
         "title": "ReadinessOut",
+        "type": "object"
+      },
+      "ReadinessScore": {
+        "description": "The one backend-owned readiness number (PDR-0005) + its breakdown.\n\n``readiness`` is ``None`` only when there is no modeled ``AthleteState`` to\nanchor against \u2014 wellness modulates the model, it is not a standalone score.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Timestamp of the modeled state used",
+            "title": "As Of"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "modeled": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Modeled-only readiness from fatigue state, 0\u2013100",
+            "title": "Modeled"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "readiness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Combined readiness, 0\u2013100 (1 = fully fresh)",
+            "title": "Readiness"
+          },
+          "wellness_delta": {
+            "default": 0.0,
+            "description": "Signed acute-wellness adjustment applied, in 0\u2013100 points (0 if no sample)",
+            "title": "Wellness Delta",
+            "type": "number"
+          },
+          "wellness_sample": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WellnessSampleOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ReadinessScore",
         "type": "object"
       },
       "RecomputeDerivedResponse": {
@@ -2497,6 +2606,241 @@
           "modality"
         ],
         "title": "WeeklyTemplateSlot",
+        "type": "object"
+      },
+      "WellnessSampleIn": {
+        "description": "One acute daily-wellness reading to ingest (manual entry or provider pull).",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "hrv_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rMSSD-style HRV (ms)",
+            "title": "Hrv Ms"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0\u201310, higher = better",
+            "title": "Mood"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source payload for provenance",
+            "title": "Raw"
+          },
+          "resting_hr": {
+            "anyOf": [
+              {
+                "maximum": 250.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resting Hr"
+          },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "maximum": 24.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
+          "sleep_quality": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Quality"
+          },
+          "soreness": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0\u201310, higher = worse",
+            "title": "Soreness"
+          },
+          "source": {
+            "default": "manual",
+            "description": "manual | google_fit | oura | \u2026",
+            "maxLength": 50,
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "title": "WellnessSampleIn",
+        "type": "object"
+      },
+      "WellnessSampleOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "hrv_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hrv Ms"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          },
+          "resting_hr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resting Hr"
+          },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
+          "sleep_quality": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Quality"
+          },
+          "soreness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Soreness"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "date",
+          "source",
+          "hrv_ms",
+          "sleep_hours",
+          "sleep_quality",
+          "resting_hr",
+          "soreness",
+          "mood",
+          "raw",
+          "created_at"
+        ],
+        "title": "WellnessSampleOut",
         "type": "object"
       },
       "WorkoutLog": {
@@ -3730,6 +4074,32 @@
         ]
       }
     },
+    "/v1/readiness": {
+      "get": {
+        "operationId": "get_readiness_v1_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessScore"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Readiness",
+        "tags": [
+          "Readiness"
+        ]
+      }
+    },
     "/v1/simulate-dose": {
       "post": {
         "operationId": "simulate_dose_v1_simulate_dose_post",
@@ -3918,6 +4288,104 @@
         "summary": "Patch Weak Point",
         "tags": [
           "Weak Points"
+        ]
+      }
+    },
+    "/v1/wellness": {
+      "get": {
+        "operationId": "list_wellness_v1_wellness_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WellnessSampleOut"
+                  },
+                  "title": "Response List Wellness V1 Wellness Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Wellness",
+        "tags": [
+          "Wellness"
+        ]
+      },
+      "post": {
+        "operationId": "ingest_wellness_v1_wellness_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WellnessSampleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WellnessSampleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Ingest Wellness",
+        "tags": [
+          "Wellness"
         ]
       }
     }
