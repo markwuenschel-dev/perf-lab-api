@@ -16,10 +16,33 @@ const STEPS = [
   ["03", "Adaptive plan", "Sessions prescribed against your readiness."],
 ];
 
+// Interactive two-up segmented control. Each option is independently selectable;
+// the previous markup hardcoded the "on"/"off" classes onto static divs, which is
+// why Male / Imperial could never be picked.
+function Seg({ options, value, onChange }: { options: readonly string[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="mt-[9px] grid grid-cols-2 gap-2">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          aria-pressed={value === opt}
+          onClick={() => onChange(opt)}
+          className={`w-full ${value === opt ? segOn : segOff}`}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function OnboardingScreen() {
   const { state, actions } = usePerfLab();
   const { completeOnboarding } = useAuth();
   const [seeding, setSeeding] = useState(false);
+  const [sex, setSex] = useState("Female");
+  const [units, setUnits] = useState("Metric (km)");
   const ob = state.obStep;
   const goOverview = () => actions.setScreen("overview");
 
@@ -82,10 +105,10 @@ export function OnboardingScreen() {
               <label className="block"><span className={labelCls}>First name</span><input defaultValue="Alex" className={inputCls} /></label>
               <label className="block"><span className={labelCls}>Last name</span><input defaultValue="Rivera" className={inputCls} /></label>
               <label className="block"><span className={labelCls}>Date of birth</span><input type="date" defaultValue="1997-04-12" className={inputCls} style={{ colorScheme: "dark" }} /></label>
-              <label className="block">
+              <div className="block">
                 <span className={labelCls}>Sex</span>
-                <div className="mt-[9px] grid grid-cols-2 gap-2"><div className={segOn}>Female</div><div className={segOff}>Male</div></div>
-              </label>
+                <Seg options={["Female", "Male"]} value={sex} onChange={setSex} />
+              </div>
             </div>
             <div className="mt-[14px] flex items-center gap-[9px] rounded-[11px] border border-info/[0.18] bg-info/[0.06] px-[13px] py-[11px]">
               <span className="text-[14px] text-info">ⓘ</span><span className="text-[12px] font-medium leading-[1.5] text-mute">VO₂ doesn't use age/sex yet — stored for upcoming model versions.</span>
@@ -102,9 +125,9 @@ export function OnboardingScreen() {
               <label className="block"><span className={labelCls}>Primary sport</span>
                 <select defaultValue="Distance running" className={inputCls} style={{ colorScheme: "dark" }}><option>Distance running</option><option>Trail / ultra</option><option>Triathlon</option><option>Hybrid / tactical</option></select>
               </label>
-              <label className="block"><span className={labelCls}>Units</span>
-                <div className="mt-[9px] grid grid-cols-2 gap-2"><div className={segOn}>Metric (km)</div><div className={segOff}>Imperial (mi)</div></div>
-              </label>
+              <div className="block"><span className={labelCls}>Units</span>
+                <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={setUnits} />
+              </div>
               <label className="block"><span className={labelCls}>Current weekly volume</span><input defaultValue="48 km" className={inputCls} /></label>
             </div>
             <div className="mt-[30px] flex justify-between"><button onClick={actions.obBack} className={btnBack}>← Back</button><button onClick={actions.obNext} className={btnPrimary}>Continue →</button></div>
