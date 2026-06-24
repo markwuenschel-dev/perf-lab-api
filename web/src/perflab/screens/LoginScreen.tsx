@@ -25,7 +25,7 @@ const HIGHLIGHTS = [
 ] as const;
 
 export function LoginScreen() {
-  const { login, register, isLoading } = useAuth();
+  const { login, register, enterGuest, isLoading } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -166,6 +166,24 @@ export function LoginScreen() {
                   ? "Create account"
                   : "Sign in"}
             </button>
+
+            {/* Guest / "try it" escape hatch — no account, nothing persisted. */}
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-white/[0.08]" />
+              <span className="font-mono text-[10px] uppercase leading-none tracking-[0.14em] text-faint">or</span>
+              <span className="h-px flex-1 bg-white/[0.08]" />
+            </div>
+            <button
+              type="button"
+              onClick={enterGuest}
+              disabled={isLoading}
+              className="rounded-[11px] border border-white/[0.12] bg-panel p-[13px] text-[13px] font-semibold leading-none text-soft disabled:opacity-60"
+            >
+              Skip — explore as guest
+            </button>
+            <p className="m-0 text-center text-[11px] font-medium leading-[1.5] text-faint">
+              Guest mode onboards you into the live twin to play with — but nothing is saved.
+            </p>
           </div>
         </div>
       </div>

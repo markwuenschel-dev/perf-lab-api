@@ -113,7 +113,9 @@ export function SettingsScreen() {
           <div className="mt-[5px] font-mono text-[11px] leading-none text-faint">
             {auth.isAuthenticated
               ? auth.user?.email ?? auth.email
-              : "Not connected — sign in to sync the live twin."}
+              : auth.isGuest
+                ? "Guest session — nothing is saved. Sign in to keep your data."
+                : "Not connected — sign in to sync the live twin."}
           </div>
         </div>
         {auth.isAuthenticated ? (
@@ -128,7 +130,7 @@ export function SettingsScreen() {
             onClick={actions.openAuth}
             className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-[#0a0c10]"
           >
-            Connect account →
+            {auth.isGuest ? "Sign in to save →" : "Connect account →"}
           </button>
         )}
       </Card>
