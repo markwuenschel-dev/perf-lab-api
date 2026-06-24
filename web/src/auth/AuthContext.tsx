@@ -24,11 +24,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState(() => getStoredEmail() ?? "");
   const [isLoading, setIsLoading] = useState(false);
   const [onboardingPending, setOnboardingPending] = useState(false);
+  // Guest ("try it") session: no token is ever issued, so every token-gated
+  // backend write stays a no-op and nothing is persisted. It only unlocks the
+  // login gate so a curious user can onboard and play with the local twin.
+  const [isGuest, setIsGuest] = useState(false);
 
   const logout = useCallback(() => {
     clearStoredSession();
     setToken(null);
     setUser(null);
+    setIsGuest(false);
+  }, []);
+
+  const enterGuest = useCallback(() => {
+    // Drop straight into onboarding (App routes on onboardingPending), exactly
+    // like a fresh register — minus the account and minus any persistence.
+    setIsGuest(true);
+    setOnboardingPending(true);
   }, []);
 
   useEffect(() => {
@@ -66,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStoredToken(tr.access_token);
       setStoredEmail(emailIn);
       setEmail(emailIn);
+      setIsGuest(false); // a real session supersedes any guest session
       setToken(tr.access_token);
       const u = await api.fetchMe(tr.access_token);
       setUser(u);
@@ -91,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeOnboarding = useCallback(
     async (req: Partial<OnboardRequest>) => {
       try {
+        // Guests persist nothing — skip the profile-seeding call entirely.
+        if (isGuest) return;
         // Identity comes from the auth token, so OnboardRequest has no `email`.
         // The backend fills server-side defaults for any field we omit, so a
         // partial (even `{}`) is a valid payload.
@@ -101,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOnboardingPending(false);
       }
     },
-    [],
+    [isGuest],
   );
 
   const value = useMemo<AuthContextValue>(
@@ -111,14 +126,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       setEmail,
       isAuthenticated: Boolean(token),
+      isGuest,
       isLoading,
       onboardingPending,
       login,
       register,
       completeOnboarding,
+      enterGuest,
       logout,
     }),
-    [token, user, email, isLoading, onboardingPending, login, register, completeOnboarding, logout],
+    [token, user, email, isGuest, isLoading, onboardingPending, login, register, completeOnboarding, enterGuest, logout],
   );
 
   return (

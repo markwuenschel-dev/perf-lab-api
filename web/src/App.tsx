@@ -1,9 +1,11 @@
 // src/App.tsx
 //
 // Perf Lab "Performance OS" — full client-side port of the design prototype.
-// Login is a hard gate: until the user is authenticated, App renders the
-// full-screen LoginScreen and nothing else. Once authenticated, onboarding is a
-// full-screen takeover; every other screen renders inside the app shell
+// Login is a gate: until the user is authenticated OR has chosen a guest ("try
+// it") session, App renders the full-screen LoginScreen and nothing else. A
+// guest has no token, so every backend write stays a no-op — the app runs
+// purely on the local store and persists nothing. Once past the gate, onboarding
+// is a full-screen takeover; every other screen renders inside the app shell
 // (sidebar + main + overlays). State lives in <PerfLabProvider> (see main.tsx);
 // auth lives in <AuthProvider>. A 401 on any /v1 call clears the token and
 // bounces the user back to the gate.
@@ -16,7 +18,7 @@ import { OnboardingScreen } from "./perflab/screens/OnboardingScreen";
 
 export default function App() {
   const { state, actions } = usePerfLab();
-  const { isAuthenticated, onboardingPending } = useAuth();
+  const { isAuthenticated, isGuest, onboardingPending } = useAuth();
 
   // After register, auth flips onboardingPending → drop the new user into the
   // onboarding takeover. `actions` is a stable useMemo, so this only fires on
@@ -25,7 +27,7 @@ export default function App() {
     if (onboardingPending) actions.setScreen("onboarding");
   }, [onboardingPending, actions]);
 
-  if (!isAuthenticated) return <LoginScreen />;
+  if (!isAuthenticated && !isGuest) return <LoginScreen />;
 
   return state.screen === "onboarding" ? <OnboardingScreen /> : <AppShell />;
 }
