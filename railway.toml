@@ -1,0 +1,19 @@
+# Railway deploy config for perf-lab-api (the FastAPI backend).
+#
+# Railway builds from the repo Dockerfile (which runs `alembic upgrade head`
+# then uvicorn on $PORT) and we add a health check + restart policy here so a
+# bad boot is caught and retried instead of silently serving errors.
+#
+# The frontend (web/) is NOT deployed from here — it's a separate static host
+# (Netlify/Cloudflare Pages) that talks to this service via VITE_API_BASE_URL.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# /ping is the app's health endpoint (see app/main.py).
+healthcheckPath = "/ping"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

@@ -19,7 +19,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
     future=True,
-    pool_pre_ping=True,      # critical for Render
+    pool_pre_ping=True,      # revalidate pooled conns (managed Postgres drops idle ones)
     pool_size=10,
     max_overflow=20,
 )
