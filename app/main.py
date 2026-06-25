@@ -24,6 +24,7 @@ from app.api.v1 import (
     wellness,
 )
 from app.api.v1.onboard import router as onboard_router
+from app.api.v1.profile import router as profile_router
 from app.core.config import settings
 from app.core.db import engine
 
@@ -125,6 +126,7 @@ app = FastAPI(
 )
 
 app.include_router(onboard_router)
+app.include_router(profile_router)
 
 
 # ----------------------------------------------------------------------

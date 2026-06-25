@@ -1823,6 +1823,327 @@
         "title": "PrescriptionExplanation",
         "type": "object"
       },
+      "ProfileRead": {
+        "properties": {
+          "available_days_per_week": {
+            "title": "Available Days Per Week",
+            "type": "integer"
+          },
+          "bench_1rm_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench 1Rm Kg"
+          },
+          "bodyweight_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodyweight Kg"
+          },
+          "deadlift_1rm_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadlift 1Rm Kg"
+          },
+          "equipment": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Equipment",
+            "type": "array"
+          },
+          "experience_level": {
+            "title": "Experience Level",
+            "type": "string"
+          },
+          "experience_years": {
+            "title": "Experience Years",
+            "type": "number"
+          },
+          "height_cm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Cm"
+          },
+          "overhead_1rm_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overhead 1Rm Kg"
+          },
+          "pullup_max_reps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pullup Max Reps"
+          },
+          "run_1p5mi_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run 1P5Mi Seconds"
+          },
+          "run_5k_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run 5K Seconds"
+          },
+          "session_duration_minutes": {
+            "title": "Session Duration Minutes",
+            "type": "integer"
+          },
+          "squat_1rm_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squat 1Rm Kg"
+          }
+        },
+        "required": [
+          "experience_years",
+          "experience_level",
+          "available_days_per_week",
+          "session_duration_minutes",
+          "equipment",
+          "squat_1rm_kg",
+          "deadlift_1rm_kg",
+          "bench_1rm_kg",
+          "overhead_1rm_kg",
+          "pullup_max_reps",
+          "run_5k_seconds",
+          "run_1p5mi_seconds",
+          "bodyweight_kg",
+          "height_cm"
+        ],
+        "title": "ProfileRead",
+        "type": "object"
+      },
+      "ProfileUpdate": {
+        "description": "Partial update \u2014 only fields present in the request body are written.\n\nNullable fields (lifts, biometrics) accept an explicit ``null`` to clear a\npreviously stored value; omitting a field leaves it untouched.",
+        "properties": {
+          "available_days_per_week": {
+            "anyOf": [
+              {
+                "maximum": 7.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Days Per Week"
+          },
+          "bench_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bench 1Rm Kg"
+          },
+          "bodyweight_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodyweight Kg"
+          },
+          "deadlift_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadlift 1Rm Kg"
+          },
+          "equipment": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment"
+          },
+          "experience_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Level"
+          },
+          "experience_years": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Years"
+          },
+          "height_cm": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Cm"
+          },
+          "overhead_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overhead 1Rm Kg"
+          },
+          "pullup_max_reps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pullup Max Reps"
+          },
+          "run_1p5mi_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run 1P5Mi Seconds"
+          },
+          "run_5k_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run 5K Seconds"
+          },
+          "session_duration_minutes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Duration Minutes"
+          },
+          "squat_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Squat 1Rm Kg"
+          }
+        },
+        "title": "ProfileUpdate",
+        "type": "object"
+      },
       "ReadinessComponent": {
         "description": "How a single acute-wellness signal nudged readiness.",
         "properties": {
@@ -4071,6 +4392,76 @@
         "summary": "Get Today",
         "tags": [
           "Planning"
+        ]
+      }
+    },
+    "/v1/profile": {
+      "get": {
+        "operationId": "get_profile_v1_profile_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Profile",
+        "tags": [
+          "profile"
+        ]
+      },
+      "patch": {
+        "operationId": "update_profile_v1_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Profile",
+        "tags": [
+          "profile"
         ]
       }
     },
