@@ -1,3 +1,7 @@
+# Normalize all text files to LF so a CRLF checkout on Windows/WSL can't churn
+# the tree (git stores LF and reconciles a CRLF working tree on compare).
+* text=auto eol=lf
+
 # The committed OpenAPI contract is byte-compared by `export_openapi --check`
 # (the CI drift gate). Force LF on every platform so a CRLF checkout on Windows
 # can't report false drift.
