@@ -41,8 +41,11 @@ export function OnboardingScreen() {
   const { state, actions } = usePerfLab();
   const { completeOnboarding } = useAuth();
   const [seeding, setSeeding] = useState(false);
-  const [sex, setSex] = useState("Female");
-  const [units, setUnits] = useState("Metric (km)");
+  // Read sex/units straight from the persisted settings store (not throwaway
+  // local state) so the choice survives "Skip for now" and shows up pre-set in
+  // Settings. setSetting writes on every change, so even an immediate skip keeps it.
+  const sex = state.settings.sex;
+  const units = state.settings.units;
   const ob = state.obStep;
   const goOverview = () => actions.setScreen("overview");
 
@@ -107,7 +110,7 @@ export function OnboardingScreen() {
               <label className="block"><span className={labelCls}>Date of birth</span><input type="date" defaultValue="1997-04-12" className={inputCls} style={{ colorScheme: "dark" }} /></label>
               <div className="block">
                 <span className={labelCls}>Sex</span>
-                <Seg options={["Female", "Male"]} value={sex} onChange={setSex} />
+                <Seg options={["Female", "Male"]} value={sex} onChange={(v) => actions.setSetting("sex", v)} />
               </div>
             </div>
             <div className="mt-[14px] flex items-center gap-[9px] rounded-[11px] border border-info/[0.18] bg-info/[0.06] px-[13px] py-[11px]">
@@ -126,7 +129,7 @@ export function OnboardingScreen() {
                 <select defaultValue="Distance running" className={inputCls} style={{ colorScheme: "dark" }}><option>Distance running</option><option>Trail / ultra</option><option>Triathlon</option><option>Hybrid / tactical</option></select>
               </label>
               <div className="block"><span className={labelCls}>Units</span>
-                <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={setUnits} />
+                <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={(v) => actions.setSetting("units", v)} />
               </div>
               <label className="block"><span className={labelCls}>Current weekly volume</span><input defaultValue="48 km" className={inputCls} /></label>
             </div>
