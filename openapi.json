@@ -3324,6 +3324,62 @@
         "title": "WorkoutLog",
         "type": "object"
       },
+      "WorkoutLogSummary": {
+        "description": "A logged workout, trimmed to what history views render (recent sessions,\nweekly training load).",
+        "properties": {
+          "distance_meters": {
+            "title": "Distance Meters",
+            "type": "number"
+          },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_benchmark": {
+            "title": "Is Benchmark",
+            "type": "boolean"
+          },
+          "logged_at": {
+            "format": "date-time",
+            "title": "Logged At",
+            "type": "string"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "session_rpe": {
+            "title": "Session Rpe",
+            "type": "number"
+          },
+          "session_timestamp": {
+            "format": "date-time",
+            "title": "Session Timestamp",
+            "type": "string"
+          },
+          "total_volume_load": {
+            "title": "Total Volume Load",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "logged_at",
+          "session_timestamp",
+          "modality",
+          "duration_minutes",
+          "session_rpe",
+          "distance_meters",
+          "total_volume_load",
+          "is_benchmark"
+        ],
+        "title": "WorkoutLogSummary",
+        "type": "object"
+      },
       "WorkoutPrescription": {
         "description": "Next-session recommendation. Legacy fields required; `why` optional for old clients.",
         "properties": {
@@ -4532,6 +4588,61 @@
         ]
       }
     },
+    "/v1/state-history": {
+      "get": {
+        "description": "The athlete's recent state vectors, oldest\u2192newest (chart order).",
+        "operationId": "state_history_v1_state_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnifiedStateVector"
+                  },
+                  "title": "Response State History V1 State History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "State History",
+        "tags": [
+          "history"
+        ]
+      }
+    },
     "/v1/weak-points/": {
       "get": {
         "description": "Return all weak-point rows for the current user.\n\nBy default only active (unresolved) rows are returned.\nPass active_only=false to include resolved rows.",
@@ -4777,6 +4888,61 @@
         "summary": "Ingest Wellness",
         "tags": [
           "Wellness"
+        ]
+      }
+    },
+    "/v1/workouts": {
+      "get": {
+        "description": "The athlete's logged workouts, most recent first.",
+        "operationId": "list_workouts_v1_workouts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkoutLogSummary"
+                  },
+                  "title": "Response List Workouts V1 Workouts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Workouts",
+        "tags": [
+          "history"
         ]
       }
     }

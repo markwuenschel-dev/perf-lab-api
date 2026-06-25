@@ -22,6 +22,7 @@ import type {
   WellnessSampleIn,
   WellnessSampleOut,
   WorkoutLog,
+  WorkoutLogSummary,
   WorkoutPrescription,
 } from "../types";
 
@@ -221,6 +222,32 @@ export async function onboard(request: OnboardRequest): Promise<OnboardResponse>
     body: JSON.stringify(request),
   });
   return handleResponse<OnboardResponse>(res);
+}
+
+/** The athlete's recent state vectors, oldest→newest (Twin time-travel, trends). */
+export async function getStateHistory(
+  token: string,
+  limit?: number,
+): Promise<UnifiedStateVector[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = limit != null ? `?limit=${limit}` : "";
+  const res = await fetch(`${API_V1_BASE}/state-history${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<UnifiedStateVector[]>(res, { sessionOn401: true });
+}
+
+/** The athlete's logged workouts, most recent first (recent sessions, load). */
+export async function listWorkouts(
+  token: string,
+  limit?: number,
+): Promise<WorkoutLogSummary[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = limit != null ? `?limit=${limit}` : "";
+  const res = await fetch(`${API_V1_BASE}/workouts${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<WorkoutLogSummary[]>(res, { sessionOn401: true });
 }
 
 /** Load the authenticated athlete's profile (Settings hydrates from this). */

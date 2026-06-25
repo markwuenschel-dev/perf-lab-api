@@ -40,6 +40,9 @@ export type WorkoutPrescription = Schemas["WorkoutPrescription"];
 export type OnboardRequest = Schemas["OnboardRequest"];
 export type OnboardResponse = Schemas["OnboardResponse"];
 
+/* ---------- History (GET /v1/state-history, /v1/workouts) ---------- */
+export type WorkoutLogSummary = Schemas["WorkoutLogSummary"];
+
 /* ---------- Athlete profile (GET / PATCH /v1/profile) ---------- */
 export type ProfileRead = Schemas["ProfileRead"];
 export type ProfileUpdate = Schemas["ProfileUpdate"];
