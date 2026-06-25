@@ -1,9 +1,23 @@
 // src/perflab/screens/PlanningScreen.tsx
+import { useMemo } from "react";
+import * as api from "@/api/perfLabClient";
+import type { PlannedSessionRead } from "@/types";
 import { usePerfLab } from "../store";
+import { useAuthedResource } from "../useAuthedResource";
 import { Card, MetricBar, ScreenHeader, SectionLabel } from "../ui";
 import { COLORS, PLAN_DAYS, PLAN_LOAD, PLAN_READY } from "../sim";
 
-const WEEK: { day: string; title: string; sub: string; subColor: string; today?: boolean; rest?: boolean }[] = [
+interface WeekCell {
+  day: string;
+  title: string;
+  sub: string;
+  subColor: string;
+  today?: boolean;
+  rest?: boolean;
+}
+
+// Prototype week, used as the fallback until the athlete has a real plan block.
+const WEEK: WeekCell[] = [
   { day: "Mon", title: "Recovery", sub: "Z1 · 8 km", subColor: "text-good" },
   { day: "Tue", title: "Endurance", sub: "Z2 · 14 km", subColor: "text-teal" },
   { day: "Wed", title: "Tempo intervals", sub: "Z3 · 5×6 min", subColor: "text-ac", today: true },
@@ -12,6 +26,34 @@ const WEEK: { day: string; title: string; sub: string; subColor: string; today?:
   { day: "Sat", title: "Rest", sub: "", subColor: "", rest: true },
   { day: "Sun", title: "Long run", sub: "Z2 · 24 km", subColor: "text-teal" },
 ];
+
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const isoLocal = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// Map real planned sessions onto a Mon–Sun strip by scheduled date; empty days
+// render as rest. Returns null when there's no plan so the caller falls back.
+function buildWeekCells(monday: Date, sessions: PlannedSessionRead[] | null): WeekCell[] | null {
+  if (!sessions || sessions.length === 0) return null;
+  const todayIso = isoLocal(new Date());
+  const byDate = new Map(sessions.map((s) => [s.scheduled_date, s]));
+  return DOW.map((day, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const iso = isoLocal(d);
+    const today = iso === todayIso;
+    const s = byDate.get(iso);
+    if (!s) return { day, title: "Rest", sub: "", subColor: "", rest: true, today };
+    return {
+      day,
+      title: titleCase(s.category || s.modality),
+      sub: s.is_deload ? "deload" : titleCase(s.modality),
+      subColor: "text-teal",
+      today,
+    };
+  });
+}
 
 const DOSE: [string, number, number, string][] = [
   ["Volume", 5.5, 55, COLORS.teal],
@@ -24,6 +66,22 @@ const DOSE: [string, number, number, string][] = [
 
 export function PlanningScreen() {
   const { actions } = usePerfLab();
+
+  // Current week's Mon–Sun range, fetched live; falls back to the prototype week.
+  const week = useMemo(() => {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { monday, start_date: isoLocal(monday), end_date: isoLocal(sunday) };
+  }, []);
+  const { data: sessions } = useAuthedResource<PlannedSessionRead[]>(
+    (t) => api.listPlannedSessions(t, { start_date: week.start_date, end_date: week.end_date }),
+    [week.start_date],
+  );
+  const weekCells = buildWeekCells(week.monday, sessions) ?? WEEK;
 
   const pcL = 24, pcR = 12, pcT = 14, pcB = 150, pcW = 680;
   const pcStep = (pcW - pcL - pcR) / 7;
@@ -52,7 +110,7 @@ export function PlanningScreen() {
           <div className="text-[11px] font-medium leading-none text-dim">Mid-base · wk 3/7</div>
         </div>
         <div className="grid grid-cols-7 gap-2">
-          {WEEK.map((w) => (
+          {weekCells.map((w) => (
             <div
               key={w.day}
               {...(w.today ? {} : { "data-tile": "1" })}

@@ -13,6 +13,15 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """Persist/query enums by their string *value* (e.g. ``"active"``), not the
+    member *name* (``"ACTIVE"``). The Postgres enum types were created from the
+    values (see the a000/a001 migrations), so without this SQLAlchemy's default
+    name-based binding raises ``invalid input value for enum ...`` on every
+    read/write of these columns."""
+    return [member.value for member in enum_cls]
+
+
 class BlockGoal(str, enum.Enum):
     STRENGTH = "Strength"
     HYPERTROPHY = "Hypertrophy"
@@ -64,9 +73,13 @@ class MesocycleBlock(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
 
-    goal: Mapped[BlockGoal] = mapped_column(SAEnum(BlockGoal), nullable=False)
+    goal: Mapped[BlockGoal] = mapped_column(
+        SAEnum(BlockGoal, values_callable=_enum_values), nullable=False
+    )
     status: Mapped[BlockStatus] = mapped_column(
-        SAEnum(BlockStatus), default=BlockStatus.ACTIVE, nullable=False
+        SAEnum(BlockStatus, values_callable=_enum_values),
+        default=BlockStatus.ACTIVE,
+        nullable=False,
     )
 
     duration_weeks: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
@@ -155,7 +168,9 @@ class PlannedSession(Base):
     modality: Mapped[str] = mapped_column(String, nullable=False)
 
     status: Mapped[SessionStatus] = mapped_column(
-        SAEnum(SessionStatus), default=SessionStatus.PENDING, nullable=False
+        SAEnum(SessionStatus, values_callable=_enum_values),
+        default=SessionStatus.PENDING,
+        nullable=False,
     )
 
     # Populated when prescriber is called for this session
