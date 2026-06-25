@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
 import type { ApiError, ProfileRead, ProfileUpdate } from "@/types";
-import { usePerfLab } from "../store";
+import { TRAINING_GOALS, usePerfLab } from "../store";
 import type { Settings } from "../store";
 import { Card, SectionLabel } from "../ui";
 
@@ -299,10 +299,20 @@ export function SettingsScreen() {
       <Card className="p-[22px]">
         <SectionLabel className="mb-4">Preferences</SectionLabel>
         <div className="flex flex-col gap-4">
-          <div>
-            <span className="text-[12px] font-medium leading-none text-mute">Primary sport</span>
-            <Seg className="flex-wrap" options={["Distance", "Trail / ultra", "Triathlon", "Hybrid"]} value={s.sport} onChange={(v) => actions.setSetting("sport", v)} />
-          </div>
+          <label className="block">
+            <span className="text-[12px] font-medium leading-none text-mute">Training goal</span>
+            <select
+              value={s.goal}
+              onChange={(e) => actions.setSetting("goal", e.target.value)}
+              className={inputCls}
+              style={{ colorScheme: "dark" }}
+            >
+              {TRAINING_GOALS.map((g) => (
+                <option key={g.value} value={g.value}>{g.label}</option>
+              ))}
+            </select>
+            <span className="mt-2 block text-[11px] font-medium leading-[1.4] text-faint">Drives your prescribed sessions — anything from strength to marathon.</span>
+          </label>
           <div>
             <span className="text-[12px] font-medium leading-none text-mute">Units</span>
             <Seg options={["Metric (km)", "Imperial (mi)"]} value={s.units} onChange={(v) => actions.setSetting("units", v)} />
