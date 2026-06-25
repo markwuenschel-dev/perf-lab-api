@@ -89,6 +89,9 @@ interface Persisted {
   fieldTest: MetricsResponse | null;
   twinState: UnifiedStateVector | null;
   readiness: ReadinessScore | null;
+  /** Client-only UI preferences (units, accent, notifications…). The athlete's
+   *  performance profile lives in the backend (GET/PATCH /v1/profile), not here. */
+  settings: Settings;
 }
 
 export const STORAGE_KEY = "perflab_v1";
@@ -135,6 +138,7 @@ export function initialState(): PerfLabState {
       notifReadiness: true,
       notifTissue: true,
       notifWeekly: false,
+      ...(sv.settings ?? {}),
     },
     explainOpen: false,
     explainKey: null,

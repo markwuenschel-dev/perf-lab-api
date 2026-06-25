@@ -11,6 +11,8 @@ import type {
   OnboardResponse,
   PlannedSessionRead,
   PlannedSessionUpdateRequest,
+  ProfileRead,
+  ProfileUpdate,
   ReadinessScore,
   StressDose,
   TokenResponse,
@@ -67,11 +69,23 @@ async function handleResponse<T>(
       }
     }
 
+    // FastAPI returns `detail` as a string for HTTPException, but as an array of
+    // {loc,msg,type} objects for 422 validation errors. Flatten both to a string
+    // so callers (and the React error UI) never try to render a raw object.
+    const rawDetail = (detail as { detail?: unknown })?.detail;
+    let message: string;
+    if (typeof rawDetail === "string") {
+      message = rawDetail;
+    } else if (Array.isArray(rawDetail)) {
+      message = rawDetail
+        .map((e) => (e as { msg?: string })?.msg ?? String(e))
+        .join("; ");
+    } else {
+      message = res.statusText || "API request failed";
+    }
+
     const error: ApiError = {
-      message:
-        (detail as { detail?: string })?.detail ??
-        res.statusText ??
-        "API request failed",
+      message,
       status: res.status,
       details: detail,
     };
@@ -207,6 +221,33 @@ export async function onboard(request: OnboardRequest): Promise<OnboardResponse>
     body: JSON.stringify(request),
   });
   return handleResponse<OnboardResponse>(res);
+}
+
+/** Load the authenticated athlete's profile (Settings hydrates from this). */
+export async function getProfile(token: string): Promise<ProfileRead> {
+  if (!API_V1_BASE) {
+    throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  }
+  const res = await fetch(`${API_V1_BASE}/profile`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<ProfileRead>(res, { sessionOn401: true });
+}
+
+/** Partial-update the athlete's profile; returns the saved row. */
+export async function updateProfile(
+  patch: ProfileUpdate,
+  token: string,
+): Promise<ProfileRead> {
+  if (!API_V1_BASE) {
+    throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  }
+  const res = await fetch(`${API_V1_BASE}/profile`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(patch),
+  });
+  return handleResponse<ProfileRead>(res, { sessionOn401: true });
 }
 
 /**
