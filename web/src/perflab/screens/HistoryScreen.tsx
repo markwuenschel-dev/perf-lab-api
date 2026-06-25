@@ -1,7 +1,56 @@
 // src/perflab/screens/HistoryScreen.tsx
+import * as api from "@/api/perfLabClient";
+import { useAuth } from "@/auth/useAuth";
+import type { WellnessSampleOut } from "@/types";
 import { usePerfLab } from "../store";
+import { useAuthedResource } from "../useAuthedResource";
 import { Card, SectionLabel, Track } from "../ui";
 import { DAYS, DAY_COUNT } from "../sim";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtDay = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+};
+const cell = (v: number | null, suffix = ""): string => (v == null ? "—" : `${v}${suffix}`);
+
+// Recent wellness — real daily samples from GET /v1/wellness. Renders live rows
+// when the athlete has logged check-ins; guests and empty histories get a note
+// rather than the prototype's mock series.
+function RecentWellnessCard() {
+  const { token } = useAuth();
+  const { data, loading, error } = useAuthedResource<WellnessSampleOut[]>((t) => api.listWellness(t, 10), []);
+
+  const body = !token ? (
+    <div className="text-[13px] font-medium leading-[1.5] text-[#7c818c]">Sign in and log a check-in to track your wellness here.</div>
+  ) : loading ? (
+    <div className="text-[13px] font-medium text-[#7c818c]">Loading recent samples…</div>
+  ) : error || !data || data.length === 0 ? (
+    <div className="text-[13px] font-medium leading-[1.5] text-[#7c818c]">No wellness logged yet — use Check-in to record sleep, HRV and resting HR.</div>
+  ) : (
+    <>
+      <div className="grid grid-cols-[1.1fr_1fr_1fr_1fr_1fr] gap-2 border-b border-white/[0.07] py-[10px] font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.1em] text-dim">
+        <span>Date</span><span>HRV</span><span>Sleep</span><span>RHR</span><span>Mood</span>
+      </div>
+      {data.map((w) => (
+        <div key={w.id} className="grid grid-cols-[1.1fr_1fr_1fr_1fr_1fr] items-center gap-2 border-b border-white/[0.05] py-[12px] last:border-0">
+          <span className="text-[13px] font-semibold leading-none text-[#e6e8ec]">{fmtDay(w.date)}</span>
+          <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.hrv_ms, " ms")}</span>
+          <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.sleep_hours, " h")}</span>
+          <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.resting_hr)}</span>
+          <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.mood)}</span>
+        </div>
+      ))}
+    </>
+  );
+
+  return (
+    <Card className="px-[22px] py-5">
+      <SectionLabel className="mb-2">Recent wellness</SectionLabel>
+      {body}
+    </Card>
+  );
+}
 
 const LOAD_BARS: [number, boolean][] = [
   [62, true], [58, true], [70, true], [65, true], [72, true], [48, false], [88, true], [82, true], [60, true], [90, true], [76, true], [74, true],
@@ -79,6 +128,8 @@ export function HistoryScreen() {
           </Card>
         </div>
       </div>
+
+      <RecentWellnessCard />
 
       <Card className="px-[22px] py-5">
         <div className="mb-[18px] flex items-center justify-between">

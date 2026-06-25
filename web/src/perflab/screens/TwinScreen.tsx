@@ -1,6 +1,10 @@
 // src/perflab/screens/TwinScreen.tsx
 import type { ReactNode } from "react";
+import * as api from "@/api/perfLabClient";
+import { useAuth } from "@/auth/useAuth";
+import type { WorkoutPrescription } from "@/types";
 import { usePerfLab } from "../store";
+import { useAuthedResource } from "../useAuthedResource";
 import { Card, MetricBar, Pill, ReadinessRing, SectionLabel, SyncChip } from "../ui";
 import {
   CAP_CFG,
@@ -105,6 +109,8 @@ export function TwinScreen() {
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
       <ScreenHeaderTwin syncLabel={isToday ? "Synced 2h ago" : "Historical view"} onLog={actions.openLog} />
+
+      <NextSessionCard />
 
       {/* time-travel */}
       <Card className="flex items-center gap-[22px] px-5 py-[15px]">
@@ -288,6 +294,75 @@ export function TwinScreen() {
         </div>
       </Card>
     </section>
+  );
+}
+
+// Recommended next session — the live prescription from the twin controller
+// (GET /v1/next-session). Authenticated only; guests and unseeded twins fall
+// back to a hint instead of fabricating a session.
+const NEXT_SESSION_GOAL = "Running";
+
+function NextSessionCard() {
+  const { token } = useAuth();
+  const { data: rx, loading, error } = useAuthedResource<WorkoutPrescription>(
+    (t) => api.getNextSession(NEXT_SESSION_GOAL, t),
+    [],
+  );
+
+  if (!token) {
+    return (
+      <Card className="px-5 py-4">
+        <SectionLabel className="text-faint">Recommended next session</SectionLabel>
+        <div className="mt-2 text-[13px] font-medium leading-[1.5] text-[#7c818c]">
+          Sign in to get a live prescription from your twin.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="px-[22px] py-5">
+      <div className="mb-3 flex items-center justify-between">
+        <SectionLabel>Recommended next session</SectionLabel>
+        <span className="font-mono text-[10px] leading-none text-dim">
+          {rx ? `${rx.type} · ${rx.duration_min} min` : loading ? "loading…" : ""}
+        </span>
+      </div>
+      {loading && <div className="text-[13px] font-medium text-[#7c818c]">Computing your prescription…</div>}
+      {!loading && error && (
+        <div className="text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">
+          No live prescription yet — log a workout or run a field test to seed your twin.
+        </div>
+      )}
+      {!loading && !error && rx && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <div className="text-[20px] font-bold leading-tight text-ink">{rx.focus}</div>
+            <div className="mt-1 text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">{rx.rationale}</div>
+          </div>
+          {rx.exercises && rx.exercises.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-white/[0.06] pt-3">
+              {rx.exercises.map((ex, i) => {
+                const detail = [
+                  ex.sets != null && ex.reps != null
+                    ? `${ex.sets}×${ex.reps}`
+                    : ex.reps ?? (ex.sets != null ? `${ex.sets} sets` : ""),
+                  ex.load_note,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <div key={i} className="flex items-baseline justify-between gap-3">
+                    <span className="text-[13px] font-semibold leading-none text-soft">{ex.name}</span>
+                    {detail && <span className="font-mono text-[12px] leading-none text-faint">{detail}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
