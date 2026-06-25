@@ -372,6 +372,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile */
+        get: operations["get_profile_v1_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Profile */
+        patch: operations["update_profile_v1_profile_patch"];
+        trace?: never;
+    };
     "/v1/readiness": {
         parameters: {
             query?: never;
@@ -1212,6 +1230,74 @@ export interface components {
              * @description Soft constraint / template warnings (non-blocking)
              */
             warnings?: string[];
+        };
+        /** ProfileRead */
+        ProfileRead: {
+            /** Available Days Per Week */
+            available_days_per_week: number;
+            /** Bench 1Rm Kg */
+            bench_1rm_kg: number | null;
+            /** Bodyweight Kg */
+            bodyweight_kg: number | null;
+            /** Deadlift 1Rm Kg */
+            deadlift_1rm_kg: number | null;
+            /** Equipment */
+            equipment: string[];
+            /** Experience Level */
+            experience_level: string;
+            /** Experience Years */
+            experience_years: number;
+            /** Height Cm */
+            height_cm: number | null;
+            /** Overhead 1Rm Kg */
+            overhead_1rm_kg: number | null;
+            /** Pullup Max Reps */
+            pullup_max_reps: number | null;
+            /** Run 1P5Mi Seconds */
+            run_1p5mi_seconds: number | null;
+            /** Run 5K Seconds */
+            run_5k_seconds: number | null;
+            /** Session Duration Minutes */
+            session_duration_minutes: number;
+            /** Squat 1Rm Kg */
+            squat_1rm_kg: number | null;
+        };
+        /**
+         * ProfileUpdate
+         * @description Partial update — only fields present in the request body are written.
+         *
+         *     Nullable fields (lifts, biometrics) accept an explicit ``null`` to clear a
+         *     previously stored value; omitting a field leaves it untouched.
+         */
+        ProfileUpdate: {
+            /** Available Days Per Week */
+            available_days_per_week?: number | null;
+            /** Bench 1Rm Kg */
+            bench_1rm_kg?: number | null;
+            /** Bodyweight Kg */
+            bodyweight_kg?: number | null;
+            /** Deadlift 1Rm Kg */
+            deadlift_1rm_kg?: number | null;
+            /** Equipment */
+            equipment?: string[] | null;
+            /** Experience Level */
+            experience_level?: string | null;
+            /** Experience Years */
+            experience_years?: number | null;
+            /** Height Cm */
+            height_cm?: number | null;
+            /** Overhead 1Rm Kg */
+            overhead_1rm_kg?: number | null;
+            /** Pullup Max Reps */
+            pullup_max_reps?: number | null;
+            /** Run 1P5Mi Seconds */
+            run_1p5mi_seconds?: number | null;
+            /** Run 5K Seconds */
+            run_5k_seconds?: number | null;
+            /** Session Duration Minutes */
+            session_duration_minutes?: number | null;
+            /** Squat 1Rm Kg */
+            squat_1rm_kg?: number | null;
         };
         /**
          * ReadinessComponent
@@ -2455,6 +2541,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TodaySessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_profile_v1_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileRead"];
+                };
+            };
+        };
+    };
+    update_profile_v1_profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileRead"];
                 };
             };
             /** @description Validation Error */

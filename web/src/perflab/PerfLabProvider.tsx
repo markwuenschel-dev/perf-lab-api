@@ -10,7 +10,7 @@ export function PerfLabProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const wasNarrow = useRef(false);
 
-  // Persist {ftDone, fresh, fieldTest, twinState, readiness}
+  // Persist {ftDone, fresh, fieldTest, twinState, readiness, settings}
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -21,12 +21,13 @@ export function PerfLabProvider({ children }: { children: ReactNode }) {
           fieldTest: state.fieldTest,
           twinState: state.twinState,
           readiness: state.readiness,
+          settings: state.settings,
         }),
       );
     } catch {
       /* ignore */
     }
-  }, [state.ftDone, state.fresh, state.fieldTest, state.twinState, state.readiness]);
+  }, [state.ftDone, state.fresh, state.fieldTest, state.twinState, state.readiness, state.settings]);
 
   // Runtime accent
   useEffect(() => {

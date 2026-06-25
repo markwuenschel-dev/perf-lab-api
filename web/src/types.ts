@@ -40,6 +40,10 @@ export type WorkoutPrescription = Schemas["WorkoutPrescription"];
 export type OnboardRequest = Schemas["OnboardRequest"];
 export type OnboardResponse = Schemas["OnboardResponse"];
 
+/* ---------- Athlete profile (GET / PATCH /v1/profile) ---------- */
+export type ProfileRead = Schemas["ProfileRead"];
+export type ProfileUpdate = Schemas["ProfileUpdate"];
+
 /* ---------- Planning ---------- */
 export type BlockGoal = Schemas["BlockGoal"];
 export type BlockStatus = Schemas["BlockStatus"];
