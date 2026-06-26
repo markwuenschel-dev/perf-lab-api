@@ -1,0 +1,31 @@
+# Never copy local build artifacts or dev dependencies into Docker build context.
+# Without this, COPY web/ . overwrites the Linux node_modules installed by npm ci
+# with Windows-compiled binaries (including rolldown-vite native code), breaking the build.
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend — exclude local node_modules and build output
+web/node_modules/
+web/dist/
+
+# Local env and secrets
+.env
+.env.local
+
+# Dev tooling
+.git/
+.github/
+.idea/
+.vs/
+data/
+docs/
+tests/
+agent_collab/
