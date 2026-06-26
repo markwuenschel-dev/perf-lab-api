@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
@@ -202,9 +202,24 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # Optional: Add security headers middleware in the future
 
 # ── Frontend static files ──────────────────────────────────────────────────────
-# Serve the React build from /static (copied in by Dockerfile).
-# Mounted LAST so all API routes take priority. html=True enables SPA fallback:
-# unknown paths return index.html so React Router handles them client-side.
+# Vite outputs: index.html + assets/ (hashed JS/CSS chunks).
+# Mount /assets as a StaticFiles sub-app (GET/HEAD only — no interference with
+# API routes). The SPA catch-all is an explicit GET route so POST/PUT/DELETE to
+# API paths are never intercepted by static file handling.
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
-if os.path.isdir(_static_dir):
-    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")
+_assets_dir = os.path.join(_static_dir, "assets")
+
+if os.path.isdir(_assets_dir):
+    app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def serve_spa(full_path: str) -> FileResponse:
+    """Catch-all GET: serve a static file if it exists, otherwise the SPA shell."""
+    candidate = os.path.join(_static_dir, full_path)
+    if full_path and os.path.isfile(candidate):
+        return FileResponse(candidate)
+    index = os.path.join(_static_dir, "index.html")
+    if os.path.isfile(index):
+        return FileResponse(index)
+    return FileResponse(candidate)  # let the OS 404 bubble naturally if no static dir
