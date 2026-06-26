@@ -5,19 +5,15 @@ import { usePerfLab } from "../store";
 import { Card, Pill, ScreenHeader, SectionLabel, Tile } from "../ui";
 import { computeMetrics } from "@/api/perfLabClient";
 import type { ApiError, MetricsResponse } from "@/types";
+import { fmtPace, paceLabel } from "@/lib/units";
 
 const inputCls = "mt-2 w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[15px] text-ink";
 const ZONE_COLOR = ["text-info", "text-teal", "text-ac", "text-warn", "text-hot"];
-
-// Backend zone paces are seconds per MILE; the design shows /km, so convert.
-const fmtKmPace = (secPerMile: number) => {
-  const s = Math.round(secPerMile / 1.60934);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-};
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 export function FieldTestScreen() {
   const { state, actions } = usePerfLab();
+  const units = state.settings.units;
   const [t300, setT300] = useState("0:52");
   const [t15, setT15] = useState("9:18");
   const [age, setAge] = useState("28");
@@ -118,13 +114,13 @@ export function FieldTestScreen() {
             <Card className="p-5">
               <div className="mb-4 flex items-center justify-between">
                 <SectionLabel>Pace zones</SectionLabel>
-                <span className="text-[11px] font-medium leading-none text-dim">min/km</span>
+                <span className="text-[11px] font-medium leading-none text-dim">{paceLabel(units)}</span>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 {result.zones.slice(0, 5).map((z, i) => (
                   <Tile key={z.name} className="bg-white/[0.03] p-[13px]">
                     <div className={`font-mono text-[11px] font-semibold leading-none ${ZONE_COLOR[i] ?? "text-mute"}`}>Z{i + 1}</div>
-                    <div className="mt-[9px] font-mono text-[17px] font-semibold leading-none text-ink">{fmtKmPace((z.slow_pace_sec + z.fast_pace_sec) / 2)}</div>
+                    <div className="mt-[9px] font-mono text-[17px] font-semibold leading-none text-ink">{fmtPace((z.slow_pace_sec + z.fast_pace_sec) / 2, units)}</div>
                     <div className="mt-[5px] text-[10px] font-medium leading-[1.3] text-faint">{z.name}</div>
                   </Tile>
                 ))}

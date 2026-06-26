@@ -60,6 +60,11 @@ export const TRAINING_GOALS: { value: string; label: string }[] = [
 /** Neutral, non-specialized default — never assume a discipline up front. */
 export const DEFAULT_GOAL = "General";
 
+export const RUNNING_GOALS = new Set(["Running", "Sprinting", "HalfMarathon", "FullMarathon"]);
+export const STRENGTH_GOALS = new Set(["Strength", "Hypertrophy", "Power", "Powerlifting", "OlympicLifts", "Calisthenics", "Gymnastics", "Grip"]);
+export const isRunningGoal = (g: string) => RUNNING_GOALS.has(g);
+export const isStrengthGoal = (g: string) => STRENGTH_GOALS.has(g);
+
 export interface RaceState {
   name: string;
   loc: string;

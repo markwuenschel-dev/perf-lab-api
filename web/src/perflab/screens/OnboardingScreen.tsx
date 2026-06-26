@@ -1,7 +1,9 @@
 // src/perflab/screens/OnboardingScreen.tsx
 import { useState } from "react";
 import { useAuth } from "@/auth/useAuth";
-import { TRAINING_GOALS, usePerfLab } from "../store";
+import { isImperial, kgToLbs, lbsToKg, parseMMSS, weightLabel } from "@/lib/units";
+import { computeMetrics } from "@/api/perfLabClient";
+import { isRunningGoal, isStrengthGoal, TRAINING_GOALS, usePerfLab } from "../store";
 
 const labelCls = "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-[#9aa0ab]";
 const inputCls = "mt-[9px] w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[14px] text-ink";
@@ -11,25 +13,17 @@ const btnPrimary = "rounded-[11px] bg-ac px-6 py-[13px] text-[13.5px] font-semib
 const btnBack = "rounded-[11px] border border-white/[0.12] px-[22px] py-[13px] text-[13.5px] font-semibold leading-none text-mute";
 
 const STEPS = [
-  ["01", "Field test", "300 m + 1.5 mi → VO₂, profile & pace zones."],
-  ["02", "Digital twin", "A state vector S(t) that evolves as you train."],
-  ["03", "Adaptive plan", "Sessions prescribed against your readiness."],
+  ["01", "Profile", "Name, sex, units — the basics."],
+  ["02", "Training context", "Goal and current training load."],
+  ["03", "Seed your twin", "Baseline inputs to initialize S(t)."],
 ];
 
-// Interactive two-up segmented control. Each option is independently selectable;
-// the previous markup hardcoded the "on"/"off" classes onto static divs, which is
-// why Male / Imperial could never be picked.
 function Seg({ options, value, onChange }: { options: readonly string[]; value: string; onChange: (v: string) => void }) {
   return (
     <div className="mt-[9px] grid grid-cols-2 gap-2">
       {options.map((opt) => (
-        <button
-          key={opt}
-          type="button"
-          aria-pressed={value === opt}
-          onClick={() => onChange(opt)}
-          className={`w-full ${value === opt ? segOn : segOff}`}
-        >
+        <button key={opt} type="button" aria-pressed={value === opt} onClick={() => onChange(opt)}
+          className={`w-full ${value === opt ? segOn : segOff}`}>
           {opt}
         </button>
       ))}
@@ -37,30 +31,89 @@ function Seg({ options, value, onChange }: { options: readonly string[]; value: 
   );
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block"><span className={labelCls}>{label}</span>{children}</label>;
+}
+
 export function OnboardingScreen() {
   const { state, actions } = usePerfLab();
   const { completeOnboarding } = useAuth();
   const [seeding, setSeeding] = useState(false);
-  // Read sex/units straight from the persisted settings store (not throwaway
-  // local state) so the choice survives "Skip for now" and shows up pre-set in
-  // Settings. setSetting writes on every change, so even an immediate skip keeps it.
+
   const sex = state.settings.sex;
   const units = state.settings.units;
   const goal = state.settings.goal;
+  const imperial = isImperial(units);
   const ob = state.obStep;
   const goOverview = () => actions.setScreen("overview");
 
-  // Seed the backend athlete profile, then enter the app. We pass the chosen
-  // training goal so the athlete's primary goal persists server-side (it feeds
-  // the prescriber's default); the rest of the OnboardRequest fills from
-  // server-side defaults. The field test (Field Test screen → /compute-metrics)
-  // is what actually seeds S(t). completeOnboarding is best-effort and never
-  // throws; enter the app regardless.
+  // Step 2 — training context
+  const [weeklyVol, setWeeklyVol] = useState(imperial ? "30" : "48");
+  const [daysPerWeek, setDaysPerWeek] = useState("4");
+  const [sessionDur, setSessionDur] = useState("60");
+
+  // Step 3 — running seed
+  const [t300, setT300] = useState("0:52");
+  const [t15, setT15] = useState("9:18");
+
+  // Step 3 — strength / general seed
+  const [bodyweight, setBodyweight] = useState("");
+  const [squat, setSquat] = useState("");
+  const [bench, setBench] = useState("");
+  const [deadlift, setDeadlift] = useState("");
+  const [run5k, setRun5k] = useState("");
+
+  const wUnit = weightLabel(units);
+
+  // When user toggles units, convert any entered weight values
+  function handleUnitsChange(v: string) {
+    actions.setSetting("units", v);
+    const toImperial = v === "Imperial (mi)";
+    const convert = toImperial
+      ? (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : kgToLbs(n).toFixed(0); }
+      : (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : lbsToKg(n).toFixed(1); };
+    if (bodyweight) setBodyweight(convert(bodyweight));
+    if (squat) setSquat(convert(squat));
+    if (bench) setBench(convert(bench));
+    if (deadlift) setDeadlift(convert(deadlift));
+    // running volume km ↔ mi
+    const vol = parseFloat(weeklyVol);
+    if (!isNaN(vol)) {
+      setWeeklyVol(toImperial ? (vol * 0.621371).toFixed(0) : (vol / 0.621371).toFixed(0));
+    }
+  }
+
   async function finish() {
     if (seeding) return;
     setSeeding(true);
-    await completeOnboarding({ goal });
-    goOverview();
+    try {
+      const req: Record<string, unknown> = { goal };
+
+      if (isRunningGoal(goal) && t300 && t15) {
+        // Best-effort: compute metrics and cache them for the Field Test screen.
+        try {
+          const r = await computeMetrics({ age: 28, sex, time_300m: t300, time_1p5mi: t15 });
+          actions.ftCompute(r);
+        } catch { /* non-fatal — user can run the field test later */ }
+      }
+
+      const parseWeight = (s: string) => {
+        const n = parseFloat(s);
+        if (isNaN(n) || n <= 0) return undefined;
+        return imperial ? lbsToKg(n) : n;
+      };
+
+      if (bodyweight) req.bodyweight_kg = parseWeight(bodyweight);
+      if (squat) req.squat_1rm_kg = parseWeight(squat);
+      if (bench) req.bench_1rm_kg = parseWeight(bench);
+      if (deadlift) req.deadlift_1rm_kg = parseWeight(deadlift);
+      if (run5k) { const s = parseMMSS(run5k); if (s) req.run_5k_seconds = s; }
+
+      await completeOnboarding(req);
+    } finally {
+      setSeeding(false);
+      goOverview();
+    }
   }
 
   return (
@@ -75,7 +128,7 @@ export function OnboardingScreen() {
           </div>
         </div>
         <div>
-          <h2 className="m-0 text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">Turn two timed runs into a living model of your body.</h2>
+          <h2 className="m-0 text-[34px] font-bold leading-[1.1] tracking-[-0.03em] text-ink">Your training, modeled and prescribed.</h2>
           <div className="mt-[30px] flex flex-col gap-[18px]">
             {STEPS.map(([n, t, d]) => (
               <div key={n} className="flex gap-[13px]">
@@ -101,63 +154,106 @@ export function OnboardingScreen() {
           <div className="h-full rounded-full transition-all duration-300" style={{ width: ob === 1 ? "33%" : ob === 2 ? "66%" : "100%", background: "linear-gradient(90deg,var(--ac),#7bd6c0)" }} />
         </div>
 
+        {/* ── Step 1: profile ── */}
         {ob === 1 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Let's set up your profile</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">Just the basics. You can change any of this later.</p>
             <div className="grid grid-cols-2 gap-4">
-              <label className="block"><span className={labelCls}>First name</span><input defaultValue="Alex" className={inputCls} /></label>
-              <label className="block"><span className={labelCls}>Last name</span><input defaultValue="Rivera" className={inputCls} /></label>
-              <label className="block"><span className={labelCls}>Date of birth</span><input type="date" defaultValue="1997-04-12" className={inputCls} style={{ colorScheme: "dark" }} /></label>
-              <div className="block">
-                <span className={labelCls}>Sex</span>
-                <Seg options={["Female", "Male"]} value={sex} onChange={(v) => actions.setSetting("sex", v)} />
-              </div>
-            </div>
-            <div className="mt-[14px] flex items-center gap-[9px] rounded-[11px] border border-info/[0.18] bg-info/[0.06] px-[13px] py-[11px]">
-              <span className="text-[14px] text-info">ⓘ</span><span className="text-[12px] font-medium leading-[1.5] text-mute">VO₂ doesn't use age/sex yet — stored for upcoming model versions.</span>
+              <Field label="First name"><input defaultValue="" placeholder="First name" className={inputCls} /></Field>
+              <Field label="Last name"><input defaultValue="" placeholder="Last name" className={inputCls} /></Field>
+              <Field label="Date of birth"><input type="date" className={inputCls} style={{ colorScheme: "dark" }} /></Field>
+              <div className="block"><span className={labelCls}>Sex</span><Seg options={["Female", "Male"]} value={sex} onChange={(v) => actions.setSetting("sex", v)} /></div>
             </div>
             <div className="mt-[30px] flex justify-end"><button onClick={actions.obNext} className={btnPrimary}>Continue →</button></div>
           </div>
         )}
 
+        {/* ── Step 2: training context ── */}
         {ob === 2 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Training context</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">So the plan speaks your language.</p>
             <div className="flex flex-col gap-4">
-              <label className="block"><span className={labelCls}>Training goal</span>
-                <select
-                  value={goal}
-                  onChange={(e) => actions.setSetting("goal", e.target.value)}
-                  className={inputCls}
-                  style={{ colorScheme: "dark" }}
-                >
-                  {TRAINING_GOALS.map((g) => (
-                    <option key={g.value} value={g.value}>{g.label}</option>
-                  ))}
+              <Field label="Training goal">
+                <select value={goal} onChange={(e) => actions.setSetting("goal", e.target.value)} className={inputCls} style={{ colorScheme: "dark" }}>
+                  {TRAINING_GOALS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
                 </select>
-              </label>
+              </Field>
               <div className="block"><span className={labelCls}>Units</span>
-                <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={(v) => actions.setSetting("units", v)} />
+                <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={handleUnitsChange} />
               </div>
-              <label className="block"><span className={labelCls}>Current weekly volume</span><input defaultValue="48 km" className={inputCls} /></label>
-            </div>
-            <div className="mt-[30px] flex justify-between"><button onClick={actions.obBack} className={btnBack}>← Back</button><button onClick={actions.obNext} className={btnPrimary}>Continue →</button></div>
-          </div>
-        )}
-
-        {ob === 3 && (
-          <div>
-            <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Seed your twin</h1>
-            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">Enter a recent field test to initialize S(t) — or skip and run one later.</p>
-            <div className="grid grid-cols-2 gap-4">
-              <label className="block"><span className={labelCls}>300 m time</span><input defaultValue="0:52" placeholder="M:SS" className={`${inputCls} font-mono`} /></label>
-              <label className="block"><span className={labelCls}>1.5 mi time</span><input defaultValue="9:18" placeholder="MM:SS" className={`${inputCls} font-mono`} /></label>
+              {isRunningGoal(goal) ? (
+                <Field label={`Current weekly volume (${imperial ? "mi" : "km"})`}>
+                  <input value={weeklyVol} onChange={(e) => setWeeklyVol(e.target.value)} inputMode="decimal" className={inputCls} />
+                </Field>
+              ) : isStrengthGoal(goal) ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Training days / week">
+                    <input value={daysPerWeek} onChange={(e) => setDaysPerWeek(e.target.value)} inputMode="numeric" className={inputCls} />
+                  </Field>
+                  <Field label="Session duration (min)">
+                    <input value={sessionDur} onChange={(e) => setSessionDur(e.target.value)} inputMode="numeric" className={inputCls} />
+                  </Field>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Training days / week">
+                    <input value={daysPerWeek} onChange={(e) => setDaysPerWeek(e.target.value)} inputMode="numeric" className={inputCls} />
+                  </Field>
+                  <Field label="Session duration (min)">
+                    <input value={sessionDur} onChange={(e) => setSessionDur(e.target.value)} inputMode="numeric" className={inputCls} />
+                  </Field>
+                </div>
+              )}
             </div>
             <div className="mt-[30px] flex justify-between">
               <button onClick={actions.obBack} className={btnBack}>← Back</button>
-              <button onClick={finish} disabled={seeding} className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-[26px] py-[13px] text-[13.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">{seeding ? "Seeding twin…" : "Enter Perf Lab →"}</button>
+              <button onClick={actions.obNext} className={btnPrimary}>Continue →</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 3: seed your twin ── */}
+        {ob === 3 && (
+          <div>
+            <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Seed your twin</h1>
+            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">
+              {isRunningGoal(goal)
+                ? "Enter a recent field test to initialize S(t) — or skip and run one from the Field Test screen."
+                : isStrengthGoal(goal)
+                  ? "Enter your current lifts to seed the strength model — or skip and add after your first session."
+                  : "Enter any baseline data you have — all fields are optional."}
+            </p>
+
+            {isRunningGoal(goal) && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="300 m time"><input value={t300} onChange={(e) => setT300(e.target.value)} placeholder="M:SS" className={`${inputCls} font-mono`} /></Field>
+                <Field label="1.5 mi time"><input value={t15} onChange={(e) => setT15(e.target.value)} placeholder="MM:SS" className={`${inputCls} font-mono`} /></Field>
+              </div>
+            )}
+
+            {isStrengthGoal(goal) && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label={`Bodyweight (${wUnit})`}><input value={bodyweight} onChange={(e) => setBodyweight(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+                <Field label={`Squat 1RM (${wUnit})`}><input value={squat} onChange={(e) => setSquat(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+                <Field label={`Bench 1RM (${wUnit})`}><input value={bench} onChange={(e) => setBench(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+                <Field label={`Deadlift 1RM (${wUnit})`}><input value={deadlift} onChange={(e) => setDeadlift(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+              </div>
+            )}
+
+            {!isRunningGoal(goal) && !isStrengthGoal(goal) && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label={`Bodyweight (${wUnit})`}><input value={bodyweight} onChange={(e) => setBodyweight(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+                <Field label="5K time (MM:SS)"><input value={run5k} onChange={(e) => setRun5k(e.target.value)} placeholder="—" className={`${inputCls} font-mono`} /></Field>
+              </div>
+            )}
+
+            <div className="mt-[30px] flex justify-between">
+              <button onClick={actions.obBack} className={btnBack}>← Back</button>
+              <button onClick={finish} disabled={seeding} className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-[26px] py-[13px] text-[13.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">
+                {seeding ? "Seeding twin…" : "Enter Perf Lab →"}
+              </button>
             </div>
           </div>
         )}
