@@ -5,12 +5,14 @@ Main FastAPI application entrypoint for Performance Lab API.
 """
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import (
     auth,
@@ -198,3 +200,11 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 
 # Optional: Add security headers middleware in the future
+
+# ── Frontend static files ──────────────────────────────────────────────────────
+# Serve the React build from /static (copied in by Dockerfile).
+# Mounted LAST so all API routes take priority. html=True enables SPA fallback:
+# unknown paths return index.html so React Router handles them client-side.
+_static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.isdir(_static_dir):
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")
