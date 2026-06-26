@@ -4,8 +4,8 @@
 # then uvicorn on $PORT) and we add a health check + restart policy here so a
 # bad boot is caught and retried instead of silently serving errors.
 #
-# The frontend (web/) is NOT deployed from here — it's a separate static host
-# (Netlify/Cloudflare Pages) that talks to this service via VITE_API_BASE_URL.
+# The frontend (web/) is a SEPARATE Railway service (root: /web, uses web/Dockerfile)
+# that talks to this service via the VITE_API_BASE_URL build variable.
 
 [build]
 builder = "DOCKERFILE"

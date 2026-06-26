@@ -39,9 +39,9 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     # Regex of additional allowed origins, matched by CORSMiddleware. Defaults to
-    # any Netlify site (production + deploy previews), since the web frontend is
-    # deployed there. Override via ALLOWED_ORIGIN_REGEX; set to "" to disable.
-    ALLOWED_ORIGIN_REGEX: str = r"https://.*\.netlify\.app"
+    # any Railway app URL (production + preview services). Override via
+    # ALLOWED_ORIGIN_REGEX; set to "" to disable.
+    ALLOWED_ORIGIN_REGEX: str = r"https://.*\.railway\.app"
 
     @property
     def allowed_origins_list(self) -> list[str]:

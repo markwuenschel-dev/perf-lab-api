@@ -56,4 +56,4 @@ blocked, stop and ask rather than forcing it.
 - `src/types.ts` manually mirrors the FastAPI backend (`perf-lab-api`) schemas — keep
   them in sync (see `docs/SYNC_WITH_BACKEND.md`).
 - All HTTP goes through `src/api/perfLabClient.ts`.
-- Merging to `main` **auto-deploys production via Netlify** — treat merges accordingly.
+- Merging to `main` **auto-deploys production via Railway** (the web service tracks the `main` branch) — treat merges accordingly.
