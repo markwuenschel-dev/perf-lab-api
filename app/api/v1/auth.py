@@ -87,7 +87,7 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    result = await db.execute(select(User).where(User.email == form.username))
+    result = await db.execute(select(User).where(User.email == form.username.lower()))
     user = result.scalars().first()
 
     if not user or not verify_password(form.password, user.hashed_password):
