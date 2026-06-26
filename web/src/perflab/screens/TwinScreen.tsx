@@ -298,15 +298,16 @@ export function TwinScreen() {
 }
 
 // Recommended next session — the live prescription from the twin controller
-// (GET /v1/next-session). Authenticated only; guests and unseeded twins fall
-// back to a hint instead of fabricating a session.
-const NEXT_SESSION_GOAL = "Running";
-
+// (GET /v1/next-session), prescribed for the athlete's chosen training goal
+// (Settings → Training goal). Authenticated only; guests and unseeded twins
+// fall back to a hint instead of fabricating a session.
 function NextSessionCard() {
   const { token } = useAuth();
+  const { state } = usePerfLab();
+  const goal = state.settings.goal;
   const { data: rx, loading, error } = useAuthedResource<WorkoutPrescription>(
-    (t) => api.getNextSession(NEXT_SESSION_GOAL, t),
-    [],
+    (t) => api.getNextSession(goal, t),
+    [goal],
   );
 
   if (!token) {

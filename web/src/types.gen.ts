@@ -424,6 +424,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/state-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * State History
+         * @description The athlete's recent state vectors, oldest→newest (chart order).
+         */
+        get: operations["state_history_v1_state_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/weak-points/": {
         parameters: {
             query?: never;
@@ -488,6 +508,26 @@ export interface paths {
         put?: never;
         /** Ingest Wellness */
         post: operations["ingest_wellness_v1_wellness_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workouts
+         * @description The athlete's logged workouts, most recent first.
+         */
+        get: operations["list_workouts_v1_workouts_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1869,6 +1909,37 @@ export interface components {
             total_volume_load: number | null;
         };
         /**
+         * WorkoutLogSummary
+         * @description A logged workout, trimmed to what history views render (recent sessions,
+         *     weekly training load).
+         */
+        WorkoutLogSummary: {
+            /** Distance Meters */
+            distance_meters: number;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /** Id */
+            id: number;
+            /** Is Benchmark */
+            is_benchmark: boolean;
+            /**
+             * Logged At
+             * Format: date-time
+             */
+            logged_at: string;
+            /** Modality */
+            modality: string;
+            /** Session Rpe */
+            session_rpe: number;
+            /**
+             * Session Timestamp
+             * Format: date-time
+             */
+            session_timestamp: string;
+            /** Total Volume Load */
+            total_volume_load: number;
+        };
+        /**
          * WorkoutPrescription
          * @description Next-session recommendation. Legacy fields required; `why` optional for old clients.
          */
@@ -2660,6 +2731,37 @@ export interface operations {
             };
         };
     };
+    state_history_v1_state_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnifiedStateVector"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_weak_points_v1_weak_points__get: {
         parameters: {
             query?: {
@@ -2806,6 +2908,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WellnessSampleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workouts_v1_workouts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutLogSummary"][];
                 };
             };
             /** @description Validation Error */

@@ -26,11 +26,39 @@ export interface Settings {
   sex: string;
   units: string;
   accent: string;
-  sport: string;
+  /** Training goal — feeds the prescriber (GET /v1/next-session?goal=…). Values
+   *  are the exact strings the backend accepts; see TRAINING_GOALS. */
+  goal: string;
   notifReadiness: boolean;
   notifTissue: boolean;
   notifWeekly: boolean;
 }
+
+/**
+ * Selectable training goals. `value` is the exact string the prescriber accepts
+ * (the GET /v1/next-session `goal` enum); `label` is the friendly display form.
+ * Ordered general → strength family → conditioning → endurance so the neutral
+ * default reads first. Not running-centric on purpose.
+ */
+export const TRAINING_GOALS: { value: string; label: string }[] = [
+  { value: "General", label: "General" },
+  { value: "Strength", label: "Strength" },
+  { value: "Hypertrophy", label: "Hypertrophy" },
+  { value: "Power", label: "Power" },
+  { value: "Powerlifting", label: "Powerlifting" },
+  { value: "OlympicLifts", label: "Olympic lifts" },
+  { value: "Calisthenics", label: "Calisthenics" },
+  { value: "Gymnastics", label: "Gymnastics" },
+  { value: "Grip", label: "Grip" },
+  { value: "MetCon", label: "MetCon" },
+  { value: "Running", label: "Running" },
+  { value: "Sprinting", label: "Sprinting" },
+  { value: "HalfMarathon", label: "Half marathon" },
+  { value: "FullMarathon", label: "Full marathon" },
+];
+
+/** Neutral, non-specialized default — never assume a discipline up front. */
+export const DEFAULT_GOAL = "General";
 
 export interface RaceState {
   name: string;
@@ -134,7 +162,7 @@ export function initialState(): PerfLabState {
       sex: "Female",
       units: "Metric (km)",
       accent: "#c6f135",
-      sport: "Distance",
+      goal: DEFAULT_GOAL,
       notifReadiness: true,
       notifTissue: true,
       notifWeekly: false,

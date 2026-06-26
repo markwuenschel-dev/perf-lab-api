@@ -1,7 +1,7 @@
 // src/perflab/screens/OnboardingScreen.tsx
 import { useState } from "react";
 import { useAuth } from "@/auth/useAuth";
-import { usePerfLab } from "../store";
+import { TRAINING_GOALS, usePerfLab } from "../store";
 
 const labelCls = "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-[#9aa0ab]";
 const inputCls = "mt-[9px] w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[14px] text-ink";
@@ -46,19 +46,20 @@ export function OnboardingScreen() {
   // Settings. setSetting writes on every change, so even an immediate skip keeps it.
   const sex = state.settings.sex;
   const units = state.settings.units;
+  const goal = state.settings.goal;
   const ob = state.obStep;
   const goOverview = () => actions.setScreen("overview");
 
-  // Seed the backend athlete profile, then enter the app. The running-themed
-  // form above doesn't map onto the strength-oriented OnboardRequest yet
-  // (docs/SYNC_WITH_BACKEND.md Gap #6), so we send only the email completeOnboarding
-  // already fills in — enough to create the profile + baseline state. The field
-  // test (Field Test screen → /compute-metrics) is what actually seeds S(t).
-  // completeOnboarding is best-effort and never throws; enter the app regardless.
+  // Seed the backend athlete profile, then enter the app. We pass the chosen
+  // training goal so the athlete's primary goal persists server-side (it feeds
+  // the prescriber's default); the rest of the OnboardRequest fills from
+  // server-side defaults. The field test (Field Test screen → /compute-metrics)
+  // is what actually seeds S(t). completeOnboarding is best-effort and never
+  // throws; enter the app regardless.
   async function finish() {
     if (seeding) return;
     setSeeding(true);
-    await completeOnboarding({});
+    await completeOnboarding({ goal });
     goOverview();
   }
 
@@ -125,8 +126,17 @@ export function OnboardingScreen() {
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Training context</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">So the plan speaks your language.</p>
             <div className="flex flex-col gap-4">
-              <label className="block"><span className={labelCls}>Primary sport</span>
-                <select defaultValue="Distance running" className={inputCls} style={{ colorScheme: "dark" }}><option>Distance running</option><option>Trail / ultra</option><option>Triathlon</option><option>Hybrid / tactical</option></select>
+              <label className="block"><span className={labelCls}>Training goal</span>
+                <select
+                  value={goal}
+                  onChange={(e) => actions.setSetting("goal", e.target.value)}
+                  className={inputCls}
+                  style={{ colorScheme: "dark" }}
+                >
+                  {TRAINING_GOALS.map((g) => (
+                    <option key={g.value} value={g.value}>{g.label}</option>
+                  ))}
+                </select>
               </label>
               <div className="block"><span className={labelCls}>Units</span>
                 <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={(v) => actions.setSetting("units", v)} />
