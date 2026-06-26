@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1 import (
     auth,
@@ -175,6 +176,12 @@ app.include_router(weak_points.router, prefix=settings.API_V1_STR)
 # Health check
 # ----------------------------------------------------------------------
 
+@app.get("/", include_in_schema=False)
+async def root() -> FileResponse:
+    """Serve the React SPA shell at the root."""
+    return FileResponse(os.path.join(_static_dir, "index.html"))
+
+
 @app.get("/ping", tags=["Health"], response_model=None)
 async def ping() -> dict[str, str]:
     """Simple health check endpoint."""
@@ -203,23 +210,24 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 # ── Frontend static files ──────────────────────────────────────────────────────
 # Vite outputs: index.html + assets/ (hashed JS/CSS chunks).
-# Mount /assets as a StaticFiles sub-app (GET/HEAD only — no interference with
-# API routes). The SPA catch-all is an explicit GET route so POST/PUT/DELETE to
-# API paths are never intercepted by static file handling.
+# /assets is served by StaticFiles (GET/HEAD only, no routing conflicts).
+# SPA fallback (index.html for unknown GET paths) is handled via the 404
+# exception handler below — no catch-all route that could shadow API endpoints.
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 _assets_dir = os.path.join(_static_dir, "assets")
 
 if os.path.isdir(_assets_dir):
     app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static-root")
 
-@app.get("/{full_path:path}", include_in_schema=False)
-async def serve_spa(full_path: str) -> FileResponse:
-    """Catch-all GET: serve a static file if it exists, otherwise the SPA shell."""
-    candidate = os.path.join(_static_dir, full_path)
-    if full_path and os.path.isfile(candidate):
-        return FileResponse(candidate)
-    index = os.path.join(_static_dir, "index.html")
-    if os.path.isfile(index):
-        return FileResponse(index)
-    return FileResponse(candidate)  # let the OS 404 bubble naturally if no static dir
+
+@app.exception_handler(StarletteHTTPException)
+async def spa_404_handler(request: Request, exc: StarletteHTTPException) -> FileResponse | JSONResponse:
+    """For GET 404s serve the SPA shell; all other errors return JSON."""
+    if exc.status_code == 404 and request.method == "GET":
+        index = os.path.join(_static_dir, "index.html")
+        if os.path.isfile(index):
+            return FileResponse(index)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
