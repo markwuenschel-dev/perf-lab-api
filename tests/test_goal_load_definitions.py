@@ -1,14 +1,14 @@
 """Tests for goal load definitions — completeness and data integrity."""
 
-import pytest
 from typing import get_args
 
-from app.schemas.training_goals import TrainingGoal
+import pytest
+
 from app.logic.goal_load_definitions import (
-    GoalLoadDefinition,
     GOAL_LOAD_DEFINITIONS,
     get_goal_load_definition,
 )
+from app.schemas.training_goals import TrainingGoal
 
 ALL_GOALS: tuple[str, ...] = get_args(TrainingGoal)
 
