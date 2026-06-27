@@ -4,6 +4,7 @@ import { useAuth } from "@/auth/useAuth";
 import { isImperial, kgToLbs, lbsToKg, parseMMSS, weightLabel } from "@/lib/units";
 import { computeMetrics } from "@/api/perfLabClient";
 import { isRunningGoal, isStrengthGoal, TRAINING_GOALS, usePerfLab } from "../store";
+import { getGoalLoadDefinition } from "../goalLoadDefinitions";
 
 const labelCls = "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-[#9aa0ab]";
 const inputCls = "mt-[9px] w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[14px] text-ink";
@@ -33,6 +34,54 @@ function Seg({ options, value, onChange }: { options: readonly string[]; value: 
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className={labelCls}>{label}</span>{children}</label>;
+}
+
+const anchorRowCls = "flex flex-col gap-[3px] border-b border-white/[0.05] py-[10px] last:border-0";
+const anchorLabelCls = "font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.13em] text-faint";
+const anchorValCls = "text-[12px] font-medium leading-[1.5] text-mute";
+
+function GoalAnchorCard({ goal }: { goal: string }) {
+  const [open, setOpen] = useState(false);
+  const defn = getGoalLoadDefinition(goal);
+  if (!defn) return null;
+  return (
+    <div className="mt-5 rounded-[12px] border border-white/[0.08] bg-white/[0.02]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3"
+      >
+        <span className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#7c818c]">
+          Baseline anchors · {goal}
+        </span>
+        <span className="font-mono text-[11px] leading-none text-faint">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-white/[0.06] px-4 pb-3">
+          <div className={anchorRowCls}>
+            <span className={anchorLabelCls}>Training load</span>
+            <span className={anchorValCls}>{defn.goalSpecificTrainingLoad}</span>
+          </div>
+          <div className={anchorRowCls}>
+            <span className={anchorLabelCls}>Capacity anchor</span>
+            <span className={anchorValCls}>{defn.primaryCapacityAnchor}</span>
+          </div>
+          <div className={anchorRowCls}>
+            <span className={anchorLabelCls}>Load-tolerance anchor</span>
+            <span className={anchorValCls}>{defn.loadToleranceAnchor}</span>
+          </div>
+          <div className={anchorRowCls}>
+            <span className={anchorLabelCls}>Risk / tissue anchor</span>
+            <span className={anchorValCls}>{defn.riskOrTissueAnchor}</span>
+          </div>
+          <div className={anchorRowCls}>
+            <span className={anchorLabelCls}>Best retest metric</span>
+            <span className={anchorValCls}>{defn.bestRetestMetric}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function OnboardingScreen() {
@@ -248,6 +297,8 @@ export function OnboardingScreen() {
                 <Field label="5K time (MM:SS)"><input value={run5k} onChange={(e) => setRun5k(e.target.value)} placeholder="—" className={`${inputCls} font-mono`} /></Field>
               </div>
             )}
+
+            <GoalAnchorCard goal={goal} />
 
             <div className="mt-[30px] flex justify-between">
               <button onClick={actions.obBack} className={btnBack}>← Back</button>

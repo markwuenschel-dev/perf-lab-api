@@ -40,6 +40,25 @@ Benchmarks can be linked to planned session flow or workout logs, but benchmark 
 
 Derived metrics are computed from observations and profile context, then stored as time-stamped snapshots.
 
+### 8. Baseline anchors, not a single baseline measurement
+
+A single capacity test is insufficient for most training goals.  Performance Lab distinguishes four anchor types for every goal:
+
+- **Capacity anchor** — what can the athlete currently do? (e.g. 1RM, 5K time, vertical jump)
+- **Load-tolerance anchor** — how much stress can they currently recover from? (e.g. weekly hard sets, weekly mileage, explosive rep capacity)
+- **Risk / tissue anchor** — what limits safe progression? (e.g. tendon irritation, injury history, technical breakdown threshold)
+- **Retest metric** — what should be measured periodically to recalibrate the model?
+
+These are represented as `GoalLoadDefinition` records in `app/logic/goal_load_definitions.py` (backend) and `web/src/perflab/goalLoadDefinitions.ts` (frontend). Each of the 14 supported training goals has exactly one definition.
+
+Goal-specific notes:
+- **Running / endurance goals**: distinguish performance capacity from durability capacity. A 5K time captures speed, not the ability to absorb chronic mileage.
+- **Strength / powerlifting**: a 1RM anchors force capacity, but does not reveal how much weekly hard-set load the athlete can recover from.
+- **Gymnastics / calisthenics / grip**: connective-tissue tolerance must be tracked separately from muscle capacity, as it adapts more slowly and fails silently.
+- **MetCon**: a single benchmark score hides the limiting system. Decompose by metabolic density, movement interference, local muscular endurance, skill bottleneck, and eccentric damage.
+
+The `GoalLoadDefinition` model is explanatory and measurement-first. It is shaped to later feed benchmark selection, onboarding question routing, prescriber rationale, validator constraints, and state-update calibration.
+
 ## Entity Overview
 
 ```text
