@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 
 from app.core.db import AsyncSessionLocal
 from app.models.user import User

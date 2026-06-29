@@ -25,7 +25,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import traceback
-from typing import Callable, Coroutine, Any
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 
 async def _run_step(
@@ -46,12 +47,14 @@ async def _run_step(
 
 
 async def main_async(n_users: int = 25, skip_openpl: bool = False) -> None:
-    from app.scripts import seed_benchmarks
-    from app.scripts import seed_demo_athletes
-    from app.scripts import seed_fitbit_wellness
-    from app.scripts import seed_fitbit_workout_logs
-    from app.scripts import seed_gym_members_wellness
-    from app.scripts import seed_openpl_strength
+    from app.scripts import (  # noqa: PLC0415
+        seed_benchmarks,
+        seed_demo_athletes,
+        seed_fitbit_wellness,
+        seed_fitbit_workout_logs,
+        seed_gym_members_wellness,
+        seed_openpl_strength,
+    )
 
     results: list[tuple[str, bool]] = []
 

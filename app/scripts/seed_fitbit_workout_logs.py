@@ -20,7 +20,7 @@ from datetime import time as time_cls
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.core.db import AsyncSessionLocal
 from app.models.user import User
