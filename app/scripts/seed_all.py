@@ -58,7 +58,7 @@ async def main_async(n_users: int = 25, skip_openpl: bool = False) -> None:
 
     results: list[tuple[str, bool]] = []
 
-    steps: list[tuple[str, Callable, dict]] = [
+    steps: list[tuple[str, Callable[..., Any], dict[str, Any]]] = [
         ("Step 1: Benchmark definitions", seed_benchmarks.seed, {}),
         ("Step 2: Google-Fit demo athletes", seed_demo_athletes.seed, {"n_users": n_users, "runs_per_athlete": 3}),
         ("Step 3: Fitbit sleep wellness", seed_fitbit_wellness.seed, {}),
