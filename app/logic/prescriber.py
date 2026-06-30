@@ -406,7 +406,7 @@ def recommend_next_session(
         # No adaptive score optimization, no block bias, no habit/novelty scoring.
         # Hard safety overrides still apply (applied above, via early return).
         static_candidates = [c for c in goal_candidates if not c.is_safety_override]
-        chosen = static_candidates[0] if static_candidates else (scored[0] if scored else None)
+        chosen = static_candidates[0] if static_candidates else (goal_candidates[0] if goal_candidates else None)
         if chosen:
             rx = _finalize(chosen, state, goal, recent_sessions)
             if rx.why:
