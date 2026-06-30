@@ -72,6 +72,124 @@ def _sessions_in_window(
     return out
 
 
+# --- Universal / cross-goal safety rules (migrated from validate_session.py) ---
+
+
+def universal_fatigue_ok(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Hard: systemic metabolic fatigue too high for any structured session."""
+    if float(ctx.legacy.get("f_met_systemic", 0)) > 80:
+        return _fail("universal_fatigue_ok", msg="systemic fatigue critical — rest required")
+    return _ok("universal_fatigue_ok")
+
+
+def universal_tissue_safe(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Hard: lumbar or knee tissue load too high for compound loading."""
+    lumbar = float(ctx.tissue_state.get("lumbar", 0))
+    knee = float(ctx.tissue_state.get("knee", 0))
+    if lumbar > 65 or knee > 70:
+        return _fail(
+            "universal_tissue_safe",
+            msg=f"tissue stress elevated (lumbar {lumbar:.0f}, knee {knee:.0f})",
+        )
+    return _ok("universal_tissue_safe")
+
+
+def universal_gymnastics_wrist_tissue(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Hard: Gymnastics goal with elevated wrist tissue stress."""
+    if ctx.goal != "Gymnastics":
+        return _ok("universal_gymnastics_wrist_tissue")
+    if float(ctx.tissue_state.get("wrist", 0)) > 75:
+        return _fail(
+            "universal_gymnastics_wrist_tissue",
+            msg="gymnastics_wrist_tissue: wrist stress too high for skill work",
+        )
+    return _ok("universal_gymnastics_wrist_tissue")
+
+
+def universal_olympic_metabolic_check(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Soft: Olympic lifts with high systemic fatigue and metabolic-heavy session."""
+    if ctx.goal != "OlympicLifts":
+        return _ok("universal_olympic_metabolic_check", hard=False)
+    met_sys = float(ctx.legacy.get("f_met_systemic", 0))
+    met_emph = float(c.get("metabolic_emphasis", 0))
+    if met_sys > 65 and met_emph > 0.55:
+        return _fail(
+            "universal_olympic_metabolic_check",
+            hard=False,
+            msg="olympic_metabolic_before_technical: elevated systemic fatigue with met-heavy draft",
+        )
+    return _ok("universal_olympic_metabolic_check", hard=False)
+
+
+def universal_running_zone2_majority(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Soft: Running goals — prefer easy volume when fatigued."""
+    if ctx.goal not in ("Running", "HalfMarathon", "FullMarathon"):
+        return _ok("universal_running_zone2_majority", hard=False)
+    met_sys = float(ctx.legacy.get("f_met_systemic", 0))
+    if c.get("intensity_bucket") in ("high", "max") and met_sys > 50:
+        return _fail(
+            "universal_running_zone2_majority",
+            hard=False,
+            msg="running_zone2_majority: prefer easy volume when fatigue present",
+        )
+    return _ok("universal_running_zone2_majority", hard=False)
+
+
+def universal_sprint_neural_freshness(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Soft: Sprinting requires CNS freshness."""
+    if ctx.goal != "Sprinting":
+        return _ok("universal_sprint_neural_freshness", hard=False)
+    if float(ctx.legacy.get("f_nm_central", 0)) > 58:
+        return _fail(
+            "universal_sprint_neural_freshness",
+            hard=False,
+            msg="sprint_neural_freshness: CNS elevated — shorten sprint exposure",
+        )
+    return _ok("universal_sprint_neural_freshness", hard=False)
+
+
+def universal_grip_max_frequency(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Soft: Grip goal — reduce max crush frequency when grip fatigue high."""
+    if ctx.goal != "Grip":
+        return _ok("universal_grip_max_frequency", hard=False)
+    grip_fat = float(ctx.fatigue_state.get("grip", 0))
+    neural_emph = float(c.get("neural_emphasis", 0))
+    if grip_fat > 55 and neural_emph > 0.7:
+        return _fail(
+            "universal_grip_max_frequency",
+            hard=False,
+            msg="grip_max_frequency: reduce max crush frequency when grip fatigue high",
+        )
+    return _ok("universal_grip_max_frequency", hard=False)
+
+
+def universal_metcon_fatigue_stack(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Soft: MetCon with high systemic load."""
+    if ctx.goal != "MetCon":
+        return _ok("universal_metcon_fatigue_stack", hard=False)
+    if float(ctx.legacy.get("f_met_systemic", 0)) > 70:
+        return _fail(
+            "universal_metcon_fatigue_stack",
+            hard=False,
+            msg="metcon_fatigue_stack: systemic load high — bias recovery or low density",
+        )
+    return _ok("universal_metcon_fatigue_stack", hard=False)
+
+
+def universal_pl_deadlift_cns(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
+    """Soft: Powerlifting — rotate CNS-heavy lifts when central fatigue high."""
+    if ctx.goal != "Powerlifting":
+        return _ok("universal_pl_deadlift_cns", hard=False)
+    cns = float(ctx.legacy.get("f_nm_central", 0))
+    if cns > 55 and c.get("intensity_bucket") == "high":
+        return _fail(
+            "universal_pl_deadlift_cns",
+            hard=False,
+            msg="pl_deadlift_cns: rotate CNS-heavy lifts when central fatigue high",
+        )
+    return _ok("universal_pl_deadlift_cns", hard=False)
+
+
 # --- Olympic ---
 
 
@@ -420,6 +538,17 @@ def prefer_scapular_control_before_advanced_ring_work(
 
 
 CONSTRAINT_REGISTRY: dict[str, Any] = {
+    # Universal rules
+    "universal_fatigue_ok": universal_fatigue_ok,
+    "universal_tissue_safe": universal_tissue_safe,
+    "universal_gymnastics_wrist_tissue": universal_gymnastics_wrist_tissue,
+    "universal_olympic_metabolic_check": universal_olympic_metabolic_check,
+    "universal_running_zone2_majority": universal_running_zone2_majority,
+    "universal_sprint_neural_freshness": universal_sprint_neural_freshness,
+    "universal_grip_max_frequency": universal_grip_max_frequency,
+    "universal_metcon_fatigue_stack": universal_metcon_fatigue_stack,
+    "universal_pl_deadlift_cns": universal_pl_deadlift_cns,
+    # Olympic
     "olift_limit_reps_per_set_competition_lifts": olift_limit_reps_per_set_competition_lifts,
     "olift_no_high_fatigue_metcon_before_technical_session": olift_no_high_fatigue_metcon_before_technical_session,
     "olift_require_freshness_for_heavy_technical_singles": olift_require_freshness_for_heavy_technical_singles,
@@ -450,3 +579,18 @@ CONSTRAINT_REGISTRY: dict[str, Any] = {
     "prefer_isometric_progression_before_dynamic_complexity": prefer_isometric_progression_before_dynamic_complexity,
     "prefer_scapular_control_before_advanced_ring_work": prefer_scapular_control_before_advanced_ring_work,
 }
+
+UNIVERSAL_HARD_CONSTRAINTS: list[str] = [
+    "universal_fatigue_ok",
+    "universal_tissue_safe",
+    "universal_gymnastics_wrist_tissue",
+]
+
+UNIVERSAL_SOFT_CONSTRAINTS: list[str] = [
+    "universal_olympic_metabolic_check",
+    "universal_running_zone2_majority",
+    "universal_sprint_neural_freshness",
+    "universal_grip_max_frequency",
+    "universal_metcon_fatigue_stack",
+    "universal_pl_deadlift_cns",
+]
