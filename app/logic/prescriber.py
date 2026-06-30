@@ -335,6 +335,7 @@ def recommend_next_session(
     active_weak_points: list[str] | None = None,
     available_equipment: list[str] | None = None,
     block_context: dict[str, Any] | None = None,
+    candidate_log_out: list[SessionCandidate] | None = None,
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -395,6 +396,13 @@ def recommend_next_session(
         r = _readiness(state)
         fallback_templates = get_templates("general", kpi, state=state)
         scored = [score_template(t, state, kpi, readiness=r) for t in fallback_templates]
+
+    # Capture all scored candidates for offline policy research (Task 8).
+    # This must happen after the fallback so callers always see the full pool.
+    # Default None means no-op — selection is unchanged.
+    if candidate_log_out is not None:
+        candidate_log_out.clear()
+        candidate_log_out.extend(scored)
 
     # --- 4. Return best candidate (finalize adds explainability + hard-constraint override) ---
     rx = _finalize(scored[0], state, goal, recent_sessions)

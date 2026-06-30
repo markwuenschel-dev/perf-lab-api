@@ -59,6 +59,103 @@ DEFAULT_SCORE_WEIGHTS: dict[str, float] = {
     "template_bias": 0.05,
 }
 
+# ---------------------------------------------------------------------------
+# Scoring weight safety constraints (Task 8)
+# ---------------------------------------------------------------------------
+# fatigue_penalty and tissue_penalty must remain negative (they penalise risky
+# sessions). novelty_bonus and habit_bonus are bounded to prevent gaming.
+_WEIGHT_CONSTRAINTS: dict[str, dict[str, float]] = {
+    "fatigue_penalty": {"max": -0.05},
+    "tissue_penalty":  {"max": -0.02},
+    "novelty_bonus":   {"min": 0.0, "max": 0.10},
+    "habit_bonus":     {"min": 0.0, "max": 0.10},
+}
+
+
+from dataclasses import dataclass as _dataclass  # noqa: E402
+
+
+@_dataclass
+class ScoreWeightProfile:
+    """Versioned container for a scoring weight dict."""
+
+    weights: dict[str, float]
+    version: str = "v1"
+
+
+def validate_score_weights(weights: dict[str, float]) -> list[str]:
+    """Return a list of violation messages; empty list means the weights are safe.
+
+    Safety constraints:
+    - ``fatigue_penalty`` and ``tissue_penalty`` must remain negative so they
+      cannot be zeroed out or inverted by a learned optimiser.
+    - ``novelty_bonus`` and ``habit_bonus`` are capped to prevent them from
+      overwhelming the readiness-based penalties.
+    """
+    violations: list[str] = []
+    fp = weights.get("fatigue_penalty", -0.15)
+    if fp > _WEIGHT_CONSTRAINTS["fatigue_penalty"]["max"]:
+        violations.append(
+            f"fatigue_penalty={fp:.3f} must be <= "
+            f"{_WEIGHT_CONSTRAINTS['fatigue_penalty']['max']} (safety minimum)"
+        )
+    tp = weights.get("tissue_penalty", -0.08)
+    if tp > _WEIGHT_CONSTRAINTS["tissue_penalty"]["max"]:
+        violations.append(
+            f"tissue_penalty={tp:.3f} must be <= "
+            f"{_WEIGHT_CONSTRAINTS['tissue_penalty']['max']} (safety minimum)"
+        )
+    nb = weights.get("novelty_bonus", 0.0)
+    if nb > _WEIGHT_CONSTRAINTS["novelty_bonus"]["max"]:
+        violations.append(
+            f"novelty_bonus={nb:.3f} must be <= "
+            f"{_WEIGHT_CONSTRAINTS['novelty_bonus']['max']}"
+        )
+    hb = weights.get("habit_bonus", 0.0)
+    if hb > _WEIGHT_CONSTRAINTS["habit_bonus"]["max"]:
+        violations.append(
+            f"habit_bonus={hb:.3f} must be <= "
+            f"{_WEIGHT_CONSTRAINTS['habit_bonus']['max']}"
+        )
+    return violations
+
+
+def simple_safe_goal_aligned_policy(
+    candidates: list[SessionCandidate],
+    state: UnifiedStateVector,
+    fatigue_limit: float = 60.0,
+    tissue_limit: float = 60.0,
+) -> SessionCandidate | None:
+    """Baseline comparator policy: safety-filtered, goal-aligned scoring.
+
+    Used to establish a Q8 baseline.  Does NOT use learned weights.
+
+    Filtering rules:
+    - Safety-override candidates are excluded (they are hard-stop sessions
+      that bypass normal scoring entirely).
+    - Candidates whose ``fatigue_penalty`` or ``tissue_penalty`` (expressed in
+      [0, 1] penalty space) exceed the corresponding limit threshold are
+      excluded.  Limits are supplied in [0, 100] state-score space and
+      converted to [0, 1] penalty space by dividing by 100.
+
+    The surviving candidate with the highest composite goal-alignment score
+    is returned, or ``None`` if no safe candidates remain.
+    """
+    fat_thresh = fatigue_limit / 100.0
+    tis_thresh = tissue_limit / 100.0
+    safe = [
+        c for c in candidates
+        if not c.is_safety_override
+        and c.fatigue_penalty < fat_thresh
+        and c.tissue_penalty < tis_thresh
+    ]
+    if not safe:
+        return None
+    return max(
+        safe,
+        key=lambda c: c.goal_alignment + 0.5 * c.state_fit + 0.5 * c.weak_point_coverage,
+    )
+
 
 def score_candidate(
     candidate: SessionCandidate,
