@@ -54,6 +54,12 @@ def directional_interference_multiplier(
         return suppression_exp(z, params.interference_e_on_strength_alpha, floor)
 
     if target_axis == "power":
+        # Two suppression channels combined via min() (weakest-link model):
+        #   1. Endurance-load proxy (0.4·metabolic + 0.6·structural), the same
+        #      channel structural fatigue always entered power through.
+        #   2. CNS fatigue — deliberate modeling change from the legacy
+        #      INTERFERENCE_DAM_ON_POWER structural-product; CNS is now the
+        #      second limiter rather than a separate structural multiplier.
         z_e = _endurance_load_fraction(state)
         z_cns = f.cns / 100.0
         m_e = suppression_exp(z_e, params.interference_e_on_power_alpha, floor)

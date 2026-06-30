@@ -399,13 +399,11 @@ def _apply_adaptation_gains(
         coef = p.adapt_coef.get(key, 0.012)
         gain = signal * coef * efficiency
 
-        # Skill adaptation is additionally suppressed under high CNS fatigue
-        if key == "skill" and s.fatigue_f.cns > p.crosstalk_skill_suppressed_above_cns:
-            cns_excess = (s.fatigue_f.cns - p.crosstalk_skill_suppressed_above_cns) / 45.0
-            gain *= max(0.5, 1.0 - cns_excess * 0.5)
-
         # Concurrent-training interference (ADR-0037): routes through the
         # exponential suppression model (app/logic/interference.py).
+        # CNS-on-skill is handled exclusively here (not the legacy
+        # crosstalk_skill_suppressed_above_cns block, which was removed to
+        # prevent double-suppression — each axis has a single CNS source).
         if key in ("max_strength", "power", "hypertrophy", "skill", "aerobic"):
             gain *= directional_interference_multiplier(key, s, p)
 
