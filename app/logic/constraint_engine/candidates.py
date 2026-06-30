@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.schemas.prescription import WorkoutPrescription
-from app.schemas.session_draft import SessionDraft
+from app.schemas.session_draft import IntensityBand, SessionDraft
 from app.schemas.training_goals import TrainingGoal
 
 # (technical, metabolic, neural) emphasis defaults per goal
@@ -23,7 +23,7 @@ _GOAL_EMPHASIS: dict[str, tuple[float, float, float]] = {
 }
 
 
-def _infer_intensity_from_rx(rx: WorkoutPrescription) -> str:
+def _infer_intensity_from_rx(rx: WorkoutPrescription) -> IntensityBand:
     t = f"{rx.type} {rx.focus}".lower()
     if "recovery" in t or "rest" in t or "passive" in t:
         return "low"
@@ -103,7 +103,7 @@ def encode_session_candidate(
     """Stable shape for constraint + scoring (v1: single branch output)."""
 
     if draft:
-        intensity_bucket = draft.intensity_band
+        intensity_bucket: IntensityBand = draft.intensity_band
     else:
         intensity_bucket = _infer_intensity_from_rx(rx)
 

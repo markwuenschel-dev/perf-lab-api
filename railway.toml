@@ -1,15 +1,17 @@
 # Railway deploy config for perf-lab-api (the FastAPI backend).
 #
-# Railway builds from the repo Dockerfile (which runs `alembic upgrade head`
-# then uvicorn on $PORT) and we add a health check + restart policy here so a
-# bad boot is caught and retried instead of silently serving errors.
+# Default build target `backend` is API-only (no Node stage) — use this when the
+# frontend is a separate Railway service (web/railway.toml).
 #
-# The frontend (web/) is a SEPARATE Railway service (root: /web, uses web/Dockerfile)
-# that talks to this service via the VITE_API_BASE_URL build variable.
+# Monolith deploy (API serves the SPA from /static): set build target to
+# `backend-with-frontend` and provide VITE_API_BASE_URL as a build variable.
+#
+# Migrations run on boot (`alembic upgrade head` in Dockerfile CMD).
 
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+buildTarget = "backend"
 
 [deploy]
 # /ping is the app's health endpoint (see app/main.py).

@@ -3,7 +3,7 @@
 # from there rather than the repo root. `publish` is relative to `base`.
 [build]
   base = "web"
-  command = "npm run build"
+  command = "pnpm run build"
   publish = "dist"
 
 [build.environment]

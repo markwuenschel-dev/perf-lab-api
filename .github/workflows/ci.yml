@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Newer pushes to the same branch/PR cancel in-flight runs.
 concurrency:
@@ -11,64 +12,82 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The contract gate: the app must import (catches the un-bootable-main class of
-  # bug that left main un-deployable for ~3 weeks), the OpenAPI schema must
-  # generate, and the committed openapi.json must match the code. This is what
-  # keeps the web app's generated types (src/types.gen.ts) honest.
-  contract:
-    name: API contract (boot + OpenAPI)
+  changes:
+    name: Detect changed paths
     runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'app/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'openapi.json'
+              - 'alembic/**'
+            web:
+              - 'web/**'
+
+  # Contract gate + tests + lint in one job: single uv install, parallel checks.
+  python:
+    name: Python (contract + tests + lint)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      needs.changes.outputs.python == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          pip install .
+          python-version: "3.12"
+
+      - name: Install package + dev deps
+        run: uv sync --frozen --extra dev
+
+      - name: Restore tool caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .mypy_cache
+            .ruff_cache
+          key: tool-cache-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: |
+            tool-cache-${{ runner.os }}-py3.12-
+
       - name: App boots (import smoke test)
-        run: python -c "import app.main; print('app.main imported OK')"
+        run: uv run python -c "import app.main; print('app.main imported OK')"
+
       - name: OpenAPI is committed and current
-        run: python -m app.scripts.export_openapi --check
+        run: uv run python -m app.scripts.export_openapi --check
 
-  # Blocking: the suite is green on Python 3.11. DB-backed tests are deselected
-  # here (no Postgres service in CI) and covered separately.
-  tests:
-    name: Tests (pytest)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install package + dev deps
+      - name: Run pytest, ruff, and mypy in parallel
         run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev]"
-      - name: Run test suite (excluding DB-backed tests)
-        run: python -m pytest -q -m "not requires_db"
-
-  # Lint + strict type gate. Both are clean (ruff 0, mypy --strict 0) — keep them so.
-  lint:
-    name: Lint & types (ruff + mypy)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install package + dev deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev]"
-      - name: Ruff (lint)
-        run: ruff check .
-      - name: Mypy (strict type-check)
-        run: mypy app
+          set -euo pipefail
+          uv run python -m pytest -q -m "not requires_db" &
+          pid_pytest=$!
+          uv run ruff check . &
+          pid_ruff=$!
+          uv run mypy app &
+          pid_mypy=$!
+          status=0
+          wait "$pid_pytest" || status=1
+          wait "$pid_ruff" || status=1
+          wait "$pid_mypy" || status=1
+          exit "$status"
 
   # Frontend gate: the production build (tsc -b + vite build) must be green.
   # Lint is non-blocking — 3 pre-existing react-refresh warnings in generated
@@ -76,20 +95,41 @@ jobs:
   web:
     name: Web (build + lint)
     runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      needs.changes.outputs.web == 'true'
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Restore Vite cache
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules/.cache
+          key: vite-cache-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+          restore-keys: |
+            vite-cache-${{ runner.os }}-
+
       - name: Install deps
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
       - name: Build (tsc + vite)
-        run: npm run build
+        run: pnpm run build
+
       - name: Lint (non-blocking)
-        run: npm run lint
+        run: pnpm run lint
         continue-on-error: true

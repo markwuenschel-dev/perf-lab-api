@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Node 18+
-- npm 9+
+- Node 22+
+- pnpm 10+ (via `corepack enable` or `npx pnpm`)
 - running instance of `perf-lab-api`
 - PostgreSQL-backed backend with Alembic migrations applied
 
@@ -11,7 +11,7 @@ Check versions:
 
 ```bash
 node --version
-npm --version
+pnpm --version
 ```
 
 ## Local Setup
@@ -19,7 +19,7 @@ npm --version
 ```bash
 git clone https://github.com/Nalakram/perf-lab-web.git
 cd perf-lab-web
-npm install
+pnpm install
 ```
 
 ## Environment Variables
@@ -43,8 +43,9 @@ If this variable is missing, the client logs a warning and API calls throw a con
 From `perf-lab-api`:
 
 ```bash
-alembic upgrade head
-uvicorn app.main:app --reload
+uv sync --extra dev
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
 ```
 
 The backend uses Alembic for schema management. Do not rely on `create_all`.
@@ -60,7 +61,7 @@ a002_planned_bench_cols
 ## Dev Server
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Starts Vite.
@@ -68,7 +69,7 @@ Starts Vite.
 ## Build
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Runs:
@@ -94,7 +95,7 @@ Run this after touching:
 ## Linting
 
 ```bash
-npm run lint
+pnpm run lint
 ```
 
 Uses ESLint with React hooks / refresh plugins.
@@ -102,7 +103,7 @@ Uses ESLint with React hooks / refresh plugins.
 ## Preview Production Build
 
 ```bash
-npm run preview
+pnpm run preview
 ```
 
 ## Tech Stack
@@ -270,8 +271,8 @@ Before committing:
 
 ```bash
 npx tsc --noEmit
-npm run build
-npm run lint
+pnpm run build
+pnpm run lint
 ```
 
 Also verify:

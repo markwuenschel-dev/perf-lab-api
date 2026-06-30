@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -134,7 +134,7 @@ async def prescribe_for_athlete(
         kpi_summary=kpi_summary or None,
         active_weak_points=active_weak_points or None,
         available_equipment=(profile.equipment if profile else None),
-        block_context=block_context,
+        block_context=cast(dict[str, Any] | None, block_context),
     )
     # Persist prescription back to the planned session slot
     if planned_session is not None:

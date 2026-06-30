@@ -20,7 +20,7 @@ The API exposes JSON endpoints; the complexity is internal.
 
 ## Stack
 
-- **Language:** Python 3.11+
+- **Language:** Python 3.12+
 - **Framework:** FastAPI (primary app version **0.2.0** in `app.main:app`)
 - **Server:** Uvicorn
 - **Config:** pydantic-settings (dotenv `.env` supported)
@@ -30,15 +30,16 @@ The API exposes JSON endpoints; the complexity is internal.
 - **Testing (tooling):** pytest, pytest-asyncio, pytest-cov
 - **Lint / format / types:** ruff, black, isort, mypy
 
-**Package manager:** `pip` via [`requirements.txt`](requirements.txt).
+**Package manager:** [uv](https://docs.astral.sh/uv/) via [`pyproject.toml`](pyproject.toml) and [`uv.lock`](uv.lock).
 
-### Dependencies in `requirements.txt`
+```bash
+uv sync --extra dev          # install runtime + dev deps
+uv run pytest -q             # run tests
+uv run ruff check .          # lint
+uv run mypy app              # type-check
+```
 
-- **Core:** FastAPI, Uvicorn, pydantic-settings, python-dotenv
-- **Database:** SQLAlchemy (asyncio), asyncpg, psycopg2-binary (for Alembic’s sync migration path), alembic, greenlet
-- **Auth & uploads:** pyjwt, passlib, python-jose, python-multipart, email-validator, bcrypt
-- **HTTP / JSON:** httpx, orjson
-- **Declared for upcoming features (not imported under `app/` today):** LLM SDKs (anthropic, openai, google-generativeai, mistralai, tiktoken, tenacity), Celery + Redis, slowapi, structlog. Local development does **not** require Redis or provider API keys unless you start wiring these layers in.
+Legacy [`requirements.txt`](requirements.txt) is kept for reference during transition.
 
 ---
 

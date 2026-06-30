@@ -45,9 +45,9 @@ blocked, stop and ask rather than forcing it.
 ## Build & verify (run before pushing)
 
 - `npx tsc -b` — type-check (catches frontend↔backend contract drift)
-- `npm run lint` — 3 pre-existing `react-refresh` errors in generated shadcn UI files
+- `pnpm run lint` — 3 pre-existing `react-refresh` errors in generated shadcn UI files
   (`badge`/`button`/`tabs`) are known and out of scope; introduce no new ones
-- `npm run build` — the production build must be green
+- `pnpm run build` — the production build must be green
 
 ## Project conventions
 
