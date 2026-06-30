@@ -6,10 +6,11 @@ Used when exercise rows omit explicit JSON phi vectors (seed backfill).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
-def _merge(base: dict[str, float], extra: dict[str, float]) -> dict[str, float]:
+def _merge(base: Mapping[str, float], extra: Mapping[str, float]) -> dict[str, float]:
     out = dict(base)
     for k, v in extra.items():
         out[k] = out.get(k, 0.0) + v
@@ -40,7 +41,9 @@ def default_phi_for_row(
         "tendon": impact_level * 0.2,
         "grip": 0.05,
     }
-    tissue = dict.fromkeys(("shoulder", "elbow", "wrist", "lumbar", "hip", "knee", "ankle", "finger"), 0.05)
+    tissue: dict[str, float] = dict.fromkeys(
+        ("shoulder", "elbow", "wrist", "lumbar", "hip", "knee", "ankle", "finger"), 0.05
+    )
 
     mp = movement_pattern.lower()
     if "squat" in mp or mp == "single_leg":

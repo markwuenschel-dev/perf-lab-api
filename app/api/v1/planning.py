@@ -153,7 +153,10 @@ async def get_today(
     )
     state_row = state_result.scalars().first()
     if not state_row:
-        return TodaySessionResponse(session=session, prescription=None)
+        return TodaySessionResponse(
+            session=PlannedSessionRead.model_validate(session, from_attributes=True),
+            prescription=None,
+        )
     state = unified_from_athlete_row(state_row)
 
     profile_result = await db.execute(select(AthleteProfile).where(AthleteProfile.user_id == current_user.id))
@@ -191,6 +194,6 @@ async def get_today(
     await db.commit()
     await db.refresh(session)
     return TodaySessionResponse(
-        session=session,
+        session=PlannedSessionRead.model_validate(session, from_attributes=True),
         prescription=session.prescribed_content,
     )

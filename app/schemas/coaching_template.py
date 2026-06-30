@@ -62,14 +62,14 @@ class StructuredCoachingTemplate(BaseModel):
     source_type: SourceType
     source_name: str
     evidence_level: EvidenceLevel
-    goal_bias: GoalBias = Field(default_factory=GoalBias)
-    weekly_structure: WeeklyStructure = Field(default_factory=WeeklyStructure)
+    goal_bias: GoalBias = Field(default_factory=lambda: GoalBias())
+    weekly_structure: WeeklyStructure = Field(default_factory=lambda: WeeklyStructure())
     load_distribution: LoadDistributionStructured = Field(
-        default_factory=LoadDistributionStructured
+        default_factory=lambda: LoadDistributionStructured()
     )
     state_targets: list[str] = Field(default_factory=list)
     fatigue_profile: FatigueProfileStructured = Field(
-        default_factory=FatigueProfileStructured
+        default_factory=lambda: FatigueProfileStructured()
     )
     hard_constraints: list[str] = Field(default_factory=list)
     soft_constraints: list[str] = Field(default_factory=list)

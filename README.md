@@ -28,7 +28,7 @@ The API exposes JSON endpoints; the complexity is internal.
 - **Migrations:** Alembic — three migrations ship with the repo (`a000` foundational tables, `a001` benchmark/KPI tables, `a002` planned-session benchmark columns). Run `alembic upgrade head` on a fresh database to create all tables.
 - **Auth:** JWT (`python-jose`), bcrypt hashing via passlib, OAuth2 password flow for `/auth/token`
 - **Testing (tooling):** pytest, pytest-asyncio, pytest-cov
-- **Lint / format / types:** ruff, black, isort, mypy
+- **Lint / format / types:** ruff, black, isort, pyright
 
 **Package manager:** [uv](https://docs.astral.sh/uv/) via [`pyproject.toml`](pyproject.toml) and [`uv.lock`](uv.lock).
 
@@ -36,7 +36,7 @@ The API exposes JSON endpoints; the complexity is internal.
 uv sync --extra dev          # install runtime + dev deps
 uv run pytest -q             # run tests
 uv run ruff check .          # lint
-uv run mypy app              # type-check
+uv run pyright                 # type-check
 ```
 
 Legacy [`requirements.txt`](requirements.txt) is kept for reference during transition.
@@ -274,7 +274,7 @@ pytest --cov=app
 ruff check .
 black .
 isort .
-mypy app
+pyright
 ```
 
 ---

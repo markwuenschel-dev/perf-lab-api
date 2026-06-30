@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 # python-jose ships no type stubs; ignore the missing-import error only.
-from jose import JWTError, jwt  # type: ignore[import-untyped]
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 

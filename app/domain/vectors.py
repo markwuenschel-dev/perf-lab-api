@@ -39,14 +39,14 @@ TissueKey = Literal[
 class CapacityState(BaseModel):
     """X_t — capacity / adaptation ceiling components (higher = better)."""
 
-    aerobic: float = Field(300.0, ge=0.0, description="Aerobic / CS–VO2 proxy")
-    glycolytic: float = Field(50.0, ge=0.0, description="Glycolytic / W′-style reserve")
-    max_strength: float = Field(100.0, ge=0.0)
-    hypertrophy: float = Field(50.0, ge=0.0)
-    power: float = Field(50.0, ge=0.0)
-    skill: float = Field(50.0, ge=0.0)
-    mobility: float = Field(50.0, ge=0.0)
-    work_capacity: float = Field(50.0, ge=0.0)
+    aerobic: float = Field(default=300.0, ge=0.0, description="Aerobic / CS–VO2 proxy")
+    glycolytic: float = Field(default=50.0, ge=0.0, description="Glycolytic / W′-style reserve")
+    max_strength: float = Field(default=100.0, ge=0.0)
+    hypertrophy: float = Field(default=50.0, ge=0.0)
+    power: float = Field(default=50.0, ge=0.0)
+    skill: float = Field(default=50.0, ge=0.0)
+    mobility: float = Field(default=50.0, ge=0.0)
+    work_capacity: float = Field(default=50.0, ge=0.0)
 
     KEYS: ClassVar[tuple[str, ...]] = (
         "aerobic", "glycolytic", "max_strength", "hypertrophy",
@@ -69,14 +69,14 @@ class CapacityConfidence(BaseModel):
     here generalizes to the EKF's covariance later (ADR-0015).
     """
 
-    aerobic: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    glycolytic: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    max_strength: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    hypertrophy: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    power: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    skill: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    mobility: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
-    work_capacity: float = Field(SEED_CAPACITY_VARIANCE, ge=0.0)
+    aerobic: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    glycolytic: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    max_strength: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    hypertrophy: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    power: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    skill: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    mobility: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
+    work_capacity: float = Field(default=SEED_CAPACITY_VARIANCE, ge=0.0)
 
     KEYS: ClassVar[tuple[str, ...]] = CapacityState.KEYS
 
@@ -84,12 +84,12 @@ class CapacityConfidence(BaseModel):
 class FatigueState(BaseModel):
     """F_t — multi-component fatigue (0–100). Higher = more fatigued."""
 
-    cns: float = Field(0.0, ge=0.0, le=100.0)
-    muscular: float = Field(0.0, ge=0.0, le=100.0)
-    metabolic: float = Field(0.0, ge=0.0, le=100.0)
-    structural: float = Field(0.0, ge=0.0, le=100.0)
-    tendon: float = Field(0.0, ge=0.0, le=100.0)
-    grip: float = Field(0.0, ge=0.0, le=100.0)
+    cns: float = Field(default=0.0, ge=0.0, le=100.0)
+    muscular: float = Field(default=0.0, ge=0.0, le=100.0)
+    metabolic: float = Field(default=0.0, ge=0.0, le=100.0)
+    structural: float = Field(default=0.0, ge=0.0, le=100.0)
+    tendon: float = Field(default=0.0, ge=0.0, le=100.0)
+    grip: float = Field(default=0.0, ge=0.0, le=100.0)
 
     KEYS: ClassVar[tuple[str, ...]] = (
         "cns", "muscular", "metabolic", "structural", "tendon", "grip"
@@ -99,14 +99,14 @@ class FatigueState(BaseModel):
 class TissueState(BaseModel):
     """T_t — accumulated tissue / structural stress (0–100)."""
 
-    shoulder: float = Field(0.0, ge=0.0, le=100.0)
-    elbow: float = Field(0.0, ge=0.0, le=100.0)
-    wrist: float = Field(0.0, ge=0.0, le=100.0)
-    lumbar: float = Field(0.0, ge=0.0, le=100.0)
-    hip: float = Field(0.0, ge=0.0, le=100.0)
-    knee: float = Field(0.0, ge=0.0, le=100.0)
-    ankle: float = Field(0.0, ge=0.0, le=100.0)
-    finger: float = Field(0.0, ge=0.0, le=100.0)
+    shoulder: float = Field(default=0.0, ge=0.0, le=100.0)
+    elbow: float = Field(default=0.0, ge=0.0, le=100.0)
+    wrist: float = Field(default=0.0, ge=0.0, le=100.0)
+    lumbar: float = Field(default=0.0, ge=0.0, le=100.0)
+    hip: float = Field(default=0.0, ge=0.0, le=100.0)
+    knee: float = Field(default=0.0, ge=0.0, le=100.0)
+    ankle: float = Field(default=0.0, ge=0.0, le=100.0)
+    finger: float = Field(default=0.0, ge=0.0, le=100.0)
 
     KEYS: ClassVar[tuple[str, ...]] = (
         "shoulder", "elbow", "wrist", "lumbar", "hip",
@@ -121,12 +121,12 @@ class TissueState(BaseModel):
 class StressDoseSix(BaseModel):
     """D_t — session stress dose in six dimensions (non-negative)."""
 
-    volume: float = Field(0.0, ge=0.0)
-    intensity: float = Field(0.0, ge=0.0)
-    density: float = Field(0.0, ge=0.0)
-    impact: float = Field(0.0, ge=0.0)
-    skill: float = Field(0.0, ge=0.0)
-    metabolic: float = Field(0.0, ge=0.0)
+    volume: float = Field(default=0.0, ge=0.0)
+    intensity: float = Field(default=0.0, ge=0.0)
+    density: float = Field(default=0.0, ge=0.0)
+    impact: float = Field(default=0.0, ge=0.0)
+    skill: float = Field(default=0.0, ge=0.0)
+    metabolic: float = Field(default=0.0, ge=0.0)
 
     KEYS: ClassVar[tuple[str, ...]] = (
         "volume", "intensity", "density", "impact", "skill", "metabolic"
@@ -155,14 +155,14 @@ class AdaptationContribution(BaseModel):
     Computed by the dose engine from aggregated phi_adapt vectors and session
     load. Consumed by state_update to drive explicit capacity gains.
     """
-    aerobic: float = Field(0.0, ge=0.0)
-    glycolytic: float = Field(0.0, ge=0.0)
-    max_strength: float = Field(0.0, ge=0.0)
-    hypertrophy: float = Field(0.0, ge=0.0)
-    power: float = Field(0.0, ge=0.0)
-    skill: float = Field(0.0, ge=0.0)
-    mobility: float = Field(0.0, ge=0.0)
-    work_capacity: float = Field(0.0, ge=0.0)
+    aerobic: float = Field(default=0.0, ge=0.0)
+    glycolytic: float = Field(default=0.0, ge=0.0)
+    max_strength: float = Field(default=0.0, ge=0.0)
+    hypertrophy: float = Field(default=0.0, ge=0.0)
+    power: float = Field(default=0.0, ge=0.0)
+    skill: float = Field(default=0.0, ge=0.0)
+    mobility: float = Field(default=0.0, ge=0.0)
+    work_capacity: float = Field(default=0.0, ge=0.0)
 
     KEYS: ClassVar[tuple[str, ...]] = (
         "aerobic", "glycolytic", "max_strength", "hypertrophy",
@@ -201,6 +201,6 @@ class PhiVectors(BaseModel):
 
 class EnergyMix(BaseModel):
     """Relative energy system emphasis for an exercise (sums to ~1)."""
-    aerobic: float = Field(0.33, ge=0.0, le=1.0)
-    glycolytic: float = Field(0.33, ge=0.0, le=1.0)
-    alactic: float = Field(0.34, ge=0.0, le=1.0)
+    aerobic: float = Field(default=0.33, ge=0.0, le=1.0)
+    glycolytic: float = Field(default=0.33, ge=0.0, le=1.0)
+    alactic: float = Field(default=0.34, ge=0.0, le=1.0)

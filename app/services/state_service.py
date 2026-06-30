@@ -8,8 +8,8 @@ from sqlalchemy.future import select
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
+    build_unified_state_vector,
     capacity_from_legacy,
-    sync_legacy_from_vectors,
     unified_from_athlete_row,
 )
 from app.logic.dose_engine_v0 import calculate_stress_dose
@@ -107,19 +107,17 @@ def _build_baseline_vector(
     )
     f = FatigueState()
     t = TissueState()
-    leg = sync_legacy_from_vectors(x, f, t)
 
-    u = UnifiedStateVector(
+    u = build_unified_state_vector(
         timestamp=datetime.utcnow(),
-        capacity_x=x,
-        fatigue_f=f,
-        tissue_t=t,
+        x=x,
+        f=f,
+        t=t,
         s_struct_signal=0.0,
         habit_strength=_habit_strength_from_experience(experience_years),
         skill_state=_baseline_skill_state(
             experience_level, squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg
         ),
-        **leg,
     )
     row = AthleteState(user_id=user_id, **athlete_state_kwargs_from_unified(u))
     return u, row
