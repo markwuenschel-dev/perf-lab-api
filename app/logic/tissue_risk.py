@@ -70,7 +70,7 @@ def compute_tissue_risk(
         base_risk = tissue_val / 100.0 * 0.50
 
         # Acute:chronic spike (ACWR > 1.3 starts adding risk)
-        spike_risk = max(0.0, (ac_ratio - 1.3) / 1.7) * 0.30 if ac_ratio > 1.3 else 0.0
+        spike_risk = min(0.30, max(0.0, (ac_ratio - 1.3) / 1.7) * 0.30) if ac_ratio > 1.3 else 0.0
 
         # Recent concentration (3d exposure relative to 7d)
         concentration = d3 / max(d7, 1e-6) if d7 > 0 else 0.0
