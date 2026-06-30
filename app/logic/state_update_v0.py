@@ -25,6 +25,7 @@ from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic import cross_talk
+from app.logic.benchmark_validity import BenchmarkValidityProfile, effective_variance
 from app.schemas.engine_vectors import CapacityConfidence, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
@@ -111,6 +112,7 @@ def _apply_capacity_residual(
     score01: float,
     observation_weight: float,
     p: EngineParameters,
+    validity_profile: BenchmarkValidityProfile | None = None,
 ) -> None:
     """Signed, confidence-scaled residual correction of a capacity axis (ADR-0034).
 
@@ -118,6 +120,12 @@ def _apply_capacity_residual(
     axis ceiling); the measurement is ``score01``. We move the axis toward the
     measurement by a Kalman gain set by how unsure we are (low confidence → big move),
     then shrink that axis's variance. A below-expectation test pulls the axis *down*.
+
+    When a validity_profile is supplied, uses profile-specific effective variance
+    (R_eff) and per-axis mapping strength instead of the generic
+    confidence_measured_variance. This reduces update strength for noisy/fatigue-
+    sensitive benchmarks without suppressing valid 1RM-style tests. The None path
+    is byte-for-byte identical to the pre-Task-2 behaviour.
     """
     key = mapping.target_key
     try:
@@ -127,19 +135,35 @@ def _apply_capacity_residual(
     ceiling = _capacity_ceiling(key)
     expected01 = cur / ceiling if ceiling > 0 else 0.0
     residual01 = score01 - expected01
-    weight = max(0.0, float(mapping.coefficient))  # mapping informativeness, ~[0, 1]
-    meas_var = p.confidence_measured_variance / max(0.1, float(observation_weight))
     prior_var = float(getattr(s.capacity_confidence, key, 1.0))
-    gain = kalman_gain(prior_var, meas_var)
 
-    new_v = cur + weight * gain * residual01 * ceiling
-    if mapping.min_value is not None:
-        new_v = max(new_v, float(mapping.min_value))
-    if mapping.max_value is not None:
-        new_v = min(new_v, float(mapping.max_value))
-    _write_axis(s, "capacity", key, new_v)
-    # A measurement reduces uncertainty about the axis.
-    setattr(s.capacity_confidence, key, max(0.0, (1.0 - gain) * prior_var))
+    if validity_profile is not None:
+        r_eff = effective_variance(validity_profile, s)
+        mapping_strength = validity_profile.mapping_strength.get(key, float(mapping.coefficient))
+        # Modified Kalman gain: K = P * m / (m² * P + R_eff)
+        # Effective update on state = m * K = P * m² / (m² * P + R_eff)
+        gain = prior_var * mapping_strength / (mapping_strength ** 2 * prior_var + max(1e-9, r_eff))
+        new_v = cur + mapping_strength * gain * residual01 * ceiling
+        if mapping.min_value is not None:
+            new_v = max(new_v, float(mapping.min_value))
+        if mapping.max_value is not None:
+            new_v = min(new_v, float(mapping.max_value))
+        _write_axis(s, "capacity", key, new_v)
+        conf_post = max(0.0, (1.0 - gain * mapping_strength) * prior_var)
+        setattr(s.capacity_confidence, key, conf_post)
+    else:
+        weight = max(0.0, float(mapping.coefficient))  # mapping informativeness, ~[0, 1]
+        meas_var = p.confidence_measured_variance / max(0.1, float(observation_weight))
+        gain = kalman_gain(prior_var, meas_var)
+
+        new_v = cur + weight * gain * residual01 * ceiling
+        if mapping.min_value is not None:
+            new_v = max(new_v, float(mapping.min_value))
+        if mapping.max_value is not None:
+            new_v = min(new_v, float(mapping.max_value))
+        _write_axis(s, "capacity", key, new_v)
+        # A measurement reduces uncertainty about the axis.
+        setattr(s.capacity_confidence, key, max(0.0, (1.0 - gain) * prior_var))
 
 
 def apply_benchmark_observation(
@@ -152,6 +176,7 @@ def apply_benchmark_observation(
     mappings: Sequence[Any],
     observed_at: datetime | None = None,
     score01: float | None = None,
+    validity_profile: BenchmarkValidityProfile | None = None,
 ) -> UnifiedStateVector:
     """
     Assimilate a benchmark observation into state (no full EKF — ADR-0015).
@@ -183,7 +208,7 @@ def apply_benchmark_observation(
         if m.target_vector not in _VECTOR_ATTR:
             continue
         if m.target_vector == "capacity" and score01 is not None:
-            _apply_capacity_residual(s, m, score01, observation_weight, p)
+            _apply_capacity_residual(s, m, score01, observation_weight, p, validity_profile)
             continue
         # Legacy additive nudge: fatigue/tissue, or capacity without normalization.
         try:
