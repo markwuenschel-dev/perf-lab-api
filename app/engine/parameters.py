@@ -117,10 +117,32 @@ class EngineParameters:
     crosstalk_skill_suppressed_above_cns: float = 55.0    # CNS fatigue above this → skill gains halved
 
     # --- Capacity confidence dynamics (ADR-0036) ---
-    # Per-axis variance grows with elapsed time (process noise) and is capped, so a
-    # long-unmeasured axis becomes a weak prior that the next benchmark corrects hard.
-    confidence_process_noise_per_day: float = 0.004
-    confidence_max_variance: float = 1.5
+    # Per-capacity-family process noise (variance units per day without benchmark).
+    # Power/skill lose observability faster; mobility is slow-changing.
+    confidence_process_noise_per_day: dict[str, float] = field(
+        default_factory=lambda: {
+            "aerobic":       0.0022,
+            "glycolytic":    0.0028,
+            "max_strength":  0.0025,
+            "hypertrophy":   0.0018,
+            "power":         0.0035,
+            "skill":         0.0035,
+            "mobility":      0.0012,
+            "work_capacity": 0.0025,
+        }
+    )
+    confidence_max_variance: dict[str, float] = field(
+        default_factory=lambda: {k: 1.5 for k in (
+            "aerobic", "glycolytic", "max_strength", "hypertrophy",
+            "power", "skill", "mobility", "work_capacity",
+        )}
+    )
+    confidence_min_variance: dict[str, float] = field(
+        default_factory=lambda: {k: 0.01 for k in (
+            "aerobic", "glycolytic", "max_strength", "hypertrophy",
+            "power", "skill", "mobility", "work_capacity",
+        )}
+    )
     # Measurement variance for a full-weight benchmark (lower ⇒ trusts the test more).
     confidence_measured_variance: float = 0.08
 

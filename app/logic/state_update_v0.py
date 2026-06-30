@@ -287,18 +287,19 @@ def _grow_confidence_variance(
     hours: float,
     p: EngineParameters,
 ) -> None:
-    """Grow per-axis capacity variance with elapsed time (process noise), in place.
+    """Grow per-axis capacity variance with elapsed time (process noise).
 
-    Training moves the capacity *mean* but does not *measure* it, so it does not
-    increase confidence — only time passing (uncertainty accrues) and, elsewhere,
-    benchmarks (which reduce it). See ADR-0036.
+    Training moves capacity mean but does not measure it, so only time passing
+    increases uncertainty. Benchmarks reduce it. ADR-0036.
     """
-    growth = p.confidence_process_noise_per_day * (hours / 24.0)
-    if growth <= 0.0:
+    dt_days = hours / 24.0
+    if dt_days <= 0.0:
         return
     for key in CapacityConfidence.KEYS:
-        v = getattr(confidence, key) + growth
-        setattr(confidence, key, min(p.confidence_max_variance, v))
+        q = p.confidence_process_noise_per_day.get(key, 0.0025)
+        max_v = p.confidence_max_variance.get(key, 1.5)
+        v = getattr(confidence, key) + q * dt_days
+        setattr(confidence, key, min(max_v, v))
 
 
 def _fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
