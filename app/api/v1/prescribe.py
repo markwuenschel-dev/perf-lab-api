@@ -1,25 +1,15 @@
-from datetime import date
-from typing import cast
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.engine.state_bridge import unified_from_athlete_row
-from app.logic.prescriber import recommend_next_session
-from app.logic.workout_history import recent_workout_summaries
-from app.models.athlete_state import AthleteState
-from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
-from app.models.user import AthleteProfile, User
-from app.models.weak_point import WeakPoint
+from app.models.user import User
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.services import dashboard_service
-from app.services.planning_service import count_block_skips
+from app.services.prescription_service import prescribe_for_athlete
 
 router = APIRouter(tags=["Prescription"])
+
 
 @router.get("/next-session", response_model=WorkoutPrescription)
 async def get_next_session(
@@ -28,114 +18,7 @@ async def get_next_session(
     current_user: User = Depends(get_current_user),
 ) -> WorkoutPrescription:
     """DEV-friendly version that auto-initializes baseline state."""
-
-    # Auto-create baseline AthleteState if none exists yet
-    result = await db.execute(
-        select(AthleteState)
-        .where(AthleteState.user_id == current_user.id)
-        .order_by(AthleteState.timestamp.desc())
-        .limit(1)
-    )
-    last_record = result.scalars().first()
-
-    if not last_record:
-        from app.services.state_service import initialize_athlete_state
-        await initialize_athlete_state(db, current_user.id)
-        # re-fetch the newly created state
-        result = await db.execute(
-            select(AthleteState)
-            .where(AthleteState.user_id == current_user.id)
-            .order_by(AthleteState.timestamp.desc())
-            .limit(1)
-        )
-        last_record = result.scalars().first()
-
-    state = unified_from_athlete_row(last_record)
-
-    # Fetch active (unresolved) weak-point tags for context injection
-    wp_result = await db.execute(
-        select(WeakPoint.tag).where(
-            WeakPoint.user_id == current_user.id,
-            WeakPoint.resolved_at.is_(None),
-        )
-    )
-    active_weak_points = [row[0] for row in wp_result.all()]
-
-    # Fetch active block + today's planned session for block-context bias
-    block_result = await db.execute(
-        select(MesocycleBlock)
-        .where(
-            MesocycleBlock.user_id == current_user.id,
-            MesocycleBlock.status == BlockStatus.ACTIVE,
-        )
-        .order_by(MesocycleBlock.created_at.desc())
-        .limit(1)
-    )
-    active_block = block_result.scalars().first()
-
-    planned_session = None
-    if active_block:
-        ps_result = await db.execute(
-            select(PlannedSession)
-            .where(
-                PlannedSession.block_id == active_block.id,
-                PlannedSession.scheduled_date == date.today(),
-                PlannedSession.status == SessionStatus.PENDING,
-            )
-            .limit(1)
-        )
-        planned_session = ps_result.scalars().first()
-
-    block_context = None
-    if active_block and planned_session:
-        block_context = {
-            "block_goal": active_block.goal.value,
-            "session_category": planned_session.category,
-            "is_deload": planned_session.is_deload,
-            "is_benchmark": planned_session.is_benchmark,
-            "week_number": planned_session.week_number,
-            "duration_weeks": active_block.duration_weeks,
-            "deload_every_n_weeks": active_block.deload_every_n_weeks,
-            "deload_volume_factor": active_block.deload_volume_factor,
-            "recent_skips": await count_block_skips(db, current_user.id, active_block.id),
-        }
-
-    profile_result = await db.execute(
-        select(AthleteProfile).where(AthleteProfile.user_id == current_user.id).limit(1)
-    )
-    profile = profile_result.scalars().first()
-
-    # ADR-0030: when a block is active, the day's training intent comes from the block
-    # (resolved to a canonical domain by the prescriber, ADR-0038); the `goal` query
-    # param is the fallback for athletes with no active block.
-    effective_goal = active_block.goal.value if active_block is not None else goal
-
     try:
-        recent = await recent_workout_summaries(db, current_user.id)
-        kpi_summary = await dashboard_service.latest_kpi_values(db, current_user.id)
-        rx = recommend_next_session(
-            state,
-            # Block goals aren't 1:1 with TrainingGoal; the prescriber resolves any
-            # goal string to a canonical domain (ADR-0038), so the cast is safe.
-            goal=cast(TrainingGoal, effective_goal),
-            recent_sessions=recent,
-            kpi_summary=kpi_summary or None,
-            active_weak_points=active_weak_points or None,
-            available_equipment=(profile.equipment if profile else None),
-            block_context=block_context,
-        )
-        # Persist prescription back to the planned session slot
-        if planned_session is not None:
-            planned_session.prescribed_content = {
-                "type": rx.type,
-                "focus": rx.focus,
-                "rationale": rx.rationale,
-                "duration_min": rx.duration_min,
-                "model_version": rx.model_version,
-                "exercises": [e.model_dump() for e in rx.exercises],
-                "why": rx.why.model_dump() if rx.why else None,
-            }
-            await db.commit()
-        return rx
+        return await prescribe_for_athlete(db, current_user.id, goal)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to generate prescription: {str(e)}") from e
