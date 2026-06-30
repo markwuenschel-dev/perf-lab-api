@@ -15,7 +15,6 @@ from app.logic.registries import (
     primitive_names,
 )
 from app.logic.session_draft_builder import build_session_draft
-from app.logic.validate_session import derive_state_drivers, validate_session
 from app.schemas.prescription import (
     PrescriptionExplanation,
     ValidationSummary,
@@ -23,6 +22,30 @@ from app.schemas.prescription import (
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TrainingGoal
+
+
+def _derive_state_drivers(state: UnifiedStateVector) -> list[str]:
+    """Human-readable drivers for explainability."""
+    out: list[str] = []
+    if state.f_nm_central > 55:
+        out.append("elevated CNS / central fatigue")
+    if state.f_nm_peripheral > 55:
+        out.append("elevated peripheral / muscular fatigue")
+    if state.f_met_systemic > 60:
+        out.append("elevated systemic metabolic fatigue")
+    if state.tissue_t.lumbar > 50:
+        out.append("lumbar tissue stress")
+    if state.tissue_t.wrist > 50:
+        out.append("wrist tissue stress")
+    if state.tissue_t.knee > 55:
+        out.append("knee tissue stress")
+    if state.fatigue_f.tendon > 45:
+        out.append("tendon fatigue")
+    if state.c_met_aerobic < 30 and state.c_met_aerobic > 0:
+        out.append("low aerobic capacity signal")
+    if not out:
+        out.append("state within normal twin bands for prescription")
+    return out[:8]
 
 
 def finalize_prescription(
@@ -34,7 +57,8 @@ def finalize_prescription(
 ) -> WorkoutPrescription:
     """
     Enrich prescription with `why`. If state is None (no athlete row), minimal explanation only.
-    Hard constraint violations (legacy + structured) replace with a safe recovery session.
+    Hard constraint violations replace with a safe recovery session.
+    Universal safety rules always run via SessionValidator; template-specific rules follow.
     """
     if state is None:
         out = rx.model_copy(deep=True)
@@ -53,46 +77,44 @@ def finalize_prescription(
 
     program_template = get_template_for_goal(goal) or get_fallback_template()
     draft = build_session_draft(rx, goal, state, program_template)
-    vsummary, soft, hard_legacy = validate_session(draft, state, goal, program_template)
 
     structured = get_structured_template_for_goal(goal)
     candidate = encode_session_candidate(rx, goal, branch_id, draft)
     ctx = build_constraint_context(state, recent_sessions, goal)
     srep = SessionValidator(structured).validate(candidate, ctx)
-    soft_v2 = srep.soft_warnings
-    hard_v2 = srep.hard_failed
+    soft_warnings = srep.soft_warnings
+    hard_violations = list(dict.fromkeys(srep.hard_failed))
     skipped_codes = srep.skipped_codes
     score_val: float | None = None
-    if not hard_legacy and not hard_v2:
+    if not hard_violations:
         score_val = simple_session_scorer(candidate, structured, state)
 
-    hard_combined = list(dict.fromkeys([*hard_legacy, *hard_v2]))
     out_rx = rx.model_copy(deep=True)
     rationale_suffix = ""
 
-    if hard_combined:
+    if hard_violations:
         out_rx = WorkoutPrescription(
             type="Recovery",
             focus="Easy movement + mobility (constraint override)",
             rationale=(
-                f"Hard domain constraints triggered: {', '.join(hard_combined[:6])}. "
+                f"Hard domain constraints triggered: {', '.join(hard_violations[:6])}. "
                 "Defaulting to a low-risk session until state improves."
             ),
             duration_min=min(rx.duration_min, 35) if rx.duration_min else 30,
         )
         vsummary = ValidationSummary(
             passed=False,
-            failed_checks=vsummary.failed_checks + soft + soft_v2,
-            hard_violations=hard_combined,
+            failed_checks=soft_warnings,
+            hard_violations=hard_violations,
         )
         rationale_suffix = f" [branch: {branch_id} → overridden]"
         score_val = None
     else:
-        if soft or soft_v2:
-            rationale_suffix = " " + "; ".join((soft + soft_v2)[:4])
+        if soft_warnings:
+            rationale_suffix = " " + "; ".join(soft_warnings[:4])
         vsummary = ValidationSummary(
             passed=True,
-            failed_checks=vsummary.failed_checks + soft + soft_v2,
+            failed_checks=soft_warnings,
             hard_violations=[],
         )
 
@@ -103,17 +125,17 @@ def finalize_prescription(
 
     applied = list(
         dict.fromkeys(
-            soft + soft_v2 + program_template.constraint_rule_ids[:6] + hard_combined[:4]
+            soft_warnings + program_template.constraint_rule_ids[:6] + hard_violations[:4]
         )
     )
 
-    warnings_out = list(dict.fromkeys([*soft_v2, *soft]))[:12]
+    warnings_out = list(dict.fromkeys(soft_warnings))[:12]
 
     tid = structured.template_id
     st_name = structured.name
 
     out_rx.why = PrescriptionExplanation(
-        state_drivers=derive_state_drivers(state),
+        state_drivers=_derive_state_drivers(state),
         goal_alignment=str(goal),
         constraints_applied=applied,
         source_alignment=sources[:14],
@@ -125,7 +147,7 @@ def finalize_prescription(
         structured_template_name=st_name,
     )
 
-    if rationale_suffix and not hard_combined:
+    if rationale_suffix and not hard_violations:
         out_rx.rationale = (out_rx.rationale + rationale_suffix).strip()
 
     return out_rx
