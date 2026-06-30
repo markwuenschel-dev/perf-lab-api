@@ -223,6 +223,29 @@ def _exp_decay(value: float, hours: float, tau: float) -> float:
     return value * math.exp(-hours / max(1e-6, tau))
 
 
+def recovery_clearance_multiplier(
+    axis: str,
+    sleep_quality: float | None,
+    life_stress_inverse: float | None,
+    params: EngineParameters,
+) -> float:
+    """Multiplicative modifier on fatigue clearance rate.
+
+    >1.0 = faster clearance (good recovery).
+    <1.0 = slower clearance (poor recovery).
+    Bounded to [recovery_clearance_min, recovery_clearance_max].
+    Neutral at sleep_quality=7, life_stress_inverse=7.
+    """
+    beta = params.recovery_clearance_beta.get(axis, {"sleep": 0.06, "stress": 0.04})
+    sq = sleep_quality if sleep_quality is not None else 7.0
+    lsi = life_stress_inverse if life_stress_inverse is not None else 7.0
+    scale = params.recovery_zscore_scale
+    z_sleep = max(-scale, min(scale, (sq - 7.0) / 2.0))
+    z_stress = max(-scale, min(scale, (lsi - 7.0) / 2.0))
+    raw = math.exp(beta["sleep"] * z_sleep + beta["stress"] * z_stress)
+    return max(params.recovery_clearance_min, min(params.recovery_clearance_max, raw))
+
+
 def kalman_gain(prior_variance: float, measurement_variance: float) -> float:
     """Scalar Kalman gain in [0, 1): how much a measurement moves the estimate.
 
@@ -398,11 +421,14 @@ def update_athlete_state(
     p = default_parameters()
     s = prev_state.model_copy(deep=True)
 
-    # --- 1. Fatigue decay (Λ) ---
+    # --- 1. Fatigue decay (Λ) with recovery-modulated clearance rate ---
+    # Multiplier >1 (good sleep/low stress) → effective hours larger → faster decay.
+    # Multiplier <1 (poor sleep/high stress) → effective hours smaller → slower decay.
     for key in FatigueState.KEYS:
         tau = p.tau_fatigue_hours[key]
+        m = recovery_clearance_multiplier(key, log.sleep_quality, log.life_stress_inverse, p)
         v = getattr(s.fatigue_f, key)
-        setattr(s.fatigue_f, key, _exp_decay(v, hours, tau))
+        setattr(s.fatigue_f, key, _exp_decay(v, hours * m, tau))
 
     # --- 2. Tissue decay (Γ) — accumulated stress eases ---
     for key in TissueState.KEYS:
@@ -410,16 +436,7 @@ def update_athlete_state(
         v = getattr(s.tissue_t, key)
         setattr(s.tissue_t, key, _exp_decay(v, hours, tau))
 
-    # --- 3. Recovery Ω (sleep / life stress) ---
-    omega = (
-        p.recovery_sleep_scale * max(0.0, 5.0 - log.sleep_quality) * hours
-        + p.recovery_stress_scale * max(0.0, 5.0 - log.life_stress_inverse) * hours
-    )
-    for key in FatigueState.KEYS:
-        v = getattr(s.fatigue_f, key)
-        setattr(s.fatigue_f, key, max(0.0, v - omega * 0.18))
-
-    # --- 4. Impulses from training dose ---
+    # --- 3. Impulses from training dose ---
     d_f = _fatigue_impulse_from_dose(dose)
     for key in FatigueState.KEYS:
         v = getattr(s.fatigue_f, key) + getattr(d_f, key)
@@ -430,7 +447,7 @@ def update_athlete_state(
         v = getattr(s.tissue_t, key) + d_t[key]
         setattr(s.tissue_t, key, max(0.0, min(100.0, v)))
 
-    # --- 5. Signaling + slow structural capacity (Banister-style nudge) ---
+    # --- 4. Signaling + slow structural capacity (Banister-style nudge) ---
     s.s_struct_signal = _exp_decay(s.s_struct_signal, hours, cross_talk.TAU_SIGNAL)
     s.s_struct_signal += dose.d_struct_signal
     s.s_struct_signal = max(0.0, s.s_struct_signal)
@@ -450,10 +467,10 @@ def update_athlete_state(
             s.capacity_x.max_strength + p.capacity_struct_bump * struct_drive * interference,
         )
 
-    # --- 6. Explicit adaptation gains (new v2 path) ---
+    # --- 5. Explicit adaptation gains (new v2 path) ---
     s = _apply_adaptation_gains(s, dose, p)
 
-    # --- 6b. Detraining: capacities erode toward baseline with elapsed time ---
+    # --- 5b. Detraining: capacities erode toward baseline with elapsed time ---
     days = hours / 24.0
     if days > 0:
         for key in s.capacity_x.KEYS:
@@ -461,11 +478,11 @@ def update_athlete_state(
             cur = getattr(s.capacity_x, key)
             setattr(s.capacity_x, key, max(0.0, cur - cur * rate * days))
 
-    # --- 7. Legacy metabolic cross-talk (preserved from v1) ---
+    # --- 6. Legacy metabolic cross-talk (preserved from v1) ---
     wc_gain = p.crosstalk_metabolic_on_work_capacity * min(s.fatigue_f.metabolic * 0.015, 0.4)
     s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_gain)
 
-    # --- 8. Legacy mirrors ---
+    # --- 7. Legacy mirrors ---
     legacy = sync_legacy_from_vectors(s.capacity_x, s.fatigue_f, s.tissue_t)
     s.c_met_aerobic = legacy["c_met_aerobic"]
     s.c_nm_force = legacy["c_nm_force"]
@@ -476,7 +493,7 @@ def update_athlete_state(
     s.f_nm_central = legacy["f_nm_central"]
     s.f_struct_damage = legacy["f_struct_damage"]
 
-    # --- 9. Confidence: uncertainty about capacity accrues with elapsed time ---
+    # --- 8. Confidence: uncertainty about capacity accrues with elapsed time ---
     _grow_confidence_variance(s.capacity_confidence, hours, p)
 
     s.timestamp = prev_state.timestamp + time_delta

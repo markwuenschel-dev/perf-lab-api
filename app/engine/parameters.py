@@ -43,9 +43,27 @@ class EngineParameters:
         }
     )
 
-    # Recovery Ω gain from sleep / stress (multiplier on fatigue clearance per hour)
+    # Superseded by multiplicative clearance (kept for backward compat; unused by engine).
     recovery_sleep_scale: float = 0.08
     recovery_stress_scale: float = 0.06
+
+    # Multiplicative fatigue clearance modifier (replaces additive Ω subtraction).
+    # beta[axis][signal]: weight on the z-score of each recovery signal.
+    # Neutral (sleep=7, stress=7) → z=0 → multiplier=1.0.
+    # Good recovery → z>0 → multiplier>1 (faster). Poor → z<0 → multiplier<1 (slower).
+    recovery_clearance_beta: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "cns":        {"sleep": 0.10, "stress": 0.08},
+            "muscular":   {"sleep": 0.08, "stress": 0.05},
+            "metabolic":  {"sleep": 0.06, "stress": 0.04},
+            "structural": {"sleep": 0.05, "stress": 0.04},
+            "tendon":     {"sleep": 0.04, "stress": 0.04},
+            "grip":       {"sleep": 0.06, "stress": 0.04},
+        }
+    )
+    recovery_clearance_min: float = 0.60
+    recovery_clearance_max: float = 1.50
+    recovery_zscore_scale: float = 2.0
 
     # Capacity adaptation (Banister-style bump from hypertrophy signal)
     capacity_signal_threshold: float = 20.0
