@@ -99,6 +99,19 @@ def test_validate_rejects_positive_fatigue_penalty():
     bad_weights = {**DEFAULT_SCORE_WEIGHTS, "fatigue_penalty": 0.10}
     violations = validate_score_weights(bad_weights)
     assert violations
+    assert any("fatigue_penalty" in v for v in violations)
+
+
+def test_validate_rejects_insufficient_tissue_penalty():
+    bad_weights = {**DEFAULT_SCORE_WEIGHTS, "tissue_penalty": 0.0}
+    violations = validate_score_weights(bad_weights)
+    assert any("tissue_penalty" in v for v in violations)
+
+
+def test_validate_rejects_high_habit_bonus():
+    bad_weights = {**DEFAULT_SCORE_WEIGHTS, "habit_bonus": 0.50}
+    violations = validate_score_weights(bad_weights)
+    assert any("habit_bonus" in v for v in violations)
 
 
 def test_validate_rejects_high_novelty_bonus():
@@ -132,17 +145,93 @@ def test_simple_policy_filters_high_fatigue():
     assert winner.branch_id == "safe"
 
 
+def test_simple_policy_uses_pure_goal_alignment_not_composite():
+    """Prove the policy selects on goal_alignment alone, not a composite.
+
+    Both candidates are safe.  The composite (goal_alignment + 0.5*state_fit +
+    0.5*weak_point_coverage) would select "composite_winner" (0.7 + 0.45 + 0.45 = 1.60)
+    over "goal_winner" (0.8 + 0.0 + 0.0 = 0.80).  Pure goal_alignment selects
+    "goal_winner" (0.8 > 0.7).  If the composite were still in use this test fails.
+    """
+    goal_winner = _candidate(
+        goal_alignment=0.8,
+        state_fit=0.0,
+        weak_point_coverage=0.0,
+        branch_id="goal_winner",
+    )
+    composite_winner = _candidate(
+        goal_alignment=0.7,
+        state_fit=0.9,
+        weak_point_coverage=0.9,
+        branch_id="composite_winner",
+    )
+    s = _state()
+    winner = simple_safe_goal_aligned_policy([goal_winner, composite_winner], s)
+    assert winner is not None
+    assert winner.branch_id == "goal_winner"
+
+
+def test_simple_policy_excludes_safety_override():
+    """A safety-override candidate must never be selected, even with high goal_alignment."""
+    override = SessionCandidate(
+        type="Recovery",
+        focus="Rest",
+        rationale="hard stop",
+        duration_min=20,
+        branch_id="override",
+        goal_alignment=1.0,
+        fatigue_penalty=0.0,
+        tissue_penalty=0.0,
+        is_safety_override=True,
+    )
+    normal = _candidate(goal_alignment=0.5, branch_id="normal")
+    s = _state()
+    winner = simple_safe_goal_aligned_policy([override, normal], s)
+    assert winner is not None
+    assert winner.branch_id == "normal"
+
+
+def test_simple_policy_returns_none_when_all_filtered():
+    """Returns None when every candidate is either a safety override or exceeds limits."""
+    override = SessionCandidate(
+        type="Recovery",
+        focus="Rest",
+        rationale="hard stop",
+        duration_min=20,
+        branch_id="override",
+        goal_alignment=1.0,
+        fatigue_penalty=0.0,
+        tissue_penalty=0.0,
+        is_safety_override=True,
+    )
+    high_fatigue = _candidate(fatigue_penalty=0.90, branch_id="high_fatigue")
+    s = _state(mean_fatigue=10.0)
+    result = simple_safe_goal_aligned_policy([override, high_fatigue], s, fatigue_limit=60.0)
+    assert result is None
+
+
 # ---------------------------------------------------------------------------
 # candidate_log_out on recommend_next_session
 # ---------------------------------------------------------------------------
 
 def test_candidate_log_out_collects_all_candidates():
+    """Prove the full scored pool is captured, not just the winner.
+
+    The chosen prescription must match collected[0] (the highest-scored
+    candidate), and len(collected) > 1 proves that rejected candidates are
+    also present — if only the winner were logged the second assertion fails.
+    """
     from app.logic.prescriber import recommend_next_session
 
     s = _state()
     collected: list = []
-    _ = recommend_next_session(s, candidate_log_out=collected)
-    assert len(collected) > 0, "candidate_log_out must be populated"
+    rx = recommend_next_session(s, candidate_log_out=collected)
+    assert len(collected) > 1, (
+        "candidate_log_out must contain ALL scored candidates, not just the winner"
+    )
+    assert rx.type == collected[0].type, (
+        "The returned prescription's type must match the top-scored logged candidate"
+    )
 
 
 # ---------------------------------------------------------------------------

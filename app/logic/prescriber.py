@@ -358,6 +358,8 @@ def recommend_next_session(
     # --- 1. Hard safety overrides (always override scoring) ---
     safety = _safety_candidates(state)
     if safety:
+        if candidate_log_out is not None:
+            candidate_log_out.clear()
         return _finalize(safety[0], state, goal, recent_sessions)
 
     # --- Deload need (shadow/Level 1: explanation only) ---

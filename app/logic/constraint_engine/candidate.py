@@ -72,10 +72,7 @@ _WEIGHT_CONSTRAINTS: dict[str, dict[str, float]] = {
 }
 
 
-from dataclasses import dataclass as _dataclass  # noqa: E402
-
-
-@_dataclass
+@dataclass
 class ScoreWeightProfile:
     """Versioned container for a scoring weight dict."""
 
@@ -126,9 +123,11 @@ def simple_safe_goal_aligned_policy(
     fatigue_limit: float = 60.0,
     tissue_limit: float = 60.0,
 ) -> SessionCandidate | None:
-    """Baseline comparator policy: safety-filtered, goal-aligned scoring.
+    """Baseline comparator policy: safety-filtered, pure goal_alignment selection.
 
-    Used to establish a Q8 baseline.  Does NOT use learned weights.
+    Clean baseline comparator for Q8 scoring-weight research. Does NOT use
+    learned weights, no composite scoring — selects the safety-filtered
+    candidate with the highest ``goal_alignment`` alone.
 
     Filtering rules:
     - Safety-override candidates are excluded (they are hard-stop sessions
@@ -138,8 +137,8 @@ def simple_safe_goal_aligned_policy(
       excluded.  Limits are supplied in [0, 100] state-score space and
       converted to [0, 1] penalty space by dividing by 100.
 
-    The surviving candidate with the highest composite goal-alignment score
-    is returned, or ``None`` if no safe candidates remain.
+    The surviving candidate with the highest ``goal_alignment`` is returned,
+    or ``None`` if no safe candidates remain.
     """
     fat_thresh = fatigue_limit / 100.0
     tis_thresh = tissue_limit / 100.0
@@ -151,10 +150,7 @@ def simple_safe_goal_aligned_policy(
     ]
     if not safe:
         return None
-    return max(
-        safe,
-        key=lambda c: c.goal_alignment + 0.5 * c.state_fit + 0.5 * c.weak_point_coverage,
-    )
+    return max(safe, key=lambda c: c.goal_alignment)
 
 
 def score_candidate(
