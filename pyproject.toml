@@ -46,7 +46,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
-    "mypy>=1.10.0,<2",
+    "pyright>=1.1.0",
     "ruff>=0.5.0",
     "black>=24.0.0",
     "isort>=5.13.0",
@@ -119,17 +119,22 @@ extend-immutable-calls = [
 line-length = 100
 target-version = ["py311"]
 
-[tool.mypy]
-python_version = "3.11"
-plugins = ["pydantic.mypy"]
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = ["alembic.*"]
-ignore_missing_imports = true
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["app"]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = "warning"
+# Re-export barrels and SQLAlchemy column defaults are intentional.
+reportUnusedImport = "none"
+reportDeprecated = "none"
+# Dynamic JSON / seed data paths; tighten incrementally after the mypy cutover.
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnusedFunction = "none"
+reportUnusedVariable = "none"
+reportUnnecessaryIsInstance = "none"
+reportConstantRedefinition = "none"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

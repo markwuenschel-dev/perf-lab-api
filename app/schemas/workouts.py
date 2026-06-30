@@ -110,9 +110,9 @@ class StressDose(BaseModel):
     capacity axis. Used by state_update for explicit capacity gains.
     """
 
-    dose_six: StressDoseSix = Field(default_factory=StressDoseSix)
+    dose_six: StressDoseSix = Field(default_factory=lambda: StressDoseSix())
     adaptation_contribution: AdaptationContribution = Field(
-        default_factory=AdaptationContribution
+        default_factory=lambda: AdaptationContribution()
     )
 
     d_met_systemic: float = 0.0

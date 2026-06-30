@@ -59,6 +59,6 @@ class WorkoutPrescription(BaseModel):
     focus: str
     rationale: str
     duration_min: int
-    model_version: str = Field("v0.3", description="Prescription engine version")
+    model_version: str = Field(default="v0.3", description="Prescription engine version")
     exercises: list[ExercisePrescription] = Field(default_factory=list)
     why: PrescriptionExplanation | None = None

@@ -154,6 +154,33 @@ def sync_legacy_from_vectors(
     }
 
 
+def build_unified_state_vector(
+    *,
+    timestamp: datetime,
+    x: CapacityState,
+    f: FatigueState,
+    t: TissueState,
+    **kwargs: Any,
+) -> UnifiedStateVector:
+    """Construct UnifiedStateVector with legacy scalars derived from x/f/t."""
+    leg = sync_legacy_from_vectors(x, f, t)
+    return UnifiedStateVector(
+        timestamp=timestamp,
+        capacity_x=x,
+        fatigue_f=f,
+        tissue_t=t,
+        c_met_aerobic=leg["c_met_aerobic"],
+        c_nm_force=leg["c_nm_force"],
+        c_struct=leg["c_struct"],
+        b_met_anaerobic=leg["b_met_anaerobic"],
+        f_met_systemic=leg["f_met_systemic"],
+        f_nm_peripheral=leg["f_nm_peripheral"],
+        f_nm_central=leg["f_nm_central"],
+        f_struct_damage=leg["f_struct_damage"],
+        **kwargs,
+    )
+
+
 def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
     """Build UnifiedStateVector from SQLAlchemy AthleteState row."""
     raw_eng = _parse_engine_state(getattr(row, "engine_state", None))

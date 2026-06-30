@@ -40,7 +40,7 @@ def main() -> None:
     if not token:
         raise SystemExit("KAGGLE_API_TOKEN not set. Check .env or export it.")
 
-    import kagglehub  # type: ignore[import-untyped]
+    import kagglehub
 
     dest_base = Path("data/kaggle")
     dest_base.mkdir(parents=True, exist_ok=True)

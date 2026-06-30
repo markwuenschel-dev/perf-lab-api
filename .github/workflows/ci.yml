@@ -61,9 +61,7 @@ jobs:
       - name: Restore tool caches
         uses: actions/cache@v4
         with:
-          path: |
-            .mypy_cache
-            .ruff_cache
+          path: .ruff_cache
           key: tool-cache-${{ runner.os }}-py3.12-${{ hashFiles('uv.lock', 'pyproject.toml') }}
           restore-keys: |
             tool-cache-${{ runner.os }}-py3.12-
@@ -74,19 +72,19 @@ jobs:
       - name: OpenAPI is committed and current
         run: uv run python -m app.scripts.export_openapi --check
 
-      - name: Run pytest, ruff, and mypy in parallel
+      - name: Run pytest, ruff, and pyright in parallel
         run: |
           set -euo pipefail
           uv run python -m pytest -q -m "not requires_db" &
           pid_pytest=$!
           uv run ruff check . &
           pid_ruff=$!
-          uv run mypy app &
-          pid_mypy=$!
+          uv run pyright &
+          pid_pyright=$!
           status=0
           wait "$pid_pytest" || status=1
           wait "$pid_ruff" || status=1
-          wait "$pid_mypy" || status=1
+          wait "$pid_pyright" || status=1
           exit "$status"
 
   # Frontend gate: the production build (tsc -b + vite build) must be green.

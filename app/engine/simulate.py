@@ -17,10 +17,10 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from app.domain.vectors import CapacityState, FatigueState, TissueState
-from app.engine.state_bridge import sync_legacy_from_vectors
+from app.engine.state_bridge import build_unified_state_vector
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.state_update_v0 import apply_benchmark_observation, update_athlete_state
 from app.schemas.state import UnifiedStateVector
@@ -48,22 +48,20 @@ def baseline_state(
     cx = CapacityState(**capacity_overrides)
     f = FatigueState()
     t = TissueState()
-    leg = sync_legacy_from_vectors(cx, f, t)
-    return UnifiedStateVector(
+    return build_unified_state_vector(
         timestamp=when or _EPOCH,
-        capacity_x=cx,
-        fatigue_f=f,
-        tissue_t=t,
+        x=cx,
+        f=f,
+        t=t,
         s_struct_signal=0.0,
         habit_strength=habit_strength,
         skill_state={},
-        **leg,
     )
 
 
 def make_log(
     when: datetime,
-    modality: str = "Strength",
+    modality: Literal["Running", "Strength", "Hypertrophy", "Power", "Mixed"] = "Strength",
     *,
     duration_minutes: float = 60.0,
     session_rpe: float = 7.0,
