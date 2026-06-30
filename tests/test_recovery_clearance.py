@@ -6,11 +6,13 @@ Verifies:
 - Poor recovery (low sleep/high stress) yields multiplier < 1  (slower clearance).
 - Multiplier is bounded to [recovery_clearance_min, recovery_clearance_max].
 - Neutral inputs (sleep=7, stress=7) give multiplier ≈ 1.0.
-- A dose with real training values still raises fatigue after decay.
+- A dose with real training values still raises fatigue above the pure-decay floor.
+- life_stress_inverse direction: high stress → slower clearance, low stress → faster.
 """
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 
 from app.engine.parameters import default_parameters
@@ -55,12 +57,6 @@ def _log(sleep: float = 7.0, stress: float = 7.0) -> WorkoutLog:
     )
 
 
-def _zero_dose() -> StressDose:
-    return StressDose(
-        dose_six=StressDoseSix(),
-        adaptation_contribution=AdaptationContribution(),
-    )
-
 
 def test_good_sleep_clears_fatigue_faster_than_neutral():
     p = default_parameters()
@@ -100,6 +96,7 @@ def test_neutral_inputs_give_multiplier_near_one():
 
 
 def test_dose_impulse_still_increases_fatigue_after_decay():
+    p = default_parameters()
     s0 = _state(cns=10.0)
     dose = StressDose(
         dose_six=StressDoseSix(volume=1.0, intensity=1.0, density=0.5, impact=0.5, skill=0.5, metabolic=0.5),
@@ -110,4 +107,21 @@ def test_dose_impulse_still_increases_fatigue_after_decay():
         d_struct_damage=1.0,
     )
     s1 = update_athlete_state(s0, dose, timedelta(hours=1), _log())
-    assert s1.fatigue_f.cns > 0.0
+    decayed_floor = s0.fatigue_f.cns * math.exp(-1.0 / p.tau_fatigue_hours["cns"])
+    assert s1.fatigue_f.cns > decayed_floor, (
+        f"Dose must raise CNS fatigue above pure-decay baseline "
+        f"(got {s1.fatigue_f.cns:.4f}, floor {decayed_floor:.4f})"
+    )
+
+
+def test_life_stress_inverse_direction():
+    """High life_stress_inverse (low real stress) → faster clearance; low → slower."""
+    p = default_parameters()
+    m_high_stress = recovery_clearance_multiplier("cns", 7.0, 3.0, p)
+    m_low_stress = recovery_clearance_multiplier("cns", 7.0, 9.0, p)
+    assert m_high_stress < 1.0, (
+        f"High life stress (inverse=3.0) should yield multiplier < 1.0, got {m_high_stress:.3f}"
+    )
+    assert m_low_stress > 1.0, (
+        f"Low life stress (inverse=9.0) should yield multiplier > 1.0, got {m_low_stress:.3f}"
+    )
