@@ -116,6 +116,26 @@ class EngineParameters:
     crosstalk_hypertrophy_on_max_strength: float = 0.004  # Long-term cross-support
     crosstalk_skill_suppressed_above_cns: float = 55.0    # CNS fatigue above this → skill gains halved
 
+    # --- Interference parameters (exponential suppression — app/logic/interference.py) ---
+    # alpha values: how quickly interference ramps with load fraction [0,1].
+    # Larger alpha = steeper suppression at moderate loads.
+    # Calibrated so that suppression at median concurrent load (z≈0.39) matches
+    # the prior linear model: max(0.2, 1 - 1.3*z) ≈ 0.49 → alpha=3.34.
+    interference_e_on_strength_alpha: float = 3.34
+    interference_e_on_power_alpha: float = 3.34
+    interference_cns_on_power_alpha: float = 0.8
+    interference_cns_on_skill_alpha: float = 0.6
+    interference_structural_on_endurance_quality_alpha: float = 0.3
+    interference_floor_by_axis: dict[str, float] = field(
+        default_factory=lambda: {
+            "max_strength": 0.30,
+            "power":        0.30,
+            "skill":        0.50,
+            "aerobic":      0.70,
+            "hypertrophy":  0.40,
+        }
+    )
+
     # --- Capacity confidence dynamics (ADR-0036) ---
     # Per-capacity-family process noise (variance units per day without benchmark).
     # Power/skill lose observability faster; mobility is slow-changing.
@@ -132,16 +152,10 @@ class EngineParameters:
         }
     )
     confidence_max_variance: dict[str, float] = field(
-        default_factory=lambda: {k: 1.5 for k in (
-            "aerobic", "glycolytic", "max_strength", "hypertrophy",
-            "power", "skill", "mobility", "work_capacity",
-        )}
+        default_factory=lambda: dict.fromkeys(("aerobic", "glycolytic", "max_strength", "hypertrophy", "power", "skill", "mobility", "work_capacity"), 1.5)
     )
     confidence_min_variance: dict[str, float] = field(
-        default_factory=lambda: {k: 0.01 for k in (
-            "aerobic", "glycolytic", "max_strength", "hypertrophy",
-            "power", "skill", "mobility", "work_capacity",
-        )}
+        default_factory=lambda: dict.fromkeys(("aerobic", "glycolytic", "max_strength", "hypertrophy", "power", "skill", "mobility", "work_capacity"), 0.01)
     )
     # Measurement variance for a full-weight benchmark (lower ⇒ trusts the test more).
     confidence_measured_variance: float = 0.08

@@ -26,6 +26,7 @@ from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic import cross_talk
 from app.logic.benchmark_validity import BenchmarkValidityProfile, effective_variance
+from app.logic.interference import directional_interference_multiplier
 from app.schemas.engine_vectors import CapacityConfidence, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
@@ -355,11 +356,7 @@ def _adaptation_efficiency(state: UnifiedStateVector, p: EngineParameters) -> fl
 
 
 def _interference_factor(coef: float, fatigue: float, floor: float = 0.2) -> float:
-    """Concurrent-interference suppression multiplier in [floor, 1] (ADR-0037).
-
-    Higher fatigue (a proxy for recent endurance/metabolic or structural load) means
-    more interference, so less of the strength/power adaptation is realized.
-    """
+    """Legacy linear interference. Superseded by directional_interference_multiplier."""
     f01 = max(0.0, min(100.0, fatigue)) / 100.0
     return max(floor, 1.0 - coef * f01)
 
@@ -407,13 +404,10 @@ def _apply_adaptation_gains(
             cns_excess = (s.fatigue_f.cns - p.crosstalk_skill_suppressed_above_cns) / 45.0
             gain *= max(0.5, 1.0 - cns_excess * 0.5)
 
-        # Concurrent-training interference (ADR-0037): endurance load blunts strength
-        # adaptation; structural damage additionally blunts power.
-        if key == "max_strength":
-            gain *= _interference_factor(cross_talk.INTERFERENCE_MET_ON_FORCE, _endurance_load(s.fatigue_f))
-        elif key == "power":
-            gain *= _interference_factor(cross_talk.INTERFERENCE_MET_ON_FORCE, _endurance_load(s.fatigue_f))
-            gain *= _interference_factor(cross_talk.INTERFERENCE_DAM_ON_POWER, s.fatigue_f.structural)
+        # Concurrent-training interference (ADR-0037): routes through the
+        # exponential suppression model (app/logic/interference.py).
+        if key in ("max_strength", "power", "hypertrophy", "skill", "aerobic"):
+            gain *= directional_interference_multiplier(key, s, p)
 
         cur = getattr(s.capacity_x, key)
         ceiling = _capacity_ceiling(key)
