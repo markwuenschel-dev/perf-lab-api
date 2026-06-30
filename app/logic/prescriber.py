@@ -10,6 +10,11 @@ Responsibilities:
 Core domain types (`SessionCandidate`, scoring primitives, readiness helpers)
 live in `app.logic.constraint_engine.candidate`.
 
+Static session content (what sessions exist per goal) lives in
+`app.logic.candidate_library` as `CandidateTemplate` definitions.
+Dynamic scoring (how templates are scored for an athlete) also lives there
+as `score_template()`.
+
 The constraint_engine package also provides template-driven validation
 (`SessionValidator`) used by the coaching template system.
 """
@@ -18,10 +23,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.logic.candidate_library import get_templates, score_template
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
-    max_tissue_load,
-    mean_fatigue,
 )
 from app.logic.constraint_engine.candidate import (
     overall_readiness as _readiness,
@@ -38,7 +42,7 @@ from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
-# We import them at the top of this file.
+# Static content + scoring dispatch lives in app.logic.candidate_library.
 
 # Default volume multiplier applied to a deload session's prescribed duration
 # when the active block does not carry its own `deload_volume_factor`. Mirrors
@@ -49,490 +53,6 @@ DEFAULT_DELOAD_VOLUME_FACTOR = 0.6
 # prescription toward lighter/variety/recovery work to rebuild adherence.
 RECENT_SKIPS_BIAS_THRESHOLD = 2
 _ADHERENCE_FRIENDLY_TYPE_KEYWORDS = ("variety", "recovery", "maintenance", "skill")
-
-
-# ---------------------------------------------------------------------------
-# Candidate generation per goal
-# ---------------------------------------------------------------------------
-
-def _weak_point_coverage(tags: list[str], state: UnifiedStateVector, kpi: dict[str, float]) -> float:
-    """
-    Fraction of state-flagged capacity deficits covered by this candidate's tags.
-    Simple heuristic: low capacity axes → weak point; candidate addresses it.
-    """
-    if not tags:
-        return 0.0
-
-    flagged: set[str] = set()
-    x = state.capacity_x
-    if x.aerobic < 200.0:
-        flagged.add("aerobic_base")
-    if x.max_strength < 40.0:
-        flagged.add("hip_hinge")
-        flagged.add("squat_pattern")
-    if state.fatigue_f.grip > 40.0:
-        flagged.add("grip")
-    if x.skill < 35.0:
-        flagged.add("barbell_technique")
-        flagged.add("gymnastics_skill")
-    if x.mobility < 35.0:
-        flagged.add("hip_mobility")
-        flagged.add("ankle_mobility")
-
-    if not flagged:
-        return 0.0
-    hits = sum(1 for t in tags if t in flagged)
-    return min(1.0, hits / len(flagged))
-
-
-def _gen_strength_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    x = state.capacity_x
-    f = state.fatigue_f
-    squat_skill = state.skill_state.get("squat", 0.0)
-    habit = state.habit_strength
-    readiness = _readiness(state)
-
-    candidates = []
-
-    # High-load max strength when ready
-    candidates.append(SessionCandidate(
-        type="Max Strength",
-        focus="Back Squat 5×3 @ RPE 8 + Romanian Deadlift 3×5",
-        rationale="Primary strength stimulus — high-tension, low-rep compound work.",
-        duration_min=65,
-        branch_id="strength_max",
-        goal_alignment=1.0,
-        state_fit=readiness * (x.max_strength / 100.0 + 0.3),
-        fatigue_penalty=f.cns / 100.0,
-        tissue_penalty=state.tissue_t.lumbar / 100.0 + state.tissue_t.knee / 100.0,
-        weak_point_coverage=_weak_point_coverage(["squat_pattern", "hip_hinge"], state, kpi),
-        habit_bonus=habit,
-    ))
-
-    # Skill acquisition for low-skill athletes
-    if squat_skill < 0.55:
-        candidates.append(SessionCandidate(
-            type="Skill Acquisition",
-            focus="Goblet Squats 3×8 (Tempo 3-1-1) + Box Squat Technique",
-            rationale="Motor pattern priority — quality reps before load progression.",
-            duration_min=45,
-            branch_id="strength_skill_acq",
-            goal_alignment=0.75,
-            state_fit=0.9,
-            fatigue_penalty=f.cns / 100.0 * 0.5,
-            tissue_penalty=0.0,
-            weak_point_coverage=_weak_point_coverage(["squat_pattern", "barbell_technique"], state, kpi),
-            habit_bonus=habit,
-        ))
-
-    # Variety / adherence bias when habit is low
-    if habit < 0.45:
-        candidates.append(SessionCandidate(
-            type="Strength — Variety",
-            focus="Box Squats + Trap Bar Deadlift + Medicine Ball Slams",
-            rationale="Habit strength low — enjoyable variation to sustain adherence.",
-            duration_min=45,
-            branch_id="strength_variety",
-            goal_alignment=0.7,
-            state_fit=readiness,
-            fatigue_penalty=f.muscular / 100.0 * 0.5,
-            tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.5,
-            habit_bonus=0.8,
-        ))
-
-    # Back-off volume when fatigued
-    candidates.append(SessionCandidate(
-        type="Strength — Volume",
-        focus="Front Squat 4×6 @ RPE 6–7 + Accessory Pull",
-        rationale="Volume accumulation with controlled intensity — good for fatigued states.",
-        duration_min=55,
-        branch_id="strength_volume",
-        goal_alignment=0.8,
-        state_fit=max(0.3, 1.0 - f.muscular / 100.0),
-        fatigue_penalty=f.muscular / 100.0 * 0.7,
-        tissue_penalty=state.tissue_t.hip / 100.0,
-        habit_bonus=habit * 0.5,
-    ))
-
-    return candidates
-
-
-def _gen_hypertrophy_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    f = state.fatigue_f
-    readiness = _readiness(state)
-
-    return [
-        SessionCandidate(
-            type="High Volume Hypertrophy",
-            focus="Leg Press 4×12 + Hack Squat 3×15 + Leg Curl 3×12 near failure",
-            rationale="Metabolic stress and mechanical tension with high proximity to failure.",
-            duration_min=75,
-            branch_id="hyp_high_vol",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.muscular / 100.0),
-            fatigue_penalty=f.muscular / 100.0,
-            tissue_penalty=(state.tissue_t.knee + state.tissue_t.hip) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["anterior_chain", "posterior_chain"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-        SessionCandidate(
-            type="Maintenance Volume",
-            focus="Machine Isolation 3×10 @ RPE 7 — upper / lower split",
-            rationale="Residual fatigue present — accumulate volume without overreaching.",
-            duration_min=45,
-            branch_id="hyp_maintenance",
-            goal_alignment=0.7,
-            state_fit=readiness,
-            fatigue_penalty=f.muscular / 100.0 * 0.4,
-            tissue_penalty=0.0,
-            habit_bonus=state.habit_strength * 0.5,
-        ),
-    ]
-
-
-def _gen_power_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    f = state.fatigue_f
-    readiness = _readiness(state)
-
-    return [
-        SessionCandidate(
-            type="Power Development",
-            focus="Hang Power Clean 5×3 @ RPE 6–7 + Box Jumps 4×4 (full recovery)",
-            rationale="High-velocity compound work — power requires neural freshness.",
-            duration_min=50,
-            branch_id="power_main",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=(state.tissue_t.knee + state.tissue_t.ankle) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["hip_hinge"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-        SessionCandidate(
-            type="Neural Priming",
-            focus="Jumps / Throws (Low Volume, Long Rest) @ RPE 6",
-            rationale="Brief neural exposures — maintain power quality under partial fatigue.",
-            duration_min=30,
-            branch_id="power_neural_prime",
-            goal_alignment=0.7,
-            state_fit=max(0.4, 1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0 * 0.5,
-            tissue_penalty=0.0,
-            habit_bonus=state.habit_strength * 0.6,
-        ),
-    ]
-
-
-def _gen_olympic_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    ratio = kpi.get("wl_snatch_cj_ratio")
-    f = state.fatigue_f
-    readiness = _readiness(state)
-    snatch_focus = ratio is not None and ratio < 72.0
-
-    return [
-        SessionCandidate(
-            type="Weightlifting Technique",
-            focus=(
-                "Snatch Complex + Power Snatch 5×2 @ RPE 6–7"
-                if snatch_focus
-                else "Clean & Jerk Drills + Hang Variations @ RPE 6–7"
-            ),
-            rationale=(
-                f"Snatch is weak relative to C&J ({ratio:.0f}%) — extra snatch work."
-                if snatch_focus
-                else "Classic lifts and complexes — positions, pulls, and turnover."
-            ),
-            duration_min=65,
-            branch_id="wl_technique_snatch" if snatch_focus else "wl_technique_cj",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=state.tissue_t.wrist / 100.0 + state.tissue_t.shoulder / 100.0,
-            weak_point_coverage=_weak_point_coverage(["olympic_lifting"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-        SessionCandidate(
-            type="Strength Pulls",
-            focus="Snatch Pull + Deadlift from Deficit 4×4 @ RPE 7",
-            rationale="Posterior chain strength and pull off the floor — direct carryover.",
-            duration_min=55,
-            branch_id="wl_strength_pulls",
-            goal_alignment=0.75,
-            state_fit=readiness,
-            fatigue_penalty=(f.muscular + f.cns * 0.5) / 150.0,
-            tissue_penalty=state.tissue_t.lumbar / 100.0,
-            weak_point_coverage=_weak_point_coverage(["hip_hinge", "posterior_chain"], state, kpi),
-            habit_bonus=state.habit_strength * 0.5,
-        ),
-    ]
-
-
-def _gen_powerlifting_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    rel = kpi.get("pl_relative_total")
-    f = state.fatigue_f
-    readiness = _readiness(state)
-    volume_bias = rel is not None and rel < 3.0
-
-    return [
-        SessionCandidate(
-            type="SBD Strength",
-            focus="Squat / Bench / Deadlift — top sets + 3–4 back-off sets",
-            rationale=(
-                "Quality reps before intensity ramp" if volume_bias
-                else "Competition lift specificity with managed autoregulation."
-            ),
-            duration_min=80,
-            branch_id="pl_sbd_main",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.cns / 100.0 * 0.5),
-            fatigue_penalty=(f.cns + f.structural * 0.5) / 150.0,
-            tissue_penalty=(state.tissue_t.lumbar + state.tissue_t.knee) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["squat_pattern", "hip_hinge", "push_horizontal"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-        SessionCandidate(
-            type="Accessory Focus",
-            focus="Paused Squat 3×4 + Close-Grip Bench + Romanian Deadlift 3×6",
-            rationale="Technical variations and accessory volume to address weak points.",
-            duration_min=65,
-            branch_id="pl_accessory",
-            goal_alignment=0.8,
-            state_fit=readiness,
-            fatigue_penalty=f.muscular / 100.0 * 0.6,
-            tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.5,
-            weak_point_coverage=_weak_point_coverage(["squat_pattern", "push_horizontal", "hip_hinge"], state, kpi),
-            habit_bonus=state.habit_strength * 0.7,
-        ),
-    ]
-
-
-def _gen_metcon_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    f = state.fatigue_f
-    readiness = _readiness(state)
-
-    return [
-        SessionCandidate(
-            type="Metabolic Conditioning",
-            focus="Row / Bike / KB Swings — AMRAP intervals @ sustainable pace",
-            rationale="Work capacity and glycolytic tolerance — mixed-modal structured intervals.",
-            duration_min=40,
-            branch_id="metcon_mixed_modal",
-            goal_alignment=1.0,
-            state_fit=readiness,
-            fatigue_penalty=f.metabolic / 100.0,
-            tissue_penalty=state.tissue_t.knee / 100.0 * 0.5,
-            weak_point_coverage=_weak_point_coverage(["work_capacity", "aerobic_base"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-        SessionCandidate(
-            type="Engine Work",
-            focus="Zone 2 Bike 20 min + Short Threshold Intervals (4×2 min @ RPE 8)",
-            rationale="Base aerobic + lactate threshold dual stimulus.",
-            duration_min=45,
-            branch_id="metcon_engine",
-            goal_alignment=0.8,
-            state_fit=1.0 - f.metabolic / 100.0,
-            fatigue_penalty=f.metabolic / 100.0 * 0.8,
-            tissue_penalty=0.0,
-            weak_point_coverage=_weak_point_coverage(["aerobic_base", "lactate_threshold"], state, kpi),
-            habit_bonus=state.habit_strength * 0.6,
-        ),
-    ]
-
-
-def _gen_running_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-    goal: TrainingGoal,
-) -> list[SessionCandidate]:
-    ff = kpi.get("run_fatigue_factor")
-    f = state.fatigue_f
-    readiness = _readiness(state)
-    threshold_priority = ff is not None and ff > 14.0
-
-    base_cands = [
-        SessionCandidate(
-            type="Aerobic Base",
-            focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
-            rationale=(
-                "Threshold durability priority — moderate effort over pure easy volume."
-                if threshold_priority
-                else "Cardiac output and mitochondrial density via sustained easy effort."
-            ),
-            duration_min=45,
-            branch_id="run_z2_base",
-            goal_alignment=1.0,
-            state_fit=readiness,
-            fatigue_penalty=f.structural / 100.0 * 0.5 + f.tendon / 100.0 * 0.5,
-            tissue_penalty=(state.tissue_t.ankle + state.tissue_t.knee) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["aerobic_base", "running_economy"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-    ]
-
-    if goal in ("HalfMarathon", "FullMarathon") or threshold_priority:
-        base_cands.append(SessionCandidate(
-            type="Threshold Work",
-            focus=(
-                "Tempo Run 20 min @ RPE 7–8 + Progression Miles"
-                if goal in ("HalfMarathon", "FullMarathon")
-                else "4×5 min @ threshold pace (RPE 8) / 2 min easy recovery"
-            ),
-            rationale="Threshold pace improves fractional utilization of VO2max.",
-            duration_min=50,
-            branch_id="run_threshold",
-            goal_alignment=0.9,
-            state_fit=readiness * 0.9,
-            fatigue_penalty=(f.structural + f.tendon) / 200.0,
-            tissue_penalty=(state.tissue_t.ankle + state.tissue_t.knee) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["lactate_threshold", "aerobic_base"], state, kpi),
-            habit_bonus=state.habit_strength * 0.7,
-        ))
-
-    if goal == "Sprinting":
-        base_cands = [SessionCandidate(
-            type="Speed",
-            focus="Acceleration 3×30 m + Max-Velocity Flys 4×20 m (full recovery)",
-            rationale="Short high-quality sprints — neural freshness required.",
-            duration_min=35,
-            branch_id="run_sprint",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=(state.tissue_t.ankle + state.tissue_t.hip) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["running_economy"], state, kpi),
-            habit_bonus=state.habit_strength,
-        )]
-
-    return base_cands
-
-
-def _gen_gymnastics_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-    goal: TrainingGoal,
-) -> list[SessionCandidate]:
-    f = state.fatigue_f
-    readiness = _readiness(state)
-
-    cands = [
-        SessionCandidate(
-            type="Gymnastics Skill",
-            focus="Handstand Progressions + Ring Support Hold + Shaping Drills",
-            rationale="Skill and straight-arm strength — quality reps, protect wrists and shoulders.",
-            duration_min=55,
-            branch_id="gym_skill",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=(state.tissue_t.wrist + state.tissue_t.shoulder + state.tissue_t.elbow) / 300.0,
-            weak_point_coverage=_weak_point_coverage(["gymnastics_skill", "overhead_stability"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-    ]
-
-    if goal == "Calisthenics":
-        cands.append(SessionCandidate(
-            type="Bodyweight Strength",
-            focus="Pull-ups / Dips / Push-up Variations + Skill Progressions",
-            rationale="Horizontal and vertical pressing/pulling patterns + straight-arm strength.",
-            duration_min=50,
-            branch_id="cal_strength",
-            goal_alignment=1.0,
-            state_fit=readiness,
-            fatigue_penalty=(f.cns + f.grip * 0.5) / 150.0,
-            tissue_penalty=(state.tissue_t.shoulder + state.tissue_t.elbow) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["pull_vertical", "push_vertical"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ))
-
-    return cands
-
-
-def _gen_grip_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    f = state.fatigue_f
-    readiness = _readiness(state)
-
-    return [
-        SessionCandidate(
-            type="Grip & Support",
-            focus="Farmer Carries + Dead Hangs + Pinch Block Hold + Crush Work @ RPE 7–8",
-            rationale="Crush, support, and finger flexors with structured volume.",
-            duration_min=35,
-            branch_id="grip_main",
-            goal_alignment=1.0,
-            state_fit=readiness * (1.0 - f.grip / 100.0),
-            fatigue_penalty=f.grip / 100.0,
-            tissue_penalty=(state.tissue_t.finger + state.tissue_t.elbow) / 200.0,
-            weak_point_coverage=_weak_point_coverage(["grip"], state, kpi),
-            habit_bonus=state.habit_strength,
-        ),
-        SessionCandidate(
-            type="Grip Recovery",
-            focus="Light Wrist Mobility + Finger Flexor Rehab Circles",
-            rationale="Active tissue care when grip fatigue is elevated.",
-            duration_min=20,
-            branch_id="grip_recovery",
-            goal_alignment=0.5,
-            state_fit=1.0 - f.grip / 100.0 + 0.3,
-            fatigue_penalty=0.0,
-            tissue_penalty=0.0,
-            habit_bonus=0.4,
-        ),
-    ]
-
-
-def _gen_general_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    readiness = _readiness(state)
-
-    return [
-        SessionCandidate(
-            type="General Physical Prep",
-            focus="Full-Body Circuit @ RPE 6–7 — Squat / Pull / Push / Carry",
-            rationale="Balanced GPP — no critical constraints, no specific goal.",
-            duration_min=45,
-            branch_id="gpp_balanced",
-            goal_alignment=0.9,
-            state_fit=readiness,
-            fatigue_penalty=mean_fatigue(state) / 100.0 * 0.5,
-            tissue_penalty=max_tissue_load(state) / 100.0 * 0.3,
-            habit_bonus=state.habit_strength,
-        ),
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -681,37 +201,6 @@ def _readiness_redirect(
 # Goal → candidate generator dispatch
 # ---------------------------------------------------------------------------
 
-def _gen_mixed_candidates(
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    recent: list[dict[str, Any]] | None,
-) -> list[SessionCandidate]:
-    """Concurrent / mixed-modal pool (MetCon, Hyrox, CrossFit).
-
-    Conditioning-primary (the MetCon candidates) plus one strength-endurance
-    option, so concurrent blocks have a real strength day. The planned-session
-    category boost (ADR-0030) selects the right one per scheduled slot.
-    """
-    f = state.fatigue_f
-    cands = _gen_metcon_candidates(state, kpi, recent)
-    cands.append(
-        SessionCandidate(
-            type="Strength Endurance",
-            focus="Compound lifts in circuit — moderate load, short rest (e.g. 5×8 @ RPE 7)",
-            rationale="The strength side of concurrent work — strength expressed under fatigue.",
-            duration_min=45,
-            branch_id="mixed_strength_endurance",
-            goal_alignment=0.9,
-            state_fit=_readiness(state),
-            fatigue_penalty=f.muscular / 100.0 * 0.6,
-            tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.4,
-            weak_point_coverage=_weak_point_coverage(["work_capacity", "max_strength"], state, kpi),
-            habit_bonus=state.habit_strength * 0.7,
-        )
-    )
-    return cands
-
-
 def _candidate_domain(goal: str) -> str:
     """Resolve a goal / block-goal to the canonical domain the prescriber keys on (ADR-0038)."""
     return GOAL_TO_DOMAIN.get(goal) or canonical_domain(str(goal))
@@ -723,29 +212,59 @@ def _generate_candidates(
     kpi: dict[str, float],
     recent: list[dict[str, Any]] | None,
 ) -> list[SessionCandidate]:
-    # Dispatch on canonical domain, not the raw goal, so BlockGoal-derived intent
-    # (e.g. Hyrox/CrossFit → "mixed") reaches a real candidate pool. Running and
-    # gymnastics also take the original goal for sub-distinctions.
+    """Build the goal-specific candidate pool via the CandidateTemplate library.
+
+    Dispatches on canonical domain, not the raw goal, so BlockGoal-derived
+    intent (e.g. Hyrox/CrossFit → "mixed") reaches a real candidate pool.
+    Running and gymnastics use the original goal for sub-distinctions.
+    """
     domain = _candidate_domain(goal)
-    if domain == "strength":
-        return _gen_strength_candidates(state, kpi, recent)
-    if domain == "hypertrophy":
-        return _gen_hypertrophy_candidates(state, kpi, recent)
-    if domain == "power":
-        return _gen_power_candidates(state, kpi, recent)
-    if domain == "weightlifting":
-        return _gen_olympic_candidates(state, kpi, recent)
-    if domain == "powerlifting":
-        return _gen_powerlifting_candidates(state, kpi, recent)
-    if domain == "running":
-        return _gen_running_candidates(state, kpi, recent, goal)
-    if domain in ("gymnastics", "calisthenics"):
-        return _gen_gymnastics_candidates(state, kpi, recent, goal)
-    if domain == "grip":
-        return _gen_grip_candidates(state, kpi, recent)
-    if domain == "mixed":
-        return _gen_mixed_candidates(state, kpi, recent)
-    return _gen_general_candidates(state, kpi, recent)
+    r = _readiness(state)
+    templates = get_templates(domain, kpi, goal=str(goal), state=state)
+    return [score_template(t, state, kpi, readiness=r) for t in templates]
+
+
+# ---------------------------------------------------------------------------
+# Thin wrappers — kept so existing test imports remain valid
+# ---------------------------------------------------------------------------
+
+def _gen_strength_candidates(
+    state: UnifiedStateVector,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
+) -> list[SessionCandidate]:
+    """Thin wrapper around the template library for the strength domain."""
+    r = _readiness(state)
+    templates = get_templates("strength", kpi, state=state)
+    return [score_template(t, state, kpi, readiness=r) for t in templates]
+
+
+def _gen_running_candidates(
+    state: UnifiedStateVector,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
+    goal: TrainingGoal,
+) -> list[SessionCandidate]:
+    """Thin wrapper around the template library for the running domain."""
+    r = _readiness(state)
+    templates = get_templates("running", kpi, goal=str(goal), state=state)
+    return [score_template(t, state, kpi, readiness=r) for t in templates]
+
+
+def _gen_mixed_candidates(
+    state: UnifiedStateVector,
+    kpi: dict[str, float],
+    recent: list[dict[str, Any]] | None,
+) -> list[SessionCandidate]:
+    """Thin wrapper around the template library for the mixed domain.
+
+    Conditioning-primary (the MetCon candidates) plus one strength-endurance
+    option, so concurrent blocks have a real strength day. The planned-session
+    category boost (ADR-0030) selects the right one per scheduled slot.
+    """
+    r = _readiness(state)
+    templates = get_templates("mixed", kpi, state=state)
+    return [score_template(t, state, kpi, readiness=r) for t in templates]
 
 
 # ---------------------------------------------------------------------------
@@ -864,7 +383,9 @@ def recommend_next_session(
 
     if not scored:
         # Fallback — should not happen unless generator returns empty
-        scored = _gen_general_candidates(state, kpi, recent_sessions)
+        r = _readiness(state)
+        fallback_templates = get_templates("general", kpi, state=state)
+        scored = [score_template(t, state, kpi, readiness=r) for t in fallback_templates]
 
     # --- 4. Return best candidate (finalize adds explainability + hard-constraint override) ---
     rx = _finalize(scored[0], state, goal, recent_sessions)
