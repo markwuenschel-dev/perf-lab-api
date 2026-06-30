@@ -336,6 +336,7 @@ def recommend_next_session(
     available_equipment: list[str] | None = None,
     block_context: dict[str, Any] | None = None,
     candidate_log_out: list[SessionCandidate] | None = None,
+    prescription_arm: str = "adaptive",
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -398,6 +399,22 @@ def recommend_next_session(
         r = _readiness(state)
         fallback_templates = get_templates("general", kpi, state=state)
         scored = [score_template(t, state, kpi, readiness=r) for t in fallback_templates]
+
+    # --- Experiment arm dispatch ---
+    if prescription_arm == "static_with_safety_caps":
+        # Static arm: use first template candidate that passes safety.
+        # No adaptive score optimization, no block bias, no habit/novelty scoring.
+        # Hard safety overrides still apply (applied above, via early return).
+        static_candidates = [c for c in goal_candidates if not c.is_safety_override]
+        chosen = static_candidates[0] if static_candidates else (scored[0] if scored else None)
+        if chosen:
+            rx = _finalize(chosen, state, goal, recent_sessions)
+            if rx.why:
+                rx.why.constraints_applied.append("static_with_safety_caps:arm")
+            if candidate_log_out is not None:
+                candidate_log_out.clear()
+                candidate_log_out.extend(static_candidates)
+            return rx
 
     # Capture all scored candidates for offline policy research (Task 8).
     # This must happen after the fallback so callers always see the full pool.

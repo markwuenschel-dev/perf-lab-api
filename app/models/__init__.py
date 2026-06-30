@@ -12,15 +12,19 @@ from app.models.benchmark_observation import BenchmarkObservation  # noqa: F401
 from app.models.derived_metric_definition import DerivedMetricDefinition  # noqa: F401
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot  # noqa: F401
 from app.models.exercise import Exercise  # noqa: F401
+from app.models.experiment import ExperimentAssignment  # noqa: F401
 from app.models.mesocycle import MesocycleBlock, PlannedSession  # noqa: F401
 from app.models.observation_mapping import ObservationMapping  # noqa: F401
+from app.models.telemetry import (  # noqa: F401
+    CandidateDecisionLog,
+    OutcomeEvent,
+    PainReport,
+    PrescriptionDecision,
+    SessionFeedback,
+)
 
 # Import all model classes (this triggers registration with Base.metadata)
 from app.models.user import AthleteProfile, User  # noqa: F401
 from app.models.weak_point import WeakPoint  # noqa: F401
 from app.models.wellness import DailyCheckin, WellnessSample  # noqa: F401
 from app.models.workout_log import WorkoutLog  # noqa: F401
-from app.models.telemetry import (  # noqa: F401
-    CandidateDecisionLog, OutcomeEvent, PainReport,
-    PrescriptionDecision, SessionFeedback,
-)
