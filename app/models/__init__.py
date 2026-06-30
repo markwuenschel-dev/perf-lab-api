@@ -20,3 +20,7 @@ from app.models.user import AthleteProfile, User  # noqa: F401
 from app.models.weak_point import WeakPoint  # noqa: F401
 from app.models.wellness import DailyCheckin, WellnessSample  # noqa: F401
 from app.models.workout_log import WorkoutLog  # noqa: F401
+from app.models.telemetry import (  # noqa: F401
+    CandidateDecisionLog, OutcomeEvent, PainReport,
+    PrescriptionDecision, SessionFeedback,
+)
