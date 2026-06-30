@@ -27,6 +27,7 @@ from app.logic.candidate_library import get_templates, score_template
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
 )
+from app.logic.deload_need import compute_deload_need
 from app.logic.constraint_engine.candidate import (
     overall_readiness as _readiness,
 )
@@ -358,6 +359,9 @@ def recommend_next_session(
     if safety:
         return _finalize(safety[0], state, goal, recent_sessions)
 
+    # --- Deload need (shadow/Level 1: explanation only) ---
+    deload_need = compute_deload_need(state)
+
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
     goal_candidates = _generate_candidates(state, goal, kpi, recent_sessions)
     redirects = _readiness_redirect(state, goal, kpi)
@@ -377,6 +381,11 @@ def recommend_next_session(
             k in c.type.lower() for k in _ADHERENCE_FRIENDLY_TYPE_KEYWORDS
         ):
             base += min(0.3, 0.1 * recent_skips)
+        # DeloadNeed bias: boost recovery/maintenance/technique if tier == "bias"
+        if deload_need.tier == "bias" and any(
+            k in c.type.lower() for k in ("recovery", "maintenance", "technique", "deload")
+        ):
+            base += 0.10
         return base
 
     scored = sorted(all_candidates, key=_score_with_context, reverse=True)
@@ -389,6 +398,12 @@ def recommend_next_session(
 
     # --- 4. Return best candidate (finalize adds explainability + hard-constraint override) ---
     rx = _finalize(scored[0], state, goal, recent_sessions)
+
+    # Level 1: surface deload assessment as explanation only (never blocks)
+    if rx.why and deload_need.tier != "none":
+        rx.why.constraints_applied.append(
+            f"deload_need:{deload_need.tier}(shadow)={deload_need.score:.2f}"
+        )
 
     # Annotate weak-point context in the explanation if present
     if weak_points and rx.why:
