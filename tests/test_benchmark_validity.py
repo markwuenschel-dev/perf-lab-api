@@ -63,6 +63,14 @@ def test_rested_1rm_higher_gain_than_fatigued_mobility():
     assert r_1rm_fresh < r_mob_tired, "Fresh 1RM should have lower R_eff than fatigued mobility"
 
 
+def test_zero_sensitivity_profile_variance_is_fatigue_invariant():
+    p_mob = get_validity_profile("mobility")
+    s_fresh = _state(cns=5.0, muscular=5.0)
+    s_tired = _state(cns=70.0, muscular=70.0)
+    assert effective_variance(p_mob, s_fresh) == effective_variance(p_mob, s_tired), \
+        "A profile with no fatigue_sensitivity must not have fatigue-dependent R_eff"
+
+
 def test_high_fatigue_increases_effective_variance():
     p = get_validity_profile("rep_max")
     s_fresh = _state(cns=5.0, muscular=5.0)
@@ -73,9 +81,6 @@ def test_high_fatigue_increases_effective_variance():
 
 
 def test_weak_mapping_reduces_gain():
-    # Verify kalman_gain is importable; not called directly here.
-    from app.logic.state_update_v0 import kalman_gain  # noqa: F401
-
     r_eff = 0.08
     prior_var = 1.0
     strong_mapping = 0.95
