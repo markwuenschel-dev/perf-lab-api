@@ -57,7 +57,7 @@ Adds a free global CDN + SSL + DDoS in front of either host:
 
 - Backend + DB: `docker compose up` (Postgres + API on `:8000`), or run uvicorn against a
   local Postgres with `.env` (copy from `.env.example`).
-- Frontend: `cd web && npm run dev`; copy `web/.env.example` → `web/.env.local` and point
+- Frontend: `cd web && pnpm run dev`; copy `web/.env.example` → `web/.env.local` and point
   `VITE_API_BASE_URL` at `http://localhost:8000`.
 
 ## Notes
