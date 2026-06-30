@@ -27,13 +27,13 @@ from app.logic.candidate_library import get_templates, score_template
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
 )
-from app.logic.deload_need import compute_deload_need
 from app.logic.constraint_engine.candidate import (
     overall_readiness as _readiness,
 )
 from app.logic.constraint_engine.candidate import (
     score_candidate as _score_candidate,
 )
+from app.logic.deload_need import compute_deload_need
 from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
 from app.logic.planning import periodization_envelope
 from app.logic.prescription_finalize import finalize_prescription

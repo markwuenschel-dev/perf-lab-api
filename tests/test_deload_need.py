@@ -1,11 +1,12 @@
 # tests/test_deload_need.py
 from __future__ import annotations
+
 from datetime import UTC, datetime
 
-from app.logic.deload_need import DeloadNeed, compute_deload_need
+from app.engine.state_bridge import sync_legacy_from_vectors
+from app.logic.deload_need import compute_deload_need
 from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
-from app.engine.state_bridge import sync_legacy_from_vectors
 
 
 def _state(
@@ -31,10 +32,10 @@ def test_fresh_state_gives_tier_none():
     assert result.shadow_only is True
 
 
-def test_single_high_fatigue_axis_gives_watch_or_bias():
-    s = _state(cns=65.0)  # one axis over 60
+def test_single_high_fatigue_axis_triggers_bias():
+    s = _state(cns=65.0)  # one axis over 60 → hard-rule floor → score 0.55 → "bias"
     result = compute_deload_need(s)
-    assert result.tier in ("watch", "bias", "force")
+    assert result.tier in ("bias", "force")
 
 
 def test_hard_rule_any_axis_over_60_triggers_force_or_bias():
@@ -57,7 +58,7 @@ def test_two_soft_signals_required_for_bias():
     assert result.tier in ("none", "watch"), f"Single soft signal should not trigger bias, got {result.tier}"
 
 
-def test_two_soft_signals_can_reach_bias():
+def test_two_soft_signals_reach_watch():
     s = _state(cns=30.0, muscular=30.0)
     result = compute_deload_need(
         s,
@@ -66,7 +67,7 @@ def test_two_soft_signals_can_reach_bias():
         max_tissue_slope=None,
         recent_adherence=None,
     )
-    assert result.tier in ("watch", "bias")
+    assert result.tier == "watch"  # 0.20 * 2 = 0.40 → "watch" exactly
 
 
 def test_deload_need_is_shadow_only():
