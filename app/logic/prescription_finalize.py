@@ -2,7 +2,6 @@
 
 from typing import Any
 
-from app.core.config import settings
 from app.logic.coaching_template_registry import get_structured_template_for_goal
 from app.logic.constraint_engine import (
     SessionValidator,
@@ -56,23 +55,16 @@ def finalize_prescription(
     draft = build_session_draft(rx, goal, state, program_template)
     vsummary, soft, hard_legacy = validate_session(draft, state, goal, program_template)
 
+    structured = get_structured_template_for_goal(goal)
+    candidate = encode_session_candidate(rx, goal, branch_id, draft)
+    ctx = build_constraint_context(state, recent_sessions, goal)
+    srep = SessionValidator(structured).validate(candidate, ctx)
+    soft_v2 = srep.soft_warnings
+    hard_v2 = srep.hard_failed
+    skipped_codes = srep.skipped_codes
     score_val: float | None = None
-    soft_v2: list[str] = []
-    hard_v2: list[str] = []
-    skipped_codes: list[str] = []
-
-    if settings.USE_STRUCTURED_COACHING_TEMPLATES:
-        structured = get_structured_template_for_goal(goal)
-        candidate = encode_session_candidate(rx, goal, branch_id, draft)
-        ctx = build_constraint_context(state, recent_sessions, goal)
-        srep = SessionValidator(structured).validate(candidate, ctx)
-        soft_v2 = srep.soft_warnings
-        hard_v2 = srep.hard_failed
-        skipped_codes = srep.skipped_codes
-        if not hard_legacy and not hard_v2:
-            score_val = simple_session_scorer(candidate, structured, state)
-    else:
-        structured = None
+    if not hard_legacy and not hard_v2:
+        score_val = simple_session_scorer(candidate, structured, state)
 
     hard_combined = list(dict.fromkeys([*hard_legacy, *hard_v2]))
     out_rx = rx.model_copy(deep=True)
@@ -105,10 +97,7 @@ def finalize_prescription(
         )
 
     prim_labels = primitive_names(program_template.provenance_primitive_ids)
-    if settings.USE_STRUCTURED_COACHING_TEMPLATES and structured is not None:
-        sources = [structured.source_name, program_template.source_name] + prim_labels
-    else:
-        sources = [program_template.source_name] + prim_labels
+    sources = [structured.source_name, program_template.source_name] + prim_labels
     if skipped_codes:
         sources.append(f"skipped_unregistered_rules:{len(skipped_codes)}")
 
@@ -120,12 +109,8 @@ def finalize_prescription(
 
     warnings_out = list(dict.fromkeys([*soft_v2, *soft]))[:12]
 
-    if settings.USE_STRUCTURED_COACHING_TEMPLATES and structured is not None:
-        tid = structured.template_id
-        st_name = structured.name
-    else:
-        tid = program_template.id
-        st_name = None
+    tid = structured.template_id
+    st_name = structured.name
 
     out_rx.why = PrescriptionExplanation(
         state_drivers=derive_state_drivers(state),
