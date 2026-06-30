@@ -8,11 +8,38 @@ from app.schemas.prescription import WorkoutPrescription
 from app.schemas.session_draft import SessionDraft
 from app.schemas.training_goals import TrainingGoal
 
+# (technical, metabolic, neural) emphasis defaults per goal
+_GOAL_EMPHASIS: dict[str, tuple[float, float, float]] = {
+    "OlympicLifts": (0.9, 0.35, 0.65),
+    "Sprinting": (0.5, 0.4, 0.85),
+    "Power": (0.5, 0.4, 0.85),
+    "Running": (0.3, 0.55, 0.5),
+    "HalfMarathon": (0.3, 0.55, 0.5),
+    "FullMarathon": (0.3, 0.55, 0.5),
+    "MetCon": (0.5, 0.75, 0.5),
+    "Gymnastics": (0.85, 0.4, 0.5),
+    "Calisthenics": (0.85, 0.4, 0.5),
+    "Grip": (0.4, 0.4, 0.55),
+}
 
-def _infer_tags(rx: WorkoutPrescription, goal: TrainingGoal, draft: SessionDraft | None) -> list[str]:
+
+def _infer_intensity_from_rx(rx: WorkoutPrescription) -> str:
+    t = f"{rx.type} {rx.focus}".lower()
+    if "recovery" in t or "rest" in t or "passive" in t:
+        return "low"
+    if "max" in t or "rpe 8" in t or "near failure" in t:
+        return "high"
+    if "sprint" in t or "speed" in t or "fly" in t:
+        return "high"
+    if "zone 2" in t or "easy" in t or "walking" in t:
+        return "low"
+    return "moderate"
+
+
+def _infer_tags(rx: WorkoutPrescription, goal: TrainingGoal, intensity_bucket: str) -> list[str]:
     tags: list[str] = []
     t = f"{rx.type} {rx.focus}".lower()
-    if draft and draft.intensity_band in ("high", "max"):
+    if intensity_bucket in ("high", "max"):
         tags.append("high_intensity_session")
     if "recovery" in t or "deload" in t or "rest" in t:
         tags.append("recovery")
@@ -75,22 +102,23 @@ def encode_session_candidate(
 ) -> dict[str, Any]:
     """Stable shape for constraint + scoring (v1: single branch output)."""
 
-    intensity_bucket = "moderate"
     if draft:
         intensity_bucket = draft.intensity_band
     else:
-        low = f"{rx.type} {rx.focus}".lower()
-        if "recovery" in low or "zone 2" in low or "easy" in low:
-            intensity_bucket = "low"
-        elif "max" in low or "rpe 8" in low or "sprint" in low or "near failure" in low:
-            intensity_bucket = "high"
+        intensity_bucket = _infer_intensity_from_rx(rx)
 
-    d = draft
-    tech = d.technical_emphasis if d else 0.55
-    meta = d.metabolic_emphasis if d else 0.45
-    neural = d.neural_emphasis if d else 0.5
-    vol = d.volume_load_proxy if d else min(1.0, max(0.2, rx.duration_min / 90.0))
-    max_reps = d.max_reps_per_set_cap if d else None
+    if draft:
+        tech = draft.technical_emphasis
+        meta = draft.metabolic_emphasis
+        neural = draft.neural_emphasis
+        vol = draft.volume_load_proxy
+        max_reps = draft.max_reps_per_set_cap
+    else:
+        tech, meta, neural = _GOAL_EMPHASIS.get(goal, (0.5, 0.4, 0.5))
+        if "recovery" in rx.type.lower() or "deload" in rx.type.lower():
+            tech, meta, neural = 0.35, 0.25, 0.2
+        vol = min(1.0, max(0.2, rx.duration_min / 90.0))
+        max_reps = 5 if goal == "OlympicLifts" else None
 
     estimated_cns_cost = neural * 0.5 + (1.0 - tech * 0.2) * 0.3 + vol * 0.2
     tissue_cost = meta * 0.25 + vol * 0.35
@@ -107,7 +135,7 @@ def encode_session_candidate(
     elif goal in ("Gymnastics", "Calisthenics"):
         ex_families = ["strict_pullup_dip", "handstand_line_drills", "ring_support"]
 
-    tags = _infer_tags(rx, goal, d)
+    tags = _infer_tags(rx, goal, intensity_bucket)
 
     return {
         "branch_id": branch_id,

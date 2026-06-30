@@ -14,7 +14,6 @@ from app.logic.registries import (
     get_template_for_goal,
     primitive_names,
 )
-from app.logic.session_draft_builder import build_session_draft
 from app.schemas.prescription import (
     PrescriptionExplanation,
     ValidationSummary,
@@ -76,10 +75,9 @@ def finalize_prescription(
         return out
 
     program_template = get_template_for_goal(goal) or get_fallback_template()
-    draft = build_session_draft(rx, goal, state, program_template)
 
     structured = get_structured_template_for_goal(goal)
-    candidate = encode_session_candidate(rx, goal, branch_id, draft)
+    candidate = encode_session_candidate(rx, goal, branch_id)
     ctx = build_constraint_context(state, recent_sessions, goal)
     srep = SessionValidator(structured).validate(candidate, ctx)
     soft_warnings = srep.soft_warnings

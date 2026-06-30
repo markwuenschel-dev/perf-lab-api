@@ -1,9 +1,8 @@
 """
 Structured coaching templates (v2) + TrainingGoal → template_id mapping.
 
-Slim `ProgramTemplate` rows in `program_templates.json` remain the source for
-`build_session_draft` (e.g. zone2_fraction). Toggle structured validation/scoring
-via `Settings.USE_STRUCTURED_COACHING_TEMPLATES`.
+Slim `ProgramTemplate` rows in `program_templates.json` provide provenance
+and constraint-rule metadata consumed by finalize_prescription.
 """
 
 import json
