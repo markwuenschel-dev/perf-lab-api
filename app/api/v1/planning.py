@@ -10,9 +10,9 @@ from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
-from app.models.athlete_state import AthleteState
 from app.models.mesocycle import MesocycleBlock, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile, User
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.planning import (
     BlockCreateRequest,
     BlockRead,
@@ -145,13 +145,7 @@ async def get_today(
     if not session:
         return TodaySessionResponse(session=None, prescription=None)
 
-    state_result = await db.execute(
-        select(AthleteState)
-        .where(AthleteState.user_id == current_user.id)
-        .order_by(AthleteState.timestamp.desc())
-        .limit(1)
-    )
-    state_row = state_result.scalars().first()
+    state_row = await AthleteContextRepository(db).get_latest_state(current_user.id)
     if not state_row:
         return TodaySessionResponse(
             session=PlannedSessionRead.model_validate(session, from_attributes=True),

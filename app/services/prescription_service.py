@@ -10,10 +10,10 @@ from sqlalchemy.future import select
 from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
 from app.logic.workout_history import recent_workout_summaries
-from app.models.athlete_state import AthleteState
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile
 from app.models.weak_point import WeakPoint
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TrainingGoal
 from app.services import dashboard_service
@@ -44,24 +44,13 @@ async def prescribe_for_athlete(
     Callable by HTTP routes, cron jobs, or batch processes.
     """
     # Auto-create baseline AthleteState if none exists yet
-    result = await db.execute(
-        select(AthleteState)
-        .where(AthleteState.user_id == user_id)
-        .order_by(AthleteState.timestamp.desc())
-        .limit(1)
-    )
-    last_record = result.scalars().first()
+    repo = AthleteContextRepository(db)
+    last_record = await repo.get_latest_state(user_id)
 
     if not last_record:
         await initialize_athlete_state(db, user_id)
         # re-fetch the newly created state
-        result = await db.execute(
-            select(AthleteState)
-            .where(AthleteState.user_id == user_id)
-            .order_by(AthleteState.timestamp.desc())
-            .limit(1)
-        )
-        last_record = result.scalars().first()
+        last_record = await repo.get_latest_state(user_id)
 
     state = unified_from_athlete_row(last_record)
 

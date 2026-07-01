@@ -21,8 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.constraint_engine import overall_readiness
-from app.models.athlete_state import AthleteState
 from app.models.wellness import WellnessSample
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.state import UnifiedStateVector
 from app.schemas.wellness import (
     ReadinessComponent,
@@ -105,14 +105,7 @@ def combine_readiness(modeled_0_1: float, modifier: float) -> float:
 
 
 async def _latest_state(db: AsyncSession, user_id: int) -> UnifiedStateVector | None:
-    row = (
-        await db.execute(
-            select(AthleteState)
-            .where(AthleteState.user_id == user_id)
-            .order_by(AthleteState.timestamp.desc())
-            .limit(1)
-        )
-    ).scalars().first()
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
     return unified_from_athlete_row(row) if row else None
 
 

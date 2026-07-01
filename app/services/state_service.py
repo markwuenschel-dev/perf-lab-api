@@ -18,6 +18,7 @@ from app.models.athlete_state import AthleteState
 from app.models.exercise import Exercise
 from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import ExerciseEntry, WorkoutLog
@@ -320,13 +321,7 @@ async def process_new_workout(
     """
     Fetch S(t), resolve exercise phi vectors, compute D(t), evolve to S(t+1), persist.
     """
-    result = await db.execute(
-        select(AthleteState)
-        .filter(AthleteState.user_id == user_id)
-        .order_by(AthleteState.timestamp.desc())
-        .limit(1)
-    )
-    last_record = result.scalars().first()
+    last_record = await AthleteContextRepository(db).get_latest_state(user_id)
 
     if not last_record:
         # Build and stage the baseline row without committing yet — the whole
