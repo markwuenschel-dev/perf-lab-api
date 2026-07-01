@@ -9,11 +9,13 @@ modified_volume, modified_intensity.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def build_dataset(session: AsyncSession) -> list[dict]:
+async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """Experiment arm assignment rows with prescription and feedback outcomes for Q7."""
     query = text("""
         SELECT
@@ -39,4 +41,4 @@ async def build_dataset(session: AsyncSession) -> list[dict]:
         LIMIT 200000
     """)
     result = await session.execute(query)
-    return [dict(row._mapping) for row in result]
+    return [dict(row) for row in result.mappings()]

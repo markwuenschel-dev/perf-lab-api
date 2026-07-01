@@ -7,11 +7,13 @@ session_feedback has status, satisfaction_score.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def build_dataset(session: AsyncSession) -> list[dict]:
+async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """All candidate rows with outcomes for offline policy evaluation (Q8)."""
     query = text("""
         SELECT
@@ -31,4 +33,4 @@ async def build_dataset(session: AsyncSession) -> list[dict]:
         LIMIT 500000
     """)
     result = await session.execute(query)
-    return [dict(row._mapping) for row in result]
+    return [dict(row) for row in result.mappings()]

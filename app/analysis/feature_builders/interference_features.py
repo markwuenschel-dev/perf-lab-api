@@ -6,11 +6,13 @@ normalized_value, observed_at. benchmark_definitions has code, better_direction.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def build_dataset(session: AsyncSession) -> list[dict]:
+async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """Benchmark observations with domain/direction metadata for Q9 interference modeling."""
     query = text("""
         SELECT
@@ -27,4 +29,4 @@ async def build_dataset(session: AsyncSession) -> list[dict]:
         LIMIT 50000
     """)
     result = await session.execute(query)
-    return [dict(row._mapping) for row in result]
+    return [dict(row) for row in result.mappings()]

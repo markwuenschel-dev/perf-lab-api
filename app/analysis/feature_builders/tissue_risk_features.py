@@ -6,11 +6,13 @@ Verified: outcome_events has athlete_id (not user_id); wellness_samples has user
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def build_dataset(session: AsyncSession) -> list[dict]:
+async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """Rows for tissue risk model training. Labels from outcome_events."""
     query = text("""
         SELECT
@@ -34,4 +36,4 @@ async def build_dataset(session: AsyncSession) -> list[dict]:
         LIMIT 100000
     """)
     result = await session.execute(query)
-    return [dict(row._mapping) for row in result]
+    return [dict(row) for row in result.mappings()]

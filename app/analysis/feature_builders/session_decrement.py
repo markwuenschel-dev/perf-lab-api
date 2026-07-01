@@ -6,11 +6,13 @@ Exports session-pair features only; labels must be derived offline.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def build_dataset(session: AsyncSession) -> list[dict]:
+async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """Build session-pair rows for Q1 decrement modeling.
 
     Verified columns: workout_logs.session_timestamp (not .timestamp),
@@ -40,4 +42,4 @@ async def build_dataset(session: AsyncSession) -> list[dict]:
         LIMIT 50000
     """)
     result = await session.execute(query)
-    return [dict(row._mapping) for row in result]
+    return [dict(row) for row in result.mappings()]

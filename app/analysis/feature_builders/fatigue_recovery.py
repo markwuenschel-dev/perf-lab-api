@@ -6,11 +6,13 @@ Verified columns: wellness_samples.user_id, .date, .hrv_ms, .resting_hr,
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def build_dataset(session: AsyncSession) -> list[dict]:
+async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """Fatigue axes at interval start vs observed readiness/performance at end."""
     query = text("""
         SELECT
@@ -29,4 +31,4 @@ async def build_dataset(session: AsyncSession) -> list[dict]:
         LIMIT 100000
     """)
     result = await session.execute(query)
-    return [dict(row._mapping) for row in result]
+    return [dict(row) for row in result.mappings()]
