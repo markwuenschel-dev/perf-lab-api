@@ -114,7 +114,8 @@ class EngineParameters:
     # Cross-talk: slow secondary gains from primary adaptation
     crosstalk_aerobic_on_work_capacity: float = 0.008
     crosstalk_hypertrophy_on_max_strength: float = 0.004  # Long-term cross-support
-    crosstalk_skill_suppressed_above_cns: float = 55.0    # CNS fatigue above this → skill gains halved
+    # (crosstalk_skill_suppressed_above_cns removed — CNS-on-skill interference is now
+    #  handled solely by directional_interference_multiplier in app/logic/interference.py)
 
     # --- Interference parameters (exponential suppression — app/logic/interference.py) ---
     # alpha values: how quickly interference ramps with load fraction [0,1].
