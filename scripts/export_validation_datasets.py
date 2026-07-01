@@ -44,19 +44,20 @@ async def export_all(output_dir: Path) -> None:
     engine = create_async_engine(DATABASE_URL, echo=False)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async with factory() as db_session:
-        for name, module_path in BUILDERS.items():
-            print(f"  Building {name}...", end=" ", flush=True)
-            try:
+    for name, module_path in BUILDERS.items():
+        print(f"  Building {name}...", end=" ", flush=True)
+        try:
+            async with factory() as session:
                 mod = importlib.import_module(module_path)
-                rows = await mod.build_dataset(db_session)
-                out_path = output_dir / f"{name}.jsonl"
-                with out_path.open("w") as f:
-                    for row in rows:
-                        f.write(json.dumps(row, default=str) + "\n")
-                print(f"{len(rows)} rows → {out_path.name}")
-            except Exception as exc:
-                print(f"FAILED: {exc}")
+                rows = await mod.build_dataset(session)
+            out_path = output_dir / f"{name}.jsonl"
+            with out_path.open("w") as f:
+                for row in rows:
+                    f.write(json.dumps(row, default=str) + "\n")
+            print(f"{len(rows)} rows → {out_path}")
+        except Exception as exc:
+            print(f"FAILED {name}: {exc}")
+            continue
 
     await engine.dispose()
 
