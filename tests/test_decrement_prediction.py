@@ -68,3 +68,22 @@ def test_score_bounded():
         _dose(volume=5.0, intensity=5.0), _state(cns=100.0, muscular=100.0), time_gap_hours=1.0
     )
     assert 0.0 <= result.score <= 1.0
+
+
+def test_higher_planned_difficulty_raises_score():
+    """planned_next_difficulty must be wired into the score, not just drivers."""
+    dose = _dose()
+    state = _state(cns=20.0, muscular=10.0)
+    low = compute_decrement_prediction(dose, state, planned_next_difficulty=0.2, time_gap_hours=48.0)
+    high = compute_decrement_prediction(dose, state, planned_next_difficulty=0.9, time_gap_hours=48.0)
+    assert high.score > low.score, (
+        f"Higher planned difficulty should raise decrement score: {high.score:.3f} vs {low.score:.3f}"
+    )
+
+
+def test_high_cns_fatigue_in_affected_axes():
+    """CNS fatigue above threshold must appear in affected_axes as 'cns'."""
+    result = compute_decrement_prediction(_dose(), _state(cns=70.0), time_gap_hours=48.0)
+    assert "cns" in result.affected_axes, (
+        f"Expected 'cns' in affected_axes, got {result.affected_axes}"
+    )

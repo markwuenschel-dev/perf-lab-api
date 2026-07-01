@@ -31,7 +31,9 @@ def compute_decrement_prediction(
 ) -> DecrementPrediction:
     """Estimate likelihood of next-session performance decrement.
 
-    Uses previous session dose and current fatigue state as features.
+    Target is a residual: observed_next_performance − expected_next_performance_given_plan
+    (see module docstring). Uses previous session dose, current fatigue state, and planned
+    next-session difficulty as features.
     Initial implementation: rule-based linear composite. No learned weights yet.
     """
     drivers: list[str] = []
@@ -66,12 +68,17 @@ def compute_decrement_prediction(
     if planned_next_difficulty > 0.7 and mean_fatigue > 30.0:
         drivers.append(f"high_load_on_fatigue={mean_fatigue:.0f}")
 
+    # Clamp caller-supplied float defensively before weighting.
+    pnd = min(1.0, max(0.0, planned_next_difficulty))
+
+    # Weights sum to 1.0: 0.25+0.20+0.20+0.15+0.10+0.10 = 1.00
     score = min(1.0, max(0.0, sum([
-        cns / 100.0 * 0.30,
+        cns / 100.0 * 0.25,
         muscular / 100.0 * 0.20,
         max(0.0, 1.0 - time_gap_hours / 48.0) * 0.20,
         min(1.0, total_dose / 5.0) * 0.15,
-        mean_fatigue / 100.0 * 0.15,
+        mean_fatigue / 100.0 * 0.10,
+        pnd * 0.10,
     ])))
 
     return DecrementPrediction(
