@@ -94,7 +94,9 @@ def compute_tissue_risk(
         drivers[axis] = axis_drivers
 
     delta_risk: dict[str, float] = dict.fromkeys(TissueState.KEYS, 0.0)
-    tier_by_axis = {k: _tier(v) for k, v in risk_by_axis.items()}
+    tier_by_axis: dict[str, Literal["green", "amber", "red"]] = {
+        k: _tier(v) for k, v in risk_by_axis.items()
+    }
 
     return TissueRiskPrediction(
         risk_by_axis=risk_by_axis,
