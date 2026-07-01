@@ -29,6 +29,35 @@ from app.logic.constraint_engine.candidate import (
 from app.schemas.state import UnifiedStateVector
 
 # ---------------------------------------------------------------------------
+# ScoringSpec — per-template dynamic scoring, carried as data
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ScoringSpec:
+    """How one template scores against the current state.
+
+    Only ``state_fit`` varies enough between templates to need a callable; the
+    penalties and habit bonus are uniform formulas parameterised by data. This
+    mirrors the eligibility predicates already carried on CandidateTemplate, so
+    a template's content, eligibility, and scoring all live in one place.
+
+    fatigue_penalty = fatigue_f.<fatigue_axis> / 100 * fatigue_weight
+    tissue_penalty  = sum(tissue_t.<tissue_axes>) / 100 * tissue_weight
+    habit_bonus     = habit_fixed, else habit_strength * habit_mult
+    weak_point_coverage = _weak_point_coverage(tags) if covers_weak_points else 0
+    """
+
+    state_fit: Callable[[UnifiedStateVector, float], float]
+    fatigue_axis: str = "cns"
+    fatigue_weight: float = 1.0
+    tissue_axes: tuple[str, ...] = ()
+    tissue_weight: float = 1.0
+    habit_mult: float = 1.0
+    habit_fixed: float | None = None
+    covers_weak_points: bool = False
+
+
+# ---------------------------------------------------------------------------
 # CandidateTemplate — static content unit
 # ---------------------------------------------------------------------------
 
@@ -65,6 +94,9 @@ class CandidateTemplate:
     kpi_eligible: Callable[[dict[str, float]], bool] | None = None
     state_eligible: Callable[[UnifiedStateVector], bool] | None = None
     goal_eligible: Callable[[str], bool] | None = None
+    # Dynamic scoring. When set, score_template() uses this instead of the
+    # per-domain scorer dispatch. Domains are migrated onto it incrementally.
+    scoring: ScoringSpec | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +151,12 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["squat_pattern", "hip_hinge"],
         domain="strength",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (s.capacity_x.max_strength / 100.0 + 0.3),
+            fatigue_axis="cns",
+            tissue_axes=("lumbar", "knee"),
+            covers_weak_points=True,
+        ),
     ),
     CandidateTemplate(
         type="Skill Acquisition",
@@ -130,6 +168,12 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         tags=["squat_pattern", "barbell_technique"],
         domain="strength",
         state_eligible=lambda s: s.skill_state.get("squat", 0.0) < 0.55,
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: 0.9,
+            fatigue_axis="cns",
+            fatigue_weight=0.5,
+            covers_weak_points=True,
+        ),
     ),
     CandidateTemplate(
         type="Strength — Variety",
@@ -141,6 +185,14 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         tags=[],
         domain="strength",
         state_eligible=lambda s: s.habit_strength < 0.45,
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axis="muscular",
+            fatigue_weight=0.5,
+            tissue_axes=("lumbar",),
+            tissue_weight=0.5,
+            habit_fixed=0.8,
+        ),
     ),
     CandidateTemplate(
         type="Strength — Volume",
@@ -151,6 +203,13 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.8,
         tags=[],
         domain="strength",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: max(0.3, 1.0 - s.fatigue_f.muscular / 100.0),
+            fatigue_axis="muscular",
+            fatigue_weight=0.7,
+            tissue_axes=("hip",),
+            habit_mult=0.5,
+        ),
     ),
 ]
 
@@ -508,57 +567,34 @@ def get_templates(
 # Per-domain scoring functions
 # ---------------------------------------------------------------------------
 
-def _score_strength(
+def _score_from_spec(
     t: CandidateTemplate,
     state: UnifiedStateVector,
     kpi: dict[str, float],
     r: float,
 ) -> SessionCandidate:
-    x = state.capacity_x
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id == "strength_max":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (x.max_strength / 100.0 + 0.3),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=state.tissue_t.lumbar / 100.0 + state.tissue_t.knee / 100.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    if t.branch_id == "strength_skill_acq":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=0.9,
-            fatigue_penalty=f.cns / 100.0 * 0.5,
-            tissue_penalty=0.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    if t.branch_id == "strength_variety":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r,
-            fatigue_penalty=f.muscular / 100.0 * 0.5,
-            tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.5,
-            habit_bonus=0.8,
-        )
-    # strength_volume (default)
+    """Generic scorer driven by the template's ScoringSpec (data-driven path)."""
+    spec = t.scoring
+    assert spec is not None  # only called when scoring is set
+    fatigue_penalty = getattr(state.fatigue_f, spec.fatigue_axis) / 100.0 * spec.fatigue_weight
+    tissue_penalty = (
+        sum(getattr(state.tissue_t, a) for a in spec.tissue_axes) / 100.0 * spec.tissue_weight
+    )
+    habit_bonus = (
+        spec.habit_fixed
+        if spec.habit_fixed is not None
+        else state.habit_strength * spec.habit_mult
+    )
+    wpc = _weak_point_coverage(t.tags, state, kpi) if spec.covers_weak_points else 0.0
     return SessionCandidate(
         type=t.type, focus=t.focus, rationale=t.rationale,
         duration_min=t.duration_min, branch_id=t.branch_id,
         goal_alignment=t.goal_alignment,
-        state_fit=max(0.3, 1.0 - f.muscular / 100.0),
-        fatigue_penalty=f.muscular / 100.0 * 0.7,
-        tissue_penalty=state.tissue_t.hip / 100.0,
-        habit_bonus=habit * 0.5,
+        state_fit=spec.state_fit(state, r),
+        fatigue_penalty=fatigue_penalty,
+        tissue_penalty=tissue_penalty,
+        weak_point_coverage=wpc,
+        habit_bonus=habit_bonus,
     )
 
 
@@ -895,7 +931,6 @@ _DOMAIN_SCORERS: dict[
     str,
     Callable[[CandidateTemplate, UnifiedStateVector, dict[str, float], float], SessionCandidate],
 ] = {
-    "strength": _score_strength,
     "hypertrophy": _score_hypertrophy,
     "power": _score_power,
     "weightlifting": _score_weightlifting,
@@ -922,5 +957,7 @@ def score_template(
     overall_readiness value so it is not recomputed for each template.
     """
     r = readiness if readiness is not None else overall_readiness(state)
+    if t.scoring is not None:
+        return _score_from_spec(t, state, kpi, r)
     scorer = _DOMAIN_SCORERS.get(t.domain, _score_general)
     return scorer(t, state, kpi, r)
