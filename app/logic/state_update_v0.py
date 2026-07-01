@@ -9,7 +9,6 @@ Handles:
 - Benchmark observation assimilation with correct timestamps
 
 This is the preferred module for state updates. See also:
-- `app.logic.state_dynamics`
 - `app.logic.cross_talk`
 - `app.services.state_service`
 """
