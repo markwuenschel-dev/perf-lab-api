@@ -1,16 +1,21 @@
 from __future__ import annotations
+
 from datetime import UTC, datetime, timedelta
 
-from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.feature_flags import ENABLE_WORKOUT_INFORMED_CONFIDENCE_MAINTENANCE
+from app.engine.parameters import default_parameters
+from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.state_update_v0 import update_athlete_state
 from app.schemas.engine_vectors import (
-    AdaptationContribution, CapacityConfidence, CapacityState,
-    FatigueState, StressDoseSix, TissueState,
+    AdaptationContribution,
+    CapacityConfidence,
+    CapacityState,
+    FatigueState,
+    StressDoseSix,
+    TissueState,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
-from app.engine.state_bridge import sync_legacy_from_vectors
 
 
 def _state(conf: float = 1.0) -> UnifiedStateVector:

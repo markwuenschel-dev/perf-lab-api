@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
 from alembic import op
 
 revision: str = "a005_telemetry"

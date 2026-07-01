@@ -16,6 +16,7 @@ import math
 from datetime import UTC, datetime, timedelta
 
 from app.engine.parameters import default_parameters
+from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.state_update_v0 import recovery_clearance_multiplier, update_athlete_state
 from app.schemas.engine_vectors import (
     AdaptationContribution,
@@ -26,7 +27,6 @@ from app.schemas.engine_vectors import (
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
-from app.engine.state_bridge import sync_legacy_from_vectors
 
 
 def _state(cns: float = 30.0) -> UnifiedStateVector:

@@ -9,14 +9,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.benchmark_validity import (
-    BenchmarkValidityProfile,
     effective_variance,
     get_validity_profile,
 )
 from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
-from app.engine.state_bridge import sync_legacy_from_vectors
 
 
 def _state(cns: float = 0.0, muscular: float = 0.0) -> UnifiedStateVector:

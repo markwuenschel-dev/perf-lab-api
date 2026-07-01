@@ -1,7 +1,11 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 from app.models.telemetry import (
-    CandidateDecisionLog, OutcomeEvent, PainReport,
-    PrescriptionDecision, SessionFeedback,
+    CandidateDecisionLog,
+    OutcomeEvent,
+    PainReport,
+    PrescriptionDecision,
+    SessionFeedback,
 )
 
 
