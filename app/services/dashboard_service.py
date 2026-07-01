@@ -8,12 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.derived_metric_formulas import CUSTOM_FORMULAS
-from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot
 from app.models.user import AthleteProfile
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.state import UnifiedStateVector
 
 # Derived metrics that depend on other KPIs must run after their inputs.
@@ -275,13 +275,7 @@ async def readiness_payload(
     db: AsyncSession,
     user_id: int,
 ) -> tuple[UnifiedStateVector | None, dict[str, Any]]:
-    row_res = await db.execute(
-        select(AthleteState)
-        .where(AthleteState.user_id == user_id)
-        .order_by(AthleteState.timestamp.desc())
-        .limit(1)
-    )
-    row = row_res.scalars().first()
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
     if not row:
         return None, {"note": "no_athlete_state"}
     state = unified_from_athlete_row(row)

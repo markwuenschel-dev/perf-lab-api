@@ -12,6 +12,7 @@ from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
 from app.services import state_service
 
@@ -200,13 +201,7 @@ async def create_observation(
 
     mappings = list(definition.observation_mappings or [])
     if body.validity_status == "valid" and mappings:
-        st = await db.execute(
-            select(AthleteState)
-            .where(AthleteState.user_id == user_id)
-            .order_by(AthleteState.timestamp.desc())
-            .limit(1)
-        )
-        last = st.scalars().first()
+        last = await AthleteContextRepository(db).get_latest_state(user_id)
         if not last:
             current = await state_service.initialize_athlete_state(db, user_id)
         else:
