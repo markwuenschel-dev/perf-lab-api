@@ -33,6 +33,7 @@ from app.logic.constraint_engine.candidate import (
 from app.logic.constraint_engine.candidate import (
     score_candidate as _score_candidate,
 )
+from app.logic.deload_need import compute_deload_need
 from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
 from app.logic.planning import periodization_envelope
 from app.logic.prescription_finalize import finalize_prescription
@@ -334,6 +335,8 @@ def recommend_next_session(
     active_weak_points: list[str] | None = None,
     available_equipment: list[str] | None = None,
     block_context: dict[str, Any] | None = None,
+    candidate_log_out: list[SessionCandidate] | None = None,
+    prescription_arm: str = "adaptive",
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -356,7 +359,12 @@ def recommend_next_session(
     # --- 1. Hard safety overrides (always override scoring) ---
     safety = _safety_candidates(state)
     if safety:
+        if candidate_log_out is not None:
+            candidate_log_out.clear()
         return _finalize(safety[0], state, goal, recent_sessions)
+
+    # --- Deload need (shadow/Level 1: explanation only) ---
+    deload_need = compute_deload_need(state)
 
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
     goal_candidates = _generate_candidates(state, goal, kpi, recent_sessions)
@@ -377,6 +385,11 @@ def recommend_next_session(
             k in c.type.lower() for k in _ADHERENCE_FRIENDLY_TYPE_KEYWORDS
         ):
             base += min(0.3, 0.1 * recent_skips)
+        # DeloadNeed bias: boost recovery/maintenance/technique if tier == "bias"
+        if deload_need.tier == "bias" and any(
+            k in c.type.lower() for k in ("recovery", "maintenance", "technique", "deload")
+        ):
+            base += 0.10
         return base
 
     scored = sorted(all_candidates, key=_score_with_context, reverse=True)
@@ -387,8 +400,37 @@ def recommend_next_session(
         fallback_templates = get_templates("general", kpi, state=state)
         scored = [score_template(t, state, kpi, readiness=r) for t in fallback_templates]
 
+    # --- Experiment arm dispatch ---
+    if prescription_arm == "static_with_safety_caps":
+        # Static arm: use first template candidate that passes safety.
+        # No adaptive score optimization, no block bias, no habit/novelty scoring.
+        # Hard safety overrides still apply (applied above, via early return).
+        static_candidates = [c for c in goal_candidates if not c.is_safety_override]
+        chosen = static_candidates[0] if static_candidates else (goal_candidates[0] if goal_candidates else None)
+        if chosen:
+            rx = _finalize(chosen, state, goal, recent_sessions)
+            if rx.why:
+                rx.why.constraints_applied.append("static_with_safety_caps:arm")
+            if candidate_log_out is not None:
+                candidate_log_out.clear()
+                candidate_log_out.extend(static_candidates)
+            return rx
+
+    # Capture all scored candidates for offline policy research (Task 8).
+    # This must happen after the fallback so callers always see the full pool.
+    # Default None means no-op — selection is unchanged.
+    if candidate_log_out is not None:
+        candidate_log_out.clear()
+        candidate_log_out.extend(scored)
+
     # --- 4. Return best candidate (finalize adds explainability + hard-constraint override) ---
     rx = _finalize(scored[0], state, goal, recent_sessions)
+
+    # Level 1: surface deload assessment as explanation only (never blocks)
+    if rx.why and deload_need.tier != "none":
+        rx.why.constraints_applied.append(
+            f"deload_need:{deload_need.tier}(shadow)={deload_need.score:.2f}"
+        )
 
     # Annotate weak-point context in the explanation if present
     if weak_points and rx.why:

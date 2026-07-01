@@ -43,9 +43,27 @@ class EngineParameters:
         }
     )
 
-    # Recovery Ω gain from sleep / stress (multiplier on fatigue clearance per hour)
+    # Superseded by multiplicative clearance (kept for backward compat; unused by engine).
     recovery_sleep_scale: float = 0.08
     recovery_stress_scale: float = 0.06
+
+    # Multiplicative fatigue clearance modifier (replaces additive Ω subtraction).
+    # beta[axis][signal]: weight on the z-score of each recovery signal.
+    # Neutral (sleep=7, stress=7) → z=0 → multiplier=1.0.
+    # Good recovery → z>0 → multiplier>1 (faster). Poor → z<0 → multiplier<1 (slower).
+    recovery_clearance_beta: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "cns":        {"sleep": 0.10, "stress": 0.08},
+            "muscular":   {"sleep": 0.08, "stress": 0.05},
+            "metabolic":  {"sleep": 0.06, "stress": 0.04},
+            "structural": {"sleep": 0.05, "stress": 0.04},
+            "tendon":     {"sleep": 0.04, "stress": 0.04},
+            "grip":       {"sleep": 0.06, "stress": 0.04},
+        }
+    )
+    recovery_clearance_min: float = 0.60
+    recovery_clearance_max: float = 1.50
+    recovery_zscore_scale: float = 2.0
 
     # Capacity adaptation (Banister-style bump from hypertrophy signal)
     capacity_signal_threshold: float = 20.0
@@ -96,13 +114,50 @@ class EngineParameters:
     # Cross-talk: slow secondary gains from primary adaptation
     crosstalk_aerobic_on_work_capacity: float = 0.008
     crosstalk_hypertrophy_on_max_strength: float = 0.004  # Long-term cross-support
-    crosstalk_skill_suppressed_above_cns: float = 55.0    # CNS fatigue above this → skill gains halved
+    # (crosstalk_skill_suppressed_above_cns removed — CNS-on-skill interference is now
+    #  handled solely by directional_interference_multiplier in app/logic/interference.py)
+
+    # --- Interference parameters (exponential suppression — app/logic/interference.py) ---
+    # alpha values: how quickly interference ramps with load fraction [0,1].
+    # Larger alpha = steeper suppression at moderate loads.
+    # Calibrated so that suppression at median concurrent load (z≈0.39) matches
+    # the prior linear model: max(0.2, 1 - 1.3*z) ≈ 0.49 → alpha=3.34.
+    interference_e_on_strength_alpha: float = 3.34
+    interference_e_on_power_alpha: float = 3.34
+    interference_cns_on_power_alpha: float = 0.8
+    interference_cns_on_skill_alpha: float = 0.6
+    interference_structural_on_endurance_quality_alpha: float = 0.3
+    interference_floor_by_axis: dict[str, float] = field(
+        default_factory=lambda: {
+            "max_strength": 0.30,
+            "power":        0.30,
+            "skill":        0.50,
+            "aerobic":      0.70,
+            "hypertrophy":  0.40,
+        }
+    )
 
     # --- Capacity confidence dynamics (ADR-0036) ---
-    # Per-axis variance grows with elapsed time (process noise) and is capped, so a
-    # long-unmeasured axis becomes a weak prior that the next benchmark corrects hard.
-    confidence_process_noise_per_day: float = 0.004
-    confidence_max_variance: float = 1.5
+    # Per-capacity-family process noise (variance units per day without benchmark).
+    # Power/skill lose observability faster; mobility is slow-changing.
+    confidence_process_noise_per_day: dict[str, float] = field(
+        default_factory=lambda: {
+            "aerobic":       0.0022,
+            "glycolytic":    0.0028,
+            "max_strength":  0.0025,
+            "hypertrophy":   0.0018,
+            "power":         0.0035,
+            "skill":         0.0035,
+            "mobility":      0.0012,
+            "work_capacity": 0.0025,
+        }
+    )
+    confidence_max_variance: dict[str, float] = field(
+        default_factory=lambda: dict.fromkeys(("aerobic", "glycolytic", "max_strength", "hypertrophy", "power", "skill", "mobility", "work_capacity"), 1.5)
+    )
+    confidence_min_variance: dict[str, float] = field(
+        default_factory=lambda: dict.fromkeys(("aerobic", "glycolytic", "max_strength", "hypertrophy", "power", "skill", "mobility", "work_capacity"), 0.01)
+    )
     # Measurement variance for a full-weight benchmark (lower ⇒ trusts the test more).
     confidence_measured_variance: float = 0.08
 

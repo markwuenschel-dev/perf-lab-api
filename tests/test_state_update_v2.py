@@ -171,6 +171,58 @@ def test_cns_fatigue_suppresses_skill_gains():
     assert gain_low > gain_high, "Skill gains should be suppressed under high CNS fatigue"
 
 
+def test_skill_cns_suppression_is_single_factor_not_squared():
+    """Regression: skill adaptation must pass through CNS suppression exactly once.
+
+    At cns=0 efficiency is 1.0 for both states so only the interference
+    multiplier matters.  The expected gain ratio is suppression_exp(z_high)
+    (single factor).  Double-suppression would yield suppression_exp(z_high)^2,
+    which at cns=80 is ~0.655 vs the expected ~0.809 — a >15% discrepancy.
+    We assert the measured ratio is within 5% of the single-factor value and
+    strictly above the squared value, making re-introduction of a second
+    CNS-on-skill path a hard failure.
+    """
+    import math
+
+    from app.engine.parameters import default_parameters
+
+    cns_high = 80.0
+    p = default_parameters()
+
+    s_zero_cns = _state(skill=50.0, cns=0.0)
+    s_high_cns = _state(skill=50.0, cns=cns_high)
+    d = _dose(skill=5.0)
+    log = _log()
+
+    s1_zero = update_athlete_state(s_zero_cns, d, timedelta(hours=1), log)
+    s1_high = update_athlete_state(s_high_cns, d, timedelta(hours=1), log)
+
+    gain_zero = s1_zero.capacity_x.skill - s_zero_cns.capacity_x.skill
+    gain_high = s1_high.capacity_x.skill - s_high_cns.capacity_x.skill
+
+    assert gain_zero > 0.0, "Baseline skill gain must be positive"
+
+    measured_ratio = gain_high / gain_zero
+
+    # Single-factor expectation from the interference module directly
+    alpha = p.interference_cns_on_skill_alpha
+    floor = p.interference_floor_by_axis.get("skill", 0.50)
+    z = cns_high / 100.0
+    single_factor = floor + (1.0 - floor) * math.exp(-alpha * z)
+    squared_factor = single_factor ** 2
+
+    # Must be close to a single application (within 5% relative tolerance)
+    assert abs(measured_ratio - single_factor) < 0.05 * single_factor, (
+        f"Measured ratio {measured_ratio:.4f} differs from single-factor "
+        f"{single_factor:.4f} by more than 5% — possible double-suppression"
+    )
+    # Must be strictly above the double-suppressed value
+    assert measured_ratio > squared_factor + 0.01, (
+        f"Measured ratio {measured_ratio:.4f} is too close to squared value "
+        f"{squared_factor:.4f} — skill is being double-suppressed by CNS"
+    )
+
+
 def test_adaptation_efficiency_low_under_high_fatigue():
     """_adaptation_efficiency should return < 1.0 under high fatigue."""
     from app.engine.parameters import default_parameters

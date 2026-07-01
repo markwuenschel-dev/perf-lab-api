@@ -38,7 +38,7 @@ def test_variance_capped_at_max():
     log = make_log(s0.timestamp + timedelta(days=3650), "Strength")
     s1 = update_athlete_state(s0, rest_dose(), timedelta(days=3650), log)
     for key in CapacityConfidence.KEYS:
-        assert getattr(s1.capacity_confidence, key) <= p.confidence_max_variance + 1e-9
+        assert getattr(s1.capacity_confidence, key) <= p.confidence_max_variance.get(key, 1.5) + 1e-9
 
 
 def test_kalman_gain_monotonic():

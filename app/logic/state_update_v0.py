@@ -25,6 +25,8 @@ from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic import cross_talk
+from app.logic.benchmark_validity import BenchmarkValidityProfile, effective_variance
+from app.logic.interference import directional_interference_multiplier
 from app.schemas.engine_vectors import CapacityConfidence, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
@@ -111,6 +113,7 @@ def _apply_capacity_residual(
     score01: float,
     observation_weight: float,
     p: EngineParameters,
+    validity_profile: BenchmarkValidityProfile | None = None,
 ) -> None:
     """Signed, confidence-scaled residual correction of a capacity axis (ADR-0034).
 
@@ -118,6 +121,12 @@ def _apply_capacity_residual(
     axis ceiling); the measurement is ``score01``. We move the axis toward the
     measurement by a Kalman gain set by how unsure we are (low confidence → big move),
     then shrink that axis's variance. A below-expectation test pulls the axis *down*.
+
+    When a validity_profile is supplied, uses profile-specific effective variance
+    (R_eff) and per-axis mapping strength instead of the generic
+    confidence_measured_variance. This reduces update strength for noisy/fatigue-
+    sensitive benchmarks without suppressing valid 1RM-style tests. The None path
+    is byte-for-byte identical to the pre-Task-2 behaviour.
     """
     key = mapping.target_key
     try:
@@ -127,19 +136,35 @@ def _apply_capacity_residual(
     ceiling = _capacity_ceiling(key)
     expected01 = cur / ceiling if ceiling > 0 else 0.0
     residual01 = score01 - expected01
-    weight = max(0.0, float(mapping.coefficient))  # mapping informativeness, ~[0, 1]
-    meas_var = p.confidence_measured_variance / max(0.1, float(observation_weight))
     prior_var = float(getattr(s.capacity_confidence, key, 1.0))
-    gain = kalman_gain(prior_var, meas_var)
 
-    new_v = cur + weight * gain * residual01 * ceiling
-    if mapping.min_value is not None:
-        new_v = max(new_v, float(mapping.min_value))
-    if mapping.max_value is not None:
-        new_v = min(new_v, float(mapping.max_value))
-    _write_axis(s, "capacity", key, new_v)
-    # A measurement reduces uncertainty about the axis.
-    setattr(s.capacity_confidence, key, max(0.0, (1.0 - gain) * prior_var))
+    if validity_profile is not None:
+        r_eff = effective_variance(validity_profile, s)
+        mapping_strength = validity_profile.mapping_strength.get(key, float(mapping.coefficient))
+        # Modified Kalman gain: K = P * m / (m² * P + R_eff)
+        # Effective update on state = m * K = P * m² / (m² * P + R_eff)
+        gain = prior_var * mapping_strength / (mapping_strength ** 2 * prior_var + max(1e-9, r_eff))
+        new_v = cur + mapping_strength * gain * residual01 * ceiling
+        if mapping.min_value is not None:
+            new_v = max(new_v, float(mapping.min_value))
+        if mapping.max_value is not None:
+            new_v = min(new_v, float(mapping.max_value))
+        _write_axis(s, "capacity", key, new_v)
+        conf_post = max(0.0, (1.0 - gain * mapping_strength) * prior_var)
+        setattr(s.capacity_confidence, key, conf_post)
+    else:
+        weight = max(0.0, float(mapping.coefficient))  # mapping informativeness, ~[0, 1]
+        meas_var = p.confidence_measured_variance / max(0.1, float(observation_weight))
+        gain = kalman_gain(prior_var, meas_var)
+
+        new_v = cur + weight * gain * residual01 * ceiling
+        if mapping.min_value is not None:
+            new_v = max(new_v, float(mapping.min_value))
+        if mapping.max_value is not None:
+            new_v = min(new_v, float(mapping.max_value))
+        _write_axis(s, "capacity", key, new_v)
+        # A measurement reduces uncertainty about the axis.
+        setattr(s.capacity_confidence, key, max(0.0, (1.0 - gain) * prior_var))
 
 
 def apply_benchmark_observation(
@@ -152,6 +177,7 @@ def apply_benchmark_observation(
     mappings: Sequence[Any],
     observed_at: datetime | None = None,
     score01: float | None = None,
+    validity_profile: BenchmarkValidityProfile | None = None,
 ) -> UnifiedStateVector:
     """
     Assimilate a benchmark observation into state (no full EKF — ADR-0015).
@@ -183,7 +209,7 @@ def apply_benchmark_observation(
         if m.target_vector not in _VECTOR_ATTR:
             continue
         if m.target_vector == "capacity" and score01 is not None:
-            _apply_capacity_residual(s, m, score01, observation_weight, p)
+            _apply_capacity_residual(s, m, score01, observation_weight, p, validity_profile)
             continue
         # Legacy additive nudge: fatigue/tissue, or capacity without normalization.
         try:
@@ -223,6 +249,29 @@ def _exp_decay(value: float, hours: float, tau: float) -> float:
     return value * math.exp(-hours / max(1e-6, tau))
 
 
+def recovery_clearance_multiplier(
+    axis: str,
+    sleep_quality: float | None,
+    life_stress_inverse: float | None,
+    params: EngineParameters,
+) -> float:
+    """Multiplicative modifier on fatigue clearance rate.
+
+    >1.0 = faster clearance (good recovery).
+    <1.0 = slower clearance (poor recovery).
+    Bounded to [recovery_clearance_min, recovery_clearance_max].
+    Neutral at sleep_quality=7, life_stress_inverse=7.
+    """
+    beta = params.recovery_clearance_beta.get(axis, {"sleep": 0.06, "stress": 0.04})
+    sq = sleep_quality if sleep_quality is not None else 7.0
+    lsi = life_stress_inverse if life_stress_inverse is not None else 7.0
+    scale = params.recovery_zscore_scale
+    z_sleep = max(-scale, min(scale, (sq - 7.0) / 2.0))
+    z_stress = max(-scale, min(scale, (lsi - 7.0) / 2.0))
+    raw = math.exp(beta["sleep"] * z_sleep + beta["stress"] * z_stress)
+    return max(params.recovery_clearance_min, min(params.recovery_clearance_max, raw))
+
+
 def kalman_gain(prior_variance: float, measurement_variance: float) -> float:
     """Scalar Kalman gain in [0, 1): how much a measurement moves the estimate.
 
@@ -239,18 +288,19 @@ def _grow_confidence_variance(
     hours: float,
     p: EngineParameters,
 ) -> None:
-    """Grow per-axis capacity variance with elapsed time (process noise), in place.
+    """Grow per-axis capacity variance with elapsed time (process noise).
 
-    Training moves the capacity *mean* but does not *measure* it, so it does not
-    increase confidence — only time passing (uncertainty accrues) and, elsewhere,
-    benchmarks (which reduce it). See ADR-0036.
+    Training moves capacity mean but does not measure it, so only time passing
+    increases uncertainty. Benchmarks reduce it. ADR-0036.
     """
-    growth = p.confidence_process_noise_per_day * (hours / 24.0)
-    if growth <= 0.0:
+    dt_days = hours / 24.0
+    if dt_days <= 0.0:
         return
     for key in CapacityConfidence.KEYS:
-        v = getattr(confidence, key) + growth
-        setattr(confidence, key, min(p.confidence_max_variance, v))
+        q = p.confidence_process_noise_per_day.get(key, 0.0025)
+        max_v = p.confidence_max_variance.get(key, 1.5)
+        v = getattr(confidence, key) + q * dt_days
+        setattr(confidence, key, min(max_v, v))
 
 
 def _fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
@@ -306,11 +356,7 @@ def _adaptation_efficiency(state: UnifiedStateVector, p: EngineParameters) -> fl
 
 
 def _interference_factor(coef: float, fatigue: float, floor: float = 0.2) -> float:
-    """Concurrent-interference suppression multiplier in [floor, 1] (ADR-0037).
-
-    Higher fatigue (a proxy for recent endurance/metabolic or structural load) means
-    more interference, so less of the strength/power adaptation is realized.
-    """
+    """Legacy linear interference. Superseded by directional_interference_multiplier."""
     f01 = max(0.0, min(100.0, fatigue)) / 100.0
     return max(floor, 1.0 - coef * f01)
 
@@ -353,18 +399,13 @@ def _apply_adaptation_gains(
         coef = p.adapt_coef.get(key, 0.012)
         gain = signal * coef * efficiency
 
-        # Skill adaptation is additionally suppressed under high CNS fatigue
-        if key == "skill" and s.fatigue_f.cns > p.crosstalk_skill_suppressed_above_cns:
-            cns_excess = (s.fatigue_f.cns - p.crosstalk_skill_suppressed_above_cns) / 45.0
-            gain *= max(0.5, 1.0 - cns_excess * 0.5)
-
-        # Concurrent-training interference (ADR-0037): endurance load blunts strength
-        # adaptation; structural damage additionally blunts power.
-        if key == "max_strength":
-            gain *= _interference_factor(cross_talk.INTERFERENCE_MET_ON_FORCE, _endurance_load(s.fatigue_f))
-        elif key == "power":
-            gain *= _interference_factor(cross_talk.INTERFERENCE_MET_ON_FORCE, _endurance_load(s.fatigue_f))
-            gain *= _interference_factor(cross_talk.INTERFERENCE_DAM_ON_POWER, s.fatigue_f.structural)
+        # Concurrent-training interference (ADR-0037): routes through the
+        # exponential suppression model (app/logic/interference.py).
+        # CNS-on-skill is handled exclusively here (not the legacy
+        # crosstalk_skill_suppressed_above_cns block, which was removed to
+        # prevent double-suppression — each axis has a single CNS source).
+        if key in ("max_strength", "power", "hypertrophy", "skill", "aerobic"):
+            gain *= directional_interference_multiplier(key, s, p)
 
         cur = getattr(s.capacity_x, key)
         ceiling = _capacity_ceiling(key)
@@ -398,11 +439,14 @@ def update_athlete_state(
     p = default_parameters()
     s = prev_state.model_copy(deep=True)
 
-    # --- 1. Fatigue decay (Λ) ---
+    # --- 1. Fatigue decay (Λ) with recovery-modulated clearance rate ---
+    # Multiplier >1 (good sleep/low stress) → effective hours larger → faster decay.
+    # Multiplier <1 (poor sleep/high stress) → effective hours smaller → slower decay.
     for key in FatigueState.KEYS:
         tau = p.tau_fatigue_hours[key]
+        m = recovery_clearance_multiplier(key, log.sleep_quality, log.life_stress_inverse, p)
         v = getattr(s.fatigue_f, key)
-        setattr(s.fatigue_f, key, _exp_decay(v, hours, tau))
+        setattr(s.fatigue_f, key, _exp_decay(v, hours * m, tau))
 
     # --- 2. Tissue decay (Γ) — accumulated stress eases ---
     for key in TissueState.KEYS:
@@ -410,16 +454,7 @@ def update_athlete_state(
         v = getattr(s.tissue_t, key)
         setattr(s.tissue_t, key, _exp_decay(v, hours, tau))
 
-    # --- 3. Recovery Ω (sleep / life stress) ---
-    omega = (
-        p.recovery_sleep_scale * max(0.0, 5.0 - log.sleep_quality) * hours
-        + p.recovery_stress_scale * max(0.0, 5.0 - log.life_stress_inverse) * hours
-    )
-    for key in FatigueState.KEYS:
-        v = getattr(s.fatigue_f, key)
-        setattr(s.fatigue_f, key, max(0.0, v - omega * 0.18))
-
-    # --- 4. Impulses from training dose ---
+    # --- 3. Impulses from training dose ---
     d_f = _fatigue_impulse_from_dose(dose)
     for key in FatigueState.KEYS:
         v = getattr(s.fatigue_f, key) + getattr(d_f, key)
@@ -430,7 +465,7 @@ def update_athlete_state(
         v = getattr(s.tissue_t, key) + d_t[key]
         setattr(s.tissue_t, key, max(0.0, min(100.0, v)))
 
-    # --- 5. Signaling + slow structural capacity (Banister-style nudge) ---
+    # --- 4. Signaling + slow structural capacity (Banister-style nudge) ---
     s.s_struct_signal = _exp_decay(s.s_struct_signal, hours, cross_talk.TAU_SIGNAL)
     s.s_struct_signal += dose.d_struct_signal
     s.s_struct_signal = max(0.0, s.s_struct_signal)
@@ -450,10 +485,10 @@ def update_athlete_state(
             s.capacity_x.max_strength + p.capacity_struct_bump * struct_drive * interference,
         )
 
-    # --- 6. Explicit adaptation gains (new v2 path) ---
+    # --- 5. Explicit adaptation gains (new v2 path) ---
     s = _apply_adaptation_gains(s, dose, p)
 
-    # --- 6b. Detraining: capacities erode toward baseline with elapsed time ---
+    # --- 5b. Detraining: capacities erode toward baseline with elapsed time ---
     days = hours / 24.0
     if days > 0:
         for key in s.capacity_x.KEYS:
@@ -461,11 +496,11 @@ def update_athlete_state(
             cur = getattr(s.capacity_x, key)
             setattr(s.capacity_x, key, max(0.0, cur - cur * rate * days))
 
-    # --- 7. Legacy metabolic cross-talk (preserved from v1) ---
+    # --- 6. Legacy metabolic cross-talk (preserved from v1) ---
     wc_gain = p.crosstalk_metabolic_on_work_capacity * min(s.fatigue_f.metabolic * 0.015, 0.4)
     s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_gain)
 
-    # --- 8. Legacy mirrors ---
+    # --- 7. Legacy mirrors ---
     legacy = sync_legacy_from_vectors(s.capacity_x, s.fatigue_f, s.tissue_t)
     s.c_met_aerobic = legacy["c_met_aerobic"]
     s.c_nm_force = legacy["c_nm_force"]
@@ -476,7 +511,7 @@ def update_athlete_state(
     s.f_nm_central = legacy["f_nm_central"]
     s.f_struct_damage = legacy["f_struct_damage"]
 
-    # --- 9. Confidence: uncertainty about capacity accrues with elapsed time ---
+    # --- 8. Confidence: uncertainty about capacity accrues with elapsed time ---
     _grow_confidence_variance(s.capacity_confidence, hours, p)
 
     s.timestamp = prev_state.timestamp + time_delta
