@@ -37,11 +37,19 @@ async def prescribe_for_athlete(
     db: AsyncSession,
     user_id: int,
     goal: TrainingGoal,
+    *,
+    planned_session: PlannedSession | None = None,
 ) -> WorkoutPrescription:
     """
     Full prescription pipeline for one athlete.
     Auto-initializes state if none exists.
     Callable by HTTP routes, cron jobs, or batch processes.
+
+    When ``planned_session`` is supplied (e.g. the planning route passes the
+    session it will display), the prescription is persisted into exactly that
+    slot and block context is taken from its owning block — so the displayed
+    session is always the persisted one. Otherwise the target is today's pending
+    session in the latest active block.
     """
     # Auto-create baseline AthleteState if none exists yet
     repo = AthleteContextRepository(db)
@@ -63,39 +71,48 @@ async def prescribe_for_athlete(
     )
     active_weak_points = [row[0] for row in wp_result.all()]
 
-    # Fetch active block + today's planned session for block-context bias
-    block_result = await db.execute(
-        select(MesocycleBlock)
-        .where(
-            MesocycleBlock.user_id == user_id,
-            MesocycleBlock.status == BlockStatus.ACTIVE,
+    # Resolve the owning block + the session to prescribe into.
+    if planned_session is not None:
+        # Caller-supplied target: persist here, take context from its block.
+        target_session: PlannedSession | None = planned_session
+        block_result = await db.execute(
+            select(MesocycleBlock).where(MesocycleBlock.id == planned_session.block_id)
         )
-        .order_by(MesocycleBlock.created_at.desc())
-        .limit(1)
-    )
-    active_block = block_result.scalars().first()
-
-    planned_session = None
-    if active_block:
-        ps_result = await db.execute(
-            select(PlannedSession)
+        active_block = block_result.scalars().first()
+    else:
+        # Resolve today's pending session in the latest active block.
+        block_result = await db.execute(
+            select(MesocycleBlock)
             .where(
-                PlannedSession.block_id == active_block.id,
-                PlannedSession.scheduled_date == date.today(),
-                PlannedSession.status == SessionStatus.PENDING,
+                MesocycleBlock.user_id == user_id,
+                MesocycleBlock.status == BlockStatus.ACTIVE,
             )
+            .order_by(MesocycleBlock.created_at.desc())
             .limit(1)
         )
-        planned_session = ps_result.scalars().first()
+        active_block = block_result.scalars().first()
+
+        target_session = None
+        if active_block:
+            ps_result = await db.execute(
+                select(PlannedSession)
+                .where(
+                    PlannedSession.block_id == active_block.id,
+                    PlannedSession.scheduled_date == date.today(),
+                    PlannedSession.status == SessionStatus.PENDING,
+                )
+                .limit(1)
+            )
+            target_session = ps_result.scalars().first()
 
     block_context: BlockContext | None = None
-    if active_block and planned_session:
+    if active_block and target_session:
         block_context = BlockContext(
             block_goal=active_block.goal.value,
-            session_category=planned_session.category,
-            is_deload=planned_session.is_deload,
-            is_benchmark=planned_session.is_benchmark,
-            week_number=planned_session.week_number,
+            session_category=target_session.category,
+            is_deload=target_session.is_deload,
+            is_benchmark=target_session.is_benchmark,
+            week_number=target_session.week_number,
             duration_weeks=active_block.duration_weeks,
             deload_every_n_weeks=active_block.deload_every_n_weeks,
             deload_volume_factor=active_block.deload_volume_factor,
@@ -126,15 +143,7 @@ async def prescribe_for_athlete(
         block_context=cast(dict[str, Any] | None, block_context),
     )
     # Persist prescription back to the planned session slot
-    if planned_session is not None:
-        planned_session.prescribed_content = {
-            "type": rx.type,
-            "focus": rx.focus,
-            "rationale": rx.rationale,
-            "duration_min": rx.duration_min,
-            "model_version": rx.model_version,
-            "exercises": [e.model_dump() for e in rx.exercises],
-            "why": rx.why.model_dump() if rx.why else None,
-        }
+    if target_session is not None:
+        target_session.prescribed_content = rx.to_prescribed_content()
         await db.commit()
     return rx

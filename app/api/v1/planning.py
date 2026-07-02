@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
@@ -8,11 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.engine.state_bridge import unified_from_athlete_row
-from app.logic.prescriber import recommend_next_session
 from app.models.mesocycle import MesocycleBlock, PlannedSession, SessionStatus
-from app.models.user import AthleteProfile, User
-from app.repositories.athlete_context_repository import AthleteContextRepository
+from app.models.user import User
 from app.schemas.planning import (
     BlockCreateRequest,
     BlockRead,
@@ -21,8 +19,9 @@ from app.schemas.planning import (
     PlannedSessionUpdateRequest,
     TodaySessionResponse,
 )
-from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
+from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services.planning_service import create_block_with_sessions, get_today_session
+from app.services.prescription_service import prescribe_for_athlete
 
 router = APIRouter(prefix="/planning", tags=["Planning"])
 
@@ -145,49 +144,15 @@ async def get_today(
     if not session:
         return TodaySessionResponse(session=None, prescription=None)
 
-    state_row = await AthleteContextRepository(db).get_latest_state(current_user.id)
-    if not state_row:
-        return TodaySessionResponse(
-            session=PlannedSessionRead.model_validate(session, from_attributes=True),
-            prescription=None,
-        )
-    state = unified_from_athlete_row(state_row)
-
-    profile_result = await db.execute(select(AthleteProfile).where(AthleteProfile.user_id == current_user.id))
-    profile = profile_result.scalars().first()
-
-    # Deload sessions scale prescribed volume by the parent block's factor.
-    deload_volume_factor: float | None = None
-    if session.is_deload:
-        factor_result = await db.execute(
-            select(MesocycleBlock.deload_volume_factor).where(MesocycleBlock.id == session.block_id)
-        )
-        deload_volume_factor = factor_result.scalar_one_or_none()
-
-    rx = recommend_next_session(
-        state,
-        goal=goal,  # type: ignore[arg-type]
-        block_context={
-            "session_category": session.category,
-            "is_deload": session.is_deload,
-            "is_benchmark": session.is_benchmark,
-            "week_number": session.week_number,
-            "deload_volume_factor": deload_volume_factor,
-        },
-        available_equipment=(profile.equipment if profile else None),
+    # Delegate to the single prescribe-and-persist seam so /planning/today and
+    # /next-session agree by construction: same ADR-0030 goal resolution and the
+    # same weak-point / KPI signals. Passing the session we resolved guarantees
+    # the displayed session is the one the prescription was persisted into.
+    rx = await prescribe_for_athlete(
+        db, current_user.id, cast(TrainingGoal, goal), planned_session=session
     )
-    session.prescribed_content = {
-        "type": rx.type,
-        "focus": rx.focus,
-        "rationale": rx.rationale,
-        "duration_min": rx.duration_min,
-        "model_version": rx.model_version,
-        "exercises": [x.model_dump() for x in rx.exercises],
-        "why": rx.why.model_dump() if rx.why else None,
-    }
-    await db.commit()
     await db.refresh(session)
     return TodaySessionResponse(
         session=PlannedSessionRead.model_validate(session, from_attributes=True),
-        prescription=session.prescribed_content,
+        prescription=rx.to_prescribed_content(),
     )

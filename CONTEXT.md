@@ -9,6 +9,9 @@ The set of database‑backed records that together allow the system to make or u
 ## Repository (general definition)
 A **repository** is a persistence boundary used by services to read/write ORM records. Repositories must not contain training‑engine decisions, dose calculations, or readiness logic; those belong in the service layer.
 
+## Prescribe-and-persist
+The single service pathway that turns an athlete's current context into a next-session recommendation **and** writes it back into a `PlannedSession.prescribed_content` slot. `prescription_service.prescribe_for_athlete` owns it end to end: state load/init, ADR-0030 goal resolution, signal gathering (recent sessions, KPIs, active weak points), block-context assembly, scoring, and persistence. HTTP routes (`/next-session`, `/planning/today`) delegate rather than reimplement — `/planning/today` passes the `PlannedSession` it will display as the persist target, so the displayed session is always the one written to. The serialized shape lives in one place, `WorkoutPrescription.to_prescribed_content()`, which `state_service` reads back by string key (ADR-0031). Any route that instead reassembles this pipeline inline is a divergence risk, not a variant.
+
 ## AthleteContextRepository — interface contract
 The seam is being built incrementally, one migrated query at a time; every method has real callers (no aspirational stubs).
 
