@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
@@ -8,10 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.logic.constraint_engine.candidate import SessionCandidate
-from app.logic.prescriber import recommend_next_session
 from app.models.mesocycle import MesocycleBlock, PlannedSession, SessionStatus
-from app.models.user import AthleteProfile, User
+from app.models.user import User
 from app.schemas.planning import (
     BlockCreateRequest,
     BlockRead,
@@ -20,11 +19,9 @@ from app.schemas.planning import (
     PlannedSessionUpdateRequest,
     TodaySessionResponse,
 )
-from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
-from app.services.decision_telemetry import persist_prescription_decision
-from app.services.objective_service import active_objective_signals
+from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services.planning_service import create_block_with_sessions, get_today_session
-from app.services.state_service import load_current_state
+from app.services.prescription_service import prescribe_for_athlete
 
 router = APIRouter(prefix="/planning", tags=["Planning"])
 
@@ -147,83 +144,17 @@ async def get_today(
     if not session:
         return TodaySessionResponse(session=None, prescription=None)
 
-    state = await load_current_state(db, current_user.id)
-    if state is None:
-        return TodaySessionResponse(
-            session=PlannedSessionRead.model_validate(session, from_attributes=True),
-            prescription=None,
-        )
-
-    profile_result = await db.execute(select(AthleteProfile).where(AthleteProfile.user_id == current_user.id))
-    profile = profile_result.scalars().first()
-
-    # Fetch the parent block so periodization (duration_weeks + deload cadence,
-    # ADR-0029) applies on this path too — mirrors the block_context built by
-    # prescription_service.prescribe_for_athlete for the /next-session path.
-    # Without duration_weeks the envelope guard in recommend_next_session
-    # silently no-ops (weeks_total == 0), so /planning/today and /next-session
-    # disagreed on periodization.
-    block_result = await db.execute(
-        select(MesocycleBlock).where(MesocycleBlock.id == session.block_id)
+    # Delegate to the single prescribe-and-persist seam so /planning/today and
+    # /next-session agree by construction: same ADR-0030 goal resolution and the
+    # same weak-point / KPI signals. Passing the session we resolved guarantees
+    # the displayed session is the one the prescription was persisted into.
+    # prescribe_for_athlete also handles state auto-init, objective signals, and
+    # the decision-telemetry write, so this route no longer duplicates them.
+    rx = await prescribe_for_athlete(
+        db, current_user.id, cast(TrainingGoal, goal), planned_session=session
     )
-    block = block_result.scalars().first()
-
-    # Objective taper + domain-emphasis (Phase 4a). This entry point builds
-    # its own block_context separately from prescription_service — both must
-    # carry the same objective signals (Phase 0/3a lesson: /today drifted
-    # from /next-session's block_context before).
-    objective_signals = await active_objective_signals(db, current_user.id)
-
-    block_context = {
-        "session_category": session.category,
-        "is_deload": session.is_deload,
-        "is_benchmark": session.is_benchmark,
-        "week_number": session.week_number,
-        "duration_weeks": block.duration_weeks if block else None,
-        "deload_every_n_weeks": block.deload_every_n_weeks if block else None,
-        "deload_volume_factor": block.deload_volume_factor if block else None,
-        "target_session_minutes": block.target_session_minutes if block else None,
-        "accessory_emphasis": block.accessory_emphasis if block else None,
-        "accessory_focus": block.accessory_focus if block else None,
-        "objective_taper": objective_signals["taper"],
-        "objective_domain": objective_signals["domain"],
-    }
-    # candidate_log_out captures the full ranked pool for decision telemetry
-    # (Workstream B); the prescriber only fills it, so selection is unchanged.
-    candidate_log: list[SessionCandidate] = []
-    rx = recommend_next_session(
-        state,
-        goal=goal,  # type: ignore[arg-type]
-        block_context=block_context,
-        available_equipment=(profile.equipment if profile else None),
-        candidate_log_out=candidate_log,
-    )
-    session.prescribed_content = {
-        "type": rx.type,
-        "focus": rx.focus,
-        "rationale": rx.rationale,
-        "duration_min": rx.duration_min,
-        "model_version": rx.model_version,
-        "exercises": [x.model_dump() for x in rx.exercises],
-        "why": rx.why.model_dump() if rx.why else None,
-    }
-    await db.commit()
     await db.refresh(session)
-
-    # Best-effort decision telemetry — after the prescription is committed so a
-    # telemetry failure can never alter or block the response.
-    await persist_prescription_decision(
-        db,
-        current_user.id,
-        rx,
-        candidate_log,
-        goal=str(goal),
-        decision_mode="adaptive",
-        planned_session_id=session.id,
-        state_snapshot=state.model_dump(mode="json"),
-        block_context=block_context,
-    )
     return TodaySessionResponse(
         session=PlannedSessionRead.model_validate(session, from_attributes=True),
-        prescription=session.prescribed_content,
+        prescription=rx.to_prescribed_content(),
     )

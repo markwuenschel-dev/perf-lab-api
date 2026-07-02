@@ -1,5 +1,7 @@
 """Workout prescription + structured explainability (backward compatible)."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -62,3 +64,13 @@ class WorkoutPrescription(BaseModel):
     model_version: str = Field(default="v0.3", description="Prescription engine version")
     exercises: list[ExercisePrescription] = Field(default_factory=list)
     why: PrescriptionExplanation | None = None
+
+    def to_prescribed_content(self) -> dict[str, Any]:
+        """Serialize for persistence into ``PlannedSession.prescribed_content``.
+
+        The single source of truth for that JSON shape — the prescribe-and-persist
+        seam (service + planning route) writes it, and state_service reads it back
+        by string key (ADR-0031). Keeping it here means a new field flows to all
+        three sites from one place.
+        """
+        return self.model_dump()
