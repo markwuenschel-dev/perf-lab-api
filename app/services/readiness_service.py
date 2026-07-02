@@ -19,17 +19,15 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.constraint_engine import overall_readiness
 from app.models.wellness import WellnessSample
-from app.repositories.athlete_context_repository import AthleteContextRepository
-from app.schemas.state import UnifiedStateVector
 from app.schemas.wellness import (
     ReadinessComponent,
     ReadinessScore,
     WellnessSampleIn,
     WellnessSampleOut,
 )
+from app.services.state_service import load_current_state
 
 # --- Combine-rule tuning (ADR-0026; provisional, calibrate against real data) ----
 
@@ -102,11 +100,6 @@ def combine_readiness(modeled_0_1: float, modifier: float) -> float:
 
 
 # --- DB-backed helpers -----------------------------------------------------------
-
-
-async def _latest_state(db: AsyncSession, user_id: int) -> UnifiedStateVector | None:
-    row = await AthleteContextRepository(db).get_latest_state(user_id)
-    return unified_from_athlete_row(row) if row else None
 
 
 async def _latest_wellness(db: AsyncSession, user_id: int) -> WellnessSample | None:
@@ -184,7 +177,7 @@ async def list_wellness_samples(
 
 async def compute_readiness(db: AsyncSession, user_id: int) -> ReadinessScore:
     """The one backend-owned readiness number (PDR-0005)."""
-    state = await _latest_state(db, user_id)
+    state = await load_current_state(db, user_id)
     sample = await _latest_wellness(db, user_id)
     sample_out = WellnessSampleOut.model_validate(sample) if sample else None
 
