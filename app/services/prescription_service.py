@@ -7,18 +7,16 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
 from app.logic.workout_history import recent_workout_summaries
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile
 from app.models.weak_point import WeakPoint
-from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TrainingGoal
 from app.services import dashboard_service
 from app.services.planning_service import count_block_skips
-from app.services.state_service import initialize_athlete_state
+from app.services.state_service import load_or_init_current_state
 
 
 class BlockContext(TypedDict, total=False):
@@ -44,15 +42,7 @@ async def prescribe_for_athlete(
     Callable by HTTP routes, cron jobs, or batch processes.
     """
     # Auto-create baseline AthleteState if none exists yet
-    repo = AthleteContextRepository(db)
-    last_record = await repo.get_latest_state(user_id)
-
-    if not last_record:
-        await initialize_athlete_state(db, user_id)
-        # re-fetch the newly created state
-        last_record = await repo.get_latest_state(user_id)
-
-    state = unified_from_athlete_row(last_record)
+    state = await load_or_init_current_state(db, user_id)
 
     # Fetch active (unresolved) weak-point tags for context injection
     wp_result = await db.execute(

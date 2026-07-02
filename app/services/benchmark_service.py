@@ -6,13 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.engine.state_bridge import athlete_state_kwargs_from_unified, unified_from_athlete_row
+from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic.state_update_v0 import apply_benchmark_observation, normalize_score01
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
-from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
 from app.services import state_service
 
@@ -201,11 +200,7 @@ async def create_observation(
 
     mappings = list(definition.observation_mappings or [])
     if body.validity_status == "valid" and mappings:
-        last = await AthleteContextRepository(db).get_latest_state(user_id)
-        if not last:
-            current = await state_service.initialize_athlete_state(db, user_id)
-        else:
-            current = unified_from_athlete_row(last)
+        current = await state_service.load_or_init_current_state(db, user_id)
 
         # Use the observation's own timestamp so state history stays chronologically correct
         observation_time = body.observed_at or datetime.utcnow()

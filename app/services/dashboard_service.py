@@ -6,15 +6,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.derived_metric_formulas import CUSTOM_FORMULAS
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot
 from app.models.user import AthleteProfile
-from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.state import UnifiedStateVector
+from app.services.state_service import load_current_state
 
 # Derived metrics that depend on other KPIs must run after their inputs.
 _DERIVED_ORDER: dict[str, int] = {
@@ -275,10 +274,9 @@ async def readiness_payload(
     db: AsyncSession,
     user_id: int,
 ) -> tuple[UnifiedStateVector | None, dict[str, Any]]:
-    row = await AthleteContextRepository(db).get_latest_state(user_id)
-    if not row:
+    state = await load_current_state(db, user_id)
+    if state is None:
         return None, {"note": "no_athlete_state"}
-    state = unified_from_athlete_row(row)
     kpi = await latest_kpi_values(db, user_id)
     flags: dict[str, Any] = {}
     ff = kpi.get("run_fatigue_factor")

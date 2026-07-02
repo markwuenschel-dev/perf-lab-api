@@ -8,11 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
 from app.models.mesocycle import MesocycleBlock, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile, User
-from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.planning import (
     BlockCreateRequest,
     BlockRead,
@@ -23,6 +21,7 @@ from app.schemas.planning import (
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
 from app.services.planning_service import create_block_with_sessions, get_today_session
+from app.services.state_service import load_current_state
 
 router = APIRouter(prefix="/planning", tags=["Planning"])
 
@@ -145,13 +144,12 @@ async def get_today(
     if not session:
         return TodaySessionResponse(session=None, prescription=None)
 
-    state_row = await AthleteContextRepository(db).get_latest_state(current_user.id)
-    if not state_row:
+    state = await load_current_state(db, current_user.id)
+    if state is None:
         return TodaySessionResponse(
             session=PlannedSessionRead.model_validate(session, from_attributes=True),
             prescription=None,
         )
-    state = unified_from_athlete_row(state_row)
 
     profile_result = await db.execute(select(AthleteProfile).where(AthleteProfile.user_id == current_user.id))
     profile = profile_result.scalars().first()

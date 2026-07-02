@@ -153,6 +153,35 @@ async def initialize_athlete_state(
     return unified_from_athlete_row(row)
 
 
+async def load_current_state(
+    db: AsyncSession, user_id: int
+) -> UnifiedStateVector | None:
+    """Load the athlete's current domain state, or None if none exists yet.
+
+    The read half of the athlete-context load: fetch the latest row via the
+    repository seam and convert it to a domain vector. Stays above the seam per
+    CONTEXT.md (the repository returns rows, never vectors). Callers that need a
+    baseline created on absence use load_or_init_current_state instead.
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    return unified_from_athlete_row(row) if row is not None else None
+
+
+async def load_or_init_current_state(
+    db: AsyncSession, user_id: int
+) -> UnifiedStateVector:
+    """Load the athlete's current domain state, auto-seeding a baseline if absent.
+
+    Like load_current_state, but when no state exists yet it initializes (and
+    commits) a baseline S0 and returns it. initialize_athlete_state already
+    returns the converted vector, so there is no redundant re-fetch.
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    if row is None:
+        return await initialize_athlete_state(db, user_id)
+    return unified_from_athlete_row(row)
+
+
 async def _resolve_exercise_phis(
     db: AsyncSession,
     log: WorkoutLog,
