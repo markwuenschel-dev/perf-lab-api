@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 
 class OnboardRequest(BaseModel):
+    display_name: str | None = None
     experience_years: float = Field(0.0, ge=0)
     experience_level: str = "intermediate"
     available_days_per_week: int = Field(3, ge=1, le=7)

@@ -29,6 +29,8 @@ async def onboard_athlete(
         profile = AthleteProfile(user_id=user.id)
         db.add(profile)
 
+    if request.display_name is not None:
+        profile.display_name = request.display_name
     profile.experience_years = request.experience_years
     profile.experience_level = request.experience_level
     profile.available_days_per_week = request.available_days_per_week

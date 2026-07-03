@@ -1484,6 +1484,17 @@
             ],
             "title": "Deadlift 1Rm Kg"
           },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "equipment": {
             "items": {
               "type": "string"
@@ -1862,6 +1873,17 @@
             ],
             "title": "Deadlift 1Rm Kg"
           },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "equipment": {
             "items": {
               "type": "string"
@@ -1949,6 +1971,7 @@
           }
         },
         "required": [
+          "display_name",
           "experience_years",
           "experience_level",
           "available_days_per_week",
@@ -2018,6 +2041,17 @@
               }
             ],
             "title": "Deadlift 1Rm Kg"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
           },
           "equipment": {
             "anyOf": [

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -73,6 +74,8 @@ class AthleteProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     experience_years: Mapped[float] = mapped_column(Float, default=0.0)
     experience_level: Mapped[str] = mapped_column(String, default="beginner")
