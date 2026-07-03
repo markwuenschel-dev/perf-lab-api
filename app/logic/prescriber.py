@@ -327,6 +327,28 @@ def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[
     ]
 
 
+def _exercise_list_for_candidate(
+    exercise_slots: list[tuple[str, str, str]],
+    available_equipment: list[str] | None,
+) -> list[ExercisePrescription]:
+    """Prefer the winning candidate's goal-specific exercise_slots; fall back
+    to the equipment map only when a template doesn't specify slots (empty
+    list). This is the fix for the bug where a Powerlifting athlete with no
+    equipment configured got the bodyweight default instead of SBD work.
+    """
+    if exercise_slots:
+        return [
+            ExercisePrescription(
+                name=name,
+                sets=int(sets),
+                reps=reps,
+                load_note="Autoregulate by RPE; scale to available equipment",
+            )
+            for name, sets, reps in exercise_slots
+        ]
+    return _exercise_list_for_equipment(available_equipment)
+
+
 def recommend_next_session(
     state: UnifiedStateVector,
     goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
@@ -474,8 +496,10 @@ def recommend_next_session(
     if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and rx.why:
         rx.why.constraints_applied.append(f"adherence:recent_skips={recent_skips}")
 
-    # Equipment-aware exercise payload with bodyweight fallback.
-    rx.exercises = _exercise_list_for_equipment(available_equipment)
+    # Goal-specific exercise payload — prefer the winning template's
+    # exercise_slots; equipment map (with bodyweight fallback) only applies
+    # when the template doesn't specify slots.
+    rx.exercises = _exercise_list_for_candidate(scored[0].exercise_slots, available_equipment)
     if rx.why:
         if available_equipment:
             rx.why.constraints_applied.append("equipment:filtered")

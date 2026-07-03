@@ -154,13 +154,16 @@ async def get_today(
     profile_result = await db.execute(select(AthleteProfile).where(AthleteProfile.user_id == current_user.id))
     profile = profile_result.scalars().first()
 
-    # Deload sessions scale prescribed volume by the parent block's factor.
-    deload_volume_factor: float | None = None
-    if session.is_deload:
-        factor_result = await db.execute(
-            select(MesocycleBlock.deload_volume_factor).where(MesocycleBlock.id == session.block_id)
-        )
-        deload_volume_factor = factor_result.scalar_one_or_none()
+    # Fetch the parent block so periodization (duration_weeks + deload cadence,
+    # ADR-0029) applies on this path too — mirrors the block_context built by
+    # prescription_service.prescribe_for_athlete for the /next-session path.
+    # Without duration_weeks the envelope guard in recommend_next_session
+    # silently no-ops (weeks_total == 0), so /planning/today and /next-session
+    # disagreed on periodization.
+    block_result = await db.execute(
+        select(MesocycleBlock).where(MesocycleBlock.id == session.block_id)
+    )
+    block = block_result.scalars().first()
 
     rx = recommend_next_session(
         state,
@@ -170,7 +173,9 @@ async def get_today(
             "is_deload": session.is_deload,
             "is_benchmark": session.is_benchmark,
             "week_number": session.week_number,
-            "deload_volume_factor": deload_volume_factor,
+            "duration_weeks": block.duration_weeks if block else None,
+            "deload_every_n_weeks": block.deload_every_n_weeks if block else None,
+            "deload_volume_factor": block.deload_volume_factor if block else None,
         },
         available_equipment=(profile.equipment if profile else None),
     )

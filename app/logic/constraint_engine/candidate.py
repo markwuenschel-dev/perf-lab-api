@@ -8,7 +8,7 @@ candidate *generators* (in prescriber.py) and the template *validators*
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from app.schemas.state import UnifiedStateVector
@@ -45,6 +45,11 @@ class SessionCandidate:
 
     # Optional provenance
     source: str = "generator"  # generator | redirect | safety | template
+
+    # Structured (name, sets, reps) movements from the winning CandidateTemplate.
+    # Empty by default — finalization falls back to the equipment map when empty
+    # (see app.logic.prescriber._exercise_list_for_candidate).
+    exercise_slots: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 # Default scoring weights (can be overridden per use case)

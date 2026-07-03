@@ -75,6 +75,12 @@ class CandidateTemplate:
         flagged athlete deficits.
     domain :
         Used by score_template() to dispatch to the right per-domain scorer.
+    exercise_slots :
+        Structured (name, sets, reps) movements for this template — the same
+        shape prescriber._EQUIPMENT_EXERCISE_MAP values use, so finalization
+        can build ExercisePrescription entries directly from a chosen template
+        instead of falling back to the equipment-only map. Empty (default)
+        preserves today's equipment-fallback behavior exactly.
     kpi_eligible :
         Predicate over the KPI dict.  ``None`` → always eligible.
     state_eligible :
@@ -97,6 +103,8 @@ class CandidateTemplate:
     # Dynamic scoring. When set, score_template() uses this instead of the
     # per-domain scorer dispatch. Domains are migrated onto it incrementally.
     scoring: ScoringSpec | None = None
+    # Structured (name, sets, reps) movements — see class docstring.
+    exercise_slots: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +159,10 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["squat_pattern", "hip_hinge"],
         domain="strength",
+        exercise_slots=[
+            ("Back Squat", "5", "3"),
+            ("Romanian Deadlift", "3", "5"),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (s.capacity_x.max_strength / 100.0 + 0.3),
             fatigue_axis="cns",
@@ -223,6 +235,11 @@ HYPERTROPHY_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["anterior_chain", "posterior_chain"],
         domain="hypertrophy",
+        exercise_slots=[
+            ("Leg Press", "4", "12"),
+            ("Hack Squat", "3", "15"),
+            ("Leg Curl", "3", "12"),
+        ],
     ),
     CandidateTemplate(
         type="Maintenance Volume",
@@ -246,6 +263,10 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["hip_hinge"],
         domain="power",
+        exercise_slots=[
+            ("Hang Power Clean", "5", "3"),
+            ("Box Jump", "4", "4"),
+        ],
     ),
     CandidateTemplate(
         type="Neural Priming",
@@ -270,6 +291,10 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["olympic_lifting"],
         domain="weightlifting",
+        exercise_slots=[
+            ("Snatch Complex", "5", "2"),
+            ("Power Snatch", "5", "2"),
+        ],
         kpi_eligible=lambda kpi: (
             kpi.get("wl_snatch_cj_ratio") is not None
             and kpi["wl_snatch_cj_ratio"] < 72.0
@@ -284,6 +309,10 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["olympic_lifting"],
         domain="weightlifting",
+        exercise_slots=[
+            ("Clean & Jerk", "5", "2"),
+            ("Hang Clean", "4", "3"),
+        ],
         kpi_eligible=lambda kpi: not (
             kpi.get("wl_snatch_cj_ratio") is not None
             and kpi["wl_snatch_cj_ratio"] < 72.0
@@ -312,6 +341,12 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["squat_pattern", "hip_hinge", "push_horizontal"],
         domain="powerlifting",
+        exercise_slots=[
+            ("Back Squat", "4", "3-5"),
+            ("Bench Press", "4", "3-5"),
+            ("Deadlift", "2", "3-5"),
+            ("Back-off Squat", "3", "6-8"),
+        ],
         kpi_eligible=lambda kpi: (
             kpi.get("pl_relative_total") is not None
             and kpi["pl_relative_total"] < 3.0
@@ -326,6 +361,12 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["squat_pattern", "hip_hinge", "push_horizontal"],
         domain="powerlifting",
+        exercise_slots=[
+            ("Back Squat", "4", "3-5"),
+            ("Bench Press", "4", "3-5"),
+            ("Deadlift", "2", "3-5"),
+            ("Back-off Squat", "3", "6-8"),
+        ],
         kpi_eligible=lambda kpi: not (
             kpi.get("pl_relative_total") is not None
             and kpi["pl_relative_total"] < 3.0
@@ -340,6 +381,11 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.8,
         tags=["squat_pattern", "push_horizontal", "hip_hinge"],
         domain="powerlifting",
+        exercise_slots=[
+            ("Paused Squat", "3", "4"),
+            ("Close-Grip Bench", "3", "6"),
+            ("Romanian Deadlift", "3", "6"),
+        ],
     ),
 ]
 
@@ -353,6 +399,11 @@ METCON_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["work_capacity", "aerobic_base"],
         domain="mixed",
+        exercise_slots=[
+            ("Row Intervals", "5", "2 min @ sustainable pace"),
+            ("Bike Intervals", "5", "2 min @ sustainable pace"),
+            ("KB Swings", "4", "20 reps"),
+        ],
     ),
     CandidateTemplate(
         type="Engine Work",
@@ -393,6 +444,9 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["aerobic_base", "running_economy"],
         domain="running",
+        exercise_slots=[
+            ("Zone 2 Run", "1", "30-40 min conversational pace"),
+        ],
         kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
     ),
     CandidateTemplate(
@@ -404,6 +458,9 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["aerobic_base", "running_economy"],
         domain="running",
+        exercise_slots=[
+            ("Zone 2 Run", "1", "30-40 min conversational pace"),
+        ],
         kpi_eligible=lambda kpi: not ((kpi.get("run_fatigue_factor") or 0.0) > 14.0),
     ),
     CandidateTemplate(
@@ -441,6 +498,10 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["running_economy"],
         domain="running",
+        exercise_slots=[
+            ("Acceleration Sprints", "3", "30m"),
+            ("Max-Velocity Flys", "4", "20m"),
+        ],
     ),
 ]
 
@@ -454,6 +515,10 @@ GYMNASTICS_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["gymnastics_skill", "overhead_stability"],
         domain="gymnastics",
+        exercise_slots=[
+            ("Handstand Hold", "4", "20-30s"),
+            ("Ring Support Hold", "3", "20-30s"),
+        ],
     ),
 ]
 
@@ -477,6 +542,11 @@ CALISTHENICS_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["pull_vertical", "push_vertical"],
         domain="calisthenics",
+        exercise_slots=[
+            ("Pull-Up", "4", "6-10"),
+            ("Dip", "3", "8-12"),
+            ("Push-Up Variation", "3", "10-15"),
+        ],
     ),
 ]
 
@@ -490,6 +560,10 @@ GRIP_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["grip"],
         domain="grip",
+        exercise_slots=[
+            ("Farmer Carry", "4", "40m"),
+            ("Dead Hang", "4", "30-45s"),
+        ],
     ),
     CandidateTemplate(
         type="Grip Recovery",
@@ -513,6 +587,12 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.9,
         tags=[],
         domain="general",
+        exercise_slots=[
+            ("Goblet Squat", "3", "10"),
+            ("Pull-Up", "3", "8"),
+            ("Push-Up", "3", "12"),
+            ("Farmer Carry", "2", "40m"),
+        ],
     ),
 ]
 
@@ -955,9 +1035,16 @@ def score_template(
 
     The ``readiness`` argument allows the caller to pass a pre-computed
     overall_readiness value so it is not recomputed for each template.
+
+    The template's ``exercise_slots`` are carried onto the resulting candidate
+    here (rather than in every per-domain scorer) so finalization can prefer
+    them over the equipment map without each scorer needing to know about it.
     """
     r = readiness if readiness is not None else overall_readiness(state)
     if t.scoring is not None:
-        return _score_from_spec(t, state, kpi, r)
-    scorer = _DOMAIN_SCORERS.get(t.domain, _score_general)
-    return scorer(t, state, kpi, r)
+        candidate = _score_from_spec(t, state, kpi, r)
+    else:
+        scorer = _DOMAIN_SCORERS.get(t.domain, _score_general)
+        candidate = scorer(t, state, kpi, r)
+    candidate.exercise_slots = t.exercise_slots
+    return candidate
