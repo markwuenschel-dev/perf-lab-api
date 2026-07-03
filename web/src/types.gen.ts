@@ -1295,6 +1295,8 @@ export interface components {
             height_cm: number | null;
             /** Overhead 1Rm Kg */
             overhead_1rm_kg: number | null;
+            /** Primary Goal */
+            primary_goal: string | null;
             /** Pullup Max Reps */
             pullup_max_reps: number | null;
             /** Run 1P5Mi Seconds */
@@ -1334,6 +1336,8 @@ export interface components {
             height_cm?: number | null;
             /** Overhead 1Rm Kg */
             overhead_1rm_kg?: number | null;
+            /** Primary Goal */
+            primary_goal?: string | null;
             /** Pullup Max Reps */
             pullup_max_reps?: number | null;
             /** Run 1P5Mi Seconds */
@@ -2383,8 +2387,8 @@ export interface operations {
     get_next_session_v1_next_session_get: {
         parameters: {
             query?: {
-                /** @description Training goal to prescribe for; defaults to the athlete's primary goal. */
-                goal?: "Strength" | "Hypertrophy" | "Power" | "General" | "OlympicLifts" | "Powerlifting" | "MetCon" | "Calisthenics" | "Gymnastics" | "Grip" | "Running" | "Sprinting" | "HalfMarathon" | "FullMarathon";
+                /** @description Training goal to prescribe for; defaults to the athlete's stored primary goal, then Strength. */
+                goal?: ("Strength" | "Hypertrophy" | "Power" | "General" | "OlympicLifts" | "Powerlifting" | "MetCon" | "Calisthenics" | "Gymnastics" | "Grip" | "Running" | "Sprinting" | "HalfMarathon" | "FullMarathon") | null;
             };
             header?: never;
             path?: never;

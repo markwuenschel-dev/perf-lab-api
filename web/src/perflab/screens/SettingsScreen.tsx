@@ -1,5 +1,5 @@
 // src/perflab/screens/SettingsScreen.tsx
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
@@ -286,6 +286,34 @@ export function SettingsScreen() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
   const s = state.settings;
+  const goalHydrated = useRef(false);
+
+  // The training goal is now persisted server-side (Phase 2). AuthContext
+  // already loads the profile on sign-in/refresh; prefer its stored
+  // `primary_goal` over the localStorage default exactly once, so we don't
+  // clobber a change the athlete just made in this session.
+  useEffect(() => {
+    if (goalHydrated.current) return;
+    if (auth.profile?.primary_goal) {
+      goalHydrated.current = true;
+      actions.setSetting("goal", auth.profile.primary_goal);
+    }
+  }, [auth.profile, actions]);
+
+  async function onGoalChange(value: string) {
+    goalHydrated.current = true; // this is now the source of truth for this session
+    actions.setSetting("goal", value); // keeps the Twin's explicit ?goal= query working
+    if (auth.token) {
+      try {
+        await api.updateProfile({ primary_goal: value }, auth.token);
+        void auth.refreshProfile();
+      } catch {
+        // Non-fatal: the local setting still drives prescriptions via the
+        // explicit query param; the next successful save will persist it.
+      }
+    }
+  }
+
   const notif: [keyof Settings, string, string][] = [
     ["notifReadiness", "Readiness alerts", "When readiness crashes below 40."],
     ["notifTissue", "Tissue-load warnings", "When a region exceeds 60."],
@@ -319,7 +347,7 @@ export function SettingsScreen() {
             <span className="text-[12px] font-medium leading-none text-mute">Training goal</span>
             <select
               value={s.goal}
-              onChange={(e) => actions.setSetting("goal", e.target.value)}
+              onChange={(e) => void onGoalChange(e.target.value)}
               className={inputCls}
               style={{ colorScheme: "dark" }}
             >
