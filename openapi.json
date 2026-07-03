@@ -1921,6 +1921,17 @@
             ],
             "title": "Overhead 1Rm Kg"
           },
+          "primary_goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Goal"
+          },
           "pullup_max_reps": {
             "anyOf": [
               {
@@ -1972,6 +1983,7 @@
         },
         "required": [
           "display_name",
+          "primary_goal",
           "experience_years",
           "experience_level",
           "available_days_per_week",
@@ -2113,6 +2125,17 @@
               }
             ],
             "title": "Overhead 1Rm Kg"
+          },
+          "primary_goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Goal"
           },
           "pullup_max_reps": {
             "anyOf": [
@@ -4066,31 +4089,37 @@
         "operationId": "get_next_session_v1_next_session_get",
         "parameters": [
           {
-            "description": "Training goal to prescribe for; defaults to the athlete's primary goal.",
+            "description": "Training goal to prescribe for; defaults to the athlete's stored primary goal, then Strength.",
             "in": "query",
             "name": "goal",
             "required": false,
             "schema": {
-              "default": "Strength",
-              "description": "Training goal to prescribe for; defaults to the athlete's primary goal.",
-              "enum": [
-                "Strength",
-                "Hypertrophy",
-                "Power",
-                "General",
-                "OlympicLifts",
-                "Powerlifting",
-                "MetCon",
-                "Calisthenics",
-                "Gymnastics",
-                "Grip",
-                "Running",
-                "Sprinting",
-                "HalfMarathon",
-                "FullMarathon"
+              "anyOf": [
+                {
+                  "enum": [
+                    "Strength",
+                    "Hypertrophy",
+                    "Power",
+                    "General",
+                    "OlympicLifts",
+                    "Powerlifting",
+                    "MetCon",
+                    "Calisthenics",
+                    "Gymnastics",
+                    "Grip",
+                    "Running",
+                    "Sprinting",
+                    "HalfMarathon",
+                    "FullMarathon"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
               ],
-              "title": "Goal",
-              "type": "string"
+              "description": "Training goal to prescribe for; defaults to the athlete's stored primary goal, then Strength.",
+              "title": "Goal"
             }
           }
         ],

@@ -5,7 +5,7 @@ from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.models.user import User
 from app.schemas.prescription import WorkoutPrescription
-from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
+from app.schemas.training_goals import TrainingGoal
 from app.services.prescription_service import prescribe_for_athlete
 
 router = APIRouter(tags=["Prescription"])
@@ -13,7 +13,7 @@ router = APIRouter(tags=["Prescription"])
 
 @router.get("/next-session", response_model=WorkoutPrescription)
 async def get_next_session(
-    goal: TrainingGoal = Query(TRAINING_GOAL_DEFAULT, description="Training goal to prescribe for; defaults to the athlete's primary goal."),
+    goal: TrainingGoal | None = Query(None, description="Training goal to prescribe for; defaults to the athlete's stored primary goal, then Strength."),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkoutPrescription:

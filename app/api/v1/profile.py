@@ -44,6 +44,7 @@ async def _get_or_create(db: AsyncSession, user_id: int) -> AthleteProfile:
 def _to_read(p: AthleteProfile) -> ProfileRead:
     return ProfileRead(
         display_name=p.display_name,
+        primary_goal=p.primary_goal,
         experience_years=p.experience_years,
         experience_level=p.experience_level,
         available_days_per_week=p.available_days_per_week,

@@ -76,6 +76,7 @@ class AthleteProfile(Base):
     )
 
     display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     experience_years: Mapped[float] = mapped_column(Float, default=0.0)
     experience_level: Mapped[str] = mapped_column(String, default="beginner")

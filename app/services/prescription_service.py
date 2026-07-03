@@ -13,7 +13,7 @@ from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, Se
 from app.models.user import AthleteProfile
 from app.models.weak_point import WeakPoint
 from app.schemas.prescription import WorkoutPrescription
-from app.schemas.training_goals import TrainingGoal
+from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import dashboard_service
 from app.services.planning_service import count_block_skips
 from app.services.state_service import load_or_init_current_state
@@ -31,10 +31,29 @@ class BlockContext(TypedDict, total=False):
     recent_skips: int
 
 
+def resolve_effective_goal(
+    *,
+    block_goal: str | None,
+    query_goal: TrainingGoal | None,
+    profile_goal: str | None,
+) -> str:
+    """Resolve the training-goal string to drive a prescription (ADR-0030/0038).
+
+    Precedence: active block goal > explicit `goal` query param > the
+    athlete's stored `profile.primary_goal` > TRAINING_GOAL_DEFAULT. Block
+    goals aren't 1:1 with TrainingGoal; the prescriber resolves any goal
+    string to a canonical domain, so returning `str` here is safe — callers
+    cast to `TrainingGoal` for the downstream call.
+    """
+    if block_goal is not None:
+        return block_goal
+    return query_goal or profile_goal or TRAINING_GOAL_DEFAULT
+
+
 async def prescribe_for_athlete(
     db: AsyncSession,
     user_id: int,
-    goal: TrainingGoal,
+    goal: TrainingGoal | None,
 ) -> WorkoutPrescription:
     """
     Full prescription pipeline for one athlete.
@@ -98,9 +117,14 @@ async def prescribe_for_athlete(
     profile = profile_result.scalars().first()
 
     # ADR-0030: when a block is active, the day's training intent comes from the block
-    # (resolved to a canonical domain by the prescriber, ADR-0038); the `goal` query
-    # param is the fallback for athletes with no active block.
-    effective_goal = active_block.goal.value if active_block is not None else goal
+    # (resolved to a canonical domain by the prescriber, ADR-0038). With no active
+    # block, resolution order is: explicit query `goal` > the athlete's stored
+    # `profile.primary_goal` > the hardcoded TRAINING_GOAL_DEFAULT.
+    effective_goal = resolve_effective_goal(
+        block_goal=active_block.goal.value if active_block is not None else None,
+        query_goal=goal,
+        profile_goal=profile.primary_goal if profile is not None else None,
+    )
 
     recent = await recent_workout_summaries(db, user_id)
     kpi_summary = await dashboard_service.latest_kpi_values(db, user_id)
