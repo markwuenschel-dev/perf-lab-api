@@ -1,9 +1,19 @@
 // src/perflab/Sidebar.tsx
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/auth/useAuth";
+import * as api from "@/api/perfLabClient";
 import { usePerfLab } from "./store";
 import type { Screen } from "./store";
 import { Track } from "./ui";
+
+/** First letter of up to the first two words; falls back to the first two chars. */
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 const I = (d: ReactNode, sw = 1.7) => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw}>
@@ -95,7 +105,34 @@ function NavLink({ screen, label }: { screen: Screen; label: string }) {
 
 export function Sidebar() {
   const { state, actions } = usePerfLab();
+  const { token, user, email, isGuest } = useAuth();
   const collapsed = state.navCollapsed;
+
+  const [displayName, setDisplayName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!token) {
+        if (!cancelled) setDisplayName(null);
+        return;
+      }
+      try {
+        const p = await api.getProfile(token);
+        if (!cancelled) setDisplayName(p.display_name ?? null);
+      } catch {
+        if (!cancelled) setDisplayName(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const emailLocalPart = (user?.email ?? email).split("@")[0];
+  const name = displayName || emailLocalPart || (isGuest ? "Guest" : "Athlete");
+  const initials = initialsFor(name);
+
   return (
     <aside
       data-rail={collapsed ? "1" : "0"}
@@ -150,11 +187,11 @@ export function Sidebar() {
         </div>
         <div className="flex items-center gap-[11px] px-1 py-[6px]">
           <div className="grid h-[34px] w-[34px] place-items-center rounded-full border border-white/10 bg-gradient-to-br from-[#2a3550] to-[#1a2030] text-[12px] font-bold leading-none text-soft">
-            AR
+            {initials}
           </div>
           <div className="leading-[1.3]">
-            <div className="text-[13px] font-semibold text-[#e6e8ec]">A. Rivera</div>
-            <div className="text-[11px] font-medium text-faint">Athlete · 28</div>
+            <div className="text-[13px] font-semibold text-[#e6e8ec]">{name}</div>
+            <div className="text-[11px] font-medium text-faint">Athlete</div>
           </div>
         </div>
         <button

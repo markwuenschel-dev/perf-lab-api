@@ -1140,6 +1140,8 @@ export interface components {
             bodyweight_kg?: number | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg?: number | null;
+            /** Display Name */
+            display_name?: string | null;
             /** Equipment */
             equipment?: string[];
             /**
@@ -1281,6 +1283,8 @@ export interface components {
             bodyweight_kg: number | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg: number | null;
+            /** Display Name */
+            display_name: string | null;
             /** Equipment */
             equipment: string[];
             /** Experience Level */
@@ -1318,6 +1322,8 @@ export interface components {
             bodyweight_kg?: number | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg?: number | null;
+            /** Display Name */
+            display_name?: string | null;
             /** Equipment */
             equipment?: string[] | null;
             /** Experience Level */

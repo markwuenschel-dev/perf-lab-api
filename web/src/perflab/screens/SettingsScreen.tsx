@@ -43,6 +43,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 // per-device prefs and live in localStorage instead — see store.tsx.
 
 type ProfileForm = {
+  display_name: string;
   experience_level: string;
   experience_years: string;
   available_days_per_week: string;
@@ -55,6 +56,7 @@ type ProfileForm = {
 };
 
 const EMPTY_FORM: ProfileForm = {
+  display_name: "",
   experience_level: "beginner",
   experience_years: "",
   available_days_per_week: "",
@@ -95,6 +97,7 @@ const mmssToSec = (v: string): number | null => {
 
 function formFromProfile(p: ProfileRead): ProfileForm {
   return {
+    display_name: p.display_name ?? "",
     experience_level: p.experience_level,
     experience_years: numStr(p.experience_years),
     available_days_per_week: numStr(p.available_days_per_week),
@@ -111,6 +114,7 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
   const patch: ProfileUpdate = {
     experience_level: f.experience_level,
     // Nullable fields: an empty input clears the stored value.
+    display_name: f.display_name.trim() === "" ? null : f.display_name.trim(),
     bodyweight_kg: numOrNull(f.bodyweight_kg),
     squat_1rm_kg: numOrNull(f.squat_1rm_kg),
     bench_1rm_kg: numOrNull(f.bench_1rm_kg),
@@ -216,6 +220,15 @@ function PerformanceProfileCard() {
       </div>
 
       <div className="flex flex-col gap-4">
+        <label className="block max-w-[320px]">
+          <span className="text-[12px] font-medium leading-none text-mute">Name</span>
+          <input
+            value={form.display_name}
+            onChange={(e) => field("display_name")(e.target.value)}
+            placeholder="e.g. Mark Wuenschel"
+            className={inputCls}
+          />
+        </label>
         <div>
           <span className="text-[12px] font-medium leading-none text-mute">Experience level</span>
           <Seg options={EXPERIENCE_LEVELS} value={form.experience_level} onChange={field("experience_level")} />
