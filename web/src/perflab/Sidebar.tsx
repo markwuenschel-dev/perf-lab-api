@@ -1,8 +1,7 @@
 // src/perflab/Sidebar.tsx
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
-import * as api from "@/api/perfLabClient";
 import { usePerfLab } from "./store";
 import type { Screen } from "./store";
 import { Track } from "./ui";
@@ -105,32 +104,11 @@ function NavLink({ screen, label }: { screen: Screen; label: string }) {
 
 export function Sidebar() {
   const { state, actions } = usePerfLab();
-  const { token, user, email, isGuest } = useAuth();
+  const { user, profile, email, isGuest } = useAuth();
   const collapsed = state.navCollapsed;
 
-  const [displayName, setDisplayName] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!token) {
-        if (!cancelled) setDisplayName(null);
-        return;
-      }
-      try {
-        const p = await api.getProfile(token);
-        if (!cancelled) setDisplayName(p.display_name ?? null);
-      } catch {
-        if (!cancelled) setDisplayName(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
   const emailLocalPart = (user?.email ?? email).split("@")[0];
-  const name = displayName || emailLocalPart || (isGuest ? "Guest" : "Athlete");
+  const name = profile?.display_name || emailLocalPart || (isGuest ? "Guest" : "Athlete");
   const initials = initialsFor(name);
 
   return (

@@ -135,7 +135,7 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 function PerformanceProfileCard() {
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, refreshProfile } = useAuth();
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [save, setSave] = useState<SaveState>("idle");
@@ -179,6 +179,9 @@ function PerformanceProfileCard() {
     try {
       const saved = await api.updateProfile(patchFromForm(form), token);
       setForm(formFromProfile(saved)); // re-seed from the persisted row
+      // Push the fresh profile into AuthContext so the sidebar name/initials
+      // update live without a reload.
+      void refreshProfile();
       setSave("saved");
     } catch (e) {
       const msg = (e as ApiError)?.message;
