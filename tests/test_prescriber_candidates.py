@@ -236,16 +236,24 @@ def test_fatigued_state_produces_different_prescription_than_fresh():
 
 
 def test_equipment_aware_exercises_fallback_to_bodyweight():
-    s = _healthy_state()
-    rx = recommend_next_session(s, goal="Strength", available_equipment=None)
-    assert len(rx.exercises) > 0
+    # Hypertrophy + elevated muscular fatigue resolves to the `hyp_maintenance`
+    # template, which carries NO exercise_slots — so exercise selection falls
+    # through to the equipment map, and with no equipment configured that is the
+    # bodyweight trio. Asserting the actual names (not just len>0) so this test
+    # can't silently pass if the equipment path breaks. (A goal whose winning
+    # template HAS slots, e.g. Strength→strength_max, would bypass this path.)
+    s = _state(muscular=70.0)
+    rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=None)
+    assert [e.name for e in rx.exercises] == ["Tempo Squat", "Push-Up", "Split Squat"]
     assert any("equipment:fallback_bodyweight" in c for c in (rx.why.constraints_applied if rx.why else []))
 
 
 def test_equipment_aware_exercises_use_available_equipment():
-    s = _healthy_state()
-    rx = recommend_next_session(s, goal="Strength", available_equipment=["barbell"])
-    assert len(rx.exercises) > 0
+    # Same empty-slot template (`hyp_maintenance`), but with a barbell available
+    # the equipment map supplies the barbell movement block.
+    s = _state(muscular=70.0)
+    rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=["barbell"])
+    assert [e.name for e in rx.exercises] == ["Back Squat", "Romanian Deadlift", "Bench Press"]
     assert any("equipment:filtered" in c for c in (rx.why.constraints_applied if rx.why else []))
 
 
