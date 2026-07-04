@@ -1,0 +1,16 @@
+{
+  "version": "q2_recovery_priors_v0_placeholder",
+  "namespace": "q2_recovery",
+  "source": "placeholder_untrained",
+  "shadow_only": true,
+  "note": "Untrained placeholder: extends the recovery signal set with hrv/rhr/soreness=0 so the learned multiplier equals the production baseline until train_recovery_priors.py fits real weak population priors and emits q2_recovery_priors_v1.json. Proves the shadow loop with zero divergence.",
+  "recovery_clearance_beta": {
+    "cns":        {"sleep": 0.10, "stress": 0.08, "hrv": 0.0, "rhr": 0.0, "soreness": 0.0},
+    "muscular":   {"sleep": 0.08, "stress": 0.05, "hrv": 0.0, "rhr": 0.0, "soreness": 0.0},
+    "metabolic":  {"sleep": 0.06, "stress": 0.04, "hrv": 0.0, "rhr": 0.0, "soreness": 0.0},
+    "structural": {"sleep": 0.05, "stress": 0.04, "hrv": 0.0, "rhr": 0.0, "soreness": 0.0},
+    "tendon":     {"sleep": 0.04, "stress": 0.04, "hrv": 0.0, "rhr": 0.0, "soreness": 0.0},
+    "grip":       {"sleep": 0.06, "stress": 0.04, "hrv": 0.0, "rhr": 0.0, "soreness": 0.0}
+  },
+  "clip": {"min": 0.6, "max": 1.5}
+}

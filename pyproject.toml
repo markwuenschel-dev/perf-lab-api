@@ -51,6 +51,10 @@ dev = [
     "black>=24.0.0",
     "isort>=5.13.0",
     "psycopg2-binary>=2.9.0",   # needed for alembic in some environments
+    # Offline ML: Q2 recovery-priors training pipeline (app/ml/) + its tests. Not a
+    # runtime dependency — the app and shadow service consume only the JSON artifact.
+    "pandas>=2.0.0",
+    "scikit-learn>=1.4.0",
 ]
 
 # Future / optional feature groups (not installed by default)
