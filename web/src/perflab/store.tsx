@@ -118,6 +118,9 @@ export interface PerfLabState {
   blockCreateOpen: boolean;
   /** Bumped after a block is created so PlanningScreen's useAuthedResource re-fetches. */
   planningRefreshKey: number;
+  /** ISO date ("YYYY-MM-DD") anchoring the week PlanningScreen shows; null = current
+   *  week. Set to a new block's start_date so its first week is what we display. */
+  planningWeekAnchor: string | null;
 }
 
 interface Persisted {
@@ -197,6 +200,7 @@ export function initialState(): PerfLabState {
     feel: "controlled",
     blockCreateOpen: false,
     planningRefreshKey: 0,
+    planningWeekAnchor: null,
   };
 }
 
@@ -292,7 +296,9 @@ export interface PerfLabActions {
   toggleFresh: () => void;
   openBlockCreate: () => void;
   closeBlockCreate: () => void;
-  bumpPlanningRefresh: () => void;
+  /** Called after a block is created: focus the week containing `startDateIso`
+   *  and force a re-fetch (covers creating a block inside the current week too). */
+  focusPlanningWeek: (startDateIso: string) => void;
 }
 
 export interface PerfLabContextValue {
@@ -360,7 +366,8 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     toggleFresh: () => mergeFn((s) => ({ fresh: !s.fresh })),
     openBlockCreate: () => merge({ blockCreateOpen: true }),
     closeBlockCreate: () => merge({ blockCreateOpen: false }),
-    bumpPlanningRefresh: () => mergeFn((s) => ({ planningRefreshKey: s.planningRefreshKey + 1 })),
+    focusPlanningWeek: (startDateIso) =>
+      mergeFn((s) => ({ planningWeekAnchor: startDateIso, planningRefreshKey: s.planningRefreshKey + 1 })),
   };
 }
 

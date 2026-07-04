@@ -55,8 +55,10 @@ const clamp = (n: number, min: number, max: number): number => (Number.isNaN(n) 
 interface BlockForm {
   goal: BlockGoal;
   startDate: string;
-  durationWeeks: number;
-  sessionsPerWeek: number;
+  // Numeric fields are held as raw input text so they tolerate a transient blank
+  // while retyping; they're parsed + clamped (with defaults) at submit time.
+  durationWeeks: string;
+  sessionsPerWeek: string;
   targetMinutes: string; // raw input text; "" → omit/null
   emphasis: Emphasis;
   focus: string[];
@@ -66,8 +68,8 @@ function initialForm(): BlockForm {
   return {
     goal: "General",
     startDate: todayIso(),
-    durationWeeks: 8,
-    sessionsPerWeek: 3,
+    durationWeeks: "8",
+    sessionsPerWeek: "3",
     targetMinutes: "",
     emphasis: "balanced",
     focus: [],
@@ -83,8 +85,8 @@ function buildBlockCreateRequest(f: BlockForm): BlockCreateRequest {
   return {
     goal: f.goal,
     start_date: f.startDate,
-    duration_weeks: f.durationWeeks,
-    sessions_per_week: f.sessionsPerWeek,
+    duration_weeks: clamp(Number(f.durationWeeks.trim() || "8"), 1, 24),
+    sessions_per_week: clamp(Number(f.sessionsPerWeek.trim() || "3"), 1, 7),
     weekly_template: [],
     modality_mix: {},
     target_session_minutes: minutes,
@@ -132,8 +134,11 @@ export function BlockCreateModal() {
     setSaving(true);
     setSaveError(null);
     try {
-      await createPlanningBlock(buildBlockCreateRequest(form), auth.token);
-      actions.bumpPlanningRefresh();
+      const req = buildBlockCreateRequest(form);
+      await createPlanningBlock(req, auth.token);
+      // Focus the week that contains the new block's start_date (not necessarily
+      // the current wall-clock week) so its first sessions are what Planning shows.
+      actions.focusPlanningWeek(req.start_date);
       actions.closeBlockCreate();
       setForm(initialForm());
     } catch (e) {
@@ -147,7 +152,7 @@ export function BlockCreateModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-[63] flex items-center justify-center p-8 backdrop-blur-[4px]" style={{ background: "rgba(4,5,8,.7)" }}>
+    <div className="fixed inset-0 z-[64] flex items-center justify-center p-8 backdrop-blur-[4px]" style={{ background: "rgba(4,5,8,.7)" }}>
       <div className="max-h-[92vh] w-[640px] max-w-full overflow-auto rounded-[18px] border border-white/[0.09] bg-surface shadow-[0_50px_110px_-30px_rgba(0,0,0,.75)]">
         <div className="flex items-center justify-between border-b border-white/[0.06] px-6 py-5">
           <div className="flex items-center gap-[10px]">
@@ -174,11 +179,11 @@ export function BlockCreateModal() {
             </label>
             <label className="block">
               <span className="text-[12px] font-medium leading-none text-mute">Duration (weeks)</span>
-              <input type="number" min={1} max={24} value={form.durationWeeks} onChange={(e) => set("durationWeeks", clamp(+e.target.value, 1, 24))} className={inputCls} />
+              <input type="number" min={1} max={24} value={form.durationWeeks} onChange={(e) => set("durationWeeks", e.target.value)} className={inputCls} />
             </label>
             <label className="block">
               <span className="text-[12px] font-medium leading-none text-mute">Sessions / week</span>
-              <input type="number" min={1} max={7} value={form.sessionsPerWeek} onChange={(e) => set("sessionsPerWeek", clamp(+e.target.value, 1, 7))} className={inputCls} />
+              <input type="number" min={1} max={7} value={form.sessionsPerWeek} onChange={(e) => set("sessionsPerWeek", e.target.value)} className={inputCls} />
             </label>
             <label className="block">
               <span className="text-[12px] font-medium leading-none text-mute">Target session length (min)</span>
