@@ -164,6 +164,9 @@ async def create_block_with_sessions(
         rationale=req.rationale,
         deload_every_n_weeks=req.deload_every_n_weeks,
         deload_volume_factor=req.deload_volume_factor,
+        target_session_minutes=req.target_session_minutes,
+        accessory_emphasis=req.accessory_emphasis,
+        accessory_focus=req.accessory_focus,
     )
     db.add(block)
     await db.flush()

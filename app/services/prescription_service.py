@@ -29,6 +29,9 @@ class BlockContext(TypedDict, total=False):
     deload_every_n_weeks: int
     deload_volume_factor: float | None
     recent_skips: int
+    target_session_minutes: int | None
+    accessory_emphasis: str | None
+    accessory_focus: list[str] | None
 
 
 def resolve_effective_goal(
@@ -109,6 +112,9 @@ async def prescribe_for_athlete(
             deload_every_n_weeks=active_block.deload_every_n_weeks,
             deload_volume_factor=active_block.deload_volume_factor,
             recent_skips=await count_block_skips(db, user_id, active_block.id),
+            target_session_minutes=active_block.target_session_minutes,
+            accessory_emphasis=active_block.accessory_emphasis,
+            accessory_focus=active_block.accessory_focus,
         )
 
     profile_result = await db.execute(

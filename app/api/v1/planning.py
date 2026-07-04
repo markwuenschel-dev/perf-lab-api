@@ -176,6 +176,9 @@ async def get_today(
             "duration_weeks": block.duration_weeks if block else None,
             "deload_every_n_weeks": block.deload_every_n_weeks if block else None,
             "deload_volume_factor": block.deload_volume_factor if block else None,
+            "target_session_minutes": block.target_session_minutes if block else None,
+            "accessory_emphasis": block.accessory_emphasis if block else None,
+            "accessory_focus": block.accessory_focus if block else None,
         },
         available_equipment=(profile.equipment if profile else None),
     )
