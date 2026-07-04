@@ -126,6 +126,10 @@ target-version = ["py311"]
 [tool.pyright]
 pythonVersion = "3.12"
 include = ["app"]
+# Offline ML/training code (pandas-heavy) is not the runtime app and pandas' strict
+# types resolve inconsistently across environments (py.typed presence differs); keep
+# it out of the strict type gate — ruff + the functional tests cover it.
+exclude = ["app/ml"]
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"
 # Re-export barrels and SQLAlchemy column defaults are intentional.
