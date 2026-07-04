@@ -1,5 +1,5 @@
 // src/perflab/screens/SettingsScreen.tsx
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
@@ -43,6 +43,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 // per-device prefs and live in localStorage instead — see store.tsx.
 
 type ProfileForm = {
+  display_name: string;
   experience_level: string;
   experience_years: string;
   available_days_per_week: string;
@@ -55,6 +56,7 @@ type ProfileForm = {
 };
 
 const EMPTY_FORM: ProfileForm = {
+  display_name: "",
   experience_level: "beginner",
   experience_years: "",
   available_days_per_week: "",
@@ -95,6 +97,7 @@ const mmssToSec = (v: string): number | null => {
 
 function formFromProfile(p: ProfileRead): ProfileForm {
   return {
+    display_name: p.display_name ?? "",
     experience_level: p.experience_level,
     experience_years: numStr(p.experience_years),
     available_days_per_week: numStr(p.available_days_per_week),
@@ -111,6 +114,7 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
   const patch: ProfileUpdate = {
     experience_level: f.experience_level,
     // Nullable fields: an empty input clears the stored value.
+    display_name: f.display_name.trim() === "" ? null : f.display_name.trim(),
     bodyweight_kg: numOrNull(f.bodyweight_kg),
     squat_1rm_kg: numOrNull(f.squat_1rm_kg),
     bench_1rm_kg: numOrNull(f.bench_1rm_kg),
@@ -131,7 +135,7 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 function PerformanceProfileCard() {
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, refreshProfile } = useAuth();
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [save, setSave] = useState<SaveState>("idle");
@@ -175,6 +179,9 @@ function PerformanceProfileCard() {
     try {
       const saved = await api.updateProfile(patchFromForm(form), token);
       setForm(formFromProfile(saved)); // re-seed from the persisted row
+      // Push the fresh profile into AuthContext so the sidebar name/initials
+      // update live without a reload.
+      void refreshProfile();
       setSave("saved");
     } catch (e) {
       const msg = (e as ApiError)?.message;
@@ -216,6 +223,15 @@ function PerformanceProfileCard() {
       </div>
 
       <div className="flex flex-col gap-4">
+        <label className="block max-w-[320px]">
+          <span className="text-[12px] font-medium leading-none text-mute">Name</span>
+          <input
+            value={form.display_name}
+            onChange={(e) => field("display_name")(e.target.value)}
+            placeholder="e.g. Mark Wuenschel"
+            className={inputCls}
+          />
+        </label>
         <div>
           <span className="text-[12px] font-medium leading-none text-mute">Experience level</span>
           <Seg options={EXPERIENCE_LEVELS} value={form.experience_level} onChange={field("experience_level")} />
@@ -270,6 +286,34 @@ export function SettingsScreen() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
   const s = state.settings;
+  const goalHydrated = useRef(false);
+
+  // The training goal is now persisted server-side (Phase 2). AuthContext
+  // already loads the profile on sign-in/refresh; prefer its stored
+  // `primary_goal` over the localStorage default exactly once, so we don't
+  // clobber a change the athlete just made in this session.
+  useEffect(() => {
+    if (goalHydrated.current) return;
+    if (auth.profile?.primary_goal) {
+      goalHydrated.current = true;
+      actions.setSetting("goal", auth.profile.primary_goal);
+    }
+  }, [auth.profile, actions]);
+
+  async function onGoalChange(value: string) {
+    goalHydrated.current = true; // this is now the source of truth for this session
+    actions.setSetting("goal", value); // keeps the Twin's explicit ?goal= query working
+    if (auth.token) {
+      try {
+        await api.updateProfile({ primary_goal: value }, auth.token);
+        void auth.refreshProfile();
+      } catch {
+        // Non-fatal: the local setting still drives prescriptions via the
+        // explicit query param; the next successful save will persist it.
+      }
+    }
+  }
+
   const notif: [keyof Settings, string, string][] = [
     ["notifReadiness", "Readiness alerts", "When readiness crashes below 40."],
     ["notifTissue", "Tissue-load warnings", "When a region exceeds 60."],
@@ -303,7 +347,7 @@ export function SettingsScreen() {
             <span className="text-[12px] font-medium leading-none text-mute">Training goal</span>
             <select
               value={s.goal}
-              onChange={(e) => actions.setSetting("goal", e.target.value)}
+              onChange={(e) => void onGoalChange(e.target.value)}
               className={inputCls}
               style={{ colorScheme: "dark" }}
             >

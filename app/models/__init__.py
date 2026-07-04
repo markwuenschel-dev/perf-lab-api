@@ -14,6 +14,7 @@ from app.models.derived_metric_snapshot import DerivedMetricSnapshot  # noqa: F4
 from app.models.exercise import Exercise  # noqa: F401
 from app.models.experiment import ExperimentAssignment  # noqa: F401
 from app.models.mesocycle import MesocycleBlock, PlannedSession  # noqa: F401
+from app.models.objective import Objective  # noqa: F401
 from app.models.observation_mapping import ObservationMapping  # noqa: F401
 from app.models.telemetry import (  # noqa: F401
     CandidateDecisionLog,

@@ -1,6 +1,7 @@
 // src/perflab/screens/PlanningScreen.tsx
 import { useMemo } from "react";
 import * as api from "@/api/perfLabClient";
+import { useAuth } from "@/auth/useAuth";
 import type { PlannedSessionRead } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
@@ -31,6 +32,23 @@ const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const isoLocal = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// Parse a "YYYY-MM-DD" string as a LOCAL date (new Date(iso) would treat it as UTC
+// midnight and can shift the day across timezones).
+const parseIsoLocal = (iso: string): Date => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// The Mon–Sun window that contains `date`, plus its ISO bounds for the query.
+function weekWindowFor(date: Date): { monday: Date; start_date: string; end_date: string } {
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { monday, start_date: isoLocal(monday), end_date: isoLocal(sunday) };
+}
 
 // Map real planned sessions onto a Mon–Sun strip by scheduled date; empty days
 // render as rest. Returns null when there's no plan so the caller falls back.
@@ -65,22 +83,36 @@ const DOSE: [string, number, number, string][] = [
 ];
 
 export function PlanningScreen() {
-  const { actions } = usePerfLab();
+  const { state, actions } = usePerfLab();
+  const auth = useAuth();
 
-  // Current week's Mon–Sun range, fetched live; falls back to the prototype week.
-  const week = useMemo(() => {
-    const now = new Date();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-    monday.setHours(0, 0, 0, 0);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    return { monday, start_date: isoLocal(monday), end_date: isoLocal(sunday) };
-  }, []);
-  const { data: sessions } = useAuthedResource<PlannedSessionRead[]>(
-    (t) => api.listPlannedSessions(t, { start_date: week.start_date, end_date: week.end_date }),
-    [week.start_date],
+  // The displayed Mon–Sun window. Defaults to the current week, but after a block
+  // is created it re-derives from that block's start_date (`planningWeekAnchor`),
+  // so a block starting outside this week still shows its own first week here.
+  const week = useMemo(
+    () => weekWindowFor(state.planningWeekAnchor ? parseIsoLocal(state.planningWeekAnchor) : new Date()),
+    [state.planningWeekAnchor],
   );
+  // `planningRefreshKey` is bumped by BlockCreateModal after a successful
+  // POST /v1/planning/blocks so a freshly created block's week shows up here.
+  const { data: sessions, loading, error } = useAuthedResource<PlannedSessionRead[]>(
+    (t) => api.listPlannedSessions(t, { start_date: week.start_date, end_date: week.end_date }),
+    [week.start_date, state.planningRefreshKey],
+  );
+
+  // For a signed-in athlete, disambiguate load / error / genuinely-no-block
+  // instead of collapsing all three onto "no sessions" (which flickered the
+  // empty-state CTA and mislabelled fetch errors as "no block").
+  if (auth.token) {
+    if (error) return <PlanningNotice title="Couldn't load your plan" body={error} onRetry={() => actions.focusPlanningWeek(week.start_date)} />;
+    // `useAuthedResource` first-renders with loading:false before its effect runs,
+    // so treat "not yet resolved" (null data, no error) as loading too — otherwise
+    // the CTA flashes for one frame.
+    if (loading || sessions === null) return <PlanningNotice title="Loading your plan…" body="Fetching this week's prescribed sessions." />;
+    if (sessions.length === 0) return <PlanningEmptyState onCreate={actions.openBlockCreate} />;
+  }
+
+  // Guests (no token) never hit the branches above and keep the prototype preview.
   const weekCells = buildWeekCells(week.monday, sessions) ?? WEEK;
 
   const pcL = 24, pcR = 12, pcT = 14, pcB = 150, pcW = 680;
@@ -101,6 +133,9 @@ export function PlanningScreen() {
         <div className="flex items-center gap-[7px] rounded-[9px] border border-ac/25 bg-ac/[0.1] px-[13px] py-[9px] font-mono text-[11px] font-semibold leading-none text-ac">
           <span className="h-[7px] w-[7px] rounded-full bg-ac" />Readiness 64 · holding intensity
         </div>
+        {auth.token && (
+          <button onClick={actions.openBlockCreate} className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-[11px] text-[12.5px] font-semibold leading-none text-soft">New block</button>
+        )}
       </ScreenHeader>
 
       {/* week strip */}
@@ -191,6 +226,39 @@ export function PlanningScreen() {
           </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+// Loading / error placeholder — kept visually distinct from the no-block CTA so a
+// fetch that's still in-flight or that errored isn't mistaken for "create a block".
+function PlanningNotice({ title, body, onRetry }: { title: string; body: string; onRetry?: () => void }) {
+  return (
+    <section className="flex min-h-[70vh] items-center justify-center px-[30px] pb-9 pt-[26px]">
+      <Card className="flex max-w-[520px] flex-col items-center gap-4 p-[44px] text-center">
+        <div className="text-[20px] font-bold leading-[1.2] text-ink">{title}</div>
+        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">{body}</div>
+        {onRetry && (
+          <button onClick={onRetry} className="mt-[6px] rounded-[10px] border border-white/10 bg-white/[0.04] px-5 py-3 text-[13px] font-semibold leading-none text-soft">Retry</button>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+// Replaces the dead-end where a fresh signed-in athlete with no block silently
+// saw the hard-coded prototype WEEK and had no way to get a real one.
+function PlanningEmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <section className="flex min-h-[70vh] items-center justify-center px-[30px] pb-9 pt-[26px]">
+      <Card className="flex max-w-[520px] flex-col items-center gap-4 p-[44px] text-center">
+        <div className="grid h-[60px] w-[60px] place-items-center rounded-[16px] border border-ac/25 bg-ac/[0.1]">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" strokeWidth="1.6"><path d="M12 2 4 7v10l8 5 8-5V7z" /><path d="M12 22V12M4 7l8 5 8-5" /></svg>
+        </div>
+        <div className="text-[22px] font-bold leading-[1.2] text-ink">No active training block</div>
+        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">Create a training block to get a week of sessions prescribed against your readiness — pick a goal, cadence and session-length preferences.</div>
+        <button onClick={onCreate} className="mt-[6px] rounded-[10px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-3 text-[13px] font-semibold leading-none text-[#0a0c10]">Create a training block →</button>
+      </Card>
     </section>
   );
 }

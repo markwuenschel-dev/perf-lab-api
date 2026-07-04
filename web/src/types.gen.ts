@@ -269,6 +269,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/objectives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Objectives */
+        get: operations["list_objectives_v1_objectives_get"];
+        put?: never;
+        /** Create Objective */
+        post: operations["create_objective_v1_objectives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/objectives/{objective_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Objective */
+        delete: operations["delete_objective_v1_objectives__objective_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Objective */
+        patch: operations["update_objective_v1_objectives__objective_id__patch"];
+        trace?: never;
+    };
     "/v1/onboard": {
         parameters: {
             query?: never;
@@ -710,6 +746,10 @@ export interface components {
         };
         /** BlockCreateRequest */
         BlockCreateRequest: {
+            /** Accessory Emphasis */
+            accessory_emphasis?: ("minimal" | "balanced" | "high") | null;
+            /** Accessory Focus */
+            accessory_focus?: string[] | null;
             /**
              * Benchmark Every N Weeks
              * @default 4
@@ -747,6 +787,8 @@ export interface components {
              * Format: date
              */
             start_date: string;
+            /** Target Session Minutes */
+            target_session_minutes?: number | null;
             /** Weekly Template */
             weekly_template?: components["schemas"]["WeeklyTemplateSlot"][];
         };
@@ -757,6 +799,10 @@ export interface components {
         BlockGoal: "Strength" | "Hypertrophy" | "Power" | "Hyrox" | "CrossFit" | "Running" | "Calisthenics" | "General" | "Recomp";
         /** BlockRead */
         BlockRead: {
+            /** Accessory Emphasis */
+            accessory_emphasis?: string | null;
+            /** Accessory Focus */
+            accessory_focus?: string[] | null;
             /**
              * Created At
              * Format: date-time
@@ -787,6 +833,8 @@ export interface components {
              */
             start_date: string;
             status: components["schemas"]["BlockStatus"];
+            /** Target Session Minutes */
+            target_session_minutes?: number | null;
             /** User Id */
             user_id: number;
             /** Weekly Template */
@@ -1127,6 +1175,79 @@ export interface components {
             /** Zones */
             zones: components["schemas"]["Zone"][];
         };
+        /** ObjectiveCreate */
+        ObjectiveCreate: {
+            /** Benchmark Code */
+            benchmark_code?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Priority
+             * @default 3
+             */
+            priority: number;
+            /** Target Date */
+            target_date?: string | null;
+            /** Target Unit */
+            target_unit?: string | null;
+            /** Target Value */
+            target_value?: number | null;
+        };
+        /** ObjectiveRead */
+        ObjectiveRead: {
+            /** Benchmark Code */
+            benchmark_code: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Days To Go */
+            days_to_go: number | null;
+            /** Domain */
+            domain: string | null;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Priority */
+            priority: number;
+            progress: components["schemas"]["ProgressBlock"];
+            status: components["schemas"]["ObjectiveStatus"];
+            /** Target Date */
+            target_date: string | null;
+            /** Target Unit */
+            target_unit: string | null;
+            /** Target Value */
+            target_value: number | null;
+            /** User Id */
+            user_id: number;
+        };
+        /**
+         * ObjectiveStatus
+         * @enum {string}
+         */
+        ObjectiveStatus: "active" | "achieved" | "abandoned";
+        /** ObjectiveUpdate */
+        ObjectiveUpdate: {
+            /** Benchmark Code */
+            benchmark_code?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Priority */
+            priority?: number | null;
+            status?: components["schemas"]["ObjectiveStatus"] | null;
+            /** Target Date */
+            target_date?: string | null;
+            /** Target Unit */
+            target_unit?: string | null;
+            /** Target Value */
+            target_value?: number | null;
+        };
         /** OnboardRequest */
         OnboardRequest: {
             /**
@@ -1140,6 +1261,8 @@ export interface components {
             bodyweight_kg?: number | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg?: number | null;
+            /** Display Name */
+            display_name?: string | null;
             /** Equipment */
             equipment?: string[];
             /**
@@ -1281,6 +1404,8 @@ export interface components {
             bodyweight_kg: number | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg: number | null;
+            /** Display Name */
+            display_name: string | null;
             /** Equipment */
             equipment: string[];
             /** Experience Level */
@@ -1291,6 +1416,8 @@ export interface components {
             height_cm: number | null;
             /** Overhead 1Rm Kg */
             overhead_1rm_kg: number | null;
+            /** Primary Goal */
+            primary_goal: string | null;
             /** Pullup Max Reps */
             pullup_max_reps: number | null;
             /** Run 1P5Mi Seconds */
@@ -1318,6 +1445,8 @@ export interface components {
             bodyweight_kg?: number | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg?: number | null;
+            /** Display Name */
+            display_name?: string | null;
             /** Equipment */
             equipment?: string[] | null;
             /** Experience Level */
@@ -1328,6 +1457,8 @@ export interface components {
             height_cm?: number | null;
             /** Overhead 1Rm Kg */
             overhead_1rm_kg?: number | null;
+            /** Primary Goal */
+            primary_goal?: string | null;
             /** Pullup Max Reps */
             pullup_max_reps?: number | null;
             /** Run 1P5Mi Seconds */
@@ -1338,6 +1469,23 @@ export interface components {
             session_duration_minutes?: number | null;
             /** Squat 1Rm Kg */
             squat_1rm_kg?: number | null;
+        };
+        /**
+         * ProgressBlock
+         * @description Direction-aware progress toward a benchmark-linked objective's target.
+         *
+         *     ``current``/``pct``/``direction`` are all null for a free-text objective
+         *     (no linked benchmark) — countdown-only via ``days_to_go`` on the parent.
+         */
+        ProgressBlock: {
+            /** Current */
+            current?: number | null;
+            /** Direction */
+            direction?: string | null;
+            /** Pct */
+            pct?: number | null;
+            /** Target */
+            target?: number | null;
         };
         /**
          * ReadinessComponent
@@ -2377,8 +2525,8 @@ export interface operations {
     get_next_session_v1_next_session_get: {
         parameters: {
             query?: {
-                /** @description Training goal to prescribe for; defaults to the athlete's primary goal. */
-                goal?: "Strength" | "Hypertrophy" | "Power" | "General" | "OlympicLifts" | "Powerlifting" | "MetCon" | "Calisthenics" | "Gymnastics" | "Grip" | "Running" | "Sprinting" | "HalfMarathon" | "FullMarathon";
+                /** @description Training goal to prescribe for; defaults to the athlete's stored primary goal, then Strength. */
+                goal?: ("Strength" | "Hypertrophy" | "Power" | "General" | "OlympicLifts" | "Powerlifting" | "MetCon" | "Calisthenics" | "Gymnastics" | "Grip" | "Running" | "Sprinting" | "HalfMarathon" | "FullMarathon") | null;
             };
             header?: never;
             path?: never;
@@ -2393,6 +2541,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkoutPrescription"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_objectives_v1_objectives_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["ObjectiveStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_objective_v1_objectives_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectiveCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_objective_v1_objectives__objective_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                objective_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_objective_v1_objectives__objective_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                objective_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectiveUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"];
                 };
             };
             /** @description Validation Error */

@@ -18,7 +18,7 @@ export type Screen =
   | "planning"
   | "history"
   | "settings"
-  | "race"
+  | "objectives"
   | "simulate"
   | "onboarding";
 
@@ -65,16 +65,6 @@ export const STRENGTH_GOALS = new Set(["Strength", "Hypertrophy", "Power", "Powe
 export const isRunningGoal = (g: string) => RUNNING_GOALS.has(g);
 export const isStrengthGoal = (g: string) => STRENGTH_GOALS.has(g);
 
-export interface RaceState {
-  name: string;
-  loc: string;
-  dateLabel: string;
-  distName: string;
-  distKm: number;
-  goalSec: number;
-  daysToGo: number;
-}
-
 export type Feel = "easy" | "controlled" | "hard" | "maxed";
 
 export interface PerfLabState {
@@ -108,12 +98,23 @@ export interface PerfLabState {
   explainKey: string | null;
   capView: "bars" | "radar";
   sim: SimParams;
-  race: RaceState;
   checkin: CheckinState;
   checkinOpen: boolean;
   feedbackOpen: boolean;
   feedbackApplied: boolean;
   feel: Feel;
+  /** Block-creation overlay (POST /v1/planning/blocks) — see BlockCreateModal. */
+  blockCreateOpen: boolean;
+  /** Bumped after a block is created so PlanningScreen's useAuthedResource re-fetches. */
+  planningRefreshKey: number;
+  /** ISO date ("YYYY-MM-DD") anchoring the week PlanningScreen shows; null = current
+   *  week. Set to a new block's start_date so its first week is what we display. */
+  planningWeekAnchor: string | null;
+  /** New-objective overlay (POST /v1/objectives) — see ObjectiveCreateModal. */
+  objectiveCreateOpen: boolean;
+  /** Bumped after an objective is created/updated/deleted so any screen reading
+   *  the objectives list (ObjectivesScreen, the Overview summary) re-fetches. */
+  objectivesRefreshKey: number;
 }
 
 interface Persisted {
@@ -177,20 +178,16 @@ export function initialState(): PerfLabState {
     explainKey: null,
     capView: "bars",
     sim: { volume: 56, intensity: "balanced", weeks: 8, recovery: "standard" },
-    race: {
-      name: "Valencia Marathon",
-      loc: "Valencia, ES",
-      dateLabel: "Dec 6, 2026",
-      distName: "Marathon",
-      distKm: 42.195,
-      goalSec: 10500,
-      daysToGo: 116,
-    },
     checkin: { hrv: 64, sleepH: 7.5, sleepQ: 4, rhr: 52, soreness: "mild", mood: 4, done: false },
     checkinOpen: false,
     feedbackOpen: false,
     feedbackApplied: false,
     feel: "controlled",
+    blockCreateOpen: false,
+    planningRefreshKey: 0,
+    planningWeekAnchor: null,
+    objectiveCreateOpen: false,
+    objectivesRefreshKey: 0,
   };
 }
 
@@ -284,6 +281,15 @@ export interface PerfLabActions {
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   toggleNav: () => void;
   toggleFresh: () => void;
+  openBlockCreate: () => void;
+  closeBlockCreate: () => void;
+  /** Called after a block is created: focus the week containing `startDateIso`
+   *  and force a re-fetch (covers creating a block inside the current week too). */
+  focusPlanningWeek: (startDateIso: string) => void;
+  openObjectiveCreate: () => void;
+  closeObjectiveCreate: () => void;
+  /** Bump after any objective create/update/delete so dependents re-fetch. */
+  refreshObjectives: () => void;
 }
 
 export interface PerfLabContextValue {
@@ -349,6 +355,13 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     setSetting: (key, value) => dispatch({ type: "mergeSettings", patch: { [key]: value } as Partial<Settings> }),
     toggleNav: () => mergeFn((s) => ({ navCollapsed: !s.navCollapsed })),
     toggleFresh: () => mergeFn((s) => ({ fresh: !s.fresh })),
+    openBlockCreate: () => merge({ blockCreateOpen: true }),
+    closeBlockCreate: () => merge({ blockCreateOpen: false }),
+    focusPlanningWeek: (startDateIso) =>
+      mergeFn((s) => ({ planningWeekAnchor: startDateIso, planningRefreshKey: s.planningRefreshKey + 1 })),
+    openObjectiveCreate: () => merge({ objectiveCreateOpen: true }),
+    closeObjectiveCreate: () => merge({ objectiveCreateOpen: false }),
+    refreshObjectives: () => mergeFn((s) => ({ objectivesRefreshKey: s.objectivesRefreshKey + 1 })),
   };
 }
 

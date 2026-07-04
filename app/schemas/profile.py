@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 
 class ProfileRead(BaseModel):
+    display_name: str | None
+    primary_goal: str | None
     experience_years: float
     experience_level: str
     available_days_per_week: int
@@ -33,6 +35,8 @@ class ProfileUpdate(BaseModel):
     previously stored value; omitting a field leaves it untouched.
     """
 
+    display_name: str | None = None
+    primary_goal: str | None = None
     experience_years: float | None = Field(None, ge=0)
     experience_level: str | None = None
     available_days_per_week: int | None = Field(None, ge=1, le=7)

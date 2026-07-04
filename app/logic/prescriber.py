@@ -55,6 +55,27 @@ DEFAULT_DELOAD_VOLUME_FACTOR = 0.6
 RECENT_SKIPS_BIAS_THRESHOLD = 2
 _ADHERENCE_FRIENDLY_TYPE_KEYWORDS = ("variety", "recovery", "maintenance", "skill")
 
+# Block session-preference bounds (Phase 3a). A block's explicit
+# `target_session_minutes` overrides the periodization-scaled duration, but is
+# clamped to a sane band and never allowed to inflate far past the winning
+# template's own length.
+TARGET_DURATION_MIN_MINUTES = 30
+TARGET_DURATION_MAX_MINUTES = 120
+TARGET_DURATION_TEMPLATE_CAP_FACTOR = 1.5
+# A target session shorter than the template's own duration shouldn't pile on
+# accessories — cap appended accessories at this many even under "high" emphasis.
+SHORT_TARGET_ACCESSORY_CAP = 1
+
+# Objective taper + domain-emphasis (Phase 4a — goal-anchored program). The
+# window itself (whether the nearest active objective's target_date qualifies)
+# is evaluated upstream by app.services.objective_service.active_objective_signals
+# — the prescriber only consumes the resulting `objective_taper` bool. Both
+# entry points (prescribe_for_athlete and /planning/today) must populate these
+# block_context keys identically (Phase 0/3a lesson).
+OBJECTIVE_TAPER_FACTOR = 0.7
+# Mirrors the existing block-category boost magnitude (see _score_with_context).
+OBJECTIVE_DOMAIN_BOOST = 0.15
+
 
 # ---------------------------------------------------------------------------
 # Safety override candidates (always placed first; skip scoring)
@@ -310,6 +331,99 @@ _EQUIPMENT_EXERCISE_MAP: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Block session preferences (Phase 3a — goal-anchored program)
+#
+# A training block can carry `accessory_emphasis` / `accessory_focus` /
+# `target_session_minutes` (MesocycleBlock, see app.models.mesocycle). The
+# prescriber appends accessory slots after the winning template's primary
+# `exercise_slots` and nudges `rx.duration_min` toward the target — see the
+# end of recommend_next_session for the full contract.
+# ---------------------------------------------------------------------------
+
+# Tag → accessory catalog. Movement-pattern focus tags an athlete can request
+# via `accessory_focus`, plus the WEAK_POINT_TAGS values that also work as
+# catalog keys directly ("posterior_chain", "single_leg").
+_ACCESSORY_BY_TAG: dict[str, list[tuple[str, str, str]]] = {
+    "posterior_chain": [
+        ("Romanian Deadlift", "3", "5-8"),
+        ("Back Extension", "3", "12-15"),
+    ],
+    "push": [
+        ("DB Shoulder Press", "3", "8-10"),
+        ("Dips", "3", "8-12"),
+    ],
+    "pull": [
+        ("Chest-Supported Row", "3", "10-12"),
+        ("Face Pull", "3", "15-20"),
+    ],
+    "core": [
+        ("Hanging Leg Raise", "3", "10-15"),
+        ("Plank", "3", "45-60s"),
+    ],
+    "single_leg": [
+        ("Bulgarian Split Squat", "3", "8-10/side"),
+        ("Walking Lunge", "3", "10-12/side"),
+    ],
+}
+
+# Generic accessories used to fill out an emphasis's accessory count when the
+# focus / weak-point tags don't yield enough matches.
+_GENERIC_ACCESSORIES: list[tuple[str, str, str]] = [
+    ("Face Pull", "3", "15-20"),
+    ("Plank", "3", "45-60s"),
+    ("Walking Lunge", "3", "10-12/side"),
+    ("DB Shoulder Press", "3", "8-10"),
+]
+
+# Max accessory slots appended per `accessory_emphasis` value. Missing/None
+# emphasis is treated as "balanced" by the caller.
+_ACCESSORY_COUNT_BY_EMPHASIS: dict[str, int] = {
+    "minimal": 0,
+    "balanced": 2,
+    "high": 4,
+}
+
+
+def _select_accessories(
+    count: int,
+    focus_tags: list[str] | None,
+    weak_point_tags: list[str] | None,
+    existing_names: set[str],
+) -> list[tuple[str, str, str]]:
+    """Pick up to `count` accessory slots, preferring `focus_tags`, then
+    falling back to `weak_point_tags`, then generic accessories. Skips names
+    already present among `existing_names` (the template's own slots) to
+    avoid duplicate entries."""
+    if count <= 0:
+        return []
+    tags = [t for t in (focus_tags or []) if t in _ACCESSORY_BY_TAG]
+    if not tags:
+        tags = [t for t in (weak_point_tags or []) if t in _ACCESSORY_BY_TAG]
+
+    seen = set(existing_names)
+    picks: list[tuple[str, str, str]] = []
+    for tag in tags:
+        for item in _ACCESSORY_BY_TAG[tag]:
+            if len(picks) >= count:
+                break
+            if item[0] not in seen:
+                picks.append(item)
+                seen.add(item[0])
+        if len(picks) >= count:
+            break
+
+    if len(picks) < count:
+        for item in _GENERIC_ACCESSORIES:
+            if len(picks) >= count:
+                break
+            if item[0] not in seen:
+                picks.append(item)
+                seen.add(item[0])
+
+    return picks[:count]
+
+
 def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[ExercisePrescription]:
     equipment = {e.lower() for e in (available_equipment or [])}
     picks: list[tuple[str, str, str]] = []
@@ -325,6 +439,28 @@ def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[
         ExercisePrescription(name=name, sets=int(sets), reps=reps, load_note="Autoregulate by RPE")
         for name, sets, reps in picks[:4]
     ]
+
+
+def _exercise_list_for_candidate(
+    exercise_slots: list[tuple[str, str, str]],
+    available_equipment: list[str] | None,
+) -> list[ExercisePrescription]:
+    """Prefer the winning candidate's goal-specific exercise_slots; fall back
+    to the equipment map only when a template doesn't specify slots (empty
+    list). This is the fix for the bug where a Powerlifting athlete with no
+    equipment configured got the bodyweight default instead of SBD work.
+    """
+    if exercise_slots:
+        return [
+            ExercisePrescription(
+                name=name,
+                sets=int(sets),
+                reps=reps,
+                load_note="Autoregulate by RPE; scale to available equipment",
+            )
+            for name, sets, reps in exercise_slots
+        ]
+    return _exercise_list_for_equipment(available_equipment)
 
 
 def recommend_next_session(
@@ -351,6 +487,11 @@ def recommend_next_session(
     `active_weak_points` biases candidate scoring toward sessions that address
     flagged limitations. `block_context` applies a +0.15 bias to candidates
     whose type matches the planned session category.
+
+    `block_context["objective_taper"]` (bool) and `["objective_domain"]`
+    (str | None) carry the athlete's nearest/top active Objective signals
+    (Phase 4a — see app.services.objective_service.active_objective_signals).
+    Absent/None on both behaves exactly as if no objective existed.
     """
     kpi = kpi_summary or {}
     weak_points = active_weak_points or []
@@ -374,12 +515,18 @@ def recommend_next_session(
 
     # --- 3. Score and sort ---
     recent_skips = int(block.get("recent_skips", 0) or 0)
+    objective_domain_raw = block.get("objective_domain")
+    objective_domain = canonical_domain(str(objective_domain_raw)) if objective_domain_raw else None
 
     def _score_with_context(c: SessionCandidate) -> float:
         base = _score_candidate(c)
         # Boost candidates whose type matches the planned session category
         if block.get("session_category") and c.type == block["session_category"]:
             base += 0.15
+        # Objective domain-emphasis (Phase 4a): boost candidates whose domain
+        # matches the top active objective's domain.
+        if objective_domain and c.domain and c.domain == objective_domain:
+            base += OBJECTIVE_DOMAIN_BOOST
         # Repeated recent skips → bias toward lighter/variety/recovery work.
         if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and any(
             k in c.type.lower() for k in _ADHERENCE_FRIENDLY_TYPE_KEYWORDS
@@ -437,6 +584,11 @@ def recommend_next_session(
         rx.why.constraints_applied.extend(
             [f"weak_point:{tag}" for tag in weak_points]
         )
+    # Objective domain-emphasis (Phase 4a): annotate when the winning candidate
+    # actually reflects the emphasized domain (the boost above may not always
+    # change the winner, e.g. a safety override or an already-dominant redirect).
+    if objective_domain and scored[0].domain == objective_domain and rx.why:
+        rx.why.constraints_applied.append(f"objective:domain_emphasis={objective_domain}")
     # ADR-0029: apply the week's periodization envelope (volume modifier + RPE target).
     # week_number shapes the prescription within an envelope; state pulls down, not up.
     week_n = int(block.get("week_number") or 0)
@@ -474,13 +626,87 @@ def recommend_next_session(
     if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and rx.why:
         rx.why.constraints_applied.append(f"adherence:recent_skips={recent_skips}")
 
-    # Equipment-aware exercise payload with bodyweight fallback.
-    rx.exercises = _exercise_list_for_equipment(available_equipment)
+    # Goal-specific exercise payload — prefer the winning template's
+    # exercise_slots; equipment map (with bodyweight fallback) only applies
+    # when the template doesn't specify slots.
+    rx.exercises = _exercise_list_for_candidate(scored[0].exercise_slots, available_equipment)
     if rx.why:
         if available_equipment:
             rx.why.constraints_applied.append("equipment:filtered")
         else:
             rx.why.constraints_applied.append("equipment:fallback_bodyweight")
+
+    # --- 5. Block session preferences (Phase 3a): accessory append + target
+    # duration override. `template_duration_min` is the winning template's own
+    # (pre-periodization) duration, used both as the "short session" reference
+    # point and as an upper anchor for the target-duration clamp.
+    template_duration_min = scored[0].duration_min
+    raw_emphasis = block.get("accessory_emphasis")
+    raw_focus = block.get("accessory_focus")
+    raw_target = block.get("target_session_minutes")
+    # Accessory append and target-duration override are independent athlete
+    # prefs: setting only a session length must NOT inject accessories, and vice
+    # versa. Gate the accessory branch on accessory prefs alone (emphasis or
+    # focus); the duration override below is gated only on `raw_target`. A
+    # block_context with none of the three keys (every block created before
+    # Phase 3a) is therefore unchanged: no accessories, no duration override.
+    has_accessory_prefs = raw_emphasis is not None or bool(raw_focus)
+    if has_accessory_prefs:
+        # Missing/None emphasis defaults to "balanced" (design decision) once
+        # the athlete has expressed *some* accessory preference.
+        emphasis = raw_emphasis or "balanced"
+        accessory_count = _ACCESSORY_COUNT_BY_EMPHASIS.get(emphasis, 2)
+        # A short target session shouldn't pile on accessories, even under
+        # "high" emphasis.
+        if (
+            raw_target is not None
+            and template_duration_min > 0
+            and int(raw_target) < template_duration_min
+        ):
+            accessory_count = min(accessory_count, SHORT_TARGET_ACCESSORY_CAP)
+        if accessory_count > 0:
+            existing_names = {e.name for e in rx.exercises}
+            accessories = _select_accessories(accessory_count, raw_focus, weak_points, existing_names)
+            if accessories:
+                rx.exercises = rx.exercises + [
+                    ExercisePrescription(
+                        name=name,
+                        sets=int(sets),
+                        reps=reps,
+                        load_note="Accessory — autoregulate by RPE",
+                    )
+                    for name, sets, reps in accessories
+                ]
+                if rx.why:
+                    rx.why.constraints_applied.append(
+                        f"block:accessories={emphasis}(+{len(accessories)})"
+                    )
+
+    if raw_target is not None:
+        # Apply periodization scaling first (done above), then the explicit
+        # block target wins over the modifier for the final duration.
+        clamped = max(
+            TARGET_DURATION_MIN_MINUTES,
+            min(TARGET_DURATION_MAX_MINUTES, int(raw_target)),
+        )
+        if template_duration_min > 0:
+            clamped = min(
+                clamped, round(template_duration_min * TARGET_DURATION_TEMPLATE_CAP_FACTOR)
+            )
+        rx.duration_min = clamped
+        if rx.why:
+            rx.why.constraints_applied.append(f"block:target_duration={clamped}")
+
+    # Objective taper (Phase 4a): applied last so it scales down whatever
+    # duration periodization/block-target preferences settled on, rather than
+    # being overridden by them.
+    if block.get("objective_taper"):
+        if rx.duration_min > 0:
+            rx.duration_min = max(1, round(rx.duration_min * OBJECTIVE_TAPER_FACTOR))
+        if rx.why:
+            rx.why.constraints_applied.append(f"objective:taper(×{OBJECTIVE_TAPER_FACTOR:.2f})")
+
+    if rx.why:
         rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))
 
     return rx

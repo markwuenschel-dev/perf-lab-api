@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     # strings are resolved at runtime via SQLAlchemy's class registry.
     from app.models.athlete_state import AthleteState
     from app.models.mesocycle import MesocycleBlock
+    from app.models.objective import Objective
     from app.models.weak_point import WeakPoint
     from app.models.wellness import WellnessSample
 
@@ -59,6 +61,9 @@ class User(Base):
     wellness_samples: Mapped[list["WellnessSample"]] = relationship(
         "WellnessSample", back_populates="user", cascade="all, delete-orphan"
     )
+    objectives: Mapped[list["Objective"]] = relationship(
+        "Objective", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class AthleteProfile(Base):
@@ -73,6 +78,9 @@ class AthleteProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     experience_years: Mapped[float] = mapped_column(Float, default=0.0)
     experience_level: Mapped[str] = mapped_column(String, default="beginner")

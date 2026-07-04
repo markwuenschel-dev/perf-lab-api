@@ -2,7 +2,7 @@ import enum
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -102,6 +102,20 @@ class MesocycleBlock(Base):
 
     # Block-level notes / LLM rationale for the generated plan
     rationale: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Per-block session preferences (Phase 3a — goal-anchored program).
+    # Desired session length in minutes for sessions in this block; the
+    # prescriber nudges rx.duration_min toward this, overriding the plain
+    # periodization scaling for the final value.
+    target_session_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # One of "minimal" | "balanced" | "high"; missing/None is treated as
+    # "balanced" by the prescriber. Controls how many accessory exercise
+    # slots are appended after the winning template's primary exercise_slots.
+    accessory_emphasis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # List of movement-pattern tag strings (e.g. ["posterior_chain", "push"])
+    # the athlete wants extra accessory work on. Missing/None means no
+    # specific focus — the prescriber falls back to active weak-point tags.
+    accessory_focus: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     # Deload configuration
     deload_every_n_weeks: Mapped[int] = mapped_column(Integer, default=4)

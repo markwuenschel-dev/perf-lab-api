@@ -96,6 +96,10 @@ export function OnboardingScreen() {
   const ob = state.obStep;
   const goOverview = () => actions.setScreen("overview");
 
+  // Step 1 — profile
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+
   // Step 2 — training context
   const [weeklyVol, setWeeklyVol] = useState(imperial ? "30" : "48");
   const [daysPerWeek, setDaysPerWeek] = useState("4");
@@ -137,6 +141,9 @@ export function OnboardingScreen() {
     setSeeding(true);
     try {
       const req: Record<string, unknown> = { goal };
+
+      const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
+      if (displayName) req.display_name = displayName;
 
       if (isRunningGoal(goal) && t300 && t15) {
         // Best-effort: compute metrics and cache them for the Field Test screen.
@@ -209,8 +216,8 @@ export function OnboardingScreen() {
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Let's set up your profile</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">Just the basics. You can change any of this later.</p>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="First name"><input defaultValue="" placeholder="First name" className={inputCls} /></Field>
-              <Field label="Last name"><input defaultValue="" placeholder="Last name" className={inputCls} /></Field>
+              <Field label="First name"><input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" className={inputCls} /></Field>
+              <Field label="Last name"><input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" className={inputCls} /></Field>
               <Field label="Date of birth"><input type="date" className={inputCls} style={{ colorScheme: "dark" }} /></Field>
               <div className="block"><span className={labelCls}>Sex</span><Seg options={["Female", "Male"]} value={sex} onChange={(v) => actions.setSetting("sex", v)} /></div>
             </div>

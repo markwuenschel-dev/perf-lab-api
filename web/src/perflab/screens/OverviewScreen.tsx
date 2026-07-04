@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { usePerfLab } from "../store";
 import { Card, ReadinessRing, SectionLabel, SyncChip, Track } from "../ui";
 import { buildCheckin, COLORS, DAYS, DAY_COUNT, readinessColor, readinessWord } from "../sim";
+import { useAuthedResource } from "../useAuthedResource";
+import { listObjectives } from "@/api/perfLabClient";
+import { sortObjectives } from "../objectives";
+import type { ObjectiveRead } from "@/types";
 
 function StatCol({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -10,6 +14,72 @@ function StatCol({ label, children }: { label: string; children: ReactNode }) {
       <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">{label}</div>
       <div className="mt-2 font-mono text-[18px] font-semibold leading-none text-ink">{children}</div>
     </div>
+  );
+}
+
+// Overview hero: the athlete's top objective (active-first, highest priority,
+// nearest deadline — same ordering as ObjectivesScreen), fetched live and
+// re-fetched when the objectives list changes. Replaces the old frontend-only
+// "Goal race" / Valencia mock. Signed-out, empty, or still-loading all fall
+// back to a CTA into the Objectives screen. Clicking navigates there.
+function GoalObjectiveCard() {
+  const { state, actions } = usePerfLab();
+  const { data, loading } = useAuthedResource<ObjectiveRead[]>(
+    (t) => listObjectives(t),
+    [state.objectivesRefreshKey],
+  );
+  const top = data && data.length ? sortObjectives(data)[0] : null;
+  const gradient = { background: "radial-gradient(120% 140% at 100% 0%,#11321f,#111419 55%)" };
+
+  if (!top) {
+    return (
+      <Card onClick={() => actions.setScreen("objectives")} className="flex items-center justify-between gap-4" style={gradient}>
+        <div>
+          <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Objective</div>
+          <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">
+            {loading ? "Loading your objective…" : "Set a goal to aim at"}
+          </div>
+          <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">
+            {loading ? "Fetching what your plan is pointed at." : "A race, a meet, a Hyrox, a PR — give your plan a target."}
+          </div>
+        </div>
+        <div className="flex-none text-right">
+          <div className="font-mono text-[13px] font-semibold leading-none text-ac">Objectives →</div>
+        </div>
+      </Card>
+    );
+  }
+
+  const pct = top.progress.pct;
+  return (
+    <Card onClick={() => actions.setScreen("objectives")} className="flex items-center justify-between gap-4" style={gradient}>
+      <div>
+        <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">
+          Objective{top.target_date ? ` · ${top.target_date}` : ""}
+        </div>
+        <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">{top.label}</div>
+        <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">
+          {top.target_value != null ? (
+            <>
+              Target <span className="text-soft">{top.target_value}{top.target_unit ? ` ${top.target_unit}` : ""}</span>
+              {pct != null && <> · <span className="text-teal">{Math.round(pct)}% there</span></>}
+            </>
+          ) : (
+            "Countdown-only · link a benchmark for progress"
+          )}
+        </div>
+      </div>
+      <div className="flex-none text-right">
+        {top.days_to_go != null ? (
+          <>
+            <div className="font-mono text-[42px] font-semibold leading-[0.9] tracking-[-0.02em] text-ink">{top.days_to_go}</div>
+            <div className="mt-[5px] font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">days to go →</div>
+          </>
+        ) : (
+          <div className="font-mono text-[13px] font-semibold leading-none text-ac">Objectives →</div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -74,25 +144,9 @@ export function OverviewScreen() {
         </div>
       </header>
 
-      {/* Goal race + this-morning */}
+      {/* Top objective + this-morning */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <Card
-          onClick={() => actions.setScreen("race")}
-          className="flex items-center justify-between gap-4"
-          style={{ background: "radial-gradient(120% 140% at 100% 0%,#11321f,#111419 55%)" }}
-        >
-          <div>
-            <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Goal race · {state.race.dateLabel}</div>
-            <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">{state.race.name}</div>
-            <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">
-              Goal 2:55:00 · predicted <span className="text-teal">2:53:40</span> <span className="text-good">(−1:20 ahead of goal)</span>
-            </div>
-          </div>
-          <div className="flex-none text-right">
-            <div className="font-mono text-[42px] font-semibold leading-[0.9] tracking-[-0.02em] text-ink">{state.race.daysToGo}</div>
-            <div className="mt-[5px] font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">days to go →</div>
-          </div>
-        </Card>
+        <GoalObjectiveCard />
 
         <Card className="flex flex-col gap-[14px]">
           <div className="flex items-center justify-between">

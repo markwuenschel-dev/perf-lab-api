@@ -7,6 +7,9 @@ import type {
   BlockUpdateRequest,
   ComputeMetricsRequest,
   MetricsResponse,
+  ObjectiveCreate,
+  ObjectiveRead,
+  ObjectiveUpdate,
   OnboardRequest,
   OnboardResponse,
   PlannedSessionRead,
@@ -410,4 +413,59 @@ export async function getReadiness(token: string): Promise<ReadinessScore> {
     headers: { ...authHeaders(token) },
   });
   return handleResponse<ReadinessScore>(res, { sessionOn401: true });
+}
+
+/**
+ * Objectives (P4a): create a benchmark-linked or free-text goal (a race, a
+ * meet, a Hyrox, a PR). Progress only computes when `benchmark_code` is set.
+ */
+export async function createObjective(
+  body: ObjectiveCreate,
+  token: string,
+): Promise<ObjectiveRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/objectives`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+}
+
+/** Objectives (P4a): list the athlete's objectives, optionally filtered by status. */
+export async function listObjectives(
+  token: string,
+  status?: string,
+): Promise<ObjectiveRead[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await fetch(`${API_V1_BASE}/objectives${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: true });
+}
+
+/** Objectives (P4a): partial-update an objective (e.g. mark achieved/abandoned). */
+export async function updateObjective(
+  id: number,
+  body: ObjectiveUpdate,
+  token: string,
+): Promise<ObjectiveRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/objectives/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+}
+
+/** Objectives (P4a): delete an objective. */
+export async function deleteObjective(id: number, token: string): Promise<void> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/objectives/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<void>(res, { sessionOn401: true });
 }

@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import * as api from "../api/perfLabClient";
-import type { OnboardRequest, UserResponse } from "../types";
+import type { OnboardRequest, ProfileRead, UserResponse } from "../types";
 import { AuthContext, type AuthContextValue } from "./perfLabAuthContext";
 import { setUnauthorizedHandler } from "./sessionBridge";
 import {
@@ -21,6 +21,7 @@ import {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [user, setUser] = useState<UserResponse | null>(null);
+  const [profile, setProfile] = useState<ProfileRead | null>(null);
   const [email, setEmail] = useState(() => getStoredEmail() ?? "");
   const [isLoading, setIsLoading] = useState(false);
   const [onboardingPending, setOnboardingPending] = useState(false);
@@ -33,7 +34,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredSession();
     setToken(null);
     setUser(null);
+    setProfile(null);
     setIsGuest(false);
+  }, []);
+
+  // Load the athlete profile for the current token. Exposed so consumers can
+  // force a re-fetch (e.g. the sidebar name after a Settings save).
+  const refreshProfile = useCallback(async () => {
+    const t = getStoredToken();
+    if (!t) {
+      setProfile(null);
+      return;
+    }
+    try {
+      setProfile(await api.getProfile(t));
+    } catch {
+      setProfile(null);
+    }
   }, []);
 
   const enterGuest = useCallback(() => {
@@ -55,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token) {
       setUser(null);
+      setProfile(null);
       return;
     }
     let cancelled = false;
@@ -64,6 +82,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setUser(u);
       } catch {
         if (!cancelled) logout();
+        return;
+      }
+      // Profile is best-effort — a missing/failed load just leaves it null and
+      // consumers fall back (e.g. sidebar → email local-part).
+      try {
+        const p = await api.getProfile(token);
+        if (!cancelled) setProfile(p);
+      } catch {
+        if (!cancelled) setProfile(null);
       }
     })();
     return () => {
@@ -110,19 +137,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // The backend fills server-side defaults for any field we omit, so a
         // partial (even `{}`) is a valid payload.
         await api.onboard(req as OnboardRequest);
+        // Pull the freshly-seeded profile so the sidebar shows the onboarded
+        // name immediately (not just the email fallback until a reload).
+        await refreshProfile();
       } catch {
         // Best-effort: baseline state seeds on first /next-session anyway
       } finally {
         setOnboardingPending(false);
       }
     },
-    [isGuest],
+    [isGuest, refreshProfile],
   );
 
   const value = useMemo<AuthContextValue>(
     () => ({
       token,
       user,
+      profile,
       email,
       setEmail,
       isAuthenticated: Boolean(token),
@@ -132,10 +163,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       completeOnboarding,
+      refreshProfile,
       enterGuest,
       logout,
     }),
-    [token, user, email, isGuest, isLoading, onboardingPending, login, register, completeOnboarding, enterGuest, logout],
+    [token, user, profile, email, isGuest, isLoading, onboardingPending, login, register, completeOnboarding, refreshProfile, enterGuest, logout],
   );
 
   return (

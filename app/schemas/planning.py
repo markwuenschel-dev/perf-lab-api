@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,11 @@ class BlockCreateRequest(BaseModel):
     deload_every_n_weeks: int = Field(4, ge=1, le=12)
     deload_volume_factor: float = Field(0.6, gt=0.1, le=1.0)
     benchmark_every_n_weeks: int | None = Field(default=4, ge=1, le=12)
+    # Per-block session preferences (Phase 3a). Missing/None accessory_emphasis
+    # is treated as "balanced" by the prescriber.
+    target_session_minutes: int | None = Field(default=None, ge=20, le=180)
+    accessory_emphasis: Literal["minimal", "balanced", "high"] | None = None
+    accessory_focus: list[str] | None = None
 
 
 class BlockUpdateRequest(BaseModel):
@@ -50,6 +55,9 @@ class BlockRead(BaseModel):
     rationale: str | None
     deload_every_n_weeks: int
     deload_volume_factor: float
+    target_session_minutes: int | None = None
+    accessory_emphasis: str | None = None
+    accessory_focus: list[str] | None = None
     created_at: datetime
 
     class Config:
