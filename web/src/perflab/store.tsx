@@ -115,6 +115,12 @@ export interface PerfLabState {
   /** Bumped after an objective is created/updated/deleted so any screen reading
    *  the objectives list (ObjectivesScreen, the Overview summary) re-fetches. */
   objectivesRefreshKey: number;
+  /** New-macrocycle overlay (POST /v1/macrocycles) — see MacrocycleCreateModal. */
+  macrocycleCreateOpen: boolean;
+  /** Bumped after a macrocycle is created/updated/deleted so any screen reading
+   *  the macrocycles list (Objectives' Program section, the Overview week X of Y)
+   *  re-fetches. */
+  macrocyclesRefreshKey: number;
 }
 
 interface Persisted {
@@ -188,6 +194,8 @@ export function initialState(): PerfLabState {
     planningWeekAnchor: null,
     objectiveCreateOpen: false,
     objectivesRefreshKey: 0,
+    macrocycleCreateOpen: false,
+    macrocyclesRefreshKey: 0,
   };
 }
 
@@ -290,6 +298,10 @@ export interface PerfLabActions {
   closeObjectiveCreate: () => void;
   /** Bump after any objective create/update/delete so dependents re-fetch. */
   refreshObjectives: () => void;
+  openMacrocycleCreate: () => void;
+  closeMacrocycleCreate: () => void;
+  /** Bump after any macrocycle create/update/delete so dependents re-fetch. */
+  refreshMacrocycles: () => void;
 }
 
 export interface PerfLabContextValue {
@@ -362,6 +374,9 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     openObjectiveCreate: () => merge({ objectiveCreateOpen: true }),
     closeObjectiveCreate: () => merge({ objectiveCreateOpen: false }),
     refreshObjectives: () => mergeFn((s) => ({ objectivesRefreshKey: s.objectivesRefreshKey + 1 })),
+    openMacrocycleCreate: () => merge({ macrocycleCreateOpen: true }),
+    closeMacrocycleCreate: () => merge({ macrocycleCreateOpen: false }),
+    refreshMacrocycles: () => mergeFn((s) => ({ macrocyclesRefreshKey: s.macrocyclesRefreshKey + 1 })),
   };
 }
 

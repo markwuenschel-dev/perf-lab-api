@@ -7,7 +7,7 @@
 import { useState } from "react";
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
-import type { ApiError, ObjectiveRead } from "@/types";
+import type { ApiError, MacrocycleRead, ObjectiveRead } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { sortObjectives } from "../objectives";
@@ -120,12 +120,100 @@ export function ObjectivesScreen() {
         <div className="rounded-[11px] border border-hot/25 bg-hot/[0.08] px-[14px] py-[11px] text-[12px] font-medium leading-[1.5] text-hot">{mutateError}</div>
       )}
 
+      <ProgramSection />
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {sorted.map((o) => (
           <ObjectiveCard key={o.id} o={o} busy={mutatingId === o.id} onAchieve={() => markAchieved(o.id)} onDelete={() => remove(o.id)} />
         ))}
       </div>
     </section>
+  );
+}
+
+// Program (Phase 5): the athlete's macrocycles — a thin container above blocks,
+// anchored to an objective, that yields a real cross-block "week X of Y". Folded
+// into the Objectives screen (rather than its own nav item) since a program only
+// exists to serve an objective. Fetches its own list keyed by the macrocycles
+// refresh key. Renders nothing while it has no data to show so it never adds
+// visual noise before there's a program.
+function ProgramSection() {
+  const { state, actions } = usePerfLab();
+  const { data, loading, error } = useAuthedResource<MacrocycleRead[]>(
+    (t) => api.listMacrocycles(t),
+    [state.macrocyclesRefreshKey],
+  );
+  const macros = data ?? [];
+
+  return (
+    <Card className="flex flex-col gap-[14px] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-[8px]">
+          <span className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Program</span>
+          <span className="text-[11px] font-medium leading-none text-faint">week X of Y across your blocks</span>
+        </div>
+        <button
+          onClick={actions.openMacrocycleCreate}
+          className="rounded-[9px] border border-white/10 bg-white/[0.04] px-[13px] py-[9px] text-[12px] font-semibold leading-none text-soft"
+        >
+          New program →
+        </button>
+      </div>
+
+      {error ? (
+        <div className="text-[12px] font-medium leading-[1.5] text-hot">{error}</div>
+      ) : loading && data === null ? (
+        <div className="text-[12px] font-medium leading-none text-mute">Loading your program…</div>
+      ) : macros.length === 0 ? (
+        <div className="text-[12.5px] font-medium leading-[1.5] text-mute">
+          No program yet. Anchor one to an objective to track a real week X of Y across every block.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-[10px]">
+          {macros.map((m) => (
+            <MacrocycleRow key={m.id} m={m} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MacrocycleRow({ m }: { m: MacrocycleRead }) {
+  const wp = m.week_progress;
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[11px] border border-white/[0.06] bg-white/[0.02] px-[14px] py-[12px]">
+      <div className="min-w-0">
+        <div className="flex items-center gap-[8px]">
+          <span className="truncate text-[14px] font-bold leading-none text-ink">{m.objective_label}</span>
+          <Pill>{statusLabel(m.status)}</Pill>
+        </div>
+        <div className="mt-2 flex items-center gap-[10px] text-[11px] font-medium leading-none text-faint">
+          <span>Since {m.start_date}</span>
+          <span className="text-[#3a4049]">·</span>
+          <span>{m.block_count} block{m.block_count === 1 ? "" : "s"}</span>
+          {m.target_date && (
+            <>
+              <span className="text-[#3a4049]">·</span>
+              <span>By {m.target_date}</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-none items-center gap-4">
+        {wp.pct != null && (
+          <div className="hidden w-[110px] sm:block">
+            <Track pct={Math.max(0, Math.min(100, wp.pct))} />
+          </div>
+        )}
+        <div className="text-right">
+          <div className="font-mono text-[15px] font-semibold leading-none text-ink">week {wp.current_week}</div>
+          <div className="mt-1 font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">
+            {wp.total_weeks != null ? `of ${wp.total_weeks}` : "open horizon"}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

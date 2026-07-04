@@ -20,6 +20,7 @@ import { SessionPlayer } from "./overlays/SessionPlayer";
 import { ExplainDrawer } from "./overlays/ExplainDrawer";
 import { BlockCreateModal } from "./overlays/BlockCreateModal";
 import { ObjectiveCreateModal } from "./overlays/ObjectiveCreateModal";
+import { MacrocycleCreateModal } from "./overlays/MacrocycleCreateModal";
 
 const SCREENS: Partial<Record<Screen, ComponentType>> = {
   overview: OverviewScreen,
@@ -74,6 +75,7 @@ export function AppShell() {
       <ExplainDrawer />
       <BlockCreateModal />
       <ObjectiveCreateModal />
+      <MacrocycleCreateModal />
     </div>
   );
 }

@@ -72,6 +72,13 @@ export type ObjectiveUpdate = Schemas["ObjectiveUpdate"];
 export type ObjectiveStatus = Schemas["ObjectiveStatus"];
 export type ProgressBlock = Schemas["ProgressBlock"];
 
+/* ---------- Macrocycles (Phase 5: a program container anchored to an objective) ---------- */
+export type MacrocycleCreate = Schemas["MacrocycleCreate"];
+export type MacrocycleRead = Schemas["MacrocycleRead"];
+export type MacrocycleUpdate = Schemas["MacrocycleUpdate"];
+export type MacrocycleStatus = Schemas["MacrocycleStatus"];
+export type WeekProgress = Schemas["WeekProgress"];
+
 /* ---------- Legacy field test (POST /compute-metrics, no /v1 prefix) ---------- */
 // The backend schema is named `MetricsRequest`; the app calls it ComputeMetricsRequest.
 export type ComputeMetricsRequest = Schemas["MetricsRequest"];
