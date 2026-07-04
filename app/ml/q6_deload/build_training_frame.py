@@ -30,7 +30,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.analysis.feature_builders.deload_risk_features import (
+from app.ml.q6_deload.feature_helpers import (
     DELOAD_FEATURE_COLUMNS,
     GROUP_COLUMN,
     ORDER_COLUMN,

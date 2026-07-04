@@ -10,10 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from app.analysis.feature_builders.deload_risk_features import (
-    DELOAD_FEATURE_COLUMNS,
-    assemble_deload_features,
-)
 from app.ml.q6_deload.build_training_frame import (
     FEATURE_COLUMNS,
     FORBIDDEN_FEATURES,
@@ -30,6 +26,10 @@ from app.ml.q6_deload.evaluate import (
     EvalReport,
     evaluate,
     rule_baseline_score,
+)
+from app.ml.q6_deload.feature_helpers import (
+    DELOAD_FEATURE_COLUMNS,
+    assemble_deload_features,
 )
 from app.ml.q6_deload.train import fit_deload_model, predict_proba, train
 
