@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     # strings are resolved at runtime via SQLAlchemy's class registry.
     from app.models.athlete_state import AthleteState
     from app.models.mesocycle import MesocycleBlock
+    from app.models.objective import Objective
     from app.models.weak_point import WeakPoint
     from app.models.wellness import WellnessSample
 
@@ -59,6 +60,9 @@ class User(Base):
     )
     wellness_samples: Mapped[list["WellnessSample"]] = relationship(
         "WellnessSample", back_populates="user", cascade="all, delete-orphan"
+    )
+    objectives: Mapped[list["Objective"]] = relationship(
+        "Objective", back_populates="user", cascade="all, delete-orphan"
     )
 
 
