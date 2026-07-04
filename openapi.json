@@ -1444,6 +1444,140 @@
         "title": "KPIValueOut",
         "type": "object"
       },
+      "MacrocycleCreate": {
+        "properties": {
+          "objective_id": {
+            "title": "Objective Id",
+            "type": "integer"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          }
+        },
+        "required": [
+          "objective_id"
+        ],
+        "title": "MacrocycleCreate",
+        "type": "object"
+      },
+      "MacrocycleRead": {
+        "properties": {
+          "block_count": {
+            "title": "Block Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "objective_id": {
+            "title": "Objective Id",
+            "type": "integer"
+          },
+          "objective_label": {
+            "title": "Objective Label",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MacrocycleStatus"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "week_progress": {
+            "$ref": "#/components/schemas/WeekProgress"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "objective_id",
+          "start_date",
+          "status",
+          "created_at",
+          "updated_at",
+          "objective_label",
+          "target_date",
+          "block_count",
+          "week_progress"
+        ],
+        "title": "MacrocycleRead",
+        "type": "object"
+      },
+      "MacrocycleStatus": {
+        "enum": [
+          "active",
+          "achieved",
+          "abandoned"
+        ],
+        "title": "MacrocycleStatus",
+        "type": "string"
+      },
+      "MacrocycleUpdate": {
+        "properties": {
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MacrocycleStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "MacrocycleUpdate",
+        "type": "object"
+      },
       "MetricsRequest": {
         "properties": {
           "age": {
@@ -3391,6 +3525,53 @@
         "title": "WeakPointPatch",
         "type": "object"
       },
+      "WeekProgress": {
+        "description": "Cross-block schedule position, derived from the macrocycle's\n``start_date`` and the anchor Objective's ``target_date`` \u2014 never stored.\n\n- ``current_week`` is 1-indexed and always present (open-ended programs\n  still have a \"week N\"). It is capped at ``total_weeks`` when the horizon\n  is known, so it never reads \"week 9 of 8\".\n- ``total_weeks``/``pct``/``weeks_to_go`` are null when the anchor has no\n  ``target_date`` (or a target on/before the start) \u2014 an open horizon.",
+        "properties": {
+          "current_week": {
+            "title": "Current Week",
+            "type": "integer"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "total_weeks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Weeks"
+          },
+          "weeks_to_go": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weeks To Go"
+          }
+        },
+        "required": [
+          "current_week"
+        ],
+        "title": "WeekProgress",
+        "type": "object"
+      },
       "WeeklyTemplateSlot": {
         "properties": {
           "category": {
@@ -4510,6 +4691,248 @@
         "summary": "Log Workout",
         "tags": [
           "Ingest"
+        ]
+      }
+    },
+    "/v1/macrocycles": {
+      "get": {
+        "operationId": "list_macrocycles_v1_macrocycles_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/MacrocycleStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MacrocycleRead"
+                  },
+                  "title": "Response List Macrocycles V1 Macrocycles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Macrocycles",
+        "tags": [
+          "Macrocycles"
+        ]
+      },
+      "post": {
+        "operationId": "create_macrocycle_v1_macrocycles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MacrocycleCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MacrocycleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Macrocycle",
+        "tags": [
+          "Macrocycles"
+        ]
+      }
+    },
+    "/v1/macrocycles/{macrocycle_id}": {
+      "delete": {
+        "operationId": "delete_macrocycle_v1_macrocycles__macrocycle_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "macrocycle_id",
+            "required": true,
+            "schema": {
+              "title": "Macrocycle Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Delete Macrocycle",
+        "tags": [
+          "Macrocycles"
+        ]
+      },
+      "get": {
+        "operationId": "get_macrocycle_v1_macrocycles__macrocycle_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "macrocycle_id",
+            "required": true,
+            "schema": {
+              "title": "Macrocycle Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MacrocycleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Macrocycle",
+        "tags": [
+          "Macrocycles"
+        ]
+      },
+      "patch": {
+        "operationId": "update_macrocycle_v1_macrocycles__macrocycle_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "macrocycle_id",
+            "required": true,
+            "schema": {
+              "title": "Macrocycle Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MacrocycleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MacrocycleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Macrocycle",
+        "tags": [
+          "Macrocycles"
         ]
       }
     },
