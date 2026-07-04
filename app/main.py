@@ -19,6 +19,7 @@ from app.api.v1 import (
     auth,
     benchmarks,
     dashboard,
+    feedback,
     ingest,
     legacy,
     macrocycles,
@@ -170,6 +171,7 @@ app.include_router(planning.router, prefix=settings.API_V1_STR)
 app.include_router(wellness.router, prefix=settings.API_V1_STR)
 app.include_router(objectives.router, prefix=settings.API_V1_STR)
 app.include_router(macrocycles.router, prefix=settings.API_V1_STR)
+app.include_router(feedback.router, prefix=settings.API_V1_STR)
 app.include_router(simulate.router, prefix=settings.API_V1_STR)
 
 # Future routers (uncomment when ready)
