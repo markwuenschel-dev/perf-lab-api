@@ -51,6 +51,10 @@ dev = [
     "black>=24.0.0",
     "isort>=5.13.0",
     "psycopg2-binary>=2.9.0",   # needed for alembic in some environments
+    # Offline ML: Q2 recovery-priors training pipeline (app/ml/) + its tests. Not a
+    # runtime dependency — the app and shadow service consume only the JSON artifact.
+    "pandas>=2.0.0",
+    "scikit-learn>=1.4.0",
 ]
 
 # Future / optional feature groups (not installed by default)
@@ -122,6 +126,10 @@ target-version = ["py311"]
 [tool.pyright]
 pythonVersion = "3.12"
 include = ["app"]
+# Offline ML/training code (pandas-heavy) is not the runtime app and pandas' strict
+# types resolve inconsistently across environments (py.typed presence differs); keep
+# it out of the strict type gate — ruff + the functional tests cover it.
+exclude = ["app/ml"]
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"
 # Re-export barrels and SQLAlchemy column defaults are intentional.

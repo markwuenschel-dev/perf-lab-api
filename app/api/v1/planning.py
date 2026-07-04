@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.prescriber import recommend_next_session
 from app.models.mesocycle import MesocycleBlock, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile, User
@@ -20,6 +21,7 @@ from app.schemas.planning import (
     TodaySessionResponse,
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
+from app.services.decision_telemetry import persist_prescription_decision
 from app.services.objective_service import active_objective_signals
 from app.services.planning_service import create_block_with_sessions, get_today_session
 from app.services.state_service import load_current_state
@@ -172,24 +174,29 @@ async def get_today(
     # from /next-session's block_context before).
     objective_signals = await active_objective_signals(db, current_user.id)
 
+    block_context = {
+        "session_category": session.category,
+        "is_deload": session.is_deload,
+        "is_benchmark": session.is_benchmark,
+        "week_number": session.week_number,
+        "duration_weeks": block.duration_weeks if block else None,
+        "deload_every_n_weeks": block.deload_every_n_weeks if block else None,
+        "deload_volume_factor": block.deload_volume_factor if block else None,
+        "target_session_minutes": block.target_session_minutes if block else None,
+        "accessory_emphasis": block.accessory_emphasis if block else None,
+        "accessory_focus": block.accessory_focus if block else None,
+        "objective_taper": objective_signals["taper"],
+        "objective_domain": objective_signals["domain"],
+    }
+    # candidate_log_out captures the full ranked pool for decision telemetry
+    # (Workstream B); the prescriber only fills it, so selection is unchanged.
+    candidate_log: list[SessionCandidate] = []
     rx = recommend_next_session(
         state,
         goal=goal,  # type: ignore[arg-type]
-        block_context={
-            "session_category": session.category,
-            "is_deload": session.is_deload,
-            "is_benchmark": session.is_benchmark,
-            "week_number": session.week_number,
-            "duration_weeks": block.duration_weeks if block else None,
-            "deload_every_n_weeks": block.deload_every_n_weeks if block else None,
-            "deload_volume_factor": block.deload_volume_factor if block else None,
-            "target_session_minutes": block.target_session_minutes if block else None,
-            "accessory_emphasis": block.accessory_emphasis if block else None,
-            "accessory_focus": block.accessory_focus if block else None,
-            "objective_taper": objective_signals["taper"],
-            "objective_domain": objective_signals["domain"],
-        },
+        block_context=block_context,
         available_equipment=(profile.equipment if profile else None),
+        candidate_log_out=candidate_log,
     )
     session.prescribed_content = {
         "type": rx.type,
@@ -202,6 +209,20 @@ async def get_today(
     }
     await db.commit()
     await db.refresh(session)
+
+    # Best-effort decision telemetry — after the prescription is committed so a
+    # telemetry failure can never alter or block the response.
+    await persist_prescription_decision(
+        db,
+        current_user.id,
+        rx,
+        candidate_log,
+        goal=str(goal),
+        decision_mode="adaptive",
+        planned_session_id=session.id,
+        state_snapshot=state.model_dump(mode="json"),
+        block_context=block_context,
+    )
     return TodaySessionResponse(
         session=PlannedSessionRead.model_validate(session, from_attributes=True),
         prescription=session.prescribed_content,

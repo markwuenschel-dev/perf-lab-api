@@ -7,6 +7,7 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.prescriber import recommend_next_session
 from app.logic.workout_history import recent_workout_summaries
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
@@ -15,6 +16,7 @@ from app.models.weak_point import WeakPoint
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import dashboard_service
+from app.services.decision_telemetry import persist_prescription_decision
 from app.services.objective_service import active_objective_signals
 from app.services.planning_service import count_block_skips
 from app.services.state_service import load_or_init_current_state
@@ -145,6 +147,10 @@ async def prescribe_for_athlete(
 
     recent = await recent_workout_summaries(db, user_id)
     kpi_summary = await dashboard_service.latest_kpi_values(db, user_id)
+    # candidate_log_out captures the full ranked pool for decision telemetry
+    # (Workstream B). Passing an empty list is a no-op for selection — the
+    # prescriber only fills it, never reads it (see recommend_next_session).
+    candidate_log: list[SessionCandidate] = []
     rx = recommend_next_session(
         state,
         # Block goals aren't 1:1 with TrainingGoal; the prescriber resolves any
@@ -155,6 +161,7 @@ async def prescribe_for_athlete(
         active_weak_points=active_weak_points or None,
         available_equipment=(profile.equipment if profile else None),
         block_context=cast(dict[str, Any] | None, block_context),
+        candidate_log_out=candidate_log,
     )
     # Persist prescription back to the planned session slot
     if planned_session is not None:
@@ -168,4 +175,18 @@ async def prescribe_for_athlete(
             "why": rx.why.model_dump() if rx.why else None,
         }
         await db.commit()
+
+    # Best-effort decision telemetry — written after the prescription is
+    # finalized/committed so a telemetry failure can never alter or block `rx`.
+    await persist_prescription_decision(
+        db,
+        user_id,
+        rx,
+        candidate_log,
+        goal=str(effective_goal),
+        decision_mode="adaptive",
+        planned_session_id=planned_session.id if planned_session is not None else None,
+        state_snapshot=state.model_dump(mode="json"),
+        block_context=cast(dict[str, Any], dict(block_context)),
+    )
     return rx

@@ -1,0 +1,68 @@
+{
+  "version": "q2_recovery_priors_v1",
+  "namespace": "q2_recovery",
+  "source": "synthetic:google-fit-csv",
+  "shadow_only": true,
+  "recovery_clearance_beta": {
+    "cns": {
+      "sleep": 0.1,
+      "stress": 0.08,
+      "hrv": -0.0131,
+      "rhr": -0.0075,
+      "soreness": 0.0
+    },
+    "muscular": {
+      "sleep": 0.08,
+      "stress": 0.05,
+      "hrv": -0.0105,
+      "rhr": -0.006,
+      "soreness": 0.0
+    },
+    "metabolic": {
+      "sleep": 0.06,
+      "stress": 0.04,
+      "hrv": -0.0079,
+      "rhr": -0.0045,
+      "soreness": 0.0
+    },
+    "structural": {
+      "sleep": 0.05,
+      "stress": 0.04,
+      "hrv": -0.0066,
+      "rhr": -0.0037,
+      "soreness": 0.0
+    },
+    "tendon": {
+      "sleep": 0.04,
+      "stress": 0.04,
+      "hrv": -0.0053,
+      "rhr": -0.003,
+      "soreness": 0.0
+    },
+    "grip": {
+      "sleep": 0.06,
+      "stress": 0.04,
+      "hrv": -0.0079,
+      "rhr": -0.0045,
+      "soreness": 0.0
+    }
+  },
+  "clip": {
+    "min": 0.6,
+    "max": 1.5
+  },
+  "training": {
+    "model": "ridge",
+    "alpha": 100.0,
+    "learned_response": {
+      "z_sleep": -0.004717533213501826,
+      "z_hrv": -0.026297485181471687,
+      "z_rhr": -0.014936432853392523
+    },
+    "n_rows": 87000,
+    "n_athletes": 3000,
+    "label": "next-day fatigue-clearance residual (per-athlete demeaned)",
+    "population_priors": true,
+    "note": "Synthetic source: SHAPE/weak-prior only. See model_card.MODEL_CARD."
+  }
+}
