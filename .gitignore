@@ -215,3 +215,7 @@ skills-lock.json
 data/kaggle/
 # Generated seed data (regenerable from loaders in app/scripts/)
 data/seeds/
+
+# Emitted (reproducible, synthetic-trained) offline-ML artifacts — regenerate via `python -m app.ml.<pipeline>.train`
+app/ml/**/*.json
+app/ml/**/artifacts/
