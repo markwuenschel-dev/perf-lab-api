@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base
 
 if TYPE_CHECKING:
+    from app.models.macrocycle import Macrocycle
     from app.models.user import User
 
 
@@ -73,6 +74,13 @@ class MesocycleBlock(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
 
+    # Optional parent macrocycle (Phase 5). Nullable — a block can exist without
+    # one; deleting the macrocycle sets this back to NULL (ON DELETE SET NULL)
+    # rather than deleting the block.
+    macrocycle_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("macrocycles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     goal: Mapped[BlockGoal] = mapped_column(
         SAEnum(BlockGoal, values_callable=_enum_values), nullable=False
     )
@@ -130,6 +138,9 @@ class MesocycleBlock(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="blocks")
+    macrocycle: Mapped["Macrocycle | None"] = relationship(
+        "Macrocycle", back_populates="blocks"
+    )
     planned_sessions: Mapped[list["PlannedSession"]] = relationship(
         "PlannedSession",
         back_populates="block",

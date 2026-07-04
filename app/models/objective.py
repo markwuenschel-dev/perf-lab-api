@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base
 
 if TYPE_CHECKING:
+    from app.models.macrocycle import Macrocycle
     from app.models.user import User
 
 
@@ -75,3 +76,8 @@ class Objective(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="objectives")
+    # A macrocycle anchored to this objective is deleted with it (DB ON DELETE
+    # CASCADE on macrocycles.objective_id, mirrored by this ORM cascade).
+    macrocycles: Mapped[list["Macrocycle"]] = relationship(
+        "Macrocycle", back_populates="objective", cascade="all, delete-orphan"
+    )

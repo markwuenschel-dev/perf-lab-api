@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     # Imported only for SQLAlchemy Mapped[...] forward refs; the relationship
     # strings are resolved at runtime via SQLAlchemy's class registry.
     from app.models.athlete_state import AthleteState
+    from app.models.macrocycle import Macrocycle
     from app.models.mesocycle import MesocycleBlock
     from app.models.objective import Objective
     from app.models.weak_point import WeakPoint
@@ -63,6 +64,9 @@ class User(Base):
     )
     objectives: Mapped[list["Objective"]] = relationship(
         "Objective", back_populates="user", cascade="all, delete-orphan"
+    )
+    macrocycles: Mapped[list["Macrocycle"]] = relationship(
+        "Macrocycle", back_populates="user", cascade="all, delete-orphan"
     )
 
 
