@@ -114,6 +114,10 @@ export interface PerfLabState {
   feedbackOpen: boolean;
   feedbackApplied: boolean;
   feel: Feel;
+  /** Block-creation overlay (POST /v1/planning/blocks) — see BlockCreateModal. */
+  blockCreateOpen: boolean;
+  /** Bumped after a block is created so PlanningScreen's useAuthedResource re-fetches. */
+  planningRefreshKey: number;
 }
 
 interface Persisted {
@@ -191,6 +195,8 @@ export function initialState(): PerfLabState {
     feedbackOpen: false,
     feedbackApplied: false,
     feel: "controlled",
+    blockCreateOpen: false,
+    planningRefreshKey: 0,
   };
 }
 
@@ -284,6 +290,9 @@ export interface PerfLabActions {
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   toggleNav: () => void;
   toggleFresh: () => void;
+  openBlockCreate: () => void;
+  closeBlockCreate: () => void;
+  bumpPlanningRefresh: () => void;
 }
 
 export interface PerfLabContextValue {
@@ -349,6 +358,9 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     setSetting: (key, value) => dispatch({ type: "mergeSettings", patch: { [key]: value } as Partial<Settings> }),
     toggleNav: () => mergeFn((s) => ({ navCollapsed: !s.navCollapsed })),
     toggleFresh: () => mergeFn((s) => ({ fresh: !s.fresh })),
+    openBlockCreate: () => merge({ blockCreateOpen: true }),
+    closeBlockCreate: () => merge({ blockCreateOpen: false }),
+    bumpPlanningRefresh: () => mergeFn((s) => ({ planningRefreshKey: s.planningRefreshKey + 1 })),
   };
 }
 

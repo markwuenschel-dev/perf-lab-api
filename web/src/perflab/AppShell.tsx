@@ -18,6 +18,7 @@ import { CheckinModal } from "./overlays/CheckinModal";
 import { FeedbackModal } from "./overlays/FeedbackModal";
 import { SessionPlayer } from "./overlays/SessionPlayer";
 import { ExplainDrawer } from "./overlays/ExplainDrawer";
+import { BlockCreateModal } from "./overlays/BlockCreateModal";
 
 const SCREENS: Partial<Record<Screen, ComponentType>> = {
   overview: OverviewScreen,
@@ -70,6 +71,7 @@ export function AppShell() {
       <FeedbackModal />
       <SessionPlayer />
       <ExplainDrawer />
+      <BlockCreateModal />
     </div>
   );
 }
