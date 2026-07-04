@@ -55,6 +55,17 @@ DEFAULT_DELOAD_VOLUME_FACTOR = 0.6
 RECENT_SKIPS_BIAS_THRESHOLD = 2
 _ADHERENCE_FRIENDLY_TYPE_KEYWORDS = ("variety", "recovery", "maintenance", "skill")
 
+# Block session-preference bounds (Phase 3a). A block's explicit
+# `target_session_minutes` overrides the periodization-scaled duration, but is
+# clamped to a sane band and never allowed to inflate far past the winning
+# template's own length.
+TARGET_DURATION_MIN_MINUTES = 30
+TARGET_DURATION_MAX_MINUTES = 120
+TARGET_DURATION_TEMPLATE_CAP_FACTOR = 1.5
+# A target session shorter than the template's own duration shouldn't pile on
+# accessories — cap appended accessories at this many even under "high" emphasis.
+SHORT_TARGET_ACCESSORY_CAP = 1
+
 
 # ---------------------------------------------------------------------------
 # Safety override candidates (always placed first; skip scoring)
@@ -607,11 +618,16 @@ def recommend_next_session(
     raw_emphasis = block.get("accessory_emphasis")
     raw_focus = block.get("accessory_focus")
     raw_target = block.get("target_session_minutes")
-    # A block_context without any of these three keys (every block created
-    # before Phase 3a) must behave exactly as before: no accessories, no
-    # duration override beyond the periodization scaling already applied.
-    has_block_prefs = raw_emphasis is not None or bool(raw_focus) or raw_target is not None
-    if has_block_prefs:
+    # Accessory append and target-duration override are independent athlete
+    # prefs: setting only a session length must NOT inject accessories, and vice
+    # versa. Gate the accessory branch on accessory prefs alone (emphasis or
+    # focus); the duration override below is gated only on `raw_target`. A
+    # block_context with none of the three keys (every block created before
+    # Phase 3a) is therefore unchanged: no accessories, no duration override.
+    has_accessory_prefs = raw_emphasis is not None or bool(raw_focus)
+    if has_accessory_prefs:
+        # Missing/None emphasis defaults to "balanced" (design decision) once
+        # the athlete has expressed *some* accessory preference.
         emphasis = raw_emphasis or "balanced"
         accessory_count = _ACCESSORY_COUNT_BY_EMPHASIS.get(emphasis, 2)
         # A short target session shouldn't pile on accessories, even under
@@ -621,7 +637,7 @@ def recommend_next_session(
             and template_duration_min > 0
             and int(raw_target) < template_duration_min
         ):
-            accessory_count = min(accessory_count, 1)
+            accessory_count = min(accessory_count, SHORT_TARGET_ACCESSORY_CAP)
         if accessory_count > 0:
             existing_names = {e.name for e in rx.exercises}
             accessories = _select_accessories(accessory_count, raw_focus, weak_points, existing_names)
@@ -643,9 +659,14 @@ def recommend_next_session(
     if raw_target is not None:
         # Apply periodization scaling first (done above), then the explicit
         # block target wins over the modifier for the final duration.
-        clamped = max(30, min(120, int(raw_target)))
+        clamped = max(
+            TARGET_DURATION_MIN_MINUTES,
+            min(TARGET_DURATION_MAX_MINUTES, int(raw_target)),
+        )
         if template_duration_min > 0:
-            clamped = min(clamped, round(template_duration_min * 1.5))
+            clamped = min(
+                clamped, round(template_duration_min * TARGET_DURATION_TEMPLATE_CAP_FACTOR)
+            )
         rx.duration_min = clamped
         if rx.why:
             rx.why.constraints_applied.append(f"block:target_duration={clamped}")

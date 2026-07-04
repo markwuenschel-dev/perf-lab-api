@@ -127,6 +127,21 @@ def test_focus_without_emphasis_defaults_to_balanced():
     assert "Back Extension" in names
 
 
+def test_target_only_appends_no_accessories():
+    """target_session_minutes and accessory_emphasis are independent prefs:
+    setting only a session length must drive duration but NOT inject any
+    accessories (emphasis/focus both unset)."""
+    rx = recommend_next_session(
+        _neutral_state(),
+        goal="Powerlifting",
+        block_context={"target_session_minutes": 90},
+    )
+    assert rx.duration_min == 90
+    assert [e.name for e in rx.exercises] == _PRIMARY_NAMES
+    assert rx.why is not None
+    assert not any("block:accessories=" in c for c in rx.why.constraints_applied)
+
+
 def test_block_context_without_new_keys_is_unchanged():
     """Regression: a block_context WITHOUT any of the new keys (the shape of
     every block created before this migration) behaves exactly as before —
