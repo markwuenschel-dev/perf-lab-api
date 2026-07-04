@@ -65,6 +65,13 @@ export type WellnessSampleOut = Schemas["WellnessSampleOut"];
 export type ReadinessComponent = Schemas["ReadinessComponent"];
 export type ReadinessScore = Schemas["ReadinessScore"];
 
+/* ---------- Objectives (Phase 4a: benchmark-linked or free-text goals) ---------- */
+export type ObjectiveCreate = Schemas["ObjectiveCreate"];
+export type ObjectiveRead = Schemas["ObjectiveRead"];
+export type ObjectiveUpdate = Schemas["ObjectiveUpdate"];
+export type ObjectiveStatus = Schemas["ObjectiveStatus"];
+export type ProgressBlock = Schemas["ProgressBlock"];
+
 /* ---------- Legacy field test (POST /compute-metrics, no /v1 prefix) ---------- */
 // The backend schema is named `MetricsRequest`; the app calls it ComputeMetricsRequest.
 export type ComputeMetricsRequest = Schemas["MetricsRequest"];

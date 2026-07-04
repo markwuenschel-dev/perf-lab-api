@@ -10,7 +10,7 @@ import { TwinScreen } from "./screens/TwinScreen";
 import { PlanningScreen } from "./screens/PlanningScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
-import { GoalRaceScreen } from "./screens/GoalRaceScreen";
+import { ObjectivesScreen } from "./screens/ObjectivesScreen";
 import { SimulatorScreen } from "./screens/SimulatorScreen";
 import { AuthModal } from "./overlays/AuthModal";
 import { LogWorkoutModal } from "./overlays/LogWorkoutModal";
@@ -19,6 +19,7 @@ import { FeedbackModal } from "./overlays/FeedbackModal";
 import { SessionPlayer } from "./overlays/SessionPlayer";
 import { ExplainDrawer } from "./overlays/ExplainDrawer";
 import { BlockCreateModal } from "./overlays/BlockCreateModal";
+import { ObjectiveCreateModal } from "./overlays/ObjectiveCreateModal";
 
 const SCREENS: Partial<Record<Screen, ComponentType>> = {
   overview: OverviewScreen,
@@ -27,7 +28,7 @@ const SCREENS: Partial<Record<Screen, ComponentType>> = {
   planning: PlanningScreen,
   history: HistoryScreen,
   settings: SettingsScreen,
-  race: GoalRaceScreen,
+  objectives: ObjectivesScreen,
   simulate: SimulatorScreen,
 };
 
@@ -72,6 +73,7 @@ export function AppShell() {
       <SessionPlayer />
       <ExplainDrawer />
       <BlockCreateModal />
+      <ObjectiveCreateModal />
     </div>
   );
 }

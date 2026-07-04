@@ -43,7 +43,13 @@ const ICONS: Record<string, ReactNode> = {
       <path d="M21 7v5h-5" />
     </>,
   ),
-  race: I(<path d="M4 21V4h13l-2 4 2 4H4" />),
+  objectives: I(
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </>,
+  ),
   planning: I(
     <>
       <rect x="3" y="4" width="18" height="17" rx="2" />
@@ -75,7 +81,7 @@ const WORKSPACE: { screen: Screen; label: string }[] = [
   { screen: "field", label: "Field Test" },
   { screen: "twin", label: "Digital Twin" },
   { screen: "simulate", label: "Simulator" },
-  { screen: "race", label: "Goal Race" },
+  { screen: "objectives", label: "Objectives" },
   { screen: "planning", label: "Planning" },
   { screen: "history", label: "History" },
 ];
