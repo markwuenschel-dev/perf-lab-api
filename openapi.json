@@ -136,6 +136,63 @@
         "title": "AnchorObservationOut",
         "type": "object"
       },
+      "AxisProjection": {
+        "description": "Projected trajectory for a single capacity axis under plan + baseline.",
+        "properties": {
+          "baseline": {
+            "description": "Value at week N under the maintain plan",
+            "title": "Baseline",
+            "type": "number"
+          },
+          "baseline_series": {
+            "description": "Length weeks+1, maintain plan",
+            "items": {
+              "type": "number"
+            },
+            "title": "Baseline Series",
+            "type": "array"
+          },
+          "key": {
+            "description": "Capacity axis key, e.g. 'max_strength'",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human label, e.g. 'Max strength'",
+            "title": "Label",
+            "type": "string"
+          },
+          "projected": {
+            "description": "Value at week N under this plan",
+            "title": "Projected",
+            "type": "number"
+          },
+          "series": {
+            "description": "Length weeks+1 (week 0..N), this plan",
+            "items": {
+              "type": "number"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start": {
+            "description": "Current value (week 0)",
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "start",
+          "projected",
+          "baseline",
+          "series",
+          "baseline_series"
+        ],
+        "title": "AxisProjection",
+        "type": "object"
+      },
       "BenchmarkDefinitionRead": {
         "properties": {
           "better_direction": {
@@ -2811,6 +2868,102 @@
           }
         },
         "title": "ProgressBlock",
+        "type": "object"
+      },
+      "ProjectionRequest": {
+        "description": "Parameters for a forward projection under a hypothetical plan.",
+        "properties": {
+          "goal": {
+            "description": "TrainingGoal being simulated, e.g. 'Powerlifting'",
+            "title": "Goal",
+            "type": "string"
+          },
+          "intensity": {
+            "description": "Session intensity emphasis",
+            "enum": [
+              "easy",
+              "balanced",
+              "hard"
+            ],
+            "title": "Intensity",
+            "type": "string"
+          },
+          "recovery": {
+            "description": "Recovery / lifestyle support level",
+            "enum": [
+              "high",
+              "standard",
+              "minimal"
+            ],
+            "title": "Recovery",
+            "type": "string"
+          },
+          "weekly_volume": {
+            "description": "Relative weekly volume index (30..90, matches the web slider)",
+            "maximum": 90.0,
+            "minimum": 30.0,
+            "title": "Weekly Volume",
+            "type": "integer"
+          },
+          "weeks": {
+            "description": "Projection horizon in weeks (1..16)",
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Weeks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "goal",
+          "weeks",
+          "weekly_volume",
+          "intensity",
+          "recovery"
+        ],
+        "title": "ProjectionRequest",
+        "type": "object"
+      },
+      "ProjectionResponse": {
+        "description": "Full projection: 8 axes (canonical order) + readiness + peak fatigue.",
+        "properties": {
+          "axes": {
+            "description": "Exactly 8, canonical CapacityState.KEYS order",
+            "items": {
+              "$ref": "#/components/schemas/AxisProjection"
+            },
+            "title": "Axes",
+            "type": "array"
+          },
+          "goal": {
+            "title": "Goal",
+            "type": "string"
+          },
+          "peak_fatigue": {
+            "description": "Max fatigue (0..100) over the horizon",
+            "title": "Peak Fatigue",
+            "type": "number"
+          },
+          "readiness_series": {
+            "description": "Length weeks+1, overall readiness 0..100 under this plan",
+            "items": {
+              "type": "number"
+            },
+            "title": "Readiness Series",
+            "type": "array"
+          },
+          "weeks": {
+            "title": "Weeks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "goal",
+          "weeks",
+          "axes",
+          "readiness_series",
+          "peak_fatigue"
+        ],
+        "title": "ProjectionResponse",
         "type": "object"
       },
       "ReadinessComponent": {
@@ -5839,6 +5992,53 @@
         "summary": "Simulate Dose",
         "tags": [
           "Ingest"
+        ]
+      }
+    },
+    "/v1/simulate/projection": {
+      "post": {
+        "description": "Project the athlete's capacity axes forward under a hypothetical plan.\n\nLoads (or seeds) the caller's current state, then runs the pure projection\nengine. No state is written \u2014 this is a compute-and-return preview.",
+        "operationId": "simulate_projection_v1_simulate_projection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Simulate Projection",
+        "tags": [
+          "Simulate"
         ]
       }
     },
