@@ -1047,4 +1047,5 @@ def score_template(
         scorer = _DOMAIN_SCORERS.get(t.domain, _score_general)
         candidate = scorer(t, state, kpi, r)
     candidate.exercise_slots = t.exercise_slots
+    candidate.domain = t.domain
     return candidate

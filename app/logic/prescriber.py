@@ -66,6 +66,16 @@ TARGET_DURATION_TEMPLATE_CAP_FACTOR = 1.5
 # accessories — cap appended accessories at this many even under "high" emphasis.
 SHORT_TARGET_ACCESSORY_CAP = 1
 
+# Objective taper + domain-emphasis (Phase 4a — goal-anchored program). The
+# window itself (whether the nearest active objective's target_date qualifies)
+# is evaluated upstream by app.services.objective_service.active_objective_signals
+# — the prescriber only consumes the resulting `objective_taper` bool. Both
+# entry points (prescribe_for_athlete and /planning/today) must populate these
+# block_context keys identically (Phase 0/3a lesson).
+OBJECTIVE_TAPER_FACTOR = 0.7
+# Mirrors the existing block-category boost magnitude (see _score_with_context).
+OBJECTIVE_DOMAIN_BOOST = 0.15
+
 
 # ---------------------------------------------------------------------------
 # Safety override candidates (always placed first; skip scoring)
@@ -477,6 +487,11 @@ def recommend_next_session(
     `active_weak_points` biases candidate scoring toward sessions that address
     flagged limitations. `block_context` applies a +0.15 bias to candidates
     whose type matches the planned session category.
+
+    `block_context["objective_taper"]` (bool) and `["objective_domain"]`
+    (str | None) carry the athlete's nearest/top active Objective signals
+    (Phase 4a — see app.services.objective_service.active_objective_signals).
+    Absent/None on both behaves exactly as if no objective existed.
     """
     kpi = kpi_summary or {}
     weak_points = active_weak_points or []
@@ -500,12 +515,18 @@ def recommend_next_session(
 
     # --- 3. Score and sort ---
     recent_skips = int(block.get("recent_skips", 0) or 0)
+    objective_domain_raw = block.get("objective_domain")
+    objective_domain = canonical_domain(str(objective_domain_raw)) if objective_domain_raw else None
 
     def _score_with_context(c: SessionCandidate) -> float:
         base = _score_candidate(c)
         # Boost candidates whose type matches the planned session category
         if block.get("session_category") and c.type == block["session_category"]:
             base += 0.15
+        # Objective domain-emphasis (Phase 4a): boost candidates whose domain
+        # matches the top active objective's domain.
+        if objective_domain and c.domain and c.domain == objective_domain:
+            base += OBJECTIVE_DOMAIN_BOOST
         # Repeated recent skips → bias toward lighter/variety/recovery work.
         if recent_skips >= RECENT_SKIPS_BIAS_THRESHOLD and any(
             k in c.type.lower() for k in _ADHERENCE_FRIENDLY_TYPE_KEYWORDS
@@ -563,6 +584,11 @@ def recommend_next_session(
         rx.why.constraints_applied.extend(
             [f"weak_point:{tag}" for tag in weak_points]
         )
+    # Objective domain-emphasis (Phase 4a): annotate when the winning candidate
+    # actually reflects the emphasized domain (the boost above may not always
+    # change the winner, e.g. a safety override or an already-dominant redirect).
+    if objective_domain and scored[0].domain == objective_domain and rx.why:
+        rx.why.constraints_applied.append(f"objective:domain_emphasis={objective_domain}")
     # ADR-0029: apply the week's periodization envelope (volume modifier + RPE target).
     # week_number shapes the prescription within an envelope; state pulls down, not up.
     week_n = int(block.get("week_number") or 0)
@@ -670,6 +696,15 @@ def recommend_next_session(
         rx.duration_min = clamped
         if rx.why:
             rx.why.constraints_applied.append(f"block:target_duration={clamped}")
+
+    # Objective taper (Phase 4a): applied last so it scales down whatever
+    # duration periodization/block-target preferences settled on, rather than
+    # being overridden by them.
+    if block.get("objective_taper"):
+        if rx.duration_min > 0:
+            rx.duration_min = max(1, round(rx.duration_min * OBJECTIVE_TAPER_FACTOR))
+        if rx.why:
+            rx.why.constraints_applied.append(f"objective:taper(×{OBJECTIVE_TAPER_FACTOR:.2f})")
 
     if rx.why:
         rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))

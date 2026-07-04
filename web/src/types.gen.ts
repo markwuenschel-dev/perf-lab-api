@@ -269,6 +269,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/objectives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Objectives */
+        get: operations["list_objectives_v1_objectives_get"];
+        put?: never;
+        /** Create Objective */
+        post: operations["create_objective_v1_objectives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/objectives/{objective_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Objective */
+        delete: operations["delete_objective_v1_objectives__objective_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Objective */
+        patch: operations["update_objective_v1_objectives__objective_id__patch"];
+        trace?: never;
+    };
     "/v1/onboard": {
         parameters: {
             query?: never;
@@ -1139,6 +1175,79 @@ export interface components {
             /** Zones */
             zones: components["schemas"]["Zone"][];
         };
+        /** ObjectiveCreate */
+        ObjectiveCreate: {
+            /** Benchmark Code */
+            benchmark_code?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Priority
+             * @default 3
+             */
+            priority: number;
+            /** Target Date */
+            target_date?: string | null;
+            /** Target Unit */
+            target_unit?: string | null;
+            /** Target Value */
+            target_value?: number | null;
+        };
+        /** ObjectiveRead */
+        ObjectiveRead: {
+            /** Benchmark Code */
+            benchmark_code: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Days To Go */
+            days_to_go: number | null;
+            /** Domain */
+            domain: string | null;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Priority */
+            priority: number;
+            progress: components["schemas"]["ProgressBlock"];
+            status: components["schemas"]["ObjectiveStatus"];
+            /** Target Date */
+            target_date: string | null;
+            /** Target Unit */
+            target_unit: string | null;
+            /** Target Value */
+            target_value: number | null;
+            /** User Id */
+            user_id: number;
+        };
+        /**
+         * ObjectiveStatus
+         * @enum {string}
+         */
+        ObjectiveStatus: "active" | "achieved" | "abandoned";
+        /** ObjectiveUpdate */
+        ObjectiveUpdate: {
+            /** Benchmark Code */
+            benchmark_code?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Priority */
+            priority?: number | null;
+            status?: components["schemas"]["ObjectiveStatus"] | null;
+            /** Target Date */
+            target_date?: string | null;
+            /** Target Unit */
+            target_unit?: string | null;
+            /** Target Value */
+            target_value?: number | null;
+        };
         /** OnboardRequest */
         OnboardRequest: {
             /**
@@ -1360,6 +1469,23 @@ export interface components {
             session_duration_minutes?: number | null;
             /** Squat 1Rm Kg */
             squat_1rm_kg?: number | null;
+        };
+        /**
+         * ProgressBlock
+         * @description Direction-aware progress toward a benchmark-linked objective's target.
+         *
+         *     ``current``/``pct``/``direction`` are all null for a free-text objective
+         *     (no linked benchmark) — countdown-only via ``days_to_go`` on the parent.
+         */
+        ProgressBlock: {
+            /** Current */
+            current?: number | null;
+            /** Direction */
+            direction?: string | null;
+            /** Pct */
+            pct?: number | null;
+            /** Target */
+            target?: number | null;
         };
         /**
          * ReadinessComponent
@@ -2415,6 +2541,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkoutPrescription"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_objectives_v1_objectives_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["ObjectiveStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_objective_v1_objectives_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectiveCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_objective_v1_objectives__objective_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                objective_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_objective_v1_objectives__objective_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                objective_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectiveUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"];
                 };
             };
             /** @description Validation Error */

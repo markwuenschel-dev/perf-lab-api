@@ -51,6 +51,13 @@ class SessionCandidate:
     # (see app.logic.prescriber._exercise_list_for_candidate).
     exercise_slots: list[tuple[str, str, str]] = field(default_factory=list)
 
+    # Canonical domain (see app.logic.domain_vocab), carried over from the
+    # source CandidateTemplate by app.logic.candidate_library.score_template.
+    # Empty for candidates with no template origin (safety overrides, the
+    # readiness redirects in app.logic.prescriber._readiness_redirect) — those
+    # never match an objective's domain-emphasis boost (Phase 4a).
+    domain: str = ""
+
 
 # Default scoring weights (can be overridden per use case)
 DEFAULT_SCORE_WEIGHTS: dict[str, float] = {

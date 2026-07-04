@@ -20,6 +20,7 @@ from app.schemas.planning import (
     TodaySessionResponse,
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
+from app.services.objective_service import active_objective_signals
 from app.services.planning_service import create_block_with_sessions, get_today_session
 from app.services.state_service import load_current_state
 
@@ -165,6 +166,12 @@ async def get_today(
     )
     block = block_result.scalars().first()
 
+    # Objective taper + domain-emphasis (Phase 4a). This entry point builds
+    # its own block_context separately from prescription_service — both must
+    # carry the same objective signals (Phase 0/3a lesson: /today drifted
+    # from /next-session's block_context before).
+    objective_signals = await active_objective_signals(db, current_user.id)
+
     rx = recommend_next_session(
         state,
         goal=goal,  # type: ignore[arg-type]
@@ -179,6 +186,8 @@ async def get_today(
             "target_session_minutes": block.target_session_minutes if block else None,
             "accessory_emphasis": block.accessory_emphasis if block else None,
             "accessory_focus": block.accessory_focus if block else None,
+            "objective_taper": objective_signals["taper"],
+            "objective_domain": objective_signals["domain"],
         },
         available_equipment=(profile.equipment if profile else None),
     )

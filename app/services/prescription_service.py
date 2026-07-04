@@ -15,6 +15,7 @@ from app.models.weak_point import WeakPoint
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import dashboard_service
+from app.services.objective_service import active_objective_signals
 from app.services.planning_service import count_block_skips
 from app.services.state_service import load_or_init_current_state
 
@@ -32,6 +33,10 @@ class BlockContext(TypedDict, total=False):
     target_session_minutes: int | None
     accessory_emphasis: str | None
     accessory_focus: list[str] | None
+    # Objective taper + domain-emphasis (Phase 4a). Populated regardless of
+    # whether an active block/planned session exists — see prescribe_for_athlete.
+    objective_taper: bool
+    objective_domain: str | None
 
 
 def resolve_effective_goal(
@@ -100,9 +105,9 @@ async def prescribe_for_athlete(
         )
         planned_session = ps_result.scalars().first()
 
-    block_context: BlockContext | None = None
+    block_context: BlockContext = BlockContext()
     if active_block and planned_session:
-        block_context = BlockContext(
+        block_context.update(
             block_goal=active_block.goal.value,
             session_category=planned_session.category,
             is_deload=planned_session.is_deload,
@@ -116,6 +121,12 @@ async def prescribe_for_athlete(
             accessory_emphasis=active_block.accessory_emphasis,
             accessory_focus=active_block.accessory_focus,
         )
+
+    # Objective taper + domain-emphasis (Phase 4a) apply regardless of
+    # whether an active block/planned session exists.
+    objective_signals = await active_objective_signals(db, user_id)
+    block_context["objective_taper"] = objective_signals["taper"]
+    block_context["objective_domain"] = objective_signals["domain"]
 
     profile_result = await db.execute(
         select(AthleteProfile).where(AthleteProfile.user_id == user_id).limit(1)
