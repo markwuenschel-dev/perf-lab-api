@@ -1,0 +1,44 @@
+{
+  "version": "dose_calibration_priors_v1",
+  "namespace": "dose_calibration",
+  "source": "untrained-v0-placeholder:defaults",
+  "shadow_only": true,
+  "engine_overrides": {
+    "dose_volume_weights": {
+      "duration": 1.0,
+      "volume_load": 0.02,
+      "sets": 2.0
+    },
+    "dose_shape_six_by_modality": {
+      "Running": {
+        "volume": 0.35,
+        "intensity": 0.45,
+        "density": 0.25,
+        "impact": 0.55,
+        "skill": 0.08,
+        "metabolic": 0.9
+      },
+      "strength": {
+        "volume": 0.5,
+        "intensity": 0.65,
+        "density": 0.35,
+        "impact": 0.25,
+        "skill": 0.2,
+        "metabolic": 0.35
+      },
+      "default": {
+        "volume": 0.4,
+        "intensity": 0.5,
+        "density": 0.3,
+        "impact": 0.3,
+        "skill": 0.15,
+        "metabolic": 0.45
+      }
+    }
+  },
+  "training": {
+    "model": "none",
+    "note": "Untrained placeholder equal to engine defaults; applying it changes nothing.",
+    "population_priors": true
+  }
+}

@@ -28,6 +28,32 @@ _RECOVERY_SIGNALS = {"sleep", "stress", "hrv", "rhr", "soreness", "mood"}
 
 _REQUIRED_KEYS = {"version", "namespace", "shadow_only", "recovery_clearance_beta", "clip"}
 
+# --- Dose-law calibration (additive path; app/ml/dose_calibration) --------------------
+# A dose-calibration artifact carries an ``engine_overrides`` block naming EngineParameters
+# dose fields to merge (weak population priors on the dose law). The names are validated
+# against this whitelist so an artifact can never touch a non-dose parameter, and the merge
+# is additive (partial dicts merge into the copy; unspecified keys keep their defaults).
+_DOSE_SCALAR_FIELDS = {
+    "dose_alpha", "dose_beta", "dose_gamma", "dose_rho",
+    "dose_delta_sets_multiplier", "dose_delta_min_divisor", "dose_delta_cap", "dose_delta_floor",
+    "dose_novelty_floor", "dose_w_phi_floor",
+    "dose_human_factor_reference", "dose_human_factor_slope",
+}
+# Flat dict[str, float] fields, with the sub-keys each one is allowed to carry.
+_DOSE_MAP_SUBKEYS: dict[str, set[str]] = {
+    "dose_volume_weights": {"duration", "volume_load", "sets"},
+    "dose_entry_volume_proxy_weights": {
+        "volume_load", "duration_divisor", "distance_divisor", "sets_reps"
+    },
+}
+# Nested dict[str, dict[str, float]] fields: outer modality keys -> six dose-axis multipliers.
+_DOSE_SHAPE_MODALITIES = {"Running", "strength", "default"}
+_DOSE_SHAPE_AXES = {"volume", "intensity", "density", "impact", "skill", "metabolic"}
+_DOSE_NESTED_MAP_FIELDS = {"dose_shape_six_by_modality"}
+
+_DOSE_FIELDS = _DOSE_SCALAR_FIELDS | set(_DOSE_MAP_SUBKEYS) | _DOSE_NESTED_MAP_FIELDS
+_DOSE_REQUIRED_KEYS = {"version", "namespace", "shadow_only", "engine_overrides"}
+
 
 class OverrideError(ValueError):
     """A learned-override artifact is malformed, out of bounds, or misapplied."""
@@ -47,7 +73,12 @@ def load_override_artifact(source: str | Path | dict[str, Any]) -> dict[str, Any
             raise OverrideError(f"override artifact not found: {path}") from e
         except json.JSONDecodeError as e:
             raise OverrideError(f"override artifact is not valid JSON: {path}") from e
-    _validate(artifact)
+    # Dispatch: a pure dose-calibration artifact (engine_overrides, no recovery block) is
+    # validated against the dose whitelist; everything else keeps the frozen recovery schema.
+    if "engine_overrides" in artifact and "recovery_clearance_beta" not in artifact:
+        _validate_dose(artifact)
+    else:
+        _validate(artifact)
     return artifact
 
 
@@ -91,6 +122,69 @@ def _validate(a: dict[str, Any]) -> None:
                 raise OverrideError(f"recovery_clearance_beta[{axis!r}][{sig!r}] must be numeric")
 
 
+def _validate_dose(a: dict[str, Any]) -> None:
+    """Validate a dose-calibration artifact's ``engine_overrides`` block against the whitelist."""
+    missing = _DOSE_REQUIRED_KEYS - a.keys()
+    if missing:
+        raise OverrideError(f"dose override artifact missing keys: {sorted(missing)}")
+    if not isinstance(a["shadow_only"], bool):
+        raise OverrideError("shadow_only must be a bool")
+
+    eo = a["engine_overrides"]
+    if not isinstance(eo, dict) or not eo:
+        raise OverrideError("engine_overrides must be a non-empty object")
+
+    for field_name, value in eo.items():
+        if field_name not in _DOSE_FIELDS:
+            raise OverrideError(f"unknown / non-dose engine_overrides field: {field_name!r}")
+        if field_name in _DOSE_SCALAR_FIELDS:
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise OverrideError(f"engine_overrides[{field_name!r}] must be numeric")
+        elif field_name in _DOSE_MAP_SUBKEYS:
+            allowed = _DOSE_MAP_SUBKEYS[field_name]
+            if not isinstance(value, dict):
+                raise OverrideError(f"engine_overrides[{field_name!r}] must be an object")
+            for k, v in value.items():
+                if k not in allowed:
+                    raise OverrideError(f"unknown key {k!r} for engine_overrides[{field_name!r}]")
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    raise OverrideError(f"engine_overrides[{field_name!r}][{k!r}] must be numeric")
+        else:  # nested map: dose_shape_six_by_modality
+            if not isinstance(value, dict):
+                raise OverrideError(f"engine_overrides[{field_name!r}] must be an object")
+            for mod, axes in value.items():
+                if mod not in _DOSE_SHAPE_MODALITIES:
+                    raise OverrideError(f"unknown modality {mod!r} for engine_overrides[{field_name!r}]")
+                if not isinstance(axes, dict):
+                    raise OverrideError(f"engine_overrides[{field_name!r}][{mod!r}] must be an object")
+                for ax, mult in axes.items():
+                    if ax not in _DOSE_SHAPE_AXES:
+                        raise OverrideError(f"unknown dose axis {ax!r} for modality {mod!r}")
+                    if not isinstance(mult, (int, float)) or isinstance(mult, bool):
+                        raise OverrideError(f"engine_overrides[{field_name!r}][{mod!r}][{ax!r}] must be numeric")
+
+
+def _merge_engine_overrides(merged: EngineParameters, eo: dict[str, Any]) -> None:
+    """Additively merge a validated ``engine_overrides`` block into the (already-copied) params.
+
+    ``merged`` is a deep copy, so mutating its dose dicts in place is non-invasive. Partial
+    dicts merge key-by-key; fields/keys absent from the block keep their engine defaults.
+    """
+    for field_name, value in eo.items():
+        if field_name in _DOSE_SCALAR_FIELDS:
+            setattr(merged, field_name, float(value))
+        elif field_name in _DOSE_MAP_SUBKEYS:
+            target: dict[str, float] = getattr(merged, field_name)
+            for k, v in value.items():
+                target[k] = float(v)
+        else:  # dose_shape_six_by_modality
+            nested: dict[str, dict[str, float]] = getattr(merged, field_name)
+            for mod, axes in value.items():
+                dest = nested.setdefault(mod, {})
+                for ax, mult in axes.items():
+                    dest[ax] = float(mult)
+
+
 def apply_parameter_overrides(
     params: EngineParameters,
     artifact: str | Path | dict[str, Any],
@@ -114,8 +208,28 @@ def apply_parameter_overrides(
         )
 
     merged = copy.deepcopy(params)
-    for axis, signals in a["recovery_clearance_beta"].items():
-        merged.recovery_clearance_beta[axis] = {k: float(v) for k, v in signals.items()}
-    merged.recovery_clearance_min = float(a["clip"]["min"])
-    merged.recovery_clearance_max = float(a["clip"]["max"])
+    # Recovery path (unchanged): a learned per-axis beta map replaces that axis's weights.
+    if "recovery_clearance_beta" in a:
+        for axis, signals in a["recovery_clearance_beta"].items():
+            merged.recovery_clearance_beta[axis] = {k: float(v) for k, v in signals.items()}
+        merged.recovery_clearance_min = float(a["clip"]["min"])
+        merged.recovery_clearance_max = float(a["clip"]["max"])
+    # Dose path (additive): merge whitelisted dose fields onto the copy.
+    if "engine_overrides" in a:
+        _merge_engine_overrides(merged, a["engine_overrides"])
     return merged
+
+
+def apply_dose_overrides(
+    params: EngineParameters,
+    artifact: str | Path | dict[str, Any],
+    *,
+    allow_shadow: bool = False,
+) -> EngineParameters:
+    """Return a COPY of ``params`` with a dose-calibration artifact's weak priors merged in.
+
+    Thin wrapper over ``apply_parameter_overrides`` for callers that specifically want the
+    dose-law path. Same guarantees: ``params`` is never mutated, and a ``shadow_only``
+    artifact is refused unless ``allow_shadow=True`` (only the dose shadow evaluator opts in).
+    """
+    return apply_parameter_overrides(params, artifact, allow_shadow=allow_shadow)
