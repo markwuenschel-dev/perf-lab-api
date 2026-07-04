@@ -249,6 +249,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/macrocycles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Macrocycles */
+        get: operations["list_macrocycles_v1_macrocycles_get"];
+        put?: never;
+        /** Create Macrocycle */
+        post: operations["create_macrocycle_v1_macrocycles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/macrocycles/{macrocycle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Macrocycle */
+        get: operations["get_macrocycle_v1_macrocycles__macrocycle_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Macrocycle */
+        delete: operations["delete_macrocycle_v1_macrocycles__macrocycle_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Macrocycle */
+        patch: operations["update_macrocycle_v1_macrocycles__macrocycle_id__patch"];
+        trace?: never;
+    };
     "/v1/next-session": {
         parameters: {
             query?: never;
@@ -1147,6 +1184,56 @@ export interface components {
             /** Value */
             value: number;
         };
+        /** MacrocycleCreate */
+        MacrocycleCreate: {
+            /** Objective Id */
+            objective_id: number;
+            /** Start Date */
+            start_date?: string | null;
+        };
+        /** MacrocycleRead */
+        MacrocycleRead: {
+            /** Block Count */
+            block_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Objective Id */
+            objective_id: number;
+            /** Objective Label */
+            objective_label: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            status: components["schemas"]["MacrocycleStatus"];
+            /** Target Date */
+            target_date: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** User Id */
+            user_id: number;
+            week_progress: components["schemas"]["WeekProgress"];
+        };
+        /**
+         * MacrocycleStatus
+         * @enum {string}
+         */
+        MacrocycleStatus: "active" | "achieved" | "abandoned";
+        /** MacrocycleUpdate */
+        MacrocycleUpdate: {
+            /** Start Date */
+            start_date?: string | null;
+            status?: components["schemas"]["MacrocycleStatus"] | null;
+        };
         /** MetricsRequest */
         MetricsRequest: {
             /** Age */
@@ -1886,6 +1973,27 @@ export interface components {
             /** Resolved At */
             resolved_at?: string | null;
         };
+        /**
+         * WeekProgress
+         * @description Cross-block schedule position, derived from the macrocycle's
+         *     ``start_date`` and the anchor Objective's ``target_date`` — never stored.
+         *
+         *     - ``current_week`` is 1-indexed and always present (open-ended programs
+         *       still have a "week N"). It is capped at ``total_weeks`` when the horizon
+         *       is known, so it never reads "week 9 of 8".
+         *     - ``total_weeks``/``pct``/``weeks_to_go`` are null when the anchor has no
+         *       ``target_date`` (or a target on/before the start) — an open horizon.
+         */
+        WeekProgress: {
+            /** Current Week */
+            current_week: number;
+            /** Pct */
+            pct?: number | null;
+            /** Total Weeks */
+            total_weeks?: number | null;
+            /** Weeks To Go */
+            weeks_to_go?: number | null;
+        };
         /** WeeklyTemplateSlot */
         WeeklyTemplateSlot: {
             /** Category */
@@ -2509,6 +2617,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnifiedStateVector"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_macrocycles_v1_macrocycles_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["MacrocycleStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacrocycleRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_macrocycle_v1_macrocycles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MacrocycleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacrocycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_macrocycle_v1_macrocycles__macrocycle_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                macrocycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacrocycleRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_macrocycle_v1_macrocycles__macrocycle_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                macrocycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_macrocycle_v1_macrocycles__macrocycle_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                macrocycle_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MacrocycleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacrocycleRead"];
                 };
             };
             /** @description Validation Error */

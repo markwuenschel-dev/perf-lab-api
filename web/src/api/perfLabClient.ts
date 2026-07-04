@@ -6,6 +6,9 @@ import type {
   BlockRead,
   BlockUpdateRequest,
   ComputeMetricsRequest,
+  MacrocycleCreate,
+  MacrocycleRead,
+  MacrocycleUpdate,
   MetricsResponse,
   ObjectiveCreate,
   ObjectiveRead,
@@ -464,6 +467,74 @@ export async function updateObjective(
 export async function deleteObjective(id: number, token: string): Promise<void> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const res = await fetch(`${API_V1_BASE}/objectives/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<void>(res, { sessionOn401: true });
+}
+
+/**
+ * Macrocycles (P5): create a program container anchored to an objective. Yields
+ * a real cross-block "week X of Y" (open horizon when the objective has no
+ * target_date). Optional `start_date` defaults server-side.
+ */
+export async function createMacrocycle(
+  body: MacrocycleCreate,
+  token: string,
+): Promise<MacrocycleRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/macrocycles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<MacrocycleRead>(res, { sessionOn401: true });
+}
+
+/** Macrocycles (P5): list the athlete's macrocycles (active by default). */
+export async function listMacrocycles(
+  token: string,
+  status?: string,
+): Promise<MacrocycleRead[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await fetch(`${API_V1_BASE}/macrocycles${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<MacrocycleRead[]>(res, { sessionOn401: true });
+}
+
+/** Macrocycles (P5): fetch one macrocycle by id. */
+export async function getMacrocycle(
+  id: number,
+  token: string,
+): Promise<MacrocycleRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/macrocycles/${id}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<MacrocycleRead>(res, { sessionOn401: true });
+}
+
+/** Macrocycles (P5): partial-update a macrocycle (e.g. re-anchor start_date, mark achieved). */
+export async function updateMacrocycle(
+  id: number,
+  body: MacrocycleUpdate,
+  token: string,
+): Promise<MacrocycleRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/macrocycles/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<MacrocycleRead>(res, { sessionOn401: true });
+}
+
+/** Macrocycles (P5): delete a macrocycle. */
+export async function deleteMacrocycle(id: number, token: string): Promise<void> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/macrocycles/${id}`, {
     method: "DELETE",
     headers: { ...authHeaders(token) },
   });

@@ -4,9 +4,10 @@ import { usePerfLab } from "../store";
 import { Card, ReadinessRing, SectionLabel, SyncChip, Track } from "../ui";
 import { buildCheckin, COLORS, DAYS, DAY_COUNT, readinessColor, readinessWord } from "../sim";
 import { useAuthedResource } from "../useAuthedResource";
-import { listObjectives } from "@/api/perfLabClient";
+import { listMacrocycles, listObjectives } from "@/api/perfLabClient";
 import { sortObjectives } from "../objectives";
-import type { ObjectiveRead } from "@/types";
+import { activeMacrocycle, weekProgressLabel } from "../macrocycles";
+import type { MacrocycleRead, ObjectiveRead } from "@/types";
 
 function StatCol({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -83,6 +84,22 @@ function GoalObjectiveCard() {
   );
 }
 
+// Real cross-block "week X of Y" for the header subtitle, from the active
+// macrocycle's week_progress (GET /v1/macrocycles). Replaces the old hard-coded
+// "Mid-base block, week 3 of 7" mock. Renders nothing (no clause) when signed
+// out, still loading, or when there is no active program — never a fabricated
+// week.
+function ProgramWeek() {
+  const { state } = usePerfLab();
+  const { data } = useAuthedResource<MacrocycleRead[]>(
+    (t) => listMacrocycles(t),
+    [state.macrocyclesRefreshKey],
+  );
+  const macro = activeMacrocycle(data);
+  if (!macro) return null;
+  return <>&nbsp;·&nbsp; {weekProgressLabel(macro.week_progress)}</>;
+}
+
 export function OverviewScreen() {
   const { state, actions } = usePerfLab();
   const ci = state.checkin;
@@ -135,7 +152,7 @@ export function OverviewScreen() {
       <header className="flex items-start justify-between gap-5">
         <div>
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">Good morning, Alex</h1>
-          <p className="m-0 mt-[9px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">Tuesday · 17 Jun &nbsp;·&nbsp; Mid-base block, week 3 of 7</p>
+          <p className="m-0 mt-[9px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">Tuesday · 17 Jun<ProgramWeek /></p>
         </div>
         <div className="flex items-center gap-[9px]">
           <SyncChip label="Synced 2h ago" />
