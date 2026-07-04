@@ -232,7 +232,9 @@ def test_legacy_mirrors_updated_after_benchmark():
         observation_weight=1.0,
         mappings=[_strength_mapping()],
     )
-    assert s1.c_nm_force == s1.capacity_x.max_strength * 10.0
+    from app.engine.state_bridge import STRENGTH_FLOOR_CNM, STRENGTH_SLOPE_CNM
+
+    assert s1.c_nm_force == s1.capacity_x.max_strength * STRENGTH_SLOPE_CNM + STRENGTH_FLOOR_CNM
 
 
 # ---------------------------------------------------------------------------

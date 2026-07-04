@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.logic.domain_vocab import canonical_domain
+from app.logic.domain_vocab import block_goal_to_domain, canonical_domain
 from app.models.mesocycle import (
     BlockGoal,
     BlockStatus,
@@ -14,6 +14,7 @@ from app.models.mesocycle import (
     PlannedSession,
     SessionStatus,
 )
+from app.models.objective import Objective
 from app.schemas.planning import BlockCreateRequest, WeeklyTemplateSlot
 from app.services import macrocycle_service
 
@@ -140,6 +141,31 @@ def _template_from_modality_mix(
     return slots[:sessions_per_week] or None
 
 
+def select_block_macrocycle_id(
+    candidates: list[tuple[int, str | None]], block_goal: str
+) -> int | None:
+    """Which active macrocycle a new block should hang under (Phase 5 spine).
+
+    ``candidates`` is ``(macrocycle_id, anchor_objective_domain)`` for the user's
+    ACTIVE macrocycles, already in deterministic order (start_date asc, id asc).
+
+    - none → no program to attach to (NULL).
+    - exactly one → that program (unambiguous — the original rule).
+    - many → attach only when the block's goal domain UNIQUELY matches one
+      program's anchor domain; a zero-match or a multi-match stays NULL rather
+      than guess which program owns the block. This disambiguates the common
+      case (e.g. a Powerlifting block joins the powerlifting-anchored program)
+      without over-reaching.
+    """
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0][0]
+    target = block_goal_to_domain(block_goal)
+    matches = [mid for mid, dom in candidates if dom and canonical_domain(dom) == target]
+    return matches[0] if len(matches) == 1 else None
+
+
 async def create_block_with_sessions(
     db: AsyncSession,
     user_id: int,
@@ -153,13 +179,21 @@ async def create_block_with_sessions(
     end_date = req.start_date + timedelta(days=req.duration_weeks * 7 - 1)
 
     # Auto-associate the new block with the user's macrocycle "spine" (Phase 5).
-    # Single-active-macrocycle rule: only when the user has EXACTLY ONE active
-    # macrocycle do we hang this block under it. Zero → there is no program to
-    # attach to; more than one → it is ambiguous which program owns the block,
-    # so we leave macrocycle_id NULL rather than guess. This is server-side only
-    # (no field on the block-create request/response schema).
+    # One active macrocycle → attach; several → disambiguate by matching the
+    # block's goal domain to a program's anchor-objective domain (see
+    # select_block_macrocycle_id). Server-side only (no request/response field).
     active_macrocycles = await macrocycle_service.list_macrocycles(db, user_id)
-    macrocycle_id = active_macrocycles[0].id if len(active_macrocycles) == 1 else None
+    candidates: list[tuple[int, str | None]] = []
+    if active_macrocycles:
+        anchor_ids = {m.objective_id for m in active_macrocycles}
+        rows = await db.execute(
+            select(Objective.id, Objective.domain).where(Objective.id.in_(anchor_ids))
+        )
+        domain_by_objective: dict[int, str | None] = {}
+        for oid, dom in rows.all():
+            domain_by_objective[oid] = dom
+        candidates = [(m.id, domain_by_objective.get(m.objective_id)) for m in active_macrocycles]
+    macrocycle_id = select_block_macrocycle_id(candidates, req.goal.value)
 
     block = MesocycleBlock(
         user_id=user_id,

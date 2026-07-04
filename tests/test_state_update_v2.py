@@ -300,8 +300,10 @@ def test_legacy_mirrors_sync_after_update():
     d = _dose(max_strength=2.0)
     s1 = update_athlete_state(s0, d, timedelta(days=1), _log())
 
-    # c_nm_force should reflect updated max_strength
-    assert s1.c_nm_force == s1.capacity_x.max_strength * 10.0
+    # c_nm_force reflects updated max_strength (inverse of the max_strength affine).
+    from app.engine.state_bridge import STRENGTH_FLOOR_CNM, STRENGTH_SLOPE_CNM
+
+    assert s1.c_nm_force == s1.capacity_x.max_strength * STRENGTH_SLOPE_CNM + STRENGTH_FLOOR_CNM
 
 
 # ---------------------------------------------------------------------------
