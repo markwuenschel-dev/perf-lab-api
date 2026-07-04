@@ -3183,6 +3183,275 @@
         "title": "RunSession",
         "type": "object"
       },
+      "SessionFeedbackIn": {
+        "description": "Athlete-reported outcome for one planned session.\n\n``planned_session_id`` must belong to the caller; ``completed_workout_log_id``\n(when given) must too \u2014 both are validated server-side to prevent IDOR.",
+        "properties": {
+          "completed_workout_log_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Workout Log Id"
+          },
+          "followed_as_prescribed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Followed As Prescribed"
+          },
+          "modification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modification Reason"
+          },
+          "modified_exercises": {
+            "default": false,
+            "title": "Modified Exercises",
+            "type": "boolean"
+          },
+          "modified_intensity": {
+            "default": false,
+            "title": "Modified Intensity",
+            "type": "boolean"
+          },
+          "modified_volume": {
+            "default": false,
+            "title": "Modified Volume",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "pain_flag": {
+            "default": false,
+            "title": "Pain Flag",
+            "type": "boolean"
+          },
+          "perceived_fit_score": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perceived Fit Score"
+          },
+          "planned_session_id": {
+            "title": "Planned Session Id",
+            "type": "integer"
+          },
+          "satisfaction_score": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Satisfaction Score"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "soreness_flag": {
+            "default": false,
+            "title": "Soreness Flag",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "skipped",
+              "modified",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "planned_session_id",
+          "status"
+        ],
+        "title": "SessionFeedbackIn",
+        "type": "object"
+      },
+      "SessionFeedbackOut": {
+        "properties": {
+          "completed_workout_log_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Workout Log Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "followed_as_prescribed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Followed As Prescribed"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "modification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modification Reason"
+          },
+          "modified_exercises": {
+            "title": "Modified Exercises",
+            "type": "boolean"
+          },
+          "modified_intensity": {
+            "title": "Modified Intensity",
+            "type": "boolean"
+          },
+          "modified_volume": {
+            "title": "Modified Volume",
+            "type": "boolean"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "pain_flag": {
+            "title": "Pain Flag",
+            "type": "boolean"
+          },
+          "perceived_fit_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perceived Fit Score"
+          },
+          "planned_session_id": {
+            "title": "Planned Session Id",
+            "type": "integer"
+          },
+          "satisfaction_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Satisfaction Score"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "soreness_flag": {
+            "title": "Soreness Flag",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "planned_session_id",
+          "completed_workout_log_id",
+          "status",
+          "followed_as_prescribed",
+          "modified_volume",
+          "modified_intensity",
+          "modified_exercises",
+          "modification_reason",
+          "skip_reason",
+          "satisfaction_score",
+          "perceived_fit_score",
+          "pain_flag",
+          "soreness_flag",
+          "notes",
+          "created_at"
+        ],
+        "title": "SessionFeedbackOut",
+        "type": "object"
+      },
       "SessionStatus": {
         "enum": [
           "pending",
@@ -4939,6 +5208,53 @@
         "summary": "Get Readiness",
         "tags": [
           "Dashboard"
+        ]
+      }
+    },
+    "/v1/feedback": {
+      "post": {
+        "description": "Persist one athlete-reported ``SessionFeedback`` row, user-scoped.",
+        "operationId": "create_feedback_v1_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionFeedbackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionFeedbackOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Feedback",
+        "tags": [
+          "Feedback"
         ]
       }
     },

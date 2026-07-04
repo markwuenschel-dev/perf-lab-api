@@ -73,7 +73,7 @@ def _phi_for_entry(entry: ExerciseEntry, session_modality: str) -> dict[str, Any
     return default_phi_for_row(modality, movement, skill, impact)
 
 
-def _entry_volume_proxy(entry: ExerciseEntry) -> float:
+def _entry_volume_proxy(entry: ExerciseEntry, p: EngineParameters) -> float:
     """Compute a volume proxy for a single exercise entry."""
     sets = entry.sets or 3.0
     reps = entry.reps or 8.0
@@ -81,10 +81,16 @@ def _entry_volume_proxy(entry: ExerciseEntry) -> float:
     dur = entry.duration_seconds or 0.0
     dist = entry.distance_meters or 0.0
 
+    w = p.dose_entry_volume_proxy_weights
     # Weight × reps × sets proxy
     vol_load = sets * reps * load
     # Add time / distance terms
-    return vol_load * 0.005 + dur / 60.0 + dist / 500.0 + sets * reps * 0.1
+    return (
+        vol_load * w["volume_load"]
+        + dur / w["duration_divisor"]
+        + dist / w["distance_divisor"]
+        + sets * reps * w["sets_reps"]
+    )
 
 
 def _entry_intensity(entry: ExerciseEntry, session_rpe: float) -> float:
@@ -175,7 +181,9 @@ def _compute_adaptation_contribution(
 # Primary entry point
 # ---------------------------------------------------------------------------
 
-def calculate_stress_dose(log: WorkoutLog) -> StressDose:
+def calculate_stress_dose(
+    log: WorkoutLog, params: EngineParameters | None = None
+) -> StressDose:
     """
     Compute session stress dose from a WorkoutLog.
 
@@ -188,7 +196,7 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
     - adaptation_contribution: per-capacity-axis adaptation signal
     - legacy scalar channels (backward compat)
     """
-    p = default_parameters()
+    p = params or default_parameters()
     movement = _infer_movement_pattern(log)
 
     # ------------------------------------------------------------------
@@ -213,18 +221,23 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
     # ------------------------------------------------------------------
     sets = log.estimated_sets or max(3.0, log.duration_minutes / 12.0)
     vol_load = log.total_volume_load or 0.0
-    V = log.duration_minutes + 0.02 * vol_load + 2.0 * sets
+    vw = p.dose_volume_weights
+    V = vw["duration"] * log.duration_minutes + vw["volume_load"] * vol_load + vw["sets"] * sets
 
     intensity_u = log.session_rpe / 10.0
-    density_raw = min(2.5, log.duration_minutes / max(20.0, sets * 5.0))
-    Delta = max(0.35, density_raw)
-    N = max(0.2, log.novelty)
+    density_raw = min(
+        p.dose_delta_cap,
+        log.duration_minutes
+        / max(p.dose_delta_min_divisor, sets * p.dose_delta_sets_multiplier),
+    )
+    Delta = max(p.dose_delta_floor, density_raw)
+    N = max(p.dose_novelty_floor, log.novelty)
     if log.avg_rir is not None:
         F = max(0.15, min(1.0, (10.0 - log.avg_rir) / 10.0))
     else:
         F = max(0.2, intensity_u)
 
-    w_phi = max(0.25, sum(phi_fatigue.values()) / max(1, len(phi_fatigue)))
+    w_phi = max(p.dose_w_phi_floor, sum(phi_fatigue.values()) / max(1, len(phi_fatigue)))
 
     # ADR-0039: separate external load (I) from internal effort (F). A session log has
     # no per-exercise load, so I=1 (effort-only via F) — this stops the old double-count
@@ -242,11 +255,13 @@ def calculate_stress_dose(log: WorkoutLog) -> StressDose:
     # ------------------------------------------------------------------
     # Build 6-axis dose vector (modality-shaped)
     # ------------------------------------------------------------------
-    six = _shape_six(base, log.modality, intensity_u, Delta, F, phi_adapt, energy_mix)
+    six = _shape_six(base, log.modality, intensity_u, Delta, F, phi_adapt, energy_mix, p)
 
     # Human-factor gain
-    sleep_penalty = 1.0 + max(0.0, (5.0 - log.sleep_quality) * 0.2)
-    life_penalty = 1.0 + max(0.0, (5.0 - log.life_stress_inverse) * 0.2)
+    hf_ref = p.dose_human_factor_reference
+    hf_slope = p.dose_human_factor_slope
+    sleep_penalty = 1.0 + max(0.0, (hf_ref - log.sleep_quality) * hf_slope)
+    life_penalty = 1.0 + max(0.0, (hf_ref - log.life_stress_inverse) * hf_slope)
     global_gain = sleep_penalty * life_penalty
     six = six.scaled(global_gain)
 
@@ -293,14 +308,20 @@ def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_Exercis
     doses = []
     for entry in log.exercises:
         phi_pack = _phi_for_entry(entry, log.modality)
-        vol_proxy = _entry_volume_proxy(entry)
+        vol_proxy = _entry_volume_proxy(entry, p)
         # ADR-0039: external load from reps+RIR (I), independent of effort (F).
         external_intensity = _external_intensity_from_reps(entry.reps, entry.avg_rir)
         fp = _entry_failure_proximity(entry, log.session_rpe)
 
-        N = max(0.2, log.novelty)
-        Delta = max(0.35, min(2.5, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)))
-        w_phi = max(0.25, sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])))
+        N = max(p.dose_novelty_floor, log.novelty)
+        Delta = max(
+            p.dose_delta_floor,
+            min(p.dose_delta_cap, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)),
+        )
+        w_phi = max(
+            p.dose_w_phi_floor,
+            sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])),
+        )
 
         base = (
             w_phi
@@ -336,34 +357,40 @@ def _shape_six(
     F: float,
     phi_adapt: dict[str, float],
     energy_mix: dict[str, float],
+    p: EngineParameters | None = None,
 ) -> StressDoseSix:
+    p = p or default_parameters()
     em_aerobic = energy_mix.get("aerobic", 0.33)
     em_glycolytic = energy_mix.get("glycolytic", 0.33)
     skill_phi = phi_adapt.get("skill", 0.15)
+    shape = p.dose_shape_six_by_modality
 
     if modality == "Running":
+        m = shape["Running"]
         return StressDoseSix(
-            volume=base * 0.35 * (em_aerobic + 0.4),
-            intensity=base * 0.45 * intensity_u,
-            density=base * 0.25 * Delta,
-            impact=base * 0.55 * max(intensity_u, 0.4),
-            skill=base * 0.08,
-            metabolic=base * 0.9 * (em_aerobic + em_glycolytic),
+            volume=base * m["volume"] * (em_aerobic + 0.4),
+            intensity=base * m["intensity"] * intensity_u,
+            density=base * m["density"] * Delta,
+            impact=base * m["impact"] * max(intensity_u, 0.4),
+            skill=base * m["skill"],
+            metabolic=base * m["metabolic"] * (em_aerobic + em_glycolytic),
         )
     if modality in ("Strength", "Hypertrophy", "Power", "Mixed"):
+        m = shape["strength"]
         return StressDoseSix(
-            volume=base * 0.5,
-            intensity=base * 0.65 * intensity_u,
-            density=base * 0.35 * Delta,
-            impact=base * 0.25 * F,
-            skill=base * 0.2 * max(skill_phi, 0.1),
-            metabolic=base * 0.35 * (em_glycolytic + 0.2),
+            volume=base * m["volume"],
+            intensity=base * m["intensity"] * intensity_u,
+            density=base * m["density"] * Delta,
+            impact=base * m["impact"] * F,
+            skill=base * m["skill"] * max(skill_phi, 0.1),
+            metabolic=base * m["metabolic"] * (em_glycolytic + 0.2),
         )
+    m = shape["default"]
     return StressDoseSix(
-        volume=base * 0.4,
-        intensity=base * 0.5 * intensity_u,
-        density=base * 0.3 * Delta,
-        impact=base * 0.3,
-        skill=base * 0.15,
-        metabolic=base * 0.45,
+        volume=base * m["volume"],
+        intensity=base * m["intensity"] * intensity_u,
+        density=base * m["density"] * Delta,
+        impact=base * m["impact"],
+        skill=base * m["skill"],
+        metabolic=base * m["metabolic"],
     )

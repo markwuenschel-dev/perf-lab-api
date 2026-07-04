@@ -17,6 +17,72 @@ class EngineParameters:
     dose_gamma: float = 0.6  # novelty exponent
     dose_rho: float = 1.0  # proximity-to-failure exponent
 
+    # --- Session dose-law shaping constants (app/logic/dose_engine_v0.py) ---
+    # Session volume proxy: V = w_dur*duration + w_vol*total_volume_load + w_sets*sets
+    dose_volume_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "duration": 1.0,
+            "volume_load": 0.02,
+            "sets": 2.0,
+        }
+    )
+
+    # Density Δ = clamp(duration / max(min_divisor, sets*sets_multiplier), floor, cap)
+    dose_delta_sets_multiplier: float = 5.0
+    dose_delta_min_divisor: float = 20.0
+    dose_delta_cap: float = 2.5
+    dose_delta_floor: float = 0.35
+
+    # Floors applied to dose-law inputs
+    dose_novelty_floor: float = 0.2
+    dose_w_phi_floor: float = 0.25
+
+    # Human-factor gain: penalty = 1 + max(0, (reference - value) * slope)
+    dose_human_factor_reference: float = 5.0
+    dose_human_factor_slope: float = 0.2
+
+    # Per-exercise volume proxy weights (_entry_volume_proxy):
+    #   proxy = w_vol*vol_load + duration_sec/dur_div + distance_m/dist_div + w_sets_reps*sets*reps
+    dose_entry_volume_proxy_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "volume_load": 0.005,
+            "duration_divisor": 60.0,
+            "distance_divisor": 500.0,
+            "sets_reps": 0.1,
+        }
+    )
+
+    # Hand-set per-modality multipliers distributing `base` into the 6 dose axes (_shape_six).
+    # Keys: "Running", "strength" (Strength/Hypertrophy/Power/Mixed), "default" (other).
+    dose_shape_six_by_modality: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "Running": {
+                "volume": 0.35,
+                "intensity": 0.45,
+                "density": 0.25,
+                "impact": 0.55,
+                "skill": 0.08,
+                "metabolic": 0.9,
+            },
+            "strength": {
+                "volume": 0.5,
+                "intensity": 0.65,
+                "density": 0.35,
+                "impact": 0.25,
+                "skill": 0.2,
+                "metabolic": 0.35,
+            },
+            "default": {
+                "volume": 0.4,
+                "intensity": 0.5,
+                "density": 0.3,
+                "impact": 0.3,
+                "skill": 0.15,
+                "metabolic": 0.45,
+            },
+        }
+    )
+
     # Fatigue decay Λ — half-life style hours (approx exp decay tau in cross_talk)
     tau_fatigue_hours: dict[str, float] = field(
         default_factory=lambda: {
