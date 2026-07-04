@@ -113,6 +113,21 @@ def tissue_from_legacy(f_struct_damage: float) -> TissueState:
     )
 
 
+# max_strength axis calibration. The legacy scalar ``c_nm_force`` is squat_kg * 10,
+# and the axis is anchored to the squat e1RM benchmark (`pl_e1rm_squat`: floor 40kg,
+# cap 250kg — see app/scripts/seed_benchmarks.py). So
+#   max_strength = clamp01((c_nm_force/10 - 40) / (250 - 40)) * 100
+#              = clamp(0, 100, (c_nm_force - 400) / 21).
+# This keeps the experience-prior seed AND the benchmark anchor on ONE scale: a
+# logged squat no longer yanks a freshly-seeded athlete, and intermediate/advanced
+# athletes get real headroom (the old /10 pegged any >=100kg squatter at the ceiling).
+# Power derives from the same force scalar as a gentler-sloped prior (its own
+# power/clean benchmarks refine it), sharing the 40kg floor.
+STRENGTH_FLOOR_CNM = 400.0   # 40kg squat * 10 (benchmark floor)
+STRENGTH_SLOPE_CNM = 21.0    # (250-40)kg * 10 / 100 axis points
+POWER_SLOPE_CNM = 28.0       # gentler than strength → power sits below max_strength
+
+
 def capacity_from_legacy(
     c_met_aerobic: float,
     c_nm_force: float,
@@ -122,9 +137,9 @@ def capacity_from_legacy(
     return CapacityState(
         aerobic=c_met_aerobic,
         glycolytic=min(100.0, max(0.0, b_met_anaerobic / 300.0)),
-        max_strength=min(100.0, max(0.0, c_nm_force / 10.0)),
+        max_strength=min(100.0, max(0.0, (c_nm_force - STRENGTH_FLOOR_CNM) / STRENGTH_SLOPE_CNM)),
         hypertrophy=min(100.0, max(0.0, c_struct * 0.5)),
-        power=min(100.0, max(0.0, c_nm_force / 15.0)),
+        power=min(100.0, max(0.0, (c_nm_force - STRENGTH_FLOOR_CNM) / POWER_SLOPE_CNM)),
         skill=50.0,
         mobility=50.0,
         work_capacity=min(100.0, max(0.0, c_struct * 0.35)),
@@ -144,7 +159,9 @@ def sync_legacy_from_vectors(
     )
     return {
         "c_met_aerobic": x.aerobic,
-        "c_nm_force": x.max_strength * 10.0,
+        # Inverse of capacity_from_legacy's max_strength affine (keeps the mirror
+        # round-tripping): c_nm_force = max_strength * 21 + 400.
+        "c_nm_force": x.max_strength * STRENGTH_SLOPE_CNM + STRENGTH_FLOOR_CNM,
         "c_struct": max(1.0, x.hypertrophy * 1.2 + x.work_capacity * 0.4),
         "b_met_anaerobic": max(0.0, x.glycolytic * 300.0),
         "f_met_systemic": f.metabolic,

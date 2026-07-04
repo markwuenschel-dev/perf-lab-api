@@ -176,12 +176,16 @@ def test_capacity_not_decreased_by_normal_workout():
 # ── Legacy mirrors ────────────────────────────────────────────────────────────
 
 def test_legacy_mirrors_consistent_after_update():
-    """c_nm_force should equal capacity_x.max_strength * 10.0 (sync_legacy_from_vectors invariant)."""
+    """c_nm_force is the inverse of capacity_from_legacy's max_strength affine
+    (sync_legacy_from_vectors invariant): max_strength * 21 + 400."""
+    from app.engine.state_bridge import STRENGTH_FLOOR_CNM, STRENGTH_SLOPE_CNM
+
     s0 = _fresh_state()
     s1 = update_athlete_state(s0, _moderate_dose(), timedelta(hours=24), _log())
-    expected_c_nm_force = s1.capacity_x.max_strength * 10.0
+    expected_c_nm_force = s1.capacity_x.max_strength * STRENGTH_SLOPE_CNM + STRENGTH_FLOOR_CNM
     assert abs(s1.c_nm_force - expected_c_nm_force) < 0.001, (
-        f"c_nm_force={s1.c_nm_force:.4f} should equal max_strength*10={expected_c_nm_force:.4f}"
+        f"c_nm_force={s1.c_nm_force:.4f} should equal the max_strength affine "
+        f"inverse={expected_c_nm_force:.4f}"
     )
 
 
