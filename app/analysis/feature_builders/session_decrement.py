@@ -3,6 +3,15 @@
 Target: observed_next_performance - expected_next_performance_given_plan.
 Do NOT use raw next performance — that conflates plan difficulty with decrement.
 Exports session-pair features only; labels must be derived offline.
+
+The offline label pipeline lives in ``app.ml.q1_decrement``: it fits an expectation
+model E[next_rpe | planned next-session difficulty] and takes the residual
+``decrement = observed_next_rpe - expected_next_rpe`` as the supervised target. The
+planned-difficulty columns needed for that expectation (``next_duration_minutes``,
+``next_volume_load``, ``next_modality``) are the SECOND session's *prescribed* load —
+known before the session is performed, so they are legitimate pre-outcome inputs to the
+expectation. The observed ``next_rpe`` is the outcome and is forbidden as a predictor
+feature (see ``app.ml.q1_decrement.build_training_frame.FORBIDDEN_FEATURES``).
 """
 from __future__ import annotations
 
@@ -32,7 +41,9 @@ async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
             wl1.modality                        AS prev_modality,
             wl2.modality                        AS next_modality,
             wl1.duration_minutes                AS prev_duration_minutes,
-            wl1.total_volume_load               AS prev_volume_load
+            wl1.total_volume_load               AS prev_volume_load,
+            wl2.duration_minutes                AS next_duration_minutes,
+            wl2.total_volume_load               AS next_volume_load
         FROM workout_logs wl1
         JOIN workout_logs wl2
             ON wl1.user_id = wl2.user_id
