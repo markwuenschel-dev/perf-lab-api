@@ -430,6 +430,36 @@
       },
       "BlockCreateRequest": {
         "properties": {
+          "accessory_emphasis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "minimal",
+                  "balanced",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessory Emphasis"
+          },
+          "accessory_focus": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessory Focus"
+          },
           "benchmark_every_n_weeks": {
             "anyOf": [
               {
@@ -498,6 +528,19 @@
             "title": "Start Date",
             "type": "string"
           },
+          "target_session_minutes": {
+            "anyOf": [
+              {
+                "maximum": 180.0,
+                "minimum": 20.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Session Minutes"
+          },
           "weekly_template": {
             "items": {
               "$ref": "#/components/schemas/WeeklyTemplateSlot"
@@ -530,6 +573,31 @@
       },
       "BlockRead": {
         "properties": {
+          "accessory_emphasis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessory Emphasis"
+          },
+          "accessory_focus": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessory Focus"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -593,6 +661,17 @@
           },
           "status": {
             "$ref": "#/components/schemas/BlockStatus"
+          },
+          "target_session_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Session Minutes"
           },
           "user_id": {
             "title": "User Id",

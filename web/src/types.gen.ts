@@ -710,6 +710,10 @@ export interface components {
         };
         /** BlockCreateRequest */
         BlockCreateRequest: {
+            /** Accessory Emphasis */
+            accessory_emphasis?: ("minimal" | "balanced" | "high") | null;
+            /** Accessory Focus */
+            accessory_focus?: string[] | null;
             /**
              * Benchmark Every N Weeks
              * @default 4
@@ -747,6 +751,8 @@ export interface components {
              * Format: date
              */
             start_date: string;
+            /** Target Session Minutes */
+            target_session_minutes?: number | null;
             /** Weekly Template */
             weekly_template?: components["schemas"]["WeeklyTemplateSlot"][];
         };
@@ -757,6 +763,10 @@ export interface components {
         BlockGoal: "Strength" | "Hypertrophy" | "Power" | "Hyrox" | "CrossFit" | "Running" | "Calisthenics" | "General" | "Recomp";
         /** BlockRead */
         BlockRead: {
+            /** Accessory Emphasis */
+            accessory_emphasis?: string | null;
+            /** Accessory Focus */
+            accessory_focus?: string[] | null;
             /**
              * Created At
              * Format: date-time
@@ -787,6 +797,8 @@ export interface components {
              */
             start_date: string;
             status: components["schemas"]["BlockStatus"];
+            /** Target Session Minutes */
+            target_session_minutes?: number | null;
             /** User Id */
             user_id: number;
             /** Weekly Template */

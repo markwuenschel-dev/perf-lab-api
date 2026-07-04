@@ -310,6 +310,99 @@ _EQUIPMENT_EXERCISE_MAP: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Block session preferences (Phase 3a — goal-anchored program)
+#
+# A training block can carry `accessory_emphasis` / `accessory_focus` /
+# `target_session_minutes` (MesocycleBlock, see app.models.mesocycle). The
+# prescriber appends accessory slots after the winning template's primary
+# `exercise_slots` and nudges `rx.duration_min` toward the target — see the
+# end of recommend_next_session for the full contract.
+# ---------------------------------------------------------------------------
+
+# Tag → accessory catalog. Movement-pattern focus tags an athlete can request
+# via `accessory_focus`, plus the WEAK_POINT_TAGS values that also work as
+# catalog keys directly ("posterior_chain", "single_leg").
+_ACCESSORY_BY_TAG: dict[str, list[tuple[str, str, str]]] = {
+    "posterior_chain": [
+        ("Romanian Deadlift", "3", "5-8"),
+        ("Back Extension", "3", "12-15"),
+    ],
+    "push": [
+        ("DB Shoulder Press", "3", "8-10"),
+        ("Dips", "3", "8-12"),
+    ],
+    "pull": [
+        ("Chest-Supported Row", "3", "10-12"),
+        ("Face Pull", "3", "15-20"),
+    ],
+    "core": [
+        ("Hanging Leg Raise", "3", "10-15"),
+        ("Plank", "3", "45-60s"),
+    ],
+    "single_leg": [
+        ("Bulgarian Split Squat", "3", "8-10/side"),
+        ("Walking Lunge", "3", "10-12/side"),
+    ],
+}
+
+# Generic accessories used to fill out an emphasis's accessory count when the
+# focus / weak-point tags don't yield enough matches.
+_GENERIC_ACCESSORIES: list[tuple[str, str, str]] = [
+    ("Face Pull", "3", "15-20"),
+    ("Plank", "3", "45-60s"),
+    ("Walking Lunge", "3", "10-12/side"),
+    ("DB Shoulder Press", "3", "8-10"),
+]
+
+# Max accessory slots appended per `accessory_emphasis` value. Missing/None
+# emphasis is treated as "balanced" by the caller.
+_ACCESSORY_COUNT_BY_EMPHASIS: dict[str, int] = {
+    "minimal": 0,
+    "balanced": 2,
+    "high": 4,
+}
+
+
+def _select_accessories(
+    count: int,
+    focus_tags: list[str] | None,
+    weak_point_tags: list[str] | None,
+    existing_names: set[str],
+) -> list[tuple[str, str, str]]:
+    """Pick up to `count` accessory slots, preferring `focus_tags`, then
+    falling back to `weak_point_tags`, then generic accessories. Skips names
+    already present among `existing_names` (the template's own slots) to
+    avoid duplicate entries."""
+    if count <= 0:
+        return []
+    tags = [t for t in (focus_tags or []) if t in _ACCESSORY_BY_TAG]
+    if not tags:
+        tags = [t for t in (weak_point_tags or []) if t in _ACCESSORY_BY_TAG]
+
+    seen = set(existing_names)
+    picks: list[tuple[str, str, str]] = []
+    for tag in tags:
+        for item in _ACCESSORY_BY_TAG[tag]:
+            if len(picks) >= count:
+                break
+            if item[0] not in seen:
+                picks.append(item)
+                seen.add(item[0])
+        if len(picks) >= count:
+            break
+
+    if len(picks) < count:
+        for item in _GENERIC_ACCESSORIES:
+            if len(picks) >= count:
+                break
+            if item[0] not in seen:
+                picks.append(item)
+                seen.add(item[0])
+
+    return picks[:count]
+
+
 def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[ExercisePrescription]:
     equipment = {e.lower() for e in (available_equipment or [])}
     picks: list[tuple[str, str, str]] = []
@@ -505,6 +598,59 @@ def recommend_next_session(
             rx.why.constraints_applied.append("equipment:filtered")
         else:
             rx.why.constraints_applied.append("equipment:fallback_bodyweight")
+
+    # --- 5. Block session preferences (Phase 3a): accessory append + target
+    # duration override. `template_duration_min` is the winning template's own
+    # (pre-periodization) duration, used both as the "short session" reference
+    # point and as an upper anchor for the target-duration clamp.
+    template_duration_min = scored[0].duration_min
+    raw_emphasis = block.get("accessory_emphasis")
+    raw_focus = block.get("accessory_focus")
+    raw_target = block.get("target_session_minutes")
+    # A block_context without any of these three keys (every block created
+    # before Phase 3a) must behave exactly as before: no accessories, no
+    # duration override beyond the periodization scaling already applied.
+    has_block_prefs = raw_emphasis is not None or bool(raw_focus) or raw_target is not None
+    if has_block_prefs:
+        emphasis = raw_emphasis or "balanced"
+        accessory_count = _ACCESSORY_COUNT_BY_EMPHASIS.get(emphasis, 2)
+        # A short target session shouldn't pile on accessories, even under
+        # "high" emphasis.
+        if (
+            raw_target is not None
+            and template_duration_min > 0
+            and int(raw_target) < template_duration_min
+        ):
+            accessory_count = min(accessory_count, 1)
+        if accessory_count > 0:
+            existing_names = {e.name for e in rx.exercises}
+            accessories = _select_accessories(accessory_count, raw_focus, weak_points, existing_names)
+            if accessories:
+                rx.exercises = rx.exercises + [
+                    ExercisePrescription(
+                        name=name,
+                        sets=int(sets),
+                        reps=reps,
+                        load_note="Accessory — autoregulate by RPE",
+                    )
+                    for name, sets, reps in accessories
+                ]
+                if rx.why:
+                    rx.why.constraints_applied.append(
+                        f"block:accessories={emphasis}(+{len(accessories)})"
+                    )
+
+    if raw_target is not None:
+        # Apply periodization scaling first (done above), then the explicit
+        # block target wins over the modifier for the final duration.
+        clamped = max(30, min(120, int(raw_target)))
+        if template_duration_min > 0:
+            clamped = min(clamped, round(template_duration_min * 1.5))
+        rx.duration_min = clamped
+        if rx.why:
+            rx.why.constraints_applied.append(f"block:target_duration={clamped}")
+
+    if rx.why:
         rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))
 
     return rx
