@@ -15,6 +15,7 @@ from app.models.mesocycle import (
     SessionStatus,
 )
 from app.schemas.planning import BlockCreateRequest, WeeklyTemplateSlot
+from app.services import macrocycle_service
 
 _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
     BlockGoal.STRENGTH: [
@@ -151,8 +152,18 @@ async def create_block_with_sessions(
     )
     end_date = req.start_date + timedelta(days=req.duration_weeks * 7 - 1)
 
+    # Auto-associate the new block with the user's macrocycle "spine" (Phase 5).
+    # Single-active-macrocycle rule: only when the user has EXACTLY ONE active
+    # macrocycle do we hang this block under it. Zero → there is no program to
+    # attach to; more than one → it is ambiguous which program owns the block,
+    # so we leave macrocycle_id NULL rather than guess. This is server-side only
+    # (no field on the block-create request/response schema).
+    active_macrocycles = await macrocycle_service.list_macrocycles(db, user_id)
+    macrocycle_id = active_macrocycles[0].id if len(active_macrocycles) == 1 else None
+
     block = MesocycleBlock(
         user_id=user_id,
+        macrocycle_id=macrocycle_id,
         goal=req.goal,
         status=BlockStatus.ACTIVE,
         duration_weeks=req.duration_weeks,

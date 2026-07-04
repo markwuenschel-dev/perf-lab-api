@@ -16,6 +16,7 @@ from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.objective import Objective, ObjectiveStatus
 from app.schemas.objective import ObjectiveCreate, ObjectiveRead, ObjectiveUpdate, ProgressBlock
+from app.services import macrocycle_service
 
 # Prescriber taper window (Phase 4a). The nearest upcoming active objective's
 # target_date within this many days triggers taper in the prescriber
@@ -200,35 +201,81 @@ async def delete_objective(db: AsyncSession, user_id: int, objective_id: int) ->
 
 # ---------------------------------------------------------------------------
 # Prescriber signal helper
+#
+# Signal derivation is split into two pure (non-DB) helpers so the taper-window
+# and priority/nearest-date rules are unit-testable without a session — see
+# tests/test_objective_signals.py. ``active_objective_signals`` only does the
+# DB fetch + the "anchor vs. scan" routing.
 # ---------------------------------------------------------------------------
+
+def _target_within_taper_window(target_date: date | None, today: date) -> bool:
+    """True when ``target_date`` is upcoming (today or later) and falls within
+    ``OBJECTIVE_TAPER_WINDOW_DAYS`` days. A past or missing date never tapers."""
+    if target_date is None or target_date < today:
+        return False
+    return (target_date - today).days <= OBJECTIVE_TAPER_WINDOW_DAYS
+
+
+def signals_from_anchor(anchor: Objective, today: date | None = None) -> ObjectiveSignals:
+    """Signals driven by a macrocycle's anchor objective (the program's goal):
+    taper off the anchor's ``target_date`` within the window, domain = the
+    anchor's ``domain``. Used when the user has an active macrocycle."""
+    today = today or date.today()
+    return ObjectiveSignals(
+        taper=_target_within_taper_window(anchor.target_date, today),
+        domain=anchor.domain,
+    )
+
+
+def signals_from_scan(objectives: list[Objective], today: date | None = None) -> ObjectiveSignals:
+    """Legacy all-objectives scan (the pre-macrocycle behavior, preserved as the
+    fallback): taper off the nearest *upcoming* objective's ``target_date``;
+    domain = the highest-priority objective's ``domain`` (priority 1 = highest,
+    ties broken by lowest ``id`` = earliest created)."""
+    today = today or date.today()
+    if not objectives:
+        return ObjectiveSignals(taper=False, domain=None)
+
+    upcoming = [o for o in objectives if o.target_date is not None and o.target_date >= today]
+    taper = False
+    if upcoming:
+        nearest = min(upcoming, key=lambda o: o.target_date)  # type: ignore[arg-type,return-value]
+        taper = _target_within_taper_window(nearest.target_date, today)
+
+    top = min(objectives, key=lambda o: (o.priority, o.id))
+    return ObjectiveSignals(taper=taper, domain=top.domain)
+
 
 async def active_objective_signals(db: AsyncSession, user_id: int) -> ObjectiveSignals:
     """``{ taper, domain }`` for the prescriber (both entry points — see
     app.services.prescription_service and app.api.v1.planning's ``/today``).
 
-    - ``taper``: True when the nearest *upcoming* active objective's
-      ``target_date`` falls within ``OBJECTIVE_TAPER_WINDOW_DAYS`` days.
-    - ``domain``: the highest-priority active objective's ``domain``
-      (priority 1 = highest; ties broken by lowest ``id``, i.e. earliest
-      created).
+    When the user has an active macrocycle, the signals derive from that
+    program's *anchor objective* (the stored goal) — this is the Phase 5
+    spine replacing the ad-hoc scan. ``list_macrocycles`` returns ACTIVE
+    macrocycles ordered by ``start_date`` asc then ``id`` asc, so the first is
+    the deterministic pick when several are active.
+
+    With no active macrocycle (or a dangling anchor) we fall back to the legacy
+    all-objectives scan, preserving the exact pre-macrocycle behavior.
     """
+    macrocycles = await macrocycle_service.list_macrocycles(db, user_id)
+    if macrocycles:
+        anchor = (
+            await db.execute(
+                select(Objective).where(
+                    Objective.id == macrocycles[0].objective_id,
+                    Objective.user_id == user_id,
+                )
+            )
+        ).scalars().first()
+        if anchor is not None:
+            return signals_from_anchor(anchor)
+
     result = await db.execute(
         select(Objective).where(
             Objective.user_id == user_id,
             Objective.status == ObjectiveStatus.ACTIVE,
         )
     )
-    objectives = list(result.scalars().all())
-    if not objectives:
-        return ObjectiveSignals(taper=False, domain=None)
-
-    today = date.today()
-    upcoming = [o for o in objectives if o.target_date is not None and o.target_date >= today]
-    taper = False
-    if upcoming:
-        nearest = min(upcoming, key=lambda o: o.target_date)  # type: ignore[arg-type,return-value]
-        assert nearest.target_date is not None
-        taper = (nearest.target_date - today).days <= OBJECTIVE_TAPER_WINDOW_DAYS
-
-    top = min(objectives, key=lambda o: (o.priority, o.id))
-    return ObjectiveSignals(taper=taper, domain=top.domain)
+    return signals_from_scan(list(result.scalars().all()))
