@@ -520,6 +520,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/simulate/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Simulate Projection
+         * @description Project the athlete's capacity axes forward under a hypothetical plan.
+         *
+         *     Loads (or seeds) the caller's current state, then runs the pure projection
+         *     engine. No state is written — this is a compute-and-return preview.
+         */
+        post: operations["simulate_projection_v1_simulate_projection_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/state-history": {
         parameters: {
             query?: never;
@@ -727,6 +750,47 @@ export interface components {
             raw_value: number;
             /** Unit */
             unit: string;
+        };
+        /**
+         * AxisProjection
+         * @description Projected trajectory for a single capacity axis under plan + baseline.
+         */
+        AxisProjection: {
+            /**
+             * Baseline
+             * @description Value at week N under the maintain plan
+             */
+            baseline: number;
+            /**
+             * Baseline Series
+             * @description Length weeks+1, maintain plan
+             */
+            baseline_series: number[];
+            /**
+             * Key
+             * @description Capacity axis key, e.g. 'max_strength'
+             */
+            key: string;
+            /**
+             * Label
+             * @description Human label, e.g. 'Max strength'
+             */
+            label: string;
+            /**
+             * Projected
+             * @description Value at week N under this plan
+             */
+            projected: number;
+            /**
+             * Series
+             * @description Length weeks+1 (week 0..N), this plan
+             */
+            series: number[];
+            /**
+             * Start
+             * @description Current value (week 0)
+             */
+            start: number;
         };
         /** BenchmarkDefinitionRead */
         BenchmarkDefinitionRead: {
@@ -1627,6 +1691,64 @@ export interface components {
             pct?: number | null;
             /** Target */
             target?: number | null;
+        };
+        /**
+         * ProjectionRequest
+         * @description Parameters for a forward projection under a hypothetical plan.
+         */
+        ProjectionRequest: {
+            /**
+             * Goal
+             * @description TrainingGoal being simulated, e.g. 'Powerlifting'
+             */
+            goal: string;
+            /**
+             * Intensity
+             * @description Session intensity emphasis
+             * @enum {string}
+             */
+            intensity: "easy" | "balanced" | "hard";
+            /**
+             * Recovery
+             * @description Recovery / lifestyle support level
+             * @enum {string}
+             */
+            recovery: "high" | "standard" | "minimal";
+            /**
+             * Weekly Volume
+             * @description Relative weekly volume index (30..90, matches the web slider)
+             */
+            weekly_volume: number;
+            /**
+             * Weeks
+             * @description Projection horizon in weeks (1..16)
+             */
+            weeks: number;
+        };
+        /**
+         * ProjectionResponse
+         * @description Full projection: 8 axes (canonical order) + readiness + peak fatigue.
+         */
+        ProjectionResponse: {
+            /**
+             * Axes
+             * @description Exactly 8, canonical CapacityState.KEYS order
+             */
+            axes: components["schemas"]["AxisProjection"][];
+            /** Goal */
+            goal: string;
+            /**
+             * Peak Fatigue
+             * @description Max fatigue (0..100) over the horizon
+             */
+            peak_fatigue: number;
+            /**
+             * Readiness Series
+             * @description Length weeks+1, overall readiness 0..100 under this plan
+             */
+            readiness_series: number[];
+            /** Weeks */
+            weeks: number;
         };
         /**
          * ReadinessComponent
@@ -3376,6 +3498,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StressDose"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_projection_v1_simulate_projection_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectionResponse"];
                 };
             };
             /** @description Validation Error */
