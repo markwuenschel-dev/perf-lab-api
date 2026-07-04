@@ -1,0 +1,66 @@
+"""Recovery shadow service (Q2 recovery priors, Rail 3).
+
+For a wellness ingest, compute the baseline (production defaults) vs learned (shadow
+override) fatigue-clearance multipliers for the athlete's current fatigue state and
+record them in ``recovery_shadow_log``. Applies NOTHING to production state — this is
+capture-only. Best-effort: a failure here must never break wellness ingest.
+
+The learned prior is loaded via the override loader with ``allow_shadow=True`` (the only
+caller permitted to apply a ``shadow_only`` artifact), keeping learned values off every
+production decision path until validated and promoted.
+"""
+from __future__ import annotations
+
+import logging
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.domain.vectors import FatigueState
+from app.engine.parameter_overrides import apply_parameter_overrides, load_namespace_override
+from app.engine.parameters import default_parameters
+from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
+from app.models.recovery_shadow import RecoveryShadowLog
+from app.services.state_service import load_current_state
+
+logger = logging.getLogger("perflab")
+
+_NAMESPACE = "q2_recovery"
+
+
+async def record_recovery_shadow(db: AsyncSession, user_id: int, wellness: object) -> None:
+    """Write one recovery shadow-telemetry row. Never raises to the caller."""
+    try:
+        params = default_parameters()
+        artifact = load_namespace_override(_NAMESPACE)
+        if artifact is not None:
+            learned = apply_parameter_overrides(params, artifact, allow_shadow=True)
+            model_version = str(artifact["version"])
+        else:
+            learned = params
+            model_version = "none"
+
+        state = await load_current_state(db, user_id)
+        fatigue_before = (
+            {a: round(float(getattr(state.fatigue_f, a)), 2) for a in FatigueState.KEYS}
+            if state is not None
+            else {}
+        )
+
+        db.add(
+            RecoveryShadowLog(
+                user_id=user_id,
+                model_version=model_version,
+                wellness=wellness_snapshot(wellness),
+                fatigue_before=fatigue_before,
+                baseline_clearance_multiplier=multipliers_by_axis(params, wellness),
+                learned_clearance_multiplier=multipliers_by_axis(learned, wellness),
+                decision_impact="none_shadow_only",
+            )
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 — shadow telemetry must never break ingest
+        logger.warning("recovery shadow log failed for user %s", user_id, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
