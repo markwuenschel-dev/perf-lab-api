@@ -72,6 +72,11 @@ export type ObjectiveUpdate = Schemas["ObjectiveUpdate"];
 export type ObjectiveStatus = Schemas["ObjectiveStatus"];
 export type ProgressBlock = Schemas["ProgressBlock"];
 
+/* ---------- Dashboard overview (Phase 6: GET /v1/dashboard/overview) ---------- */
+export type OverviewMetrics = Schemas["OverviewMetrics"];
+export type TrainingLoadMetrics = Schemas["TrainingLoadMetrics"];
+export type AdherenceMetrics = Schemas["AdherenceMetrics"];
+
 /* ---------- Macrocycles (Phase 5: a program container anchored to an objective) ---------- */
 export type MacrocycleCreate = Schemas["MacrocycleCreate"];
 export type MacrocycleRead = Schemas["MacrocycleRead"];

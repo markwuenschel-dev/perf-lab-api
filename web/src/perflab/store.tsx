@@ -121,6 +121,9 @@ export interface PerfLabState {
    *  the macrocycles list (Objectives' Program section, the Overview week X of Y)
    *  re-fetches. */
   macrocyclesRefreshKey: number;
+  /** Bumped after a check-in so any screen reading backend readiness + the latest
+   *  wellness sample (the Overview ring / tiles / sparkline) re-fetches. */
+  readinessRefreshKey: number;
 }
 
 interface Persisted {
@@ -196,6 +199,7 @@ export function initialState(): PerfLabState {
     objectivesRefreshKey: 0,
     macrocycleCreateOpen: false,
     macrocyclesRefreshKey: 0,
+    readinessRefreshKey: 0,
   };
 }
 
@@ -302,6 +306,8 @@ export interface PerfLabActions {
   closeMacrocycleCreate: () => void;
   /** Bump after any macrocycle create/update/delete so dependents re-fetch. */
   refreshMacrocycles: () => void;
+  /** Bump after a check-in so backend readiness + latest wellness re-fetch. */
+  refreshReadiness: () => void;
 }
 
 export interface PerfLabContextValue {
@@ -344,7 +350,14 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     sessToLog: () => merge({ sessOpen: false, sessRunning: false, feedbackOpen: true, feedbackApplied: false }),
     openCheckin: () => merge({ checkinOpen: true }),
     closeCheckin: () => merge({ checkinOpen: false }),
-    applyCheckin: () => mergeFn((s) => ({ checkinOpen: false, checkin: { ...s.checkin, done: true } })),
+    applyCheckin: () =>
+      mergeFn((s) => ({
+        checkinOpen: false,
+        checkin: { ...s.checkin, done: true },
+        // A completed check-in changes backend readiness + the latest wellness
+        // sample — bump so the Overview ring / tiles / sparkline re-fetch.
+        readinessRefreshKey: s.readinessRefreshKey + 1,
+      })),
     setCheckin: (patch) => dispatch({ type: "mergeCheckin", patch }),
     openExplain: (key) => merge({ explainOpen: true, explainKey: key }),
     closeExplain: () => merge({ explainOpen: false }),
@@ -377,6 +390,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     openMacrocycleCreate: () => merge({ macrocycleCreateOpen: true }),
     closeMacrocycleCreate: () => merge({ macrocycleCreateOpen: false }),
     refreshMacrocycles: () => mergeFn((s) => ({ macrocyclesRefreshKey: s.macrocyclesRefreshKey + 1 })),
+    refreshReadiness: () => mergeFn((s) => ({ readinessRefreshKey: s.readinessRefreshKey + 1 })),
   };
 }
 

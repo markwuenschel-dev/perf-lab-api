@@ -215,6 +215,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/dashboard/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overview
+         * @description Real Overview tiles: training load / ACWR and adherence / streak.
+         *
+         *     Returns null/insufficient figures rather than erroring for users with
+         *     little or no history.
+         */
+        get: operations["get_overview_v1_dashboard_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/dashboard/readiness": {
         parameters: {
             query?: never;
@@ -659,6 +682,29 @@ export interface components {
              * @default 0
              */
             work_capacity: number;
+        };
+        /**
+         * AdherenceMetrics
+         * @description Recent plan adherence and the current training streak.
+         */
+        AdherenceMetrics: {
+            /**
+             * Pct
+             * @description completed / scheduled over the window, 0-100; None if nothing scheduled
+             */
+            pct?: number | null;
+            /**
+             * Streak Days
+             * @description consecutive days with a completed session / logged workout
+             * @default 0
+             */
+            streak_days: number;
+            /**
+             * Window Days
+             * @description length of the adherence window in days
+             * @default 28
+             */
+            window_days: number;
         };
         /** AnchorObservationOut */
         AnchorObservationOut: {
@@ -1393,6 +1439,14 @@ export interface components {
             /** User Id */
             user_id: number;
         };
+        /**
+         * OverviewMetrics
+         * @description Real dashboard tiles: training load / ACWR and adherence / streak.
+         */
+        OverviewMetrics: {
+            adherence: components["schemas"]["AdherenceMetrics"];
+            training_load: components["schemas"]["TrainingLoadMetrics"];
+        };
         /** PlannedSessionRead */
         PlannedSessionRead: {
             /** Benchmark Key */
@@ -1829,6 +1883,47 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /**
+         * TrainingLoadMetrics
+         * @description Acute:chronic workload ratio vs the 0.8-1.3 sweet spot.
+         *
+         *     ``acute`` is the 7-day summed load; ``chronic`` is the average *weekly*
+         *     load over 28 days (28-day sum / 4). ``acwr`` = acute / chronic. All three
+         *     are ``None`` when there is insufficient history to compute a meaningful
+         *     baseline (``status == "insufficient"``).
+         */
+        TrainingLoadMetrics: {
+            /**
+             * Acute
+             * @description 7-day summed training load
+             */
+            acute?: number | null;
+            /**
+             * Acwr
+             * @description acute(7d) / chronic(28d avg weekly) load ratio
+             */
+            acwr?: number | null;
+            /**
+             * Chronic
+             * @description 28-day average weekly training load
+             */
+            chronic?: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "insufficient" | "low" | "optimal" | "high";
+            /**
+             * Sweet Spot High
+             * @default 1.3
+             */
+            sweet_spot_high: number;
+            /**
+             * Sweet Spot Low
+             * @default 0.8
+             */
+            sweet_spot_low: number;
         };
         /**
          * UnifiedStateVector
@@ -2573,6 +2668,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardBundleOut"];
+                };
+            };
+        };
+    };
+    get_overview_v1_dashboard_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewMetrics"];
                 };
             };
         };
