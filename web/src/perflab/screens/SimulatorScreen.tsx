@@ -1,8 +1,25 @@
 // src/perflab/screens/SimulatorScreen.tsx
+//
+// Twin Simulator (Phase 7) — a GOAL-AWARE forward projection of the athlete's
+// eight capacity axes. The plan controls (goal / volume / intensity / recovery /
+// horizon) feed a single projection source; the output shows start → projected
+// across all 8 axes, a per-axis trajectory vs a "maintain" baseline, the
+// readiness curve and peak fatigue. No running-only vocabulary here.
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { usePerfLab } from "../store";
+import * as api from "@/api/perfLabClient";
+import { useAuth } from "@/auth/useAuth";
+import { usePerfLab, TRAINING_GOALS } from "../store";
 import { Card, Pill, ScreenHeader, SectionLabel, Tile } from "../ui";
-import { buildProjection, COLORS, fmtMin } from "../sim";
+import { COLORS, readinessColor, readinessWord } from "../sim";
+import { useAuthedResource } from "../useAuthedResource";
+import {
+  placeholderProjection,
+  dominantAxes,
+  goalLabel,
+  type ProjectionResponse,
+  type ProjectionAxis,
+} from "../projection";
 
 const seg = (active: boolean) =>
   cn(
@@ -10,48 +27,126 @@ const seg = (active: boolean) =>
     active ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-panel text-mute",
   );
 
+const fmtDelta = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(Math.round(n))}`;
+const fmtPct = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(Math.round(n * 100))}%`;
+const relGain = (a: ProjectionAxis) => (a.baseline > 0 ? (a.projected - a.baseline) / a.baseline : 0);
+
 export function SimulatorScreen() {
   const { state, actions } = usePerfLab();
+  const auth = useAuth();
   const sim = state.sim;
-  const proj = buildProjection(sim);
-  const base = buildProjection({ volume: 48, intensity: "balanced", weeks: sim.weeks, recovery: "standard" });
 
-  const vo2Final = proj.vo2Final;
-  const vo2Delta = vo2Final - base.vo2Final;
-  const vo2DeltaStr = `${vo2Delta >= 0 ? "+" : ""}${vo2Delta.toFixed(1)}`;
-  const tenKSecSaved = Math.round((base.tenKMin - proj.tenKMin) * 60);
-  const tenKDeltaStr = `${tenKSecSaved >= 0 ? "−" : "+"}${Math.floor(Math.abs(tenKSecSaved) / 60)}:${String(Math.abs(tenKSecSaved) % 60).padStart(2, "0")}`;
-  const tenKColor = tenKSecSaved >= 0 ? COLORS.good : COLORS.warn;
-  const riskBand = proj.risk < 25 ? "Low" : proj.risk < 50 ? "Moderate" : "High";
-  const riskColor = proj.risk < 25 ? COLORS.good : proj.risk < 50 ? COLORS.warn : COLORS.hot;
-  const peakColor = proj.peakFat < 45 ? COLORS.good : proj.peakFat < 65 ? COLORS.warn : COLORS.hot;
+  // Default the goal to the athlete's profile goal once it loads. A manual pick
+  // made before the profile arrives is respected (the ref trips only once).
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    const g = auth.profile?.primary_goal;
+    if (g) {
+      seededRef.current = true;
+      if (g !== sim.goal) actions.setSim({ goal: g });
+    }
+  }, [auth.profile, sim.goal, actions]);
 
+  // ─── SINGLE PROJECTION SOURCE ──────────────────────────────────────────────
+  // Signed in → project against the seeded twin via the real endpoint. Guest /
+  // signed out → the deterministic local placeholder (the "preview data" pill).
+  // The placeholder is also the graceful fallback while the first fetch is in
+  // flight (so we never flash an empty screen) and if the fetch errors.
+  const placeholder: ProjectionResponse = placeholderProjection({
+    goal: sim.goal,
+    weeks: sim.weeks,
+    weekly_volume: sim.volume,
+    intensity: sim.intensity,
+    recovery: sim.recovery,
+  });
+  const {
+    data: fetched,
+    loading: projLoading,
+    error: projError,
+  } = useAuthedResource(
+    (t) =>
+      api.getSimulateProjection(
+        {
+          goal: sim.goal,
+          weeks: sim.weeks,
+          weekly_volume: sim.volume,
+          intensity: sim.intensity,
+          recovery: sim.recovery,
+        },
+        t,
+      ),
+    [sim.goal, sim.weeks, sim.volume, sim.intensity, sim.recovery],
+  );
+  // `fetched` persists across control-change refetches (the hook only clears it
+  // on error), so `?? placeholder` keeps the last real projection during a
+  // refetch and swaps to the local one only before the first result or on error.
+  const proj: ProjectionResponse = fetched ?? placeholder;
+  const usingFallback = !!auth.token && !fetched; // signed in but on placeholder
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const weeks = proj.weeks;
+  const axes = proj.axes;
+
+  // Trajectory: selectable axis, defaulting to the goal's dominant axis.
+  const domOrder = dominantAxes(sim.goal);
+  const [selKey, setSelKey] = useState<string | null>(null);
+  const activeKey = selKey && axes.some((a) => a.key === selKey) ? selKey : domOrder[0];
+  const selAxis = axes.find((a) => a.key === activeKey) ?? axes[0];
+
+  // Headline stats.
+  const endReady = proj.readiness_series[weeks];
+  const rColor = readinessColor(endReady);
+  const peakColor = proj.peak_fatigue < 45 ? COLORS.good : proj.peak_fatigue < 65 ? COLORS.warn : COLORS.hot;
+  const topAxis = axes.reduce((m, a) => (relGain(a) > relGain(m) ? a : m), axes[0]);
+  const avgUplift = axes.reduce((s, a) => s + relGain(a), 0) / axes.length;
+
+  // Trajectory chart geometry (hand-rolled SVG, no chart lib).
   const cW = 520, cpL = 6, cpR = 6, cpT = 14, cH = 188, cpB = 26;
-  const allV = proj.vo2.concat(base.vo2);
-  const vMax = Math.ceil(Math.max(...allV)) + 1;
-  const vMin = Math.floor(Math.min(...allV)) - 1;
-  const cN = sim.weeks;
-  const cx = (i: number) => cpL + (i / cN) * (cW - cpL - cpR);
-  const cy = (v: number) => cpT + (1 - (v - vMin) / (vMax - vMin)) * (cH - cpT - cpB);
-  const simPlanPts = proj.vo2.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
-  const simBasePts = base.vo2.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
-  let simArea = `M ${cx(0).toFixed(1)} ${cy(proj.vo2[0]).toFixed(1)}`;
-  proj.vo2.forEach((v, i) => (simArea += ` L ${cx(i).toFixed(1)} ${cy(v).toFixed(1)}`));
-  simArea += ` L ${cx(cN).toFixed(1)} ${cH - cpB} L ${cx(0).toFixed(1)} ${cH - cpB} Z`;
+  const tAll = selAxis.series.concat(selAxis.baseline_series);
+  const tHi = Math.max(...tAll), tLo = Math.min(...tAll);
+  const pad = (tHi - tLo) * 0.14 + 0.5;
+  const yHi = tHi + pad, yLo = tLo - pad;
+  const cx = (i: number) => cpL + (i / weeks) * (cW - cpL - cpR);
+  const cy = (v: number) => cpT + (1 - (v - yLo) / (yHi - yLo)) * (cH - cpT - cpB);
+  const planPts = selAxis.series.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
+  const basePts = selAxis.baseline_series.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
+  let planArea = `M ${cx(0).toFixed(1)} ${cy(selAxis.series[0]).toFixed(1)}`;
+  selAxis.series.forEach((v, i) => (planArea += ` L ${cx(i).toFixed(1)} ${cy(v).toFixed(1)}`));
+  planArea += ` L ${cx(weeks).toFixed(1)} ${cH - cpB} L ${cx(0).toFixed(1)} ${cH - cpB} Z`;
 
-  const intWord = sim.intensity === "easy" ? "mostly easy" : sim.intensity === "hard" ? "high" : "balanced";
-  const advice = proj.risk >= 50 ? "Add a recovery week or trim volume to stay clear of injury." : proj.risk >= 25 ? "Manageable alongside the scheduled down weeks." : "Comfortably within a safe ramp.";
-  const simNarr = `Holding ~${sim.volume} km/wk at ${intWord} intensity for ${sim.weeks} weeks lifts projected VO₂max to ${vo2Final.toFixed(1)} (${vo2DeltaStr} vs maintaining), trimming your 10K to ${fmtMin(proj.tenKMin)}. Peak fatigue reaches ${proj.peakFat} and injury risk reads ${riskBand.toLowerCase()}. ${advice}`;
+  // Readiness chart geometry (fixed 20–100 scale).
+  const rLo = 20, rHi = 100;
+  const ry = (v: number) => cpT + (1 - (v - rLo) / (rHi - rLo)) * (cH - cpT - cpB);
+  const readyPts = proj.readiness_series.map((v, i) => `${cx(i).toFixed(1)},${ry(v).toFixed(1)}`).join(" ");
+  let readyArea = `M ${cx(0).toFixed(1)} ${ry(proj.readiness_series[0]).toFixed(1)}`;
+  proj.readiness_series.forEach((v, i) => (readyArea += ` L ${cx(i).toFixed(1)} ${ry(v).toFixed(1)}`));
+  readyArea += ` L ${cx(weeks).toFixed(1)} ${cH - cpB} L ${cx(0).toFixed(1)} ${cH - cpB} Z`;
+
+  // Narrative.
+  const advice =
+    proj.peak_fatigue >= 65
+      ? "Consider more recovery emphasis or trimming volume to keep fatigue in check."
+      : proj.peak_fatigue >= 45
+        ? "Sustainable alongside built-in down weeks."
+        : "Comfortably within a safe load.";
+  const narr = `A ${goalLabel(sim.goal)} plan at volume ${sim.volume} · ${sim.intensity} intensity over ${weeks} weeks lifts your ${topAxis.label.toLowerCase()} most (${fmtPct(relGain(topAxis))} vs maintaining), with an average ${fmtPct(avgUplift)} across all eight capacity axes. Readiness settles near ${endReady}/100 and peak fatigue reaches ${proj.peak_fatigue}. ${advice}`;
 
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
       <ScreenHeader
         title="Twin Simulator"
-        badge={<Pill>what-if · S(t) projection</Pill>}
-        subtitle="Run your digital twin forward. Shape the plan on the left and watch projected VO₂, fatigue and injury risk respond — measured against simply maintaining."
-      />
+        badge={<Pill>what-if · X(t) projection</Pill>}
+        subtitle="Run your digital twin forward against a goal. Shape the plan on the left and watch all eight capacity axes, readiness and fatigue respond — measured against simply maintaining."
+      >
+        {!auth.token && <Pill className="border-white/15 bg-white/[0.06] text-mute">preview data</Pill>}
+        {auth.token && projLoading && (
+          <Pill className="border-ac/25 bg-ac/[0.08] text-ac">projecting…</Pill>
+        )}
+      </ScreenHeader>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
+        {/* ── Controls ── */}
         <Card className="flex flex-col gap-5 self-start p-[22px]">
           <div>
             <SectionLabel className="mb-[11px]">Quick scenarios</SectionLabel>
@@ -63,12 +158,26 @@ export function SimulatorScreen() {
           </div>
           <div className="h-px bg-white/[0.06]" />
           <div>
+            <SectionLabel className="mb-[11px]">Goal</SectionLabel>
+            <select
+              value={sim.goal}
+              onChange={(e) => actions.setSim({ goal: e.target.value })}
+              className="w-full cursor-pointer rounded-[10px] border border-white/10 bg-panel px-3 py-[11px] text-[13px] font-semibold leading-none text-soft outline-none focus:border-ac/40"
+              style={{ colorScheme: "dark" }}
+            >
+              {TRAINING_GOALS.map((g) => (
+                <option key={g.value} value={g.value}>{g.label}</option>
+              ))}
+            </select>
+            <div className="mt-[7px] font-mono text-[10px] leading-none text-dim">shapes which axes grow</div>
+          </div>
+          <div>
             <div className="mb-3 flex items-center justify-between">
               <SectionLabel>Weekly volume</SectionLabel>
-              <span className="font-mono text-[13px] font-semibold leading-none text-ac">{sim.volume} km/wk</span>
+              <span className="font-mono text-[13px] font-semibold leading-none text-ac">{sim.volume}</span>
             </div>
             <input type="range" min={30} max={90} step={2} value={sim.volume} onChange={(e) => actions.setSim({ volume: +e.target.value })} className="w-full cursor-pointer" style={{ accentColor: "var(--ac)" }} />
-            <div className="mt-[6px] flex justify-between font-mono text-[10px] leading-none text-dim"><span>30</span><span>90 km</span></div>
+            <div className="mt-[6px] flex justify-between font-mono text-[10px] leading-none text-dim"><span>30</span><span>90</span></div>
           </div>
           <div>
             <SectionLabel className="mb-[11px]">Training intensity</SectionLabel>
@@ -89,60 +198,128 @@ export function SimulatorScreen() {
           <div>
             <SectionLabel className="mb-[11px]">Horizon</SectionLabel>
             <div className="flex gap-2">
-              {[4, 8, 12, 16].map((w) => (
-                <div key={w} onClick={() => actions.setSim({ weeks: w })} className={seg(sim.weeks === w)}>{w} wk</div>
+              {[4, 8, 12, 16].map((wk) => (
+                <div key={wk} onClick={() => actions.setSim({ weeks: wk })} className={seg(sim.weeks === wk)}>{wk} wk</div>
               ))}
             </div>
           </div>
         </Card>
 
+        {/* ── Output ── */}
         <div className="flex flex-col gap-4">
+          {/* Stat tiles */}
           <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
             <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">VO₂max</div>
-              <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none text-teal">{vo2Final.toFixed(1)}</div>
-              <div className="mt-2 text-[11px] font-semibold leading-none" style={{ color: vo2Delta >= 0 ? COLORS.good : COLORS.warn }}>{vo2DeltaStr} vs maintain</div>
-            </Tile>
-            <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">10K projection</div>
-              <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none text-ink">{fmtMin(proj.tenKMin)}</div>
-              <div className="mt-2 text-[11px] font-semibold leading-none" style={{ color: tenKColor }}>{tenKDeltaStr} vs maintain</div>
+              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">End readiness</div>
+              <div className="mt-[11px] flex items-baseline gap-[7px]">
+                <span className="font-mono text-[26px] font-semibold leading-none" style={{ color: rColor }}>{endReady}</span>
+                <span className="text-[12px] font-semibold leading-none" style={{ color: rColor }}>{readinessWord(endReady)}</span>
+              </div>
+              <div className="mt-2 text-[11px] font-medium leading-none text-faint">at week {weeks}</div>
             </Tile>
             <Tile className="p-4">
               <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Peak fatigue</div>
-              <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none" style={{ color: peakColor }}>{proj.peakFat}</div>
-              <div className="mt-2 text-[11px] font-medium leading-none text-faint">over horizon</div>
+              <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none" style={{ color: peakColor }}>{proj.peak_fatigue}</div>
+              <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-white/[0.08]"><div className="h-full rounded-full transition-all" style={{ width: `${proj.peak_fatigue}%`, background: peakColor }} /></div>
             </Tile>
             <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Injury risk</div>
-              <div className="mt-[11px] flex items-baseline gap-[7px]"><span className="font-mono text-[26px] font-semibold leading-none" style={{ color: riskColor }}>{proj.risk}</span><span className="text-[12px] font-semibold leading-none" style={{ color: riskColor }}>{riskBand}</span></div>
-              <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-white/[0.08]"><div className="h-full rounded-full transition-all" style={{ width: `${proj.risk}%`, background: riskColor }} /></div>
+              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Top gain</div>
+              <div className="mt-[11px] font-mono text-[19px] font-semibold leading-none text-teal">{topAxis.label}</div>
+              <div className="mt-2 text-[11px] font-semibold leading-none text-good">{fmtPct(relGain(topAxis))} vs maintain</div>
+            </Tile>
+            <Tile className="p-4">
+              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Plan uplift</div>
+              <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none text-ink">{fmtPct(avgUplift)}</div>
+              <div className="mt-2 text-[11px] font-medium leading-none text-faint">avg across 8 axes</div>
             </Tile>
           </div>
 
+          {/* 8-axis start → projected */}
           <Card className="p-5">
-            <div className="mb-[10px] flex items-center justify-between">
-              <SectionLabel>Projected VO₂max trajectory</SectionLabel>
+            <div className="mb-[18px] flex items-center justify-between">
+              <SectionLabel>Capacity projection · X(t)</SectionLabel>
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-soft"><span className="h-[6px] w-4 rounded-[2px] bg-ac" />projected</span>
+                <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="h-[10px] w-[2px] bg-[#6b7280]" />maintain</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-4">
+              {axes.map((a) => {
+                const scaleMax = Math.max(a.projected, a.baseline, a.start) * 1.12;
+                const fillPct = Math.max(3, Math.min(100, (a.projected / scaleMax) * 100));
+                const basePct = Math.max(2, Math.min(100, (a.baseline / scaleMax) * 100));
+                const d = a.projected - a.baseline;
+                return (
+                  <div key={a.key}>
+                    <div className="mb-2 text-[12px] font-medium leading-none text-mute">{a.label}</div>
+                    <div className="font-mono text-[26px] font-semibold leading-none text-ink">{Math.round(a.projected)}</div>
+                    <div className="relative mb-[7px] mt-[11px] h-[6px] overflow-hidden rounded-full bg-white/[0.07]">
+                      <div className="h-full rounded-full" style={{ width: `${fillPct}%`, background: "linear-gradient(90deg,var(--ac),#a7e36e)" }} />
+                      <div className="absolute top-[-2px] h-[10px] w-[2px] rounded-full bg-[#8b919c]" style={{ left: `calc(${basePct}% - 1px)` }} />
+                    </div>
+                    <div className="font-mono text-[10px] leading-none" style={{ color: d > 0.5 ? COLORS.good : d < -0.5 ? COLORS.hot : COLORS.dim }}>{fmtDelta(d)} vs maintain</div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Trajectory: selectable axis vs maintain */}
+          <Card className="p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <SectionLabel>Trajectory · {selAxis.label}</SectionLabel>
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-soft"><span className="h-[3px] w-4 rounded-[2px] bg-ac" />This plan</span>
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="w-4 border-t-2 border-dashed border-[#5a626e]" />Maintain</span>
               </div>
             </div>
-            <div className="mb-2 font-mono text-[10px] leading-none text-dim">VO₂ scale {vMin}–{vMax} ml·kg⁻¹·min⁻¹</div>
-            <svg viewBox="0 0 520 188" preserveAspectRatio="none" className="block h-[230px] w-full overflow-visible">
-              <defs><linearGradient id="simg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="rgba(198,241,53,.24)" /><stop offset="1" stopColor="rgba(198,241,53,0)" /></linearGradient></defs>
-              <path d={simArea} fill="url(#simg)" />
-              <polyline points={simBasePts} fill="none" stroke="#5a626e" strokeWidth="2" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-              <polyline points={simPlanPts} fill="none" stroke="var(--ac)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-              <circle cx={cx(cN)} cy={cy(vo2Final)} r="4" fill="var(--ac)" />
+            <div className="mb-3 flex flex-wrap gap-[6px]">
+              {axes.map((a) => (
+                <button key={a.key} onClick={() => setSelKey(a.key)} className={cn("rounded-[7px] border px-[9px] py-[6px] text-[11px] font-semibold leading-none transition-colors", a.key === activeKey ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-white/[0.03] text-mute")}>{a.label}</button>
+              ))}
+            </div>
+            <svg viewBox="0 0 520 188" preserveAspectRatio="none" className="block h-[220px] w-full overflow-visible">
+              <defs><linearGradient id="simTraj" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="rgba(198,241,53,.24)" /><stop offset="1" stopColor="rgba(198,241,53,0)" /></linearGradient></defs>
+              <path d={planArea} fill="url(#simTraj)" />
+              <polyline points={basePts} fill="none" stroke="#5a626e" strokeWidth="2" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+              <polyline points={planPts} fill="none" stroke="var(--ac)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+              <circle cx={cx(weeks)} cy={cy(selAxis.projected)} r="4" fill="var(--ac)" />
             </svg>
-            <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now</span><span>{sim.weeks} wk</span></div>
+            <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now · {Math.round(selAxis.start)}</span><span>{weeks} wk · {Math.round(selAxis.projected)}</span></div>
           </Card>
 
+          {/* Readiness curve */}
+          <Card className="p-5">
+            <div className="mb-2 flex items-center justify-between">
+              <SectionLabel>Readiness under this plan</SectionLabel>
+              <span className="font-mono text-[10px] leading-none text-dim">0–100 scale</span>
+            </div>
+            <svg viewBox="0 0 520 188" preserveAspectRatio="none" className="block h-[180px] w-full overflow-visible">
+              <defs><linearGradient id="simReady" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="rgba(123,214,192,.22)" /><stop offset="1" stopColor="rgba(123,214,192,0)" /></linearGradient></defs>
+              <path d={readyArea} fill="url(#simReady)" />
+              <polyline points={readyPts} fill="none" stroke={COLORS.teal} strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+              <circle cx={cx(weeks)} cy={ry(endReady)} r="4" fill={COLORS.teal} />
+            </svg>
+            <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now</span><span>{weeks} wk · {endReady}</span></div>
+          </Card>
+
+          {/* Narrative */}
           <Card className="flex items-start gap-[13px] px-5 py-[18px]">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" strokeWidth="2" className="mt-[2px] flex-none"><path d="M12 2v6M12 22v-2M5 12H2M22 12h-3" /><circle cx="12" cy="12" r="4" /></svg>
-            <div className="text-[13.5px] font-medium leading-[1.6] text-soft">{simNarr}</div>
+            <div className="text-[13.5px] font-medium leading-[1.6] text-soft">{narr}</div>
           </Card>
+
+          {!auth.token && (
+            <Card hover={false} className="px-5 py-[14px]">
+              <div className="text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">Sign in to project against your seeded twin — the figures above are illustrative preview data.</div>
+            </Card>
+          )}
+
+          {usingFallback && projError && (
+            <Card hover={false} className="px-5 py-[14px]">
+              <div className="text-[12.5px] font-medium leading-[1.5] text-[#b98a6a]">Couldn't reach the projection service ({projError}). Showing an illustrative estimate — adjust a control to retry.</div>
+            </Card>
+          )}
         </div>
       </div>
     </section>

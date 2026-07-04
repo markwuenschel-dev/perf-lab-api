@@ -186,7 +186,7 @@ export function initialState(): PerfLabState {
     explainOpen: false,
     explainKey: null,
     capView: "bars",
-    sim: { volume: 56, intensity: "balanced", weeks: 8, recovery: "standard" },
+    sim: { volume: 56, intensity: "balanced", weeks: 8, recovery: "standard", goal: DEFAULT_GOAL },
     checkin: { hrv: 64, sleepH: 7.5, sleepQ: 4, rhr: 52, soreness: "mild", mood: 4, done: false },
     checkinOpen: false,
     feedbackOpen: false,

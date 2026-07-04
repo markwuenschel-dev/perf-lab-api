@@ -77,6 +77,11 @@ export type OverviewMetrics = Schemas["OverviewMetrics"];
 export type TrainingLoadMetrics = Schemas["TrainingLoadMetrics"];
 export type AdherenceMetrics = Schemas["AdherenceMetrics"];
 
+/* ---------- Twin Simulator projection (Phase 7: POST /v1/simulate/projection) ---------- */
+export type ProjectionRequest = Schemas["ProjectionRequest"];
+export type ProjectionResponse = Schemas["ProjectionResponse"];
+export type AxisProjection = Schemas["AxisProjection"];
+
 /* ---------- Macrocycles (Phase 5: a program container anchored to an objective) ---------- */
 export type MacrocycleCreate = Schemas["MacrocycleCreate"];
 export type MacrocycleRead = Schemas["MacrocycleRead"];

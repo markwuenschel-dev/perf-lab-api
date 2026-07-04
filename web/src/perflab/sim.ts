@@ -89,6 +89,9 @@ export interface SimParams {
   intensity: "easy" | "balanced" | "hard";
   weeks: number;
   recovery: "high" | "standard" | "minimal";
+  /** Training goal the projection is shaped for (Twin Simulator, Phase 7).
+   *  Values are the TRAINING_GOALS enum strings (see store.tsx). */
+  goal: string;
 }
 
 export interface Projection {

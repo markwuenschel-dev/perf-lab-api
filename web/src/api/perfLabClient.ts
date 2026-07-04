@@ -20,6 +20,8 @@ import type {
   PlannedSessionUpdateRequest,
   ProfileRead,
   ProfileUpdate,
+  ProjectionRequest,
+  ProjectionResponse,
   ReadinessScore,
   StressDose,
   TokenResponse,
@@ -214,6 +216,24 @@ export async function logWorkout(
     body: JSON.stringify(log),
   });
   return handleResponse<UnifiedStateVector>(res, { sessionOn401: true });
+}
+
+/**
+ * Twin Simulator (Phase 7): forward-project the eight capacity axes + readiness /
+ * peak fatigue under a hypothetical plan. Auth-required — projects against the
+ * athlete's seeded twin.
+ */
+export async function getSimulateProjection(
+  body: ProjectionRequest,
+  token: string,
+): Promise<ProjectionResponse> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/simulate/projection`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<ProjectionResponse>(res, { sessionOn401: true });
 }
 
 /**
