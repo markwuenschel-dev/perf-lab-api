@@ -9,6 +9,7 @@ from app.schemas.dashboard import (
     DashboardBundleOut,
     DomainSummaryOut,
     KPIValueOut,
+    OverviewMetrics,
     ReadinessOut,
 )
 from app.services import dashboard_service
@@ -42,6 +43,19 @@ async def get_domain_summary(
         kpis=[KPIValueOut(**k) for k in kpis_raw],
         primary_anchors=[AnchorObservationOut(**a) for a in anchors_raw],
     )
+
+
+@router.get("/overview", response_model=OverviewMetrics)
+async def get_overview(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> OverviewMetrics:
+    """Real Overview tiles: training load / ACWR and adherence / streak.
+
+    Returns null/insufficient figures rather than erroring for users with
+    little or no history.
+    """
+    return await dashboard_service.overview_metrics(db, current_user.id)
 
 
 @router.get("/readiness", response_model=ReadinessOut)

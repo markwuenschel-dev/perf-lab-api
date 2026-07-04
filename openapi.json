@@ -56,6 +56,37 @@
         "title": "AdaptationContribution",
         "type": "object"
       },
+      "AdherenceMetrics": {
+        "description": "Recent plan adherence and the current training streak.",
+        "properties": {
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "completed / scheduled over the window, 0-100; None if nothing scheduled",
+            "title": "Pct"
+          },
+          "streak_days": {
+            "default": 0,
+            "description": "consecutive days with a completed session / logged workout",
+            "title": "Streak Days",
+            "type": "integer"
+          },
+          "window_days": {
+            "default": 28,
+            "description": "length of the adherence window in days",
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "title": "AdherenceMetrics",
+        "type": "object"
+      },
       "AnchorObservationOut": {
         "properties": {
           "benchmark_code": {
@@ -2099,6 +2130,23 @@
         "title": "OnboardResponse",
         "type": "object"
       },
+      "OverviewMetrics": {
+        "description": "Real dashboard tiles: training load / ACWR and adherence / streak.",
+        "properties": {
+          "adherence": {
+            "$ref": "#/components/schemas/AdherenceMetrics"
+          },
+          "training_load": {
+            "$ref": "#/components/schemas/TrainingLoadMetrics"
+          }
+        },
+        "required": [
+          "training_load",
+          "adherence"
+        ],
+        "title": "OverviewMetrics",
+        "type": "object"
+      },
       "PlannedSessionRead": {
         "properties": {
           "benchmark_key": {
@@ -3221,6 +3269,72 @@
           "access_token"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "TrainingLoadMetrics": {
+        "description": "Acute:chronic workload ratio vs the 0.8-1.3 sweet spot.\n\n``acute`` is the 7-day summed load; ``chronic`` is the average *weekly*\nload over 28 days (28-day sum / 4). ``acwr`` = acute / chronic. All three\nare ``None`` when there is insufficient history to compute a meaningful\nbaseline (``status == \"insufficient\"``).",
+        "properties": {
+          "acute": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "7-day summed training load",
+            "title": "Acute"
+          },
+          "acwr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "acute(7d) / chronic(28d avg weekly) load ratio",
+            "title": "Acwr"
+          },
+          "chronic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "28-day average weekly training load",
+            "title": "Chronic"
+          },
+          "status": {
+            "enum": [
+              "insufficient",
+              "low",
+              "optimal",
+              "high"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "sweet_spot_high": {
+            "default": 1.3,
+            "title": "Sweet Spot High",
+            "type": "number"
+          },
+          "sweet_spot_low": {
+            "default": 0.8,
+            "title": "Sweet Spot Low",
+            "type": "number"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "TrainingLoadMetrics",
         "type": "object"
       },
       "UnifiedStateVector": {
@@ -4617,6 +4731,33 @@
           }
         ],
         "summary": "Get Dashboard Kpis",
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/v1/dashboard/overview": {
+      "get": {
+        "description": "Real Overview tiles: training load / ACWR and adherence / streak.\n\nReturns null/insufficient figures rather than erroring for users with\nlittle or no history.",
+        "operationId": "get_overview_v1_dashboard_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Overview",
         "tags": [
           "Dashboard"
         ]

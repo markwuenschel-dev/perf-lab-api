@@ -15,6 +15,7 @@ import type {
   ObjectiveUpdate,
   OnboardRequest,
   OnboardResponse,
+  OverviewMetrics,
   PlannedSessionRead,
   PlannedSessionUpdateRequest,
   ProfileRead,
@@ -416,6 +417,19 @@ export async function getReadiness(token: string): Promise<ReadinessScore> {
     headers: { ...authHeaders(token) },
   });
   return handleResponse<ReadinessScore>(res, { sessionOn401: true });
+}
+
+/**
+ * Dashboard (P6): the Overview tiles' backend-owned metrics — acute:chronic
+ * training load vs the sweet spot, plus recent plan adherence + streak. Fields
+ * are null / `status == "insufficient"` for new users with little history.
+ */
+export async function getDashboardOverview(token: string): Promise<OverviewMetrics> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/dashboard/overview`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<OverviewMetrics>(res, { sessionOn401: true });
 }
 
 /**

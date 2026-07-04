@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Mapping
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -11,9 +12,22 @@ from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot
+from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.user import AthleteProfile
+from app.models.workout_log import WorkoutLog
+from app.schemas.dashboard import AdherenceMetrics, OverviewMetrics, TrainingLoadMetrics
 from app.schemas.state import UnifiedStateVector
 from app.services.state_service import load_current_state
+
+# --- Overview / dashboard-tile constants -----------------------------------
+ACUTE_DAYS = 7
+CHRONIC_DAYS = 28
+# A meaningful chronic baseline needs history predating the acute window;
+# below this span the acute:chronic ratio is dominated by a few recent days.
+MIN_HISTORY_DAYS = 14
+SWEET_SPOT_LOW = 0.8
+SWEET_SPOT_HIGH = 1.3
+ADHERENCE_WINDOW_DAYS = 28
 
 # Derived metrics that depend on other KPIs must run after their inputs.
 _DERIVED_ORDER: dict[str, int] = {
@@ -289,3 +303,147 @@ async def readiness_payload(
     if ratio is not None and ratio < 72.0:
         flags["wl_snatch_share_low"] = True
     return state, flags
+
+
+# ---------------------------------------------------------------------------
+# Overview tiles: training load / ACWR + adherence / streak
+#
+# The numeric logic lives in pure helpers (no DB session) so it is unit-testable
+# without Postgres — see tests/test_dashboard_overview.py. ``overview_metrics``
+# only does the DB fetches and feeds these helpers.
+# ---------------------------------------------------------------------------
+
+def daily_load(session_rpe: float | None, duration_minutes: float | None) -> float:
+    """Per-session training-load proxy: ``session_rpe * duration_minutes``.
+
+    Falls back to duration alone when RPE is missing/non-positive, and to 0.0
+    when both are missing. Session-RPE load (RPE × minutes) is the standard
+    field-friendly internal-load estimate.
+    """
+    dur = duration_minutes or 0.0
+    if dur <= 0:
+        return 0.0
+    if session_rpe and session_rpe > 0:
+        return session_rpe * dur
+    return dur
+
+
+def _classify_acwr(acwr: float) -> str:
+    if acwr < SWEET_SPOT_LOW:
+        return "low"
+    if acwr <= SWEET_SPOT_HIGH:
+        return "optimal"
+    return "high"
+
+
+def compute_training_load(loads_by_day: Mapping[date, float], today: date) -> TrainingLoadMetrics:
+    """Acute:chronic workload ratio from a date→load map.
+
+    - ``acute`` = summed load over the trailing ``ACUTE_DAYS`` (7).
+    - ``chronic`` = average weekly load over ``CHRONIC_DAYS`` (28-day sum / 4).
+    - ``acwr`` = acute / chronic.
+
+    Returns ``status == "insufficient"`` (with null figures) when there is no
+    load in the window, the chronic baseline is zero, or the history span is
+    shorter than ``MIN_HISTORY_DAYS`` (so the ratio would be dominated by a few
+    recent days rather than a real chronic baseline).
+    """
+    window = {d: v for d, v in loads_by_day.items() if 0 <= (today - d).days < CHRONIC_DAYS and v > 0}
+    insufficient = TrainingLoadMetrics(
+        acwr=None, acute=None, chronic=None, status="insufficient",
+        sweet_spot_low=SWEET_SPOT_LOW, sweet_spot_high=SWEET_SPOT_HIGH,
+    )
+    if not window:
+        return insufficient
+
+    oldest_days = max((today - d).days for d in window)
+    if oldest_days < MIN_HISTORY_DAYS:
+        return insufficient
+
+    acute = sum(v for d, v in window.items() if (today - d).days < ACUTE_DAYS)
+    chronic_total = sum(window.values())
+    chronic_weekly = chronic_total / (CHRONIC_DAYS / 7.0)
+    if chronic_weekly <= 0:
+        return insufficient
+
+    acwr = acute / chronic_weekly
+    return TrainingLoadMetrics(
+        acwr=round(acwr, 2),
+        acute=round(acute, 1),
+        chronic=round(chronic_weekly, 1),
+        status=_classify_acwr(acwr),  # type: ignore[arg-type]
+        sweet_spot_low=SWEET_SPOT_LOW,
+        sweet_spot_high=SWEET_SPOT_HIGH,
+    )
+
+
+def compute_adherence_pct(completed: int, scheduled: int) -> float | None:
+    """``completed / scheduled`` as a 0-100 percentage; ``None`` when nothing
+    was scheduled in the window (a new user has no plan to adhere to)."""
+    if scheduled <= 0:
+        return None
+    return round(completed / scheduled * 100.0, 1)
+
+
+def compute_streak(active_days: set[date], today: date) -> int:
+    """Consecutive days with training activity (a completed session or a logged
+    workout), counting back from today. Today not yet being active does not
+    reset the streak — it resumes from yesterday — but a full gap day ends it.
+    """
+    cursor = today if today in active_days else today - timedelta(days=1)
+    streak = 0
+    while cursor in active_days:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
+
+
+async def overview_metrics(db: AsyncSession, user_id: int) -> OverviewMetrics:
+    """Real training-load/ACWR and adherence/streak tiles for the Overview.
+
+    Degrades gracefully for new users (nulls / ``insufficient`` / empty streak),
+    never raising on thin history.
+    """
+    today = date.today()
+    chronic_cutoff = datetime.combine(today - timedelta(days=CHRONIC_DAYS - 1), datetime.min.time())
+
+    # --- Training load: daily load proxy from logged workouts in the window ---
+    wo_rows = (
+        await db.execute(
+            select(WorkoutLog).where(
+                WorkoutLog.user_id == user_id,
+                WorkoutLog.session_timestamp >= chronic_cutoff,
+            )
+        )
+    ).scalars().all()
+
+    loads_by_day: dict[date, float] = {}
+    workout_days: set[date] = set()
+    for w in wo_rows:
+        d = w.session_timestamp.date()
+        loads_by_day[d] = loads_by_day.get(d, 0.0) + daily_load(w.session_rpe, w.duration_minutes)
+        workout_days.add(d)
+    training_load = compute_training_load(loads_by_day, today)
+
+    # --- Adherence: planned sessions due within the adherence window ----------
+    adherence_start = today - timedelta(days=ADHERENCE_WINDOW_DAYS - 1)
+    ps_rows = (
+        await db.execute(
+            select(PlannedSession).where(
+                PlannedSession.user_id == user_id,
+                PlannedSession.scheduled_date >= adherence_start,
+                PlannedSession.scheduled_date <= today,
+            )
+        )
+    ).scalars().all()
+
+    scheduled = len(ps_rows)
+    completed = sum(1 for p in ps_rows if p.status == SessionStatus.COMPLETED)
+    completed_days = {p.scheduled_date for p in ps_rows if p.status == SessionStatus.COMPLETED}
+    adherence = AdherenceMetrics(
+        pct=compute_adherence_pct(completed, scheduled),
+        streak_days=compute_streak(workout_days | completed_days, today),
+        window_days=ADHERENCE_WINDOW_DAYS,
+    )
+
+    return OverviewMetrics(training_load=training_load, adherence=adherence)
