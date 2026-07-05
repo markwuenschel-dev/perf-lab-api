@@ -441,4 +441,14 @@ async def process_new_workout(
     await db.commit()
     await db.refresh(new_db_record)
 
-    return unified_from_athlete_row(new_db_record)
+    # Materialize the return value BEFORE the shadow write: the EKF's best-effort
+    # commit/rollback expires ORM objects, which would break a later attribute read.
+    result = unified_from_athlete_row(new_db_record)
+
+    # Shadow EKF (ADR-0041): advance the parallel full-covariance belief through this
+    # same workout. Best-effort and capture-only — never affects the returned state.
+    from app.services import ekf_shadow_service
+
+    await ekf_shadow_service.record_ekf_predict(db, user_id, dose, dt, log)
+
+    return result

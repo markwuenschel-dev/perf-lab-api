@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
+from app.logic.ekf.observation import mapping_specs_from_orm
 from app.logic.state_update_v0 import apply_benchmark_observation, normalize_score01
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -202,11 +203,12 @@ async def create_observation(
     await db.flush()
 
     mappings = list(definition.observation_mappings or [])
+    observation_time = body.observed_at or datetime.utcnow()
+    # Snapshot mapping data for the shadow EKF *before* commit — ORM attributes expire on
+    # commit, so lazy-loading them afterward in async would fail.
+    ekf_specs = mapping_specs_from_orm(mappings) if (body.validity_status == "valid" and mappings) else []
     if body.validity_status == "valid" and mappings:
         current = await state_service.load_or_init_current_state(db, user_id)
-
-        # Use the observation's own timestamp so state history stays chronologically correct
-        observation_time = body.observed_at or datetime.utcnow()
 
         new_state = apply_benchmark_observation(
             current,
@@ -228,6 +230,20 @@ async def create_observation(
         )
 
     await db.commit()
+
+    # Shadow EKF (ADR-0041): assimilate this benchmark into the parallel full-covariance
+    # belief. Best-effort and capture-only — never affects the returned observation.
+    if ekf_specs:
+        from app.services import ekf_shadow_service
+
+        await ekf_shadow_service.record_ekf_update(
+            db,
+            user_id,
+            benchmark_code=body.benchmark_code,
+            mapping_specs=ekf_specs,
+            score01=score01,
+            observed_at=observation_time,
+        )
 
     # Auto-recompute derived KPI metrics so the dashboard is immediately fresh
     from app.services import dashboard_service as _ds

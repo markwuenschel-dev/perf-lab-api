@@ -227,6 +227,34 @@ class EngineParameters:
     # Measurement variance for a full-weight benchmark (lower ⇒ trusts the test more).
     confidence_measured_variance: float = 0.08
 
+    # --- Shadow EKF: full joint covariance over X/F/T (ADR-0041) ---
+    # These parameterize the parallel shadow estimator only; nothing here affects the
+    # production scalar confidence path. All variances are in normalized per-axis space
+    # (axis / scale), matching the relative residual semantics of ADR-0034/0036.
+    #
+    # Process noise (variance/day) for the fatigue and tissue blocks — larger than
+    # capacity's because fatigue/tissue are transient and re-driven every session.
+    fatigue_process_noise_per_day: dict[str, float] = field(
+        default_factory=lambda: dict.fromkeys(
+            ("cns", "muscular", "metabolic", "structural", "tendon", "grip"), 0.02
+        )
+    )
+    tissue_process_noise_per_day: dict[str, float] = field(
+        default_factory=lambda: dict.fromkeys(
+            ("shoulder", "elbow", "wrist", "lumbar", "hip", "knee", "ankle", "finger"), 0.01
+        )
+    )
+    # Block-diagonal seed variance for fatigue/tissue (the capacity block seeds from the
+    # production per-axis ``capacity_confidence``). Weak-ish priors in normalized space.
+    ekf_seed_variance_fatigue: float = 0.25
+    ekf_seed_variance_tissue: float = 0.25
+    # Finite-difference step (normalized state units) for the transition Jacobian.
+    ekf_epsilon: float = 1e-4
+    # Variance floor/ceiling for the fatigue/tissue blocks (the capacity block reuses
+    # confidence_min_variance / confidence_max_variance).
+    ekf_min_variance: float = 1e-4
+    ekf_max_variance: float = 2.0
+
 
 def default_parameters() -> EngineParameters:
     return EngineParameters()
