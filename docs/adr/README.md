@@ -90,3 +90,4 @@ and die with their PR.
 | [0039](0039-dose-law-external-load-vs-effort.md) | Dose-law intensity splits external load from internal effort | accepted |
 | [0040](0040-macrocycle-thin-container.md) | The macrocycle is a thin container, not a materialized plan | proposed |
 | [0041](0041-shadow-ekf-state-covariance.md) | Shadow EKF: full joint covariance over X/F/T (scalar → covariance) | accepted |
+| [0042](0042-shadow-mpc-planner.md) | Shadow MPC planner: receding-horizon re-ranking of prescriber candidates | accepted |

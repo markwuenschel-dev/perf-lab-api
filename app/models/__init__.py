@@ -16,6 +16,7 @@ from app.models.exercise import Exercise  # noqa: F401
 from app.models.experiment import ExperimentAssignment  # noqa: F401
 from app.models.macrocycle import Macrocycle  # noqa: F401
 from app.models.mesocycle import MesocycleBlock, PlannedSession  # noqa: F401
+from app.models.mpc_shadow import MpcShadowLog  # noqa: F401
 from app.models.objective import Objective  # noqa: F401
 from app.models.observation_mapping import ObservationMapping  # noqa: F401
 from app.models.recovery_shadow import RecoveryShadowLog  # noqa: F401

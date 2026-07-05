@@ -18,10 +18,15 @@ the current state and calls it.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from app.domain.vectors import CapacityState
-from app.engine.simulate import make_log, rest_dose
+from app.engine.simulate import (
+    INTENSITY_BANDS,
+    RECOVERY_BANDS,
+    make_log,
+    rest_dose,
+    session_log_from_intent,
+)
 from app.logic.constraint_engine import mean_fatigue, overall_readiness
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.planning import periodization_envelope
@@ -78,52 +83,8 @@ _GOAL_MIX: dict[str, list[str]] = {
     "FullMarathon": ["Running", "Running", "Running", "Running", "Running"],
 }
 
-# Per-session baseline load fields by modality (scaled by the weekly factor).
-_BASE_SESSION: dict[str, dict[str, Any]] = {
-    "Strength": {
-        "duration_minutes": 60.0,
-        "estimated_sets": 6.0,
-        "total_volume_load": 6000.0,
-        "dominant_movement_pattern": "squat",
-    },
-    "Hypertrophy": {
-        "duration_minutes": 60.0,
-        "estimated_sets": 8.0,
-        "total_volume_load": 5000.0,
-        "dominant_movement_pattern": "squat",
-    },
-    "Power": {
-        "duration_minutes": 55.0,
-        "estimated_sets": 5.0,
-        "total_volume_load": 3200.0,
-        "dominant_movement_pattern": "squat",
-    },
-    "Running": {
-        "duration_minutes": 50.0,
-        "distance_meters": 8000.0,
-        "dominant_movement_pattern": "run",
-    },
-    "Mixed": {
-        "duration_minutes": 40.0,
-        "dominant_movement_pattern": "mixed",
-    },
-}
-
-# intensity -> (target RPE, avg RIR for lifting, load multiplier).
-_INTENSITY: dict[str, dict[str, float]] = {
-    "easy": {"rpe": 5.5, "rir": 4.0, "load": 0.85},
-    "balanced": {"rpe": 7.0, "rir": 2.5, "load": 1.0},
-    "hard": {"rpe": 8.5, "rir": 1.0, "load": 1.15},
-}
-
-# recovery -> (sleep quality, life-stress-inverse, volume multiplier). Poor
-# recovery (minimal) drives the dose engine's sleep/life penalties up, which both
-# raises fatigue and *lowers* adaptation gain — modelling overreaching.
-_RECOVERY: dict[str, dict[str, float]] = {
-    "high": {"sleep": 8.0, "life": 8.0, "vol": 0.95},
-    "standard": {"sleep": 7.0, "life": 7.0, "vol": 1.0},
-    "minimal": {"sleep": 4.0, "life": 4.0, "vol": 1.05},
-}
+# The per-modality baseline load, intensity and recovery tables live in
+# ``app.engine.simulate`` (shared with the MPC planner) and are imported above.
 
 # A near-zero-dose "rest" log used to elapse the trailing recovery days of a week.
 _REST_MODALITY = "Strength"
@@ -144,37 +105,9 @@ def _week_sessions(mix: list[str], sessions_per_week: int) -> list[str]:
     return [mix[i % len(mix)] for i in range(n)]
 
 
-def _build_session_log(
-    when: datetime,
-    modality: str,
-    *,
-    scale: float,
-    intensity: str,
-    recovery: str,
-) -> Any:
-    """One synthetic session log, scaled by the weekly volume/intensity/recovery."""
-    intens = _INTENSITY.get(intensity, _INTENSITY["balanced"])
-    rec = _RECOVERY.get(recovery, _RECOVERY["standard"])
-    base = dict(_BASE_SESSION.get(modality, _BASE_SESSION["Mixed"]))
-
-    eff_scale = max(0.1, scale)
-    for field in ("duration_minutes", "estimated_sets", "total_volume_load", "distance_meters"):
-        if field in base:
-            base[field] = float(base[field]) * eff_scale
-
-    # Effort-only sessions (Running / Mixed) leave avg_rir unset so the dose engine
-    # derives failure-proximity from RPE; lifting sessions carry an explicit RIR.
-    if modality in ("Strength", "Hypertrophy", "Power"):
-        base["avg_rir"] = intens["rir"]
-
-    return make_log(
-        when,
-        modality,  # type: ignore[arg-type]
-        session_rpe=intens["rpe"],
-        sleep_quality=rec["sleep"],
-        life_stress_inverse=rec["life"],
-        **base,
-    )
+# Internal alias — the projection week loop calls the shared synthesis helper by its
+# original private name.
+_build_session_log = session_log_from_intent
 
 
 def _run_week(
@@ -236,8 +169,8 @@ def _simulate(
     volume envelope; the maintain baseline runs flat (no periodization).
     """
     mix = _mix_for(goal)
-    intens_load = _INTENSITY.get(intensity, _INTENSITY["balanced"])["load"]
-    rec_vol = _RECOVERY.get(recovery, _RECOVERY["standard"])["vol"]
+    intens_load = INTENSITY_BANDS.get(intensity, INTENSITY_BANDS["balanced"])["load"]
+    rec_vol = RECOVERY_BANDS.get(recovery, RECOVERY_BANDS["standard"])["vol"]
 
     # Per-session load reflects intensity/recovery only; weekly volume drives the
     # session *count* below (the lever the dose law doesn't log-compress).
