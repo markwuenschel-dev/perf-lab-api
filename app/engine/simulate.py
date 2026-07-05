@@ -131,6 +131,73 @@ def rest_dose() -> StressDose:
 
 
 # ---------------------------------------------------------------------------
+# Planned-intent → synthetic session log
+# ---------------------------------------------------------------------------
+
+# Per-session baseline load fields by modality (scaled by an intent's volume factor).
+SESSION_BASELINES: dict[str, dict[str, Any]] = {
+    "Strength": {"duration_minutes": 60.0, "estimated_sets": 6.0, "total_volume_load": 6000.0,
+                 "dominant_movement_pattern": "squat"},
+    "Hypertrophy": {"duration_minutes": 60.0, "estimated_sets": 8.0, "total_volume_load": 5000.0,
+                    "dominant_movement_pattern": "squat"},
+    "Power": {"duration_minutes": 55.0, "estimated_sets": 5.0, "total_volume_load": 3200.0,
+              "dominant_movement_pattern": "squat"},
+    "Running": {"duration_minutes": 50.0, "distance_meters": 8000.0, "dominant_movement_pattern": "run"},
+    "Mixed": {"duration_minutes": 40.0, "dominant_movement_pattern": "mixed"},
+}
+
+# intensity -> (target RPE, avg RIR for lifting, load multiplier).
+INTENSITY_BANDS: dict[str, dict[str, float]] = {
+    "easy": {"rpe": 5.5, "rir": 4.0, "load": 0.85},
+    "balanced": {"rpe": 7.0, "rir": 2.5, "load": 1.0},
+    "hard": {"rpe": 8.5, "rir": 1.0, "load": 1.15},
+}
+
+# recovery -> (sleep quality, life-stress-inverse, volume multiplier). Poor recovery drives
+# the dose engine's sleep/life penalties up (raises fatigue, lowers adaptation gain).
+RECOVERY_BANDS: dict[str, dict[str, float]] = {
+    "high": {"sleep": 8.0, "life": 8.0, "vol": 0.95},
+    "standard": {"sleep": 7.0, "life": 7.0, "vol": 1.0},
+    "minimal": {"sleep": 4.0, "life": 4.0, "vol": 1.05},
+}
+
+
+def session_log_from_intent(
+    when: datetime,
+    modality: str,
+    *,
+    scale: float,
+    intensity: str,
+    recovery: str,
+) -> WorkoutLog:
+    """One synthetic session log, scaled by a volume/intensity/recovery intent.
+
+    The "planned intent → WorkoutLog" bridge: maps a (modality, intensity, recovery, scale)
+    intent onto a synthetic ``WorkoutLog`` the real dose engine can consume. Reused by the
+    projection service (weekly rollout) and the shadow MPC planner (ADR-0042).
+    """
+    intens = INTENSITY_BANDS.get(intensity, INTENSITY_BANDS["balanced"])
+    rec = RECOVERY_BANDS.get(recovery, RECOVERY_BANDS["standard"])
+    base = dict(SESSION_BASELINES.get(modality, SESSION_BASELINES["Mixed"]))
+
+    eff_scale = max(0.1, scale)
+    for field in ("duration_minutes", "estimated_sets", "total_volume_load", "distance_meters"):
+        if field in base:
+            base[field] = float(base[field]) * eff_scale
+
+    # Effort-only sessions (Running / Mixed) leave avg_rir unset so the dose engine derives
+    # failure-proximity from RPE; lifting sessions carry an explicit RIR.
+    if modality in ("Strength", "Hypertrophy", "Power"):
+        base["avg_rir"] = intens["rir"]
+
+    return make_log(
+        when, modality,  # type: ignore[arg-type]
+        session_rpe=intens["rpe"], sleep_quality=rec["sleep"], life_stress_inverse=rec["life"],
+        **base,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Driving the engine
 # ---------------------------------------------------------------------------
 

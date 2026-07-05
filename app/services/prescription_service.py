@@ -17,6 +17,7 @@ from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import dashboard_service
 from app.services.decision_telemetry import persist_prescription_decision
+from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
 from app.services.planning_service import count_block_skips
 from app.services.state_service import load_or_init_current_state
@@ -195,4 +196,9 @@ async def prescribe_for_athlete(
         state_snapshot=state.model_dump(mode="json"),
         block_context=cast(dict[str, Any], dict(block_context)),
     )
+
+    # Best-effort shadow MPC (ADR-0042): re-rank the same candidate pool by
+    # receding-horizon lookahead and log MPC-vs-greedy. Capture-only — never alters `rx`.
+    await record_mpc_shadow(db, user_id, state, candidate_log, str(effective_goal))
+
     return rx
