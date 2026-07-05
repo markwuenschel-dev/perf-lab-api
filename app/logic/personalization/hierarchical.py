@@ -44,6 +44,29 @@ def experience_prior_scale(experience_level: str | None) -> float:
     return _EXPERIENCE_RECOVERY_SCALE.get(experience_level.strip().lower(), 1.0)
 
 
+def partial_pool_with_sampling_var(
+    prior_mean: float,
+    data_estimate: float,
+    sampling_var: float,
+    between_var: float,
+    *,
+    n: int = 0,
+) -> PooledScalar:
+    """Partial-pool one scalar given the data estimate's actual sampling variance.
+
+    ``sampling_var`` is Var(β̂) — for a regression coefficient this is ``σ²·(ZᵀZ)⁻¹_jj``, NOT the
+    ``σ²/n`` approximation (which understates it and makes ``P^θ`` overconfident). Use this form
+    whenever the design matrix is available.
+    """
+    if between_var <= 0.0:
+        return PooledScalar(value=prior_mean, p_theta=max(0.0, between_var), weight=0.0, n=n)
+    if sampling_var <= 0.0:
+        return PooledScalar(value=data_estimate, p_theta=0.0, weight=1.0, n=n)
+    weight = between_var / (between_var + sampling_var)  # = τ² / (τ² + Var(β̂))
+    value = (1.0 - weight) * prior_mean + weight * data_estimate
+    return PooledScalar(value=value, p_theta=(1.0 - weight) * between_var, weight=weight, n=n)
+
+
 def partial_pool_scalar(
     prior_mean: float,
     data_estimate: float,
@@ -51,16 +74,16 @@ def partial_pool_scalar(
     between_var: float,
     within_var: float,
 ) -> PooledScalar:
-    """Partial-pool one scalar toward ``prior_mean``. See module docstring for the model."""
-    if n <= 0 or between_var <= 0.0:
-        # No data (or a degenerate prior) → fall back entirely to the population prior.
+    """Partial-pool one scalar with the ``σ²/n`` sampling-variance approximation.
+
+    Convenience wrapper over ``partial_pool_with_sampling_var`` for the case where only a count
+    and a residual variance are available (no design matrix). ``n ≤ 0`` ⇒ the population prior.
+    """
+    if n <= 0:
         return PooledScalar(value=prior_mean, p_theta=max(0.0, between_var), weight=0.0, n=max(0, n))
-    data_precision = n / max(1e-12, within_var)
-    prior_precision = 1.0 / between_var
-    post_precision = prior_precision + data_precision
-    weight = data_precision / post_precision  # = τ² / (τ² + σ²/n)
-    value = (1.0 - weight) * prior_mean + weight * data_estimate
-    return PooledScalar(value=value, p_theta=1.0 / post_precision, weight=weight, n=n)
+    return partial_pool_with_sampling_var(
+        prior_mean, data_estimate, max(1e-12, within_var) / n, between_var, n=n
+    )
 
 
 def estimate_hyperparameters(

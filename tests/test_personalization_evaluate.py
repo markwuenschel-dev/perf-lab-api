@@ -21,12 +21,13 @@ def test_partial_pool_mae_is_lowest():
     assert r.mae_partial_pool < r.mae_no_pool
 
 
-def test_ptheta_calibration_is_reported_with_warning_when_overconfident():
-    r = ev.evaluate(synthesize_population(seed=2), seed=2)
-    assert r.ptheta_calibration_ratio > 0.0  # reported
-    # seed 2 is overconfident (~0.18) → a warning, but it does NOT block promotion
-    assert r.verdict == "promote"
-    assert any("P^θ" in w for w in r.warnings)
+def test_ptheta_is_calibrated_and_gated_after_gram_correction():
+    """With the Gram-based sampling variance, tr(P^θ)/MSE lands ~1.0 and is gated on."""
+    for seed in range(5):
+        r = ev.evaluate(synthesize_population(seed=seed), seed=seed)
+        assert 0.5 <= r.ptheta_calibration_ratio <= 2.0, f"seed {seed}: {r.ptheta_calibration_ratio}"
+        assert not r.warnings  # in band → no calibration warning
+        assert r.verdict == "promote"
 
 
 def test_entrypoint_run_payload_and_artifact():

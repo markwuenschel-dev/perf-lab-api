@@ -28,12 +28,10 @@ from app.ml.personalization.partial_pool_fit import fit_athlete, fit_hyperparame
 ARTIFACT = Path(__file__).parent / "artifacts" / "personalization_recovery_v1.json"
 SEED = 20260705
 
-MIN_IMPROVEMENT = 0.002       # partial MAE must beat both baselines by this margin (the GATE)
-# P^θ calibration is REPORTED, not gated. It is a coarse parameter-uncertainty signal and is
-# genuinely ~2-4x overconfident here because the multivariate coefficient sampling variance is
-# σ²·(ZᵀZ)⁻¹, which σ²/n underestimates — a Gram-based correction is the documented follow-up.
-# Outside this band we attach a warning; the seed-robust MAE win is the primary claim.
-CALIB_LO, CALIB_HI = 0.5, 2.0  # tr(P^θ)/MSE band for the reported-not-gated calibration warning
+MIN_IMPROVEMENT = 0.002       # partial MAE must beat both baselines by this margin
+# P^θ calibration IS gated now: with the Gram-based sampling variance σ²·(ZᵀZ)⁻¹ (not σ²/n),
+# mean tr(P^θ)/MSE lands ~1.0-1.2 across seeds, so the parameter uncertainty is trustworthy.
+CALIB_LO, CALIB_HI = 0.5, 2.0  # tr(P^θ)/MSE must land in this band (gate)
 
 
 @dataclass
@@ -71,7 +69,7 @@ def evaluate(pop: list[AthleteData], *, holdout_frac: float = 0.3, seed: int = S
     full_within: list[float] = []
     full_dof: list[int] = []
     for a in pop:
-        b, wv, n = fit_athlete(a.Z, a.y)
+        b, wv, n, _gdiag = fit_athlete(a.Z, a.y)
         k = b.size
         full_est.append(b)
         if n - k > 0:
@@ -84,23 +82,23 @@ def evaluate(pop: list[AthleteData], *, holdout_frac: float = 0.3, seed: int = S
     )
 
     # Per-athlete personalization is fit on TRAIN only; test rows score the three estimators.
-    fits: list[tuple[np.ndarray, int, np.ndarray, np.ndarray, np.ndarray]] = []
+    fits: list[tuple[np.ndarray, int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
     for a in pop:
         if len(a.y) < 2:
             continue
         tr, te = _split(len(a.y), holdout_frac, rng)
         if tr.size < 1 or te.size < 1:
             continue
-        beta_hat, _within, n_tr = fit_athlete(a.Z[tr], a.y[tr])
-        fits.append((beta_hat, n_tr, a.theta_true, a.Z[te], a.y[te]))
+        beta_hat, _within, n_tr, gdiag_tr = fit_athlete(a.Z[tr], a.y[tr])
+        fits.append((beta_hat, n_tr, gdiag_tr, a.theta_true, a.Z[te], a.y[te]))
 
     ae_full: list[float] = []
     ae_nopool: list[float] = []
     ae_partial: list[float] = []
     sq_err_partial: list[float] = []
     ptheta_tr: list[float] = []
-    for beta_hat, n_tr, theta_true, z_te, y_te in fits:
-        beta_i, p_theta = pool_athlete(beta_hat, n_tr, mu0, tau2, within_pooled)
+    for beta_hat, n_tr, gdiag_tr, theta_true, z_te, y_te in fits:
+        beta_i, p_theta = pool_athlete(beta_hat, within_pooled, gdiag_tr, mu0, tau2, n=n_tr)
         ae_full.extend(np.abs(y_te - z_te @ mu0).tolist())
         ae_nopool.extend(np.abs(y_te - z_te @ beta_hat).tolist())
         ae_partial.extend(np.abs(y_te - z_te @ beta_i).tolist())
@@ -112,17 +110,16 @@ def evaluate(pop: list[AthleteData], *, holdout_frac: float = 0.3, seed: int = S
     mae_partial = float(np.mean(ae_partial))
     calib = float(np.mean(ptheta_tr) / max(1e-12, np.mean(sq_err_partial)))
 
-    # GATE: partial pooling must beat both baselines (the seed-robust claim).
+    # GATE: partial pooling must beat both baselines AND P^θ must be calibrated.
     reasons: list[str] = []
     if not (mae_partial < mae_full - MIN_IMPROVEMENT):
         reasons.append(f"partial not better than full pooling ({mae_partial:.4f} vs {mae_full:.4f})")
     if not (mae_partial < mae_nopool - MIN_IMPROVEMENT):
         reasons.append(f"partial not better than no pooling ({mae_partial:.4f} vs {mae_nopool:.4f})")
-    # REPORTED (not gated): P^θ calibration — coarse and known-overconfident here.
     warnings: list[str] = []
     if not (CALIB_LO <= calib <= CALIB_HI):
         direction = "overconfident" if calib < CALIB_LO else "overconservative"
-        warnings.append(f"P^θ {direction}: tr(P^θ)/MSE = {calib:.2f} (coarse signal; σ²/n understates coef variance)")
+        reasons.append(f"P^θ {direction}: tr(P^θ)/MSE = {calib:.2f}")
 
     return EvalReport(
         n_athletes=len(fits),
