@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from app.engine.parameters import default_parameters
+from app.ml.common.artifact import write_artifact as _write_artifact
 from app.ml.q10_confidence.build_training_frame import (
     AXIS_COLUMN,
     FEATURE_COLUMN,
@@ -163,10 +164,7 @@ def write_artifact(
     artifact: dict[str, Any], path: str | Path = _DEFAULT_ARTIFACT_PATH
 ) -> Path:
     """Write the shadow artifact JSON (no override loader — the binding is unwired)."""
-    out = Path(path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
-    return out
+    return _write_artifact(artifact, path)
 
 
 def main() -> None:

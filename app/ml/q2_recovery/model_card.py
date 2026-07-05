@@ -1,7 +1,7 @@
 """Model card for the Q2 recovery-priors artifact (``q2_recovery_priors_v1``).
 
 Kept as source so the provenance ships with the training code and can be printed by the
-``__main__`` reproduction path in ``train_recovery_priors``.
+``__main__`` reproduction path in ``train``.
 """
 from __future__ import annotations
 

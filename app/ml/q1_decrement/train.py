@@ -20,9 +20,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import GroupKFold
 
+from app.ml.common.model_selection import select_alpha_grouped_cv
+from app.ml.common.standardize import standardize_label
 from app.ml.q1_decrement.build_training_frame import (
     GROUP_COLUMN,
     LABEL_COLUMN,
@@ -37,36 +37,6 @@ from app.ml.q1_decrement.model_card import MODEL_CARD
 
 ARTIFACT_VERSION = "q1_decrement_v1"
 NAMESPACE = "q1_decrement"
-
-# Candidate ridge strengths for the decrement predictor's grouped CV.
-_ALPHAS: tuple[float, ...] = (0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
-
-
-def _standardize_label(y: pd.Series) -> tuple[np.ndarray, float, float]:
-    """Center+scale the label to unit variance so ridge coefficients are comparable."""
-    mean = float(y.mean())
-    std = float(y.std(ddof=0)) or 1.0
-    return ((y.to_numpy(dtype=float) - mean) / std), mean, std
-
-
-def _select_alpha_grouped_cv(
-    x: np.ndarray, y: np.ndarray, groups: np.ndarray, n_groups: int
-) -> float:
-    """Pick the ridge alpha by athlete-grouped K-fold CV (min mean validation MSE)."""
-    if n_groups < 2:
-        return 1.0
-    cv = GroupKFold(n_splits=min(5, n_groups))
-    best_alpha, best_mse = 1.0, np.inf
-    for alpha in _ALPHAS:
-        fold_mse: list[float] = []
-        for tr_idx, va_idx in cv.split(x, y, groups):
-            model = Ridge(alpha=alpha)
-            model.fit(x[tr_idx], y[tr_idx])
-            fold_mse.append(float(mean_squared_error(y[va_idx], model.predict(x[va_idx]))))
-        mean_mse = float(np.mean(fold_mse))
-        if mean_mse < best_mse:
-            best_alpha, best_mse = alpha, mean_mse
-    return best_alpha
 
 
 def labeled_partition(
@@ -91,11 +61,11 @@ def fit_decrement_predictor(frame: pd.DataFrame) -> dict[str, Any]:
     athlete-grouped CV. Features are the pre-next-session ``PREDICTOR_FEATURES``.
     """
     x = frame.loc[:, list(PREDICTOR_FEATURES)].to_numpy(dtype=float)
-    y_std, mean, std = _standardize_label(frame[LABEL_COLUMN])
+    y_std, mean, std = standardize_label(frame[LABEL_COLUMN])
     groups = frame[GROUP_COLUMN].to_numpy()
     n_groups = int(np.unique(groups).size)
 
-    alpha = _select_alpha_grouped_cv(x, y_std, groups, n_groups)
+    alpha = select_alpha_grouped_cv(x, y_std, groups, n_groups)
     model = Ridge(alpha=alpha)
     model.fit(x, y_std)
     coefs = {f: float(c) for f, c in zip(PREDICTOR_FEATURES, model.coef_, strict=True)}
@@ -165,7 +135,7 @@ def holdout_mae(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> tuple[flo
     train_l, test_l, _ = labeled_partition(train_df, test_df)
 
     x_tr = train_l.loc[:, list(PREDICTOR_FEATURES)].to_numpy(dtype=float)
-    y_tr, mean, std = _standardize_label(train_l[LABEL_COLUMN])
+    y_tr, mean, std = standardize_label(train_l[LABEL_COLUMN])
     x_te = test_l.loc[:, list(PREDICTOR_FEATURES)].to_numpy(dtype=float)
     y_te = (test_l[LABEL_COLUMN].to_numpy(dtype=float) - mean) / std
 

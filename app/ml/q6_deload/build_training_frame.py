@@ -30,6 +30,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.ml.common.splits import grouped_time_split as _grouped_time_split
 from app.ml.q6_deload.feature_helpers import (
     DELOAD_FEATURE_COLUMNS,
     GROUP_COLUMN,
@@ -102,16 +103,15 @@ def grouped_time_split(
 
     Athletes are partitioned by id so none appears in both train and test — this keeps the
     within-athlete residuals/slopes and any per-athlete standardization from leaking across
-    the split. Rows stay in ``(athlete_id, date)`` order within each partition. Mirrors
-    ``app.ml.q2_recovery.build_training_frame.grouped_time_split``.
+    the split. Rows stay in ``(athlete_id, date)`` order within each partition. Binds this
+    pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
-    ids = np.sort(frame[GROUP_COLUMN].unique())
-    n_holdout = max(1, int(round(len(ids) * holdout_frac)))
-    test_ids = set(ids[-n_holdout:].tolist())
-    is_test = frame[GROUP_COLUMN].isin(test_ids)
-    train_df = frame[~is_test].sort_values([GROUP_COLUMN, ORDER_COLUMN]).reset_index(drop=True)
-    test_df = frame[is_test].sort_values([GROUP_COLUMN, ORDER_COLUMN]).reset_index(drop=True)
-    return train_df, test_df
+    return _grouped_time_split(
+        frame,
+        group_column=GROUP_COLUMN,
+        order_columns=(ORDER_COLUMN,),
+        holdout_frac=holdout_frac,
+    )
 
 
 def synthetic_deload_rows(

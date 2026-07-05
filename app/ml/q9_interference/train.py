@@ -23,6 +23,7 @@ import pandas as pd
 from scipy.optimize import least_squares
 
 from app.engine.parameters import default_parameters
+from app.ml.common.artifact import write_artifact as _write_artifact
 from app.ml.q9_interference.build_training_frame import (
     GROUP_COLUMN,
     LABEL_COLUMN,
@@ -165,9 +166,7 @@ def train(
 
 def write_artifact(artifact: dict[str, Any], path: str | Path = _DEFAULT_ARTIFACT_PATH) -> Path:
     """Write the shadow-only artifact JSON. No engine loader (Q9 is not wired)."""
-    out = Path(path)
-    out.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
-    return out
+    return _write_artifact(artifact, path)
 
 
 def main() -> None:

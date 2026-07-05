@@ -13,6 +13,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.ml.common.standardize import zscore_within_group
+
 # Public group/order keys for the per-(athlete, day) feature frame.
 GROUP_COLUMN = "athlete_id"
 ORDER_COLUMN = "date"
@@ -68,16 +70,6 @@ def rolling_slope(
     )
 
 
-def _zscore_within_group(df: pd.DataFrame, col: str, *, group: str = GROUP_COLUMN) -> pd.Series:
-    """z-score ``col`` within each athlete (degenerate athlete → NaN)."""
-    grp = df.groupby(group)[col]
-    mean = grp.transform("mean")
-    std = grp.transform("std")
-    std = std.where(std > 1e-9)
-    z = (df[col] - mean) / std
-    return z.replace([np.inf, -np.inf], np.nan)
-
-
 def performance_decrement_residual(
     df: pd.DataFrame,
     *,
@@ -93,7 +85,7 @@ def performance_decrement_residual(
     from app.ml.q1_decrement import build_training_frame as q1_frame
 
     mini = pd.DataFrame(index=df.index)
-    mini["z_next_duration"] = _zscore_within_group(df, planned_col, group=group).fillna(0.0)
+    mini["z_next_duration"] = zscore_within_group(df, planned_col, group_column=group).fillna(0.0)
     mini["z_next_volume"] = 0.0
     mini["modality_change"] = 0.0
     mini[q1_frame.OBSERVED_COLUMN] = df[perf_col].astype(float).to_numpy()

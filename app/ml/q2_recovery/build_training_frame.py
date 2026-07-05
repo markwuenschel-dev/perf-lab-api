@@ -18,8 +18,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
+
+from app.ml.common.splits import grouped_time_split as _grouped_time_split
+from app.ml.common.standardize import zscore_vs_trailing_baseline
 
 # Trailing personal-baseline window, mirroring readiness_service.BASELINE_WINDOW_DAYS.
 WINDOW_DAYS = 28
@@ -56,28 +58,6 @@ FORBIDDEN_FEATURES: dict[str, str] = {
 }
 
 
-def _zscore_vs_trailing_baseline(df: pd.DataFrame, raw_col: str) -> pd.Series:
-    """z-score ``raw_col`` against each athlete's trailing baseline, excluding today.
-
-    Baseline mean/std come from a rolling ``WINDOW_DAYS`` window shifted by one day so
-    the current observation never enters its own baseline (matching the "excludes
-    before" semantics of ``readiness_service._baselines``). Rows without enough prior
-    history, a missing value, or a degenerate (zero-variance) baseline yield NaN, which
-    the caller imputes to 0.0 (neutral = at-baseline).
-    """
-    grp = df.groupby(GROUP_COLUMN)[raw_col]
-    # shift(1) so the current day never enters its own baseline window.
-    mean = grp.transform(
-        lambda s: s.shift(1).rolling(WINDOW_DAYS, min_periods=MIN_BASELINE_DAYS).mean()
-    )
-    std = grp.transform(
-        lambda s: s.shift(1).rolling(WINDOW_DAYS, min_periods=MIN_BASELINE_DAYS).std()
-    )
-    std = std.where(std > 1e-9)  # degenerate baseline -> NaN -> neutral
-    z = (df[raw_col] - mean) / std
-    return z.replace([np.inf, -np.inf], np.nan)
-
-
 def build_frame(csv_path: str | Path) -> pd.DataFrame:
     """Build the supervised recovery-priors frame from a wellness CSV.
 
@@ -96,7 +76,13 @@ def build_frame(csv_path: str | Path) -> pd.DataFrame:
 
     # --- Features: per-signal z-score vs trailing personal baseline (pre-outcome) ---
     for feat, raw_col in _RAW_SOURCE.items():
-        df[feat] = _zscore_vs_trailing_baseline(df, raw_col)
+        df[feat] = zscore_vs_trailing_baseline(
+            df,
+            raw_col,
+            group_column=GROUP_COLUMN,
+            window_days=WINDOW_DAYS,
+            min_baseline_days=MIN_BASELINE_DAYS,
+        )
 
     # --- Label: next-day fatigue clearance, consecutive days only, then residualize ---
     grp_f = df.groupby(GROUP_COLUMN)["fatigue_score"]
@@ -127,12 +113,12 @@ def grouped_time_split(
 
     Athletes are partitioned by id so no athlete appears in both train and test — this
     prevents the per-athlete residualization and trailing baselines from leaking across
-    the split. Rows stay in ``(user_id, date)`` order within each partition.
+    the split. Rows stay in ``(user_id, date)`` order within each partition. Binds this
+    pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
-    ids = np.sort(frame[GROUP_COLUMN].unique())
-    n_holdout = max(1, int(round(len(ids) * holdout_frac)))
-    test_ids = set(ids[-n_holdout:].tolist())
-    is_test = frame[GROUP_COLUMN].isin(test_ids)
-    train_df = frame[~is_test].sort_values([GROUP_COLUMN, "date"]).reset_index(drop=True)
-    test_df = frame[is_test].sort_values([GROUP_COLUMN, "date"]).reset_index(drop=True)
-    return train_df, test_df
+    return _grouped_time_split(
+        frame,
+        group_column=GROUP_COLUMN,
+        order_columns=("date",),
+        holdout_frac=holdout_frac,
+    )

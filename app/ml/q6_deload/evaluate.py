@@ -15,14 +15,15 @@ Run ``python -m app.ml.q6_deload.evaluate`` for the current verdict.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, roc_auc_score
 
+from app.ml.common.eval_report import BaseEvalReport
+from app.ml.common.metrics import decile_calibration
 from app.ml.q6_deload.build_training_frame import (
     FEATURE_COLUMNS,
     GROUP_COLUMN,
@@ -38,7 +39,6 @@ MIN_BRIER_IMPROVEMENT = 0.003    # Brier_rule - Brier_learned (lower Brier = bet
 MAX_CALIBRATION_ERROR = 0.15     # decile reliability of the learned probabilities
 SPARSE_TOLERANCE = 0.02          # sparse subgroup Brier may be at most this much worse
 SPARSE_OBS_THRESHOLD = 20        # athletes with < this many test rows are "sparse"
-_N_DECILES = 10
 
 # Rule-baseline thresholds mirroring app.logic.deload_need.compute_deload_need, adapted to
 # the frame's raw signals. Hard drivers are fatigue/tissue levels; soft drivers are the
@@ -50,23 +50,15 @@ _SPAN = 40.0  # level units above threshold that saturate a hard driver
 
 
 @dataclass
-class EvalReport:
-    n_test_rows: int
-    n_test_athletes: int
-    positive_rate: float
-    auc_rule: float
-    auc_learned: float
-    auc_improvement: float          # learned - rule (positive = the model helps)
-    brier_rule: float
-    brier_learned: float
-    brier_improvement: float        # rule - learned (positive = the model helps)
-    calibration_error: float
-    sparse_brier_improvement: float
-    verdict: str                    # "promote" | "stay_shadow"
-    reasons: list[str] = field(default_factory=list)
-
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+class EvalReport(BaseEvalReport):
+    positive_rate: float = 0.0
+    auc_rule: float = 0.0
+    auc_learned: float = 0.0
+    auc_improvement: float = 0.0    # learned - rule (positive = the model helps)
+    brier_rule: float = 0.0
+    brier_learned: float = 0.0
+    brier_improvement: float = 0.0  # rule - learned (positive = the model helps)
+    sparse_brier_improvement: float = 0.0
 
 
 def rule_baseline_score(frame: pd.DataFrame) -> np.ndarray:
@@ -89,15 +81,6 @@ def rule_baseline_score(frame: pd.DataFrame) -> np.ndarray:
     score += (frame["perf_residual_slope"].to_numpy(dtype=float) > 0.0) * 0.10
     score += (frame["adherence"].to_numpy(dtype=float) < 0.70) * 0.10
     return np.clip(score, 0.0, 1.0)
-
-
-def _decile_calibration(pred: np.ndarray, actual: np.ndarray) -> float:
-    """Mean |bin-mean prediction - bin-mean actual| across prediction deciles."""
-    if len(pred) < _N_DECILES:
-        return float("nan")
-    bins = np.array_split(np.argsort(pred), _N_DECILES)
-    errs = [abs(float(pred[b].mean()) - float(actual[b].mean())) for b in bins if len(b)]
-    return float(np.mean(errs))
 
 
 def _fit_predict(train_df: pd.DataFrame, test_df: pd.DataFrame) -> np.ndarray:
@@ -129,7 +112,7 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
     brier_learned = float(brier_score_loss(y_te, learned)) if not single_class else float("nan")
     brier_rule = float(brier_score_loss(y_te, rule)) if not single_class else float("nan")
     brier_improvement = brier_rule - brier_learned
-    calibration_error = _decile_calibration(learned, y_te)
+    calibration_error = decile_calibration(learned, y_te)
 
     counts = test_df.groupby(GROUP_COLUMN).size()
     sparse_ids = set(counts[counts < SPARSE_OBS_THRESHOLD].index.tolist())

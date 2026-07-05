@@ -34,6 +34,7 @@ import pandas as pd
 
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.ml.common.splits import grouped_time_split as _grouped_time_split
 from app.schemas.workouts import WorkoutLog
 
 GROUP_COLUMN = "user_id"
@@ -173,15 +174,15 @@ def grouped_time_split(
     """Split holding out whole athletes (grouped) while preserving per-athlete time order.
 
     Athletes are partitioned by id so no athlete appears in both train and test — this
-    prevents the per-athlete residualization from leaking across the split.
+    prevents the per-athlete residualization from leaking across the split. Binds this
+    pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
-    ids = np.sort(frame[GROUP_COLUMN].unique())
-    n_holdout = max(1, int(round(len(ids) * holdout_frac)))
-    test_ids = set(ids[-n_holdout:].tolist())
-    is_test = frame[GROUP_COLUMN].isin(test_ids)
-    train_df = frame[~is_test].sort_values([GROUP_COLUMN, "date"]).reset_index(drop=True)
-    test_df = frame[is_test].sort_values([GROUP_COLUMN, "date"]).reset_index(drop=True)
-    return train_df, test_df
+    return _grouped_time_split(
+        frame,
+        group_column=GROUP_COLUMN,
+        order_columns=("date",),
+        holdout_frac=holdout_frac,
+    )
 
 
 def synthesize_sessions(

@@ -28,10 +28,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import GroupKFold
 
 from app.engine.parameters import default_parameters
+from app.ml.common.artifact import write_validated_artifact
+from app.ml.common.model_selection import select_alpha_grouped_cv
+from app.ml.common.standardize import standardize_label
 from app.ml.dose_calibration.build_training_frame import (
     COMPONENT_FEATURES,
     COMPONENT_TO_WEIGHT,
@@ -49,7 +50,6 @@ from app.ml.dose_calibration.model_card import MODEL_CARD
 ARTIFACT_VERSION = "dose_calibration_priors_v1"
 NAMESPACE = "dose_calibration"
 
-_ALPHAS: tuple[float, ...] = (0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
 # A standardized effect size of _EFFECT_REF earns a component/modality its FULL allowed
 # nudge; a near-zero learned effect therefore yields a near-default weight (weak prior).
 _EFFECT_REF = 0.20
@@ -66,41 +66,13 @@ _DEFAULT_ARTIFACT_PATH = (
 )
 
 
-def _standardize(y: pd.Series | np.ndarray) -> tuple[np.ndarray, float, float]:
-    """Center + scale to unit variance; return (standardized, mean, std)."""
-    arr = np.asarray(y, dtype=float)
-    mean = float(arr.mean())
-    std = float(arr.std(ddof=0)) or 1.0
-    return (arr - mean) / std, mean, std
-
-
-def _select_alpha_grouped_cv(
-    x: np.ndarray, y: np.ndarray, groups: np.ndarray, n_groups: int
-) -> float:
-    """Pick the ridge alpha by athlete-grouped K-fold CV (min mean validation MSE)."""
-    if n_groups < 2:
-        return 1.0
-    cv = GroupKFold(n_splits=min(5, n_groups))
-    best_alpha, best_mse = 1.0, np.inf
-    for alpha in _ALPHAS:
-        fold_mse: list[float] = []
-        for tr_idx, va_idx in cv.split(x, y, groups):
-            model = Ridge(alpha=alpha)
-            model.fit(x[tr_idx], y[tr_idx])
-            fold_mse.append(float(mean_squared_error(y[va_idx], model.predict(x[va_idx]))))
-        mean_mse = float(np.mean(fold_mse))
-        if mean_mse < best_mse:
-            best_alpha, best_mse = alpha, mean_mse
-    return best_alpha
-
-
 def fit_component_response(frame: pd.DataFrame) -> dict[str, Any]:
     """Fit the aggregate ridge response of the label on the volume components."""
     x = frame.loc[:, list(COMPONENT_FEATURES)].to_numpy(dtype=float)
-    y_std, _, _ = _standardize(frame[LABEL_COLUMN])
+    y_std, _, _ = standardize_label(frame[LABEL_COLUMN])
     groups = frame[GROUP_COLUMN].to_numpy()
     n_groups = int(np.unique(groups).size)
-    alpha = _select_alpha_grouped_cv(x, y_std, groups, n_groups)
+    alpha = select_alpha_grouped_cv(x, y_std, groups, n_groups)
 
     model = Ridge(alpha=alpha)
     model.fit(x, y_std)
@@ -136,8 +108,8 @@ def fit_modality_calibration(frame: pd.DataFrame) -> dict[str, Any]:
     that tracks worse is de-emphasized — a relative, self-cancelling calibration.
     """
     shape_key = frame["modality"].map(MODALITY_TO_SHAPE)
-    y_all, _, _ = _standardize(frame[LABEL_COLUMN])
-    d_all, _, _ = _standardize(frame[DOSE_COLUMN])
+    y_all, _, _ = standardize_label(frame[LABEL_COLUMN])
+    d_all, _, _ = standardize_label(frame[DOSE_COLUMN])
     g_global = float(Ridge(alpha=1.0).fit(d_all.reshape(-1, 1), y_all).coef_[0])
 
     by_modality: dict[str, float] = {}
@@ -145,8 +117,8 @@ def fit_modality_calibration(frame: pd.DataFrame) -> dict[str, Any]:
         mask = (shape_key == mod).to_numpy()
         if int(mask.sum()) < 10:
             continue
-        y_m, _, _ = _standardize(frame.loc[mask, LABEL_COLUMN])
-        d_m, _, _ = _standardize(frame.loc[mask, DOSE_COLUMN])
+        y_m, _, _ = standardize_label(frame.loc[mask, LABEL_COLUMN])
+        d_m, _, _ = standardize_label(frame.loc[mask, DOSE_COLUMN])
         by_modality[mod] = float(Ridge(alpha=1.0).fit(d_m.reshape(-1, 1), y_m).coef_[0])
     return {"global": g_global, "by_modality": by_modality}
 
@@ -241,7 +213,7 @@ def holdout_mae(
     from app.engine.parameter_overrides import apply_dose_overrides
 
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
-    y_tr, y_mean, y_std = _standardize(train_df[LABEL_COLUMN])
+    y_tr, y_mean, y_std = standardize_label(train_df[LABEL_COLUMN])
     y_te = (test_df[LABEL_COLUMN].to_numpy(dtype=float) - y_mean) / y_std
 
     default_p = default_parameters()
@@ -251,7 +223,7 @@ def holdout_mae(
     for params in (calibrated_p, default_p):
         d_tr_raw = modeled_doses(train_df, params)
         d_te_raw = modeled_doses(test_df, params)
-        d_std, d_mean, d_sd = _standardize(d_tr_raw)
+        d_std, d_mean, d_sd = standardize_label(d_tr_raw)
         d_te = (d_te_raw - d_mean) / d_sd
         out.append(_outcome_map_mae(d_std, y_tr, d_te, y_te))
     return out[0], out[1]
@@ -259,12 +231,7 @@ def holdout_mae(
 
 def write_artifact(artifact: dict[str, Any], path: str | Path = _DEFAULT_ARTIFACT_PATH) -> Path:
     """Validate against the loader and write the artifact JSON to ``path``."""
-    from app.engine.parameter_overrides import load_override_artifact
-
-    load_override_artifact(artifact)  # fail loudly if it drifts from the frozen schema
-    p = Path(path)
-    p.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
-    return p
+    return write_validated_artifact(artifact, path)
 
 
 def main() -> None:
