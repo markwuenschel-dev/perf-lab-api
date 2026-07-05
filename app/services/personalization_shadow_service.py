@@ -23,7 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.vectors import FatigueState
 from app.engine.parameter_overrides import apply_parameter_overrides, load_namespace_override
 from app.engine.parameters import default_parameters
-from app.logic.personalization.hierarchical import experience_prior_scale, partial_pool_scalar
+from app.logic.personalization.hierarchical import (
+    experience_prior_scale,
+    partial_pool_with_sampling_var,
+)
 from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
 from app.logic.wellness_signals import SIGNAL_CONFIG
 from app.ml.personalization.partial_pool_fit import fit_athlete
@@ -124,11 +127,14 @@ async def record_personalization_shadow(db: AsyncSession, user_id: int, wellness
         w_values: list[float] = []
         theta_trace = 0.0
         if n >= _MIN_OBS:
-            beta_hat, _within, _ = fit_athlete(Z, y)
-            resp = {sig: float(beta_hat[i]) for i, sig in enumerate(_FIT_SIGNALS)}
+            beta_hat, _within, _n_fit, gram_inv_diag = fit_athlete(Z, y)
+            idx_of = {sig: i for i, sig in enumerate(_FIT_SIGNALS)}
             for sig in _PERSONALIZED_SIGNALS:
+                i = idx_of[sig]
                 mu = scale * float(mu0_resp.get(f"z_{sig}", 0.0))
-                ps = partial_pool_scalar(mu, resp[sig], n, _POP_TAU2, _POP_WITHIN)
+                # Gram-based sampling variance σ²·(ZᵀZ)⁻¹_jj (calibrated P^θ, ADR-0043 follow-up).
+                sampling_var = _POP_WITHIN * float(gram_inv_diag[i])
+                ps = partial_pool_with_sampling_var(mu, float(beta_hat[i]), sampling_var, _POP_TAU2, n=n)
                 w_values.append(ps.weight)
                 theta_trace += ps.p_theta * len(FatigueState.KEYS)
                 if abs(mu) > 1e-6:

@@ -27,11 +27,10 @@ with their own data.
 
 **Validated offline** (`python -m app.ml.personalization.evaluate`): on a synthetic population
 with known per-athlete β, partial pooling beats **both** full pooling (population only) and no
-pooling (per-athlete only) on held-out recovery MAE — the seed-robust shrinkage result, and the
-gate. `P^θ` calibration is **reported, not gated**: it runs ~2-4× overconfident because the
-multivariate coefficient sampling variance is `σ²·(ZᵀZ)⁻¹`, which `σ²/n` understates — so `P^θ`
-is a coarse ordinal conservatism signal here, and a Gram-based correction is the documented
-follow-up.
+pooling (per-athlete only) on held-out recovery MAE — the seed-robust shrinkage result. `P^θ`
+calibration is **gated**: using the Gram-based coefficient sampling variance `σ²·(ZᵀZ)⁻¹_jj`
+(not the `σ²/n` approximation, which understated it and made `P^θ` ~2-4× overconfident), mean
+`tr(P^θ)/MSE` lands ~1.0-1.2 across seeds, so the parameter uncertainty is trustworthy.
 
 **Shadow wiring:** on wellness ingest, `personalization_shadow_service` builds the athlete's
 bounded-window recovery frame, partial-pools their β toward the Q2 population prior, and logs

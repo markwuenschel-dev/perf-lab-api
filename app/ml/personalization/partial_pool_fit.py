@@ -8,20 +8,27 @@ from __future__ import annotations
 
 import numpy as np
 
-from app.logic.personalization.hierarchical import estimate_hyperparameters, partial_pool_scalar
+from app.logic.personalization.hierarchical import (
+    estimate_hyperparameters,
+    partial_pool_with_sampling_var,
+)
 
 _RIDGE_LAMBDA = 1e-3
 
 
-def fit_athlete(Z: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float, int]:
-    """Ridge fit → (coefficients (k,), within-athlete residual variance, n)."""
+def fit_athlete(Z: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float, int, np.ndarray]:
+    """Ridge fit → (coefficients (k,), within-athlete residual variance, n, Gram-inverse diag).
+
+    The Gram-inverse diagonal ``(ZᵀZ+λI)⁻¹_jj`` gives each coefficient's sampling variance as
+    ``σ²·(ZᵀZ)⁻¹_jj`` — the quantity ``σ²/n`` understates, which is what makes P^θ overconfident.
+    """
     n, k = Z.shape
-    gram = Z.T @ Z + _RIDGE_LAMBDA * np.eye(k)
-    beta = np.linalg.solve(gram, Z.T @ y)
+    gram_inv = np.linalg.inv(Z.T @ Z + _RIDGE_LAMBDA * np.eye(k))
+    beta = gram_inv @ (Z.T @ y)
     resid = y - Z @ beta
     dof = max(1, n - k)
     within_var = float(resid @ resid / dof)
-    return beta, within_var, n
+    return beta, within_var, n, np.diag(gram_inv).copy()
 
 
 def fit_hyperparameters(
@@ -40,18 +47,22 @@ def fit_hyperparameters(
 
 
 def pool_athlete(
-    beta_hat: np.ndarray,     # (k,)
-    n: int,
-    mu0: np.ndarray,          # (k,)
-    tau2: np.ndarray,         # (k,)
-    within_var: float,
+    beta_hat: np.ndarray,      # (k,)
+    within_var: float,         # shared σ²
+    gram_inv_diag: np.ndarray,  # (k,) — (ZᵀZ+λI)⁻¹_jj from fit_athlete
+    mu0: np.ndarray,           # (k,)
+    tau2: np.ndarray,          # (k,)
     prior_scale: float = 1.0,
+    n: int = 0,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Partial-pool a coefficient vector → (β_i (k,), P^θ_i (k,))."""
+    """Partial-pool a coefficient vector using the true sampling variance ``σ²·(ZᵀZ)⁻¹_jj``."""
     k = beta_hat.size
     value = np.empty(k)
     p_theta = np.empty(k)
     for j in range(k):
-        ps = partial_pool_scalar(prior_scale * float(mu0[j]), float(beta_hat[j]), n, float(tau2[j]), within_var)
+        sampling_var = within_var * float(gram_inv_diag[j])
+        ps = partial_pool_with_sampling_var(
+            prior_scale * float(mu0[j]), float(beta_hat[j]), sampling_var, float(tau2[j]), n=n
+        )
         value[j], p_theta[j] = ps.value, ps.p_theta
     return value, p_theta

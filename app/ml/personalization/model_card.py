@@ -23,12 +23,10 @@ GATE (seed-robust)
   Partial-pool held-out MAE must beat BOTH baselines by ≥ MIN_IMPROVEMENT. This holds on
   every seed -- the bias-variance win of shrinkage, strongest for sparse-data athletes.
 
-REPORTED, NOT GATED -- P^θ CALIBRATION
-  mean tr(P^θ) / mean ‖β_i − β_true‖² should be ~1. In practice it runs ~0.2-0.5
-  (overconfident) because the multivariate coefficient sampling variance is σ²·(ZᵀZ)⁻¹,
-  which σ²/n understates. P^θ is therefore a COARSE, ordinal conservatism signal, not a
-  precise credible interval; a Gram-based sampling-variance correction is the documented
-  follow-up. The gate does not depend on it -- a warning is attached when out of band.
+GATED -- P^θ CALIBRATION
+  mean tr(P^θ) / mean ‖β_i − β_true‖² should be ~1. Using the Gram-based sampling variance
+  σ²·(ZᵀZ)⁻¹_jj for each coefficient (NOT the σ²/n approximation, which understates it and
+  made P^θ ~2-4x overconfident), it lands ~1.0-1.2 across seeds and is now part of the gate.
 
 PRODUCTION FEED
   The per-athlete resolver + shadow log lives in
