@@ -62,7 +62,7 @@ class WorkoutPrescription(BaseModel):
     rationale: str
     duration_min: int
     model_version: str = Field(default="v0.3", description="Prescription engine version")
-    exercises: list[ExercisePrescription] = Field(default_factory=list)
+    exercises: list[ExercisePrescription] = Field(default_factory=lambda: [])
     why: PrescriptionExplanation | None = None
 
     def to_prescribed_content(self) -> dict[str, Any]:

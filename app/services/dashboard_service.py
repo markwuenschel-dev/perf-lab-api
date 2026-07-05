@@ -102,7 +102,7 @@ def _compute_derived_value(
     obs_ids: list[int] = []
 
     if d.formula_type == "sum":
-        codes = fc.get("benchmark_codes") or []
+        codes: list[str] = fc.get("benchmark_codes") or []
         total = 0.0
         for c in codes:
             if c not in obs_by_code:
@@ -125,7 +125,7 @@ def _compute_derived_value(
         return 100.0 * n / de, obs_ids, None
 
     if d.formula_type == "weighted_sum":
-        terms = fc.get("terms") or []
+        terms: list[dict[str, Any]] = fc.get("terms") or []
         s = 0.0
         for t in terms:
             c = t.get("benchmark_code")
@@ -139,7 +139,7 @@ def _compute_derived_value(
 
     if d.formula_type == "custom_python_key":
         fn_name = fc.get("function")
-        inputs = fc.get("inputs") or []
+        inputs: list[str] = fc.get("inputs") or []
         if not fn_name or fn_name not in CUSTOM_FORMULAS:
             return None, [], "unknown custom function"
         ctx: dict[str, Any] = {}

@@ -18,8 +18,8 @@ from app.schemas.workouts import StressDose
 @dataclass
 class DecrementPrediction:
     score: float
-    affected_axes: list[str] = field(default_factory=list)
-    drivers: list[str] = field(default_factory=list)
+    affected_axes: list[str] = field(default_factory=lambda: [])
+    drivers: list[str] = field(default_factory=lambda: [])
     shadow_only: bool = True
 
 

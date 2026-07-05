@@ -19,7 +19,7 @@ class BlockCreateRequest(BaseModel):
     start_date: date
     duration_weeks: int = Field(8, ge=1, le=24)
     sessions_per_week: int = Field(3, ge=1, le=7)
-    weekly_template: list[WeeklyTemplateSlot] = Field(default_factory=list)
+    weekly_template: list[WeeklyTemplateSlot] = Field(default_factory=lambda: [])
     modality_mix: dict[str, float] = Field(default_factory=dict)
     rationale: str | None = None
     deload_every_n_weeks: int = Field(4, ge=1, le=12)

@@ -7,7 +7,7 @@ unit-testable without a DB session — see tests/test_objective_progress.py.
 from __future__ import annotations
 
 from datetime import date
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -239,7 +239,7 @@ def signals_from_scan(objectives: list[Objective], today: date | None = None) ->
     upcoming = [o for o in objectives if o.target_date is not None and o.target_date >= today]
     taper = False
     if upcoming:
-        nearest = min(upcoming, key=lambda o: o.target_date)  # type: ignore[arg-type,return-value]
+        nearest = min(upcoming, key=lambda o: cast("date", o.target_date))
         taper = _target_within_taper_window(nearest.target_date, today)
 
     top = min(objectives, key=lambda o: (o.priority, o.id))

@@ -117,21 +117,22 @@ line-length = 100
 target-version = ["py311"]
 
 [tool.pyright]
-pythonVersion = "3.12"
+pythonVersion = "3.11"
 include = ["app"]
-# Offline ML/training code (pandas-heavy) is not the runtime app and pandas' strict
-# types resolve inconsistently across environments (py.typed presence differs); keep
-# it out of the strict type gate — ruff + the functional tests cover it.
-exclude = ["app/ml"]
+# Offline code (pandas-heavy ML/training, CLI scripts, ml-feeder analysis) is not the
+# runtime request path and pandas' strict types resolve inconsistently across
+# environments (py.typed presence differs); keep it out of the strict type gate —
+# ruff + the functional tests cover it.
+exclude = ["app/ml", "app/scripts", "app/analysis"]
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"
 # Re-export barrels and SQLAlchemy column defaults are intentional.
 reportUnusedImport = "none"
 reportDeprecated = "none"
-# Dynamic JSON / seed data paths; tighten incrementally after the mypy cutover.
-reportUnknownVariableType = "none"
-reportUnknownMemberType = "none"
-reportUnknownArgumentType = "none"
+# Re-enabled: dynamic JSON / dict plumbing must be annotated, not silently Any.
+reportUnknownVariableType = "error"
+reportUnknownMemberType = "error"
+reportUnknownArgumentType = "error"
 reportUnusedFunction = "none"
 reportUnusedVariable = "none"
 reportUnnecessaryIsInstance = "none"

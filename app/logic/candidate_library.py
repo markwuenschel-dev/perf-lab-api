@@ -95,7 +95,7 @@ class CandidateTemplate:
     branch_id: str
     duration_min: int
     goal_alignment: float
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=lambda: [])
     domain: str = ""
     kpi_eligible: Callable[[dict[str, float]], bool] | None = None
     state_eligible: Callable[[UnifiedStateVector], bool] | None = None
@@ -104,7 +104,7 @@ class CandidateTemplate:
     # per-domain scorer dispatch. Domains are migrated onto it incrementally.
     scoring: ScoringSpec | None = None
     # Structured (name, sets, reps) movements — see class docstring.
-    exercise_slots: list[tuple[str, str, str]] = field(default_factory=list)
+    exercise_slots: list[tuple[str, str, str]] = field(default_factory=lambda: [])
 
 
 # ---------------------------------------------------------------------------

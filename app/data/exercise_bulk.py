@@ -148,7 +148,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["weightlifting"]))
 
     # Gymnastics / calisthenics
-    gym = [
+    gym: list[_BaseRow] = [
         ("Chest-to-Bar Pull-Up", "Calisthenics", "pull_vertical", ["lats", "biceps"], [], [], "bodyweight", 0.55, 0.35, ["pull_vertical", "gymnastics_skill"]),
         ("Bar Muscle-Up (Strict Progression)", "Calisthenics", "pull_vertical", ["lats", "triceps"], ["core"], ["pullup_bar"], "bodyweight", 0.92, 0.45, ["gymnastics_skill", "transition_skill", "false_grip"]),
         ("Ring Muscle-Up (False Grip Progression)", "Calisthenics", "pull_vertical", ["lats", "shoulders"], ["core"], ["rings"], "bodyweight", 0.95, 0.45, ["gymnastics_skill", "ring_support", "false_grip"]),
@@ -169,7 +169,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["gymnastics"]))
 
     # CrossFit / Hyrox / conditioning
-    cf = [
+    cf: list[_BaseRow] = [
         ("Thruster (Cluster Style)", "Mixed", "squat", ["quads", "shoulders"], ["core"], ["barbell"], "barbell", 0.72, 0.55, ["work_capacity", "crossfit"]),
         ("Wall Ball Unbroken Set", "Mixed", "squat", ["quads", "shoulders"], [], ["wall_ball"], "reps", 0.48, 0.45, ["work_capacity"]),
         ("Burpee Over Row Erg", "Conditioning", "mixed", ["full_body"], [], ["rower"], "bodyweight", 0.52, 0.58, ["work_capacity"]),
@@ -194,7 +194,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=sd or ["conditioning"]))
 
     # Grip specialty
-    grip = [
+    grip: list[_BaseRow] = [
         ("Captains of Crush Gripper", "Strength", "pull_vertical", ["forearms"], [], ["gripper"], "reps", 0.35, 0.2, ["grip", "crush"]),
         ("Bottom-Up Plate Pinch Hold", "Strength", "carry", ["forearms", "fingers"], [], ["plates"], "time", 0.52, 0.25, ["grip", "pinch", "finger"]),
         ("Fat Grip Towel Hang", "Calisthenics", "pull_vertical", ["grip", "forearms"], [], ["pullup_bar"], "time", 0.55, 0.28, ["grip", "crush"]),
@@ -206,7 +206,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["grip"]))
 
     # Endurance
-    run = [
+    run: list[_BaseRow] = [
         ("Continuous Zone 2 Run", "Running", "run", ["cardio"], ["calves"], [], "distance", 0.25, 0.55, ["aerobic_base"]),
         ("Threshold Tempo Run", "Running", "run", ["cardio"], ["quads"], [], "distance", 0.48, 0.65, ["lactate_threshold"]),
         ("VO2 Interval Repeats", "Running", "run", ["cardio"], [], [], "distance", 0.55, 0.75, ["aerobic_base", "lactate_threshold"]),
@@ -290,7 +290,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ]
     )
 
-    strongman = [
+    strongman: list[_BaseRow] = [
         ("Atlas Stone Load", "Power", "hinge", ["hips", "back"], ["grip"], [], "reps", 0.88, 0.85, ["grip", "support", "start_strength"]),
         ("Log Clean and Press", "Power", "push_vertical", ["shoulders", "legs"], ["core"], [], "reps", 0.82, 0.7, ["power", "bracing"]),
         ("Yoke Walk", "Strength", "carry", ["back", "legs"], ["core"], [], "distance", 0.75, 0.75, ["support", "bracing"]),
@@ -314,7 +314,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["conditioning"]))
 
     # Plyometrics and speed
-    plyo = [
+    plyo: list[_BaseRow] = [
         ("Broad Jump", "Power", "jump", ["quads", "glutes", "calves"], [], [], "reps", 0.55, 0.7, ["plyometric", "power"]),
         ("Bounding Drill", "Power", "run", ["glutes", "calves"], ["quads"], [], "distance", 0.55, 0.65, ["plyometric", "running_economy"]),
         ("Seated Box Jump", "Power", "jump", ["quads", "glutes"], ["calves"], ["box"], "reps", 0.62, 0.72, ["plyometric", "power"]),
@@ -369,7 +369,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, benchmark=bm, notes=notes, unilateral=uni))
 
     # Battle rope / unconventional
-    rope = [
+    rope: list[_BaseRow] = [
         ("Battle Rope Alternating Waves", "Conditioning", "mixed", ["shoulders", "core"], ["legs"], ["battle_ropes"], "reps", 0.42, 0.45, ["work_capacity", "aerobic_base"]),
         ("Battle Rope Double Slam", "Power", "mixed", ["lats", "core", "shoulders"], [], ["battle_ropes"], "reps", 0.45, 0.48, ["power", "work_capacity"]),
         ("Battle Rope Side-to-Side Waves", "Conditioning", "mixed", ["shoulders", "core"], [], ["battle_ropes"], "time", 0.42, 0.42, ["work_capacity", "rotation"]),

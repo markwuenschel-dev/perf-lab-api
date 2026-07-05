@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from app.schemas.engine_vectors import (
     CapacityConfidence,
@@ -71,13 +71,13 @@ def _parse_engine_state(raw: Any) -> dict[str, Any] | None:
     if raw is None:
         return None
     if isinstance(raw, dict):
-        return raw
+        return cast("dict[str, Any]", raw)
     if isinstance(raw, str):
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
             return None
-        return parsed if isinstance(parsed, dict) else None
+        return cast("dict[str, Any]", parsed) if isinstance(parsed, dict) else None
     return None
 
 

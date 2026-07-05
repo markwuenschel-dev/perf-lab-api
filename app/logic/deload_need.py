@@ -116,6 +116,6 @@ def compute_deload_need(
 class DeloadNeed:
     score: float
     tier: Literal["none", "watch", "bias", "force"]
-    drivers: list[str] = field(default_factory=list)
+    drivers: list[str] = field(default_factory=lambda: [])
     model_version: str = "rule_v1"
     shadow_only: bool = True

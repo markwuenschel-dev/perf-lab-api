@@ -86,7 +86,7 @@ class WorkoutLog(BaseModel):
 
     # Concrete exercise entries (optional; enables exercise-aware dose computation)
     exercises: list[ExerciseEntry] = Field(
-        default_factory=list,
+        default_factory=lambda: [],
         description="Per-exercise breakdown. When present, dose reflects actual exercise phi vectors.",
     )
 

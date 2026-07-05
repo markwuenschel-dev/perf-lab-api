@@ -15,7 +15,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.engine.parameters import EngineParameters
 
@@ -111,14 +111,14 @@ def _validate(a: dict[str, Any]) -> None:
     if not isinstance(a["shadow_only"], bool):
         raise OverrideError("shadow_only must be a bool")
 
-    clip = a["clip"]
+    clip: dict[str, Any] = a["clip"]
     if not isinstance(clip, dict) or "min" not in clip or "max" not in clip:
         raise OverrideError("clip must be an object with 'min' and 'max'")
     lo, hi = float(clip["min"]), float(clip["max"])
     if not (0.0 < lo < hi):
         raise OverrideError(f"clip bounds must satisfy 0 < min < max, got min={lo} max={hi}")
 
-    beta = a["recovery_clearance_beta"]
+    beta: dict[str, dict[str, Any]] = a["recovery_clearance_beta"]
     if not isinstance(beta, dict) or not beta:
         raise OverrideError("recovery_clearance_beta must be a non-empty object")
     for axis, signals in beta.items():
@@ -141,7 +141,7 @@ def _validate_dose(a: dict[str, Any]) -> None:
     if not isinstance(a["shadow_only"], bool):
         raise OverrideError("shadow_only must be a bool")
 
-    eo = a["engine_overrides"]
+    eo: dict[str, Any] = a["engine_overrides"]
     if not isinstance(eo, dict) or not eo:
         raise OverrideError("engine_overrides must be a non-empty object")
 
@@ -155,7 +155,7 @@ def _validate_dose(a: dict[str, Any]) -> None:
             allowed = _DOSE_MAP_SUBKEYS[field_name]
             if not isinstance(value, dict):
                 raise OverrideError(f"engine_overrides[{field_name!r}] must be an object")
-            for k, v in value.items():
+            for k, v in cast("dict[str, Any]", value).items():
                 if k not in allowed:
                     raise OverrideError(f"unknown key {k!r} for engine_overrides[{field_name!r}]")
                 if not isinstance(v, (int, float)) or isinstance(v, bool):
@@ -163,12 +163,12 @@ def _validate_dose(a: dict[str, Any]) -> None:
         else:  # nested map: dose_shape_six_by_modality
             if not isinstance(value, dict):
                 raise OverrideError(f"engine_overrides[{field_name!r}] must be an object")
-            for mod, axes in value.items():
+            for mod, axes in cast("dict[str, Any]", value).items():
                 if mod not in _DOSE_SHAPE_MODALITIES:
                     raise OverrideError(f"unknown modality {mod!r} for engine_overrides[{field_name!r}]")
                 if not isinstance(axes, dict):
                     raise OverrideError(f"engine_overrides[{field_name!r}][{mod!r}] must be an object")
-                for ax, mult in axes.items():
+                for ax, mult in cast("dict[str, Any]", axes).items():
                     if ax not in _DOSE_SHAPE_AXES:
                         raise OverrideError(f"unknown dose axis {ax!r} for modality {mod!r}")
                     if not isinstance(mult, (int, float)) or isinstance(mult, bool):

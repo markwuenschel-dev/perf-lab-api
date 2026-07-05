@@ -77,7 +77,7 @@ class ReadinessScore(BaseModel):
         default=0.0,
         description="Signed acute-wellness adjustment applied, in 0–100 points (0 if no sample)",
     )
-    components: list[ReadinessComponent] = Field(default_factory=list)
+    components: list[ReadinessComponent] = Field(default_factory=lambda: [])
     wellness_sample: WellnessSampleOut | None = None
     as_of: datetime | None = Field(default=None, description="Timestamp of the modeled state used")
     note: str | None = None

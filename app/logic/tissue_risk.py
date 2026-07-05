@@ -32,7 +32,7 @@ class TissueRiskPrediction:
     risk_by_axis: dict[str, float]
     delta_risk_by_axis: dict[str, float]
     tier_by_axis: dict[str, Literal["green", "amber", "red"]]
-    drivers: dict[str, list[str]] = field(default_factory=dict)
+    drivers: dict[str, list[str]] = field(default_factory=lambda: {})
     calibrated: bool = False
     shadow_only: bool = True
 
