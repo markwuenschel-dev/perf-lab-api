@@ -149,6 +149,7 @@ def train(frame: pd.DataFrame, *, source: str = "synthetic:dose-sessions") -> di
         engine_overrides["dose_shape_six_by_modality"] = shape
 
     return {
+        "kind": "dose_overrides",
         "version": ARTIFACT_VERSION,
         "namespace": NAMESPACE,
         "source": source,
@@ -175,6 +176,7 @@ def placeholder_artifact() -> dict[str, Any]:
     """Safe untrained v0 = current engine defaults verbatim (a ZERO-CHANGE override)."""
     p = default_parameters()
     return {
+        "kind": "dose_overrides",
         "version": ARTIFACT_VERSION,
         "namespace": NAMESPACE,
         "source": "untrained-v0-placeholder:defaults",
@@ -210,14 +212,14 @@ def holdout_mae(
     via the engine. Returns ``(mae_calibrated, mae_default)`` — calibration helps iff the
     former is smaller.
     """
-    from app.engine.parameter_overrides import apply_dose_overrides
+    from app.engine.parameter_overrides import apply_parameter_overrides
 
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
     y_tr, y_mean, y_std = standardize_label(train_df[LABEL_COLUMN])
     y_te = (test_df[LABEL_COLUMN].to_numpy(dtype=float) - y_mean) / y_std
 
     default_p = default_parameters()
-    calibrated_p = apply_dose_overrides(default_p, artifact, allow_shadow=True)
+    calibrated_p = apply_parameter_overrides(default_p, artifact, allow_shadow=True)
 
     out: list[float] = []
     for params in (calibrated_p, default_p):

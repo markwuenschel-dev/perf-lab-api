@@ -106,14 +106,14 @@ def evaluate(
     frame: pd.DataFrame, *, artifact: dict[str, Any] | None = None, holdout_frac: float = 0.25
 ) -> EvalReport:
     """Fit on held-in athletes, score the held-out athletes, and return the gate report."""
-    from app.engine.parameter_overrides import apply_dose_overrides
+    from app.engine.parameter_overrides import apply_parameter_overrides
 
     if artifact is None:
         artifact = train(frame)
 
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
     default_p = default_parameters()
-    calibrated_p = apply_dose_overrides(default_p, artifact, allow_shadow=True)
+    calibrated_p = apply_parameter_overrides(default_p, artifact, allow_shadow=True)
 
     err_cal, _ = _row_abs_errors(train_df, test_df, calibrated_p)
     err_def, _ = _row_abs_errors(train_df, test_df, default_p)

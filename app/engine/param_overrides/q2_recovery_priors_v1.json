@@ -1,4 +1,5 @@
 {
+  "kind": "recovery_priors",
   "version": "q2_recovery_priors_v1",
   "namespace": "q2_recovery",
   "source": "synthetic:google-fit-csv",

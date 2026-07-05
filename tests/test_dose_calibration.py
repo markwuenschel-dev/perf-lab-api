@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from app.engine.parameter_overrides import (
-    apply_dose_overrides,
+    apply_parameter_overrides,
     load_override_artifact,
 )
 from app.engine.parameters import default_parameters
@@ -71,7 +71,7 @@ def test_train_emits_loader_accepted_artifact() -> None:
     assert "dose_volume_weights" in loaded["engine_overrides"]
 
     # Merges onto default params via the shadow-only dose path.
-    merged = apply_dose_overrides(default_parameters(), artifact, allow_shadow=True)
+    merged = apply_parameter_overrides(default_parameters(), artifact, allow_shadow=True)
     assert set(merged.dose_volume_weights) == {"duration", "volume_load", "sets"}
 
 
@@ -99,7 +99,7 @@ def test_weak_prior_clamps_near_zero_signal_to_defaults() -> None:
 def test_placeholder_artifact_is_zero_change() -> None:
     artifact = placeholder_artifact()
     load_override_artifact(artifact)  # frozen loader accepts it
-    merged = apply_dose_overrides(default_parameters(), artifact, allow_shadow=True)
+    merged = apply_parameter_overrides(default_parameters(), artifact, allow_shadow=True)
     assert merged.dose_volume_weights == default_parameters().dose_volume_weights
     assert merged.dose_shape_six_by_modality == default_parameters().dose_shape_six_by_modality
 
