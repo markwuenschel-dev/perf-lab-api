@@ -11,8 +11,8 @@ from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.prescriber import recommend_next_session
 from app.logic.workout_history import recent_workout_summaries
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
-from app.models.user import AthleteProfile
 from app.models.weak_point import WeakPoint
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import dashboard_service
@@ -147,10 +147,7 @@ async def prescribe_for_athlete(
     block_context["objective_taper"] = objective_signals["taper"]
     block_context["objective_domain"] = objective_signals["domain"]
 
-    profile_result = await db.execute(
-        select(AthleteProfile).where(AthleteProfile.user_id == user_id).limit(1)
-    )
-    profile = profile_result.scalars().first()
+    profile = await AthleteProfileRepository(db).get_for_user(user_id)
 
     # ADR-0030: when a block is active, the day's training intent comes from the block
     # (resolved to a canonical domain by the prescriber, ADR-0038). With no active

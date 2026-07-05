@@ -7,11 +7,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.core.auth import create_access_token, get_current_user, hash_password, verify_password
 from app.core.db import get_db
 from app.models.user import AthleteProfile, User
+from app.repositories.user_repository import UserRepository
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -50,8 +50,7 @@ async def register(
 ) -> User:
     """Create new user + empty AthleteProfile."""
     # Check for duplicate email
-    result = await db.execute(select(User).where(User.email == body.email))
-    if result.scalars().first():
+    if await UserRepository(db).get_by_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
 
     try:
@@ -87,8 +86,7 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    result = await db.execute(select(User).where(User.email == form.username.lower()))
-    user = result.scalars().first()
+    user = await UserRepository(db).get_by_email(form.username.lower())
 
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(

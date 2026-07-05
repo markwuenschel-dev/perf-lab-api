@@ -8,12 +8,12 @@ load that data back and edit it any time. Lift/biometric API fields use the
 """
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.models.user import AthleteProfile, User
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.profile import ProfileRead, ProfileUpdate
 
 router = APIRouter(prefix="/v1", tags=["profile"])
@@ -28,11 +28,7 @@ _COLUMN_MAP = {
 
 
 async def _get_or_create(db: AsyncSession, user_id: int) -> AthleteProfile:
-    profile = (
-        await db.execute(
-            select(AthleteProfile).where(AthleteProfile.user_id == user_id)
-        )
-    ).scalar_one_or_none()
+    profile = await AthleteProfileRepository(db).get_for_user(user_id)
     if profile is None:
         profile = AthleteProfile(user_id=user_id)
         db.add(profile)

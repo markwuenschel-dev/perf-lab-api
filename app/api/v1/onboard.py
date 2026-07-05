@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.models.user import AthleteProfile, User
 from app.models.weak_point import WeakPoint, WeakPointSource
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.onboarding import OnboardRequest, OnboardResponse
 from app.services.state_service import initialize_athlete_state
 
@@ -21,9 +21,7 @@ async def onboard_athlete(
     user = current_user
 
     # Upsert profile: register creates an empty shell; onboard fills it in.
-    profile = (await db.execute(
-        select(AthleteProfile).where(AthleteProfile.user_id == user.id)
-    )).scalar_one_or_none()
+    profile = await AthleteProfileRepository(db).get_for_user(user.id)
 
     if profile is None:
         profile = AthleteProfile(user_id=user.id)
