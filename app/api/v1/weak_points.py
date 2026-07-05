@@ -10,12 +10,11 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.models.user import User
-from app.models.weak_point import WeakPoint
+from app.repositories.weak_point_repository import WeakPointRepository
 
 router = APIRouter(prefix="/weak-points", tags=["Weak Points"])
 
@@ -58,12 +57,9 @@ async def list_weak_points(
     By default only active (unresolved) rows are returned.
     Pass active_only=false to include resolved rows.
     """
-    stmt = select(WeakPoint).where(WeakPoint.user_id == current_user.id)
-    if active_only:
-        stmt = stmt.where(WeakPoint.resolved_at.is_(None))
-
-    result = await db.execute(stmt)
-    rows = result.scalars().all()
+    rows = await WeakPointRepository(db).list_for_user(
+        current_user.id, active_only=active_only
+    )
     return [WeakPointOut.model_validate(row) for row in rows]
 
 
@@ -79,13 +75,7 @@ async def patch_weak_point(
     Only fields explicitly present in the request body are applied.
     Sending resolved_at=null re-opens a resolved weak point.
     """
-    result = await db.execute(
-        select(WeakPoint).where(
-            WeakPoint.id == weak_point_id,
-            WeakPoint.user_id == current_user.id,
-        )
-    )
-    wp = result.scalars().first()
+    wp = await WeakPointRepository(db).get_for_user(weak_point_id, current_user.id)
     if wp is None:
         raise HTTPException(status_code=404, detail="Weak point not found")
 
@@ -116,13 +106,7 @@ async def delete_weak_point(
 
     Returns 204 No Content on success, 404 if not found or wrong user.
     """
-    result = await db.execute(
-        select(WeakPoint).where(
-            WeakPoint.id == weak_point_id,
-            WeakPoint.user_id == current_user.id,
-        )
-    )
-    wp = result.scalars().first()
+    wp = await WeakPointRepository(db).get_for_user(weak_point_id, current_user.id)
     if wp is None:
         raise HTTPException(status_code=404, detail="Weak point not found")
 
