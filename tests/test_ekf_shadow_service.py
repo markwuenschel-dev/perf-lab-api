@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from sqlalchemy import func, select
 
+from app.analysis.feature_builders.ekf_calibration_features import summarize_ekf_shadow
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.ekf_shadow import EkfShadowLog
@@ -127,6 +128,26 @@ async def test_benchmark_endpoint_end_to_end_writes_update_and_keeps_production(
     update_rows = [r for r in await _ekf_rows(async_db, user.id) if r.event_type == "update"]
     assert len(update_rows) == 1
     assert update_rows[0].benchmark_code == "e1rm"
+
+
+async def test_summarize_ekf_shadow_returns_trace_and_calibration(async_db):
+    user = await _create_user(async_db)
+    base = await initialize_athlete_state(async_db, user.id)
+    for i in (1, 2):
+        await process_new_workout(async_db, user.id, _log(base.timestamp + timedelta(hours=24 * i)))
+    specs = [ekf_shadow_service.MappingSpec(target_vector="capacity", target_key="max_strength", coefficient=1.0)]
+    await record_ekf_update(
+        async_db, user.id, benchmark_code="1rm", mapping_specs=specs,
+        score01=0.8, observed_at=datetime.now(UTC),
+    )
+
+    summary = await summarize_ekf_shadow(async_db, user.id)
+    assert summary["n_predict"] == 2
+    assert summary["n_update"] == 1
+    assert len(summary["trace_series"]) == 3
+    assert all(isinstance(t["trace"], float) and t["trace"] > 0 for t in summary["trace_series"])
+    assert summary["nis_series"][0]["benchmark_code"] == "1rm"
+    assert "verdict" in summary["calibration"]  # too few updates → stay_shadow, but well-formed
 
 
 async def test_shadow_failure_never_touches_production(async_db, monkeypatch):
