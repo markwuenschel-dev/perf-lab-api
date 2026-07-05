@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -14,6 +15,8 @@ from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
 from app.services import state_service
+
+logger = logging.getLogger(__name__)
 
 # Normalized score thresholds for weak-point feedback.
 # Below DEFICIT → flag as a weakness; above IMPROVEMENT → resolve the weakness.
@@ -231,8 +234,12 @@ async def create_observation(
     try:
         await _ds.recompute_derived_metrics(db, user_id)
     except Exception:
-        # Non-critical: KPI recompute failure should not fail the observation write
-        pass
+        # Non-critical: a KPI recompute failure must not fail the observation
+        # write, but it should be visible (dashboard may be briefly stale).
+        logger.warning(
+            "derived-KPI recompute failed for user %s after benchmark write",
+            user_id, exc_info=True,
+        )
     await db.refresh(obs)
     return BenchmarkObservationRead(
         id=obs.id,
