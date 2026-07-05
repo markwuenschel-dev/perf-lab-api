@@ -6270,6 +6270,34 @@
         ]
       }
     },
+    "/v1/shadow/summary": {
+      "get": {
+        "operationId": "get_shadow_summary_v1_shadow_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Shadow Summary V1 Shadow Summary Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Shadow Summary",
+        "tags": [
+          "Shadow"
+        ]
+      }
+    },
     "/v1/simulate-dose": {
       "post": {
         "operationId": "simulate_dose_v1_simulate_dose_post",
