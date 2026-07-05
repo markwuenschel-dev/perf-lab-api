@@ -256,6 +256,8 @@ class EngineParameters:
     ekf_max_variance: float = 2.0
     # Measurement noise for a soreness → fatigue observation (soreness is a noisy self-report).
     ekf_soreness_variance: float = 0.12
+    # Measurement noise for an HRV/RHR → CNS (autonomic) fatigue observation.
+    ekf_autonomic_variance: float = 0.15
 
 
 def default_parameters() -> EngineParameters:
