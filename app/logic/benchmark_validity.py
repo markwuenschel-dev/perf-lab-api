@@ -20,9 +20,9 @@ class BenchmarkValidityProfile:
     benchmark_code: str
     measurement_variance: float
     protocol_variance: float = 0.0
-    mapping_strength: dict[str, float] = field(default_factory=dict)
-    fatigue_sensitivity: dict[str, float] = field(default_factory=dict)
-    tissue_sensitivity: dict[str, float] = field(default_factory=dict)
+    mapping_strength: dict[str, float] = field(default_factory=lambda: {})
+    fatigue_sensitivity: dict[str, float] = field(default_factory=lambda: {})
+    tissue_sensitivity: dict[str, float] = field(default_factory=lambda: {})
     skill_sensitivity: float = 0.0
     reliability_prior: float = 1.0
     min_attempts_for_strong_update: int = 1

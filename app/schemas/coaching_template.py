@@ -73,7 +73,7 @@ class StructuredCoachingTemplate(BaseModel):
     )
     hard_constraints: list[str] = Field(default_factory=list)
     soft_constraints: list[str] = Field(default_factory=list)
-    exercise_bias: list[ExerciseBiasEntry] = Field(default_factory=list)
+    exercise_bias: list[ExerciseBiasEntry] = Field(default_factory=lambda: [])
     benchmark_preferences: list[str] = Field(default_factory=list)
     progression_rules: list[str] = Field(default_factory=list)
     progression_gates: list[str] = Field(default_factory=list)

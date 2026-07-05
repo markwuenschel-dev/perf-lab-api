@@ -305,7 +305,7 @@ def calculate_stress_dose(
 
 def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_ExerciseDose]:
     """Build per-exercise dose bundles, then return for aggregation."""
-    doses = []
+    doses: list[_ExerciseDose] = []
     for entry in log.exercises:
         phi_pack = _phi_for_entry(entry, log.modality)
         vol_proxy = _entry_volume_proxy(entry, p)

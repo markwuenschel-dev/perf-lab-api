@@ -53,7 +53,7 @@ def _mapping_delta(
     signal: float,
     observation_weight: float,
 ) -> float:
-    cfg = mapping.config or {}
+    cfg: dict[str, Any] = mapping.config or {}
     scale = float(cfg.get("scale", 30.0))
     amp = float(cfg.get("amp", 2.5))
     coef = float(mapping.coefficient) * observation_weight

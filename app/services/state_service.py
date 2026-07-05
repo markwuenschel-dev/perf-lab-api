@@ -214,7 +214,7 @@ async def _resolve_exercise_phis(
             rows_by_name[row.name] = row
 
     # Build a mutable copy of exercises with resolved phis
-    resolved_entries = []
+    resolved_entries: list[ExerciseEntry] = []
     for entry in log.exercises:
         ex_row: Exercise | None = None
         if entry.exercise_id is not None:
@@ -296,8 +296,8 @@ def _seed_exercises_from_prescription(
     Gives planned work an exercise-aware dose (phi resolved by name) without the
     athlete re-entering every movement. Only fills when the client sent none.
     """
-    content = planned_session.prescribed_content or {}
-    prescribed = content.get("exercises") or []
+    content: dict[str, Any] = planned_session.prescribed_content or {}
+    prescribed: list[dict[str, Any]] = content.get("exercises") or []
     entries: list[ExerciseEntry] = []
     for ex in prescribed:
         name = ex.get("name") if isinstance(ex, dict) else None

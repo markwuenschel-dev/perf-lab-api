@@ -60,7 +60,7 @@ class TrainingBlock:
     description: str
 
     # Session distribution: type → sessions per week
-    weekly_distribution: dict[str, int] = field(default_factory=dict)
+    weekly_distribution: dict[str, int] = field(default_factory=lambda: {})
 
     # RPE / intensity envelope
     target_rpe_range: tuple[float, float] = (6.0, 8.0)
@@ -72,7 +72,7 @@ class TrainingBlock:
     retest_at_end: bool = False
 
     # Tags for exercise selection bias in this block
-    exercise_bias_tags: list[str] = field(default_factory=list)
+    exercise_bias_tags: list[str] = field(default_factory=lambda: [])
 
     # Notes for the athlete / coach
     coaching_notes: str = ""
