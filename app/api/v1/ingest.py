@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -23,9 +23,9 @@ async def log_workout(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> UnifiedStateVector:
-    try:
-        return await state_service.process_new_workout(
-            db, user_id=current_user.id, log=log
-        )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to update state: {str(e)}") from e
+    # No blanket try/except: an HTTPException keeps its status, and unexpected
+    # errors are logged + returned as a clean 500 by the global handler (app.main)
+    # instead of being mislabelled a 400 with the internal message leaked.
+    return await state_service.process_new_workout(
+        db, user_id=current_user.id, log=log
+    )

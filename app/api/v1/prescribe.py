@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -18,7 +18,7 @@ async def get_next_session(
     current_user: User = Depends(get_current_user),
 ) -> WorkoutPrescription:
     """DEV-friendly version that auto-initializes baseline state."""
-    try:
-        return await prescribe_for_athlete(db, current_user.id, goal)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to generate prescription: {str(e)}") from e
+    # No blanket try/except: an HTTPException raised downstream keeps its status,
+    # and any unexpected error is logged + returned as a clean 500 by the global
+    # handler (app.main) rather than being mislabelled a 400 with leaked internals.
+    return await prescribe_for_athlete(db, current_user.id, goal)
