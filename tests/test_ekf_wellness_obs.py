@@ -32,13 +32,28 @@ def test_none_without_soreness():
     assert build_wellness_observation(SimpleNamespace(), _P) is None
 
 
-def test_targets_muscular_and_structural_fatigue():
+def test_soreness_targets_muscular_and_structural_fatigue():
     obs = build_wellness_observation(SimpleNamespace(soreness=6.0), _P)
     assert obs is not None
-    assert obs.benchmark_code == "wellness_soreness"
+    assert obs.benchmark_code == "wellness"
     assert set(obs.axis_keys) == {"muscular", "structural"}
     assert obs.H.shape == (2, 22)
     assert np.allclose(obs.y, 0.6)  # soreness 6/10
+
+
+def test_hrv_rhr_add_a_cns_autonomic_observation():
+    obs = build_wellness_observation(SimpleNamespace(soreness=5.0, hrv_ms=40.0, resting_hr=68.0), _P)
+    assert obs is not None
+    assert set(obs.axis_keys) == {"muscular", "structural", "cns"}
+    # poor autonomic readiness (low HRV, high RHR) → high observed CNS fatigue
+    cns_i = list(obs.axis_keys).index("cns")
+    assert obs.y[cns_i] > 0.6
+
+
+def test_good_autonomic_readiness_low_cns_fatigue():
+    obs = build_wellness_observation(SimpleNamespace(hrv_ms=90.0, resting_hr=45.0), _P)
+    assert obs is not None and obs.axis_keys == ("cns",)
+    assert obs.y[0] < 0.4  # well-recovered → low CNS fatigue
 
 
 def test_update_shrinks_fatigue_variance_on_observed_axes():

@@ -24,6 +24,7 @@ import numpy as np
 
 from app.engine.parameters import EngineParameters
 from app.logic.benchmark_validity import BenchmarkValidityProfile, effective_variance
+from app.logic.wellness_signals import SIGNAL_CONFIG
 from app.schemas.state import UnifiedStateVector
 
 from .belief import EkfBelief
@@ -118,39 +119,68 @@ def build_observation(
     )
 
 
-def build_wellness_observation(wellness: object, params: EngineParameters) -> Observation | None:
-    """A soreness reading as a noisy observation of fatigue axes (ADR-0041 extension).
-
-    Athlete-reported soreness (0–10) is a direct signal of musculoskeletal fatigue, so we
-    treat ``soreness/10`` (normalized) as an observation of the ``muscular`` and ``structural``
-    fatigue axes. This lets the EKF's fatigue block actually be *observed* (its variance shrinks,
-    and correlated axes are corrected via P) rather than only inflated by the predict step.
-    Returns None when there is no soreness reading.
-    """
-    soreness = getattr(wellness, "soreness", None)
-    if soreness is None:
+def _fatigue_row(axis: str, y_val: float, r: float) -> tuple[np.ndarray, float, float, str] | None:
+    idx = INDEX_OF_KEY.get(("fatigue", axis))
+    if idx is None:
         return None
-    y_val = max(0.0, min(1.0, float(soreness) / 10.0))
-    r = float(params.ekf_soreness_variance)
-    rows: list[np.ndarray] = []
-    ys: list[float] = []
-    rs: list[float] = []
-    keys: list[str] = []
-    for axis in ("muscular", "structural"):
-        idx = INDEX_OF_KEY.get(("fatigue", axis))
-        if idx is None:
+    row = np.zeros(N_STATE, dtype=float)
+    row[idx] = 1.0
+    return row, y_val, r, axis
+
+
+def _autonomic_fatigue(wellness: object, scale: float) -> float | None:
+    """Observed CNS fatigue in [0,1] from HRV + resting HR, or None if unavailable.
+
+    Low HRV / high resting HR (below-baseline autonomic readiness) ⇒ high CNS fatigue. Uses the
+    shared per-signal z-score convention; ``z=+scale`` (well recovered) ⇒ 0, ``z=−scale`` ⇒ 1.
+    """
+    zs: list[float] = []
+    for field in ("hrv_ms", "resting_hr"):
+        val = getattr(wellness, field, None)
+        if val is None:
             continue
-        row = np.zeros(N_STATE, dtype=float)
-        row[idx] = 1.0
-        rows.append(row)
-        ys.append(y_val)
-        rs.append(r)
-        keys.append(axis)
-    if not rows:
+        direction, base, norm = SIGNAL_CONFIG[field]
+        z = max(-scale, min(scale, direction * (float(val) - base) / norm))
+        zs.append(z)
+    if not zs:
+        return None
+    z_readiness = sum(zs) / len(zs)
+    return max(0.0, min(1.0, 0.5 - 0.5 * z_readiness / max(1e-6, scale)))
+
+
+def build_wellness_observation(wellness: object, params: EngineParameters) -> Observation | None:
+    """Wellness signals as noisy observations of fatigue axes (ADR-0041 extension).
+
+    - Soreness (0–10) → ``muscular`` and ``structural`` fatigue (``soreness/10``).
+    - HRV + resting HR → ``cns`` (autonomic) fatigue.
+
+    This lets the EKF's fatigue block actually be *observed* (its variance shrinks, correlated
+    axes corrected via P) rather than only inflated by predict. Returns None with no usable signal.
+    """
+    built: list[tuple[np.ndarray, float, float, str]] = []
+
+    soreness = getattr(wellness, "soreness", None)
+    if soreness is not None:
+        y_val = max(0.0, min(1.0, float(soreness) / 10.0))
+        for axis in ("muscular", "structural"):
+            b = _fatigue_row(axis, y_val, float(params.ekf_soreness_variance))
+            if b is not None:
+                built.append(b)
+
+    cns_fat = _autonomic_fatigue(wellness, params.recovery_zscore_scale)
+    if cns_fat is not None:
+        b = _fatigue_row("cns", cns_fat, float(params.ekf_autonomic_variance))
+        if b is not None:
+            built.append(b)
+
+    if not built:
         return None
     return Observation(
-        H=np.vstack(rows), y=np.array(ys, dtype=float), R=np.diag(rs),
-        benchmark_code="wellness_soreness", axis_keys=tuple(keys),
+        H=np.vstack([b[0] for b in built]),
+        y=np.array([b[1] for b in built], dtype=float),
+        R=np.diag([b[2] for b in built]),
+        benchmark_code="wellness",
+        axis_keys=tuple(b[3] for b in built),
     )
 
 

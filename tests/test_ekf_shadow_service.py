@@ -111,8 +111,8 @@ async def test_wellness_observation_writes_fatigue_update_row(async_db):
     )
     rows = [r for r in await _ekf_rows(async_db, user.id) if r.event_type == "update"]
     assert len(rows) == 1
-    assert rows[0].benchmark_code == "wellness_soreness"
-    assert rows[0].n_obs == 2  # muscular + structural fatigue
+    assert rows[0].benchmark_code == "wellness"
+    assert rows[0].n_obs == 2  # muscular + structural fatigue (soreness only)
     assert rows[0].trace_post < rows[0].trace_pre
 
 
