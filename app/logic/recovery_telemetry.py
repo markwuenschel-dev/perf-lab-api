@@ -12,18 +12,21 @@ from typing import Any
 
 from app.domain.vectors import FatigueState
 from app.engine.parameters import EngineParameters
+from app.logic.wellness_signals import SIGNAL_CONFIG
 
-# (beta_key, wellness_field, direction, baseline, norm) — mirrors
-# readiness_service._SIGNAL_CONFIG. The recovery beta "stress" signal has no wellness
-# field (production reads it from the workout log, not a check-in), so it is absent here;
-# with the default params (sleep+stress only) the shadow baseline reduces to the sleep term.
-_WELLNESS_Z: tuple[tuple[str, str, float, float, float], ...] = (
-    ("sleep", "sleep_hours", 1.0, 8.0, 2.0),
-    ("hrv", "hrv_ms", 1.0, 60.0, 20.0),
-    ("rhr", "resting_hr", -1.0, 55.0, 10.0),
-    ("soreness", "soreness", -1.0, 3.0, 3.0),
-    ("mood", "mood", 1.0, 6.0, 3.0),
-)
+# Recovery-clearance beta signal key -> wellness field name. The per-field z-score
+# parameters (direction, baseline, norm) come from the shared SIGNAL_CONFIG, so this can
+# no longer drift from the readiness convention. The recovery beta uses a subset of the
+# readiness signals (no sleep_quality) under its own key names. The "stress" beta signal
+# has no wellness field (production reads it from the workout log, not a check-in), so it
+# is absent here; with the default params (sleep+stress) the baseline reduces to sleep.
+_BETA_KEY_FIELD: dict[str, str] = {
+    "sleep": "sleep_hours",
+    "hrv": "hrv_ms",
+    "rhr": "resting_hr",
+    "soreness": "soreness",
+    "mood": "mood",
+}
 
 
 def _signal(wellness: Any, field: str) -> float | None:
@@ -37,13 +40,14 @@ def clearance_multiplier(params: EngineParameters, axis: str, wellness: Any) -> 
     beta = params.recovery_clearance_beta.get(axis, {})
     z_clip = params.recovery_zscore_scale
     total = 0.0
-    for key, field, direction, base, norm in _WELLNESS_Z:
+    for key, field in _BETA_KEY_FIELD.items():
         w = beta.get(key)
         if w is None:
             continue
         val = _signal(wellness, field)
         if val is None:
             continue
+        direction, base, norm = SIGNAL_CONFIG[field]
         z = direction * (val - base) / norm
         z = max(-z_clip, min(z_clip, z))
         total += w * z
@@ -57,4 +61,4 @@ def multipliers_by_axis(params: EngineParameters, wellness: Any) -> dict[str, fl
 
 def wellness_snapshot(wellness: Any) -> dict[str, float | None]:
     """The wellness signals used by the multiplier, for the telemetry row."""
-    return {field: _signal(wellness, field) for _, field, *_ in _WELLNESS_Z}
+    return {field: _signal(wellness, field) for field in _BETA_KEY_FIELD.values()}

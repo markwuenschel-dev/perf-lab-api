@@ -11,8 +11,6 @@ production decision path until validated and promoted.
 """
 from __future__ import annotations
 
-import logging
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.vectors import FatigueState
@@ -21,15 +19,14 @@ from app.engine.parameters import default_parameters
 from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.services.state_service import load_current_state
-
-logger = logging.getLogger("perflab")
+from app.services.telemetry_common import best_effort_write
 
 _NAMESPACE = "q2_recovery"
 
 
 async def record_recovery_shadow(db: AsyncSession, user_id: int, wellness: object) -> None:
     """Write one recovery shadow-telemetry row. Never raises to the caller."""
-    try:
+    async with best_effort_write(db, f"recovery shadow log for user {user_id}"):
         params = default_parameters()
         artifact = load_namespace_override(_NAMESPACE)
         if artifact is not None:
@@ -57,10 +54,3 @@ async def record_recovery_shadow(db: AsyncSession, user_id: int, wellness: objec
                 decision_impact="none_shadow_only",
             )
         )
-        await db.commit()
-    except Exception:  # noqa: BLE001 — shadow telemetry must never break ingest
-        logger.warning("recovery shadow log failed for user %s", user_id, exc_info=True)
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001
-            pass

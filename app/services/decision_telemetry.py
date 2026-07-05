@@ -16,7 +16,6 @@ outcome labels such as ``followed_as_prescribed`` here — those belong to
 """
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,8 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.logic.constraint_engine.candidate import SessionCandidate, score_candidate
 from app.models.telemetry import CandidateDecisionLog, PrescriptionDecision
 from app.schemas.prescription import WorkoutPrescription
-
-logger = logging.getLogger(__name__)
+from app.services.telemetry_common import best_effort_write
 
 # The linear scoring axes carried by every SessionCandidate (see
 # app.logic.constraint_engine.candidate.DEFAULT_SCORE_WEIGHTS). Captured verbatim
@@ -88,7 +86,7 @@ async def persist_prescription_decision(
         state_snapshot: JSON-serializable athlete-state snapshot.
         block_context: JSON-serializable block/objective context used for bias.
     """
-    try:
+    async with best_effort_write(db, f"prescription decision telemetry for user {user_id}"):
         chosen = candidate_log[0] if candidate_log else None
         decision = PrescriptionDecision(
             athlete_id=user_id,
@@ -122,12 +120,4 @@ async def persist_prescription_decision(
                     chosen=candidate is chosen,
                 )
             )
-        await db.commit()
-    except Exception:  # pragma: no cover - telemetry must never break prescribe
-        logger.exception(
-            "Failed to persist prescription decision telemetry for user %s", user_id
-        )
-        try:
-            await db.rollback()
-        except Exception:
-            logger.exception("Rollback after telemetry write failure also failed")
+    # commit / on-failure log-and-rollback handled by best_effort_write
