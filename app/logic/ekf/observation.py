@@ -118,6 +118,42 @@ def build_observation(
     )
 
 
+def build_wellness_observation(wellness: object, params: EngineParameters) -> Observation | None:
+    """A soreness reading as a noisy observation of fatigue axes (ADR-0041 extension).
+
+    Athlete-reported soreness (0–10) is a direct signal of musculoskeletal fatigue, so we
+    treat ``soreness/10`` (normalized) as an observation of the ``muscular`` and ``structural``
+    fatigue axes. This lets the EKF's fatigue block actually be *observed* (its variance shrinks,
+    and correlated axes are corrected via P) rather than only inflated by the predict step.
+    Returns None when there is no soreness reading.
+    """
+    soreness = getattr(wellness, "soreness", None)
+    if soreness is None:
+        return None
+    y_val = max(0.0, min(1.0, float(soreness) / 10.0))
+    r = float(params.ekf_soreness_variance)
+    rows: list[np.ndarray] = []
+    ys: list[float] = []
+    rs: list[float] = []
+    keys: list[str] = []
+    for axis in ("muscular", "structural"):
+        idx = INDEX_OF_KEY.get(("fatigue", axis))
+        if idx is None:
+            continue
+        row = np.zeros(N_STATE, dtype=float)
+        row[idx] = 1.0
+        rows.append(row)
+        ys.append(y_val)
+        rs.append(r)
+        keys.append(axis)
+    if not rows:
+        return None
+    return Observation(
+        H=np.vstack(rows), y=np.array(ys, dtype=float), R=np.diag(rs),
+        benchmark_code="wellness_soreness", axis_keys=tuple(keys),
+    )
+
+
 def update(belief: EkfBelief, obs: Observation, params: EngineParameters) -> UpdateResult:
     """Joseph-form EKF measurement update. PSD-stable across many updates."""
     H, y, R = obs.H, obs.y, obs.R
