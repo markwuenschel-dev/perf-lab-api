@@ -27,6 +27,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.ml.common.splits import grouped_time_split as _grouped_time_split
+
 # Grouping / ordering keys for the per-(athlete, day, axis) frame. Whole athletes are held
 # out for CV (GROUP_COLUMN); a per-axis time series is keyed by (athlete, axis).
 GROUP_COLUMN = "athlete_id"
@@ -175,17 +177,15 @@ def grouped_time_split(
 
     Athletes are partitioned by id so none appears in both train and test — this keeps the
     trailing exposures, the prior-pain flag and any per-athlete standardization from leaking
-    across the split, and keeps every axis of an athlete on the same side. Mirrors
-    ``app.ml.q6_deload.build_training_frame.grouped_time_split``.
+    across the split, and keeps every axis of an athlete on the same side. Binds this
+    pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
-    ids = np.sort(frame[GROUP_COLUMN].unique())
-    n_holdout = max(1, int(round(len(ids) * holdout_frac)))
-    test_ids = set(ids[-n_holdout:].tolist())
-    is_test = frame[GROUP_COLUMN].isin(test_ids)
-    order = [GROUP_COLUMN, AXIS_COLUMN, ORDER_COLUMN]
-    train_df = frame[~is_test].sort_values(order).reset_index(drop=True)
-    test_df = frame[is_test].sort_values(order).reset_index(drop=True)
-    return train_df, test_df
+    return _grouped_time_split(
+        frame,
+        group_column=GROUP_COLUMN,
+        order_columns=(AXIS_COLUMN, ORDER_COLUMN),
+        holdout_frac=holdout_frac,
+    )
 
 
 # Default axes for the synthetic fixture — a representative subset of TissueState.KEYS

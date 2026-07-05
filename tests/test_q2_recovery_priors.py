@@ -26,7 +26,7 @@ from app.ml.q2_recovery.build_training_frame import (
     LABEL_COLUMN,
     build_frame,
 )
-from app.ml.q2_recovery.train_recovery_priors import holdout_mae, train
+from app.ml.q2_recovery.train import holdout_mae, train
 
 
 def _write_synthetic_csv(path: Path, *, n_athletes: int = 4, n_days: int = 45) -> Path:
@@ -141,7 +141,7 @@ def test_learned_beats_neutral_baseline_on_planted_effect() -> None:
 
 
 def test_planted_effect_recovers_expected_signs() -> None:
-    from app.ml.q2_recovery.train_recovery_priors import fit_population_response
+    from app.ml.q2_recovery.train import fit_population_response
 
     fit = fit_population_response(_planted_frame())
     coefs = fit["coefficients"]

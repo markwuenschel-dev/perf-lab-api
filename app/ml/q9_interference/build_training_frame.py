@@ -29,6 +29,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.ml.common.splits import grouped_time_split as _grouped_time_split
+
 # The interfering-load fraction is the single pre-outcome predictor; the label is the
 # realized-vs-expected adaptation ratio.
 FEATURE_COLUMNS: tuple[str, ...] = ("z_interfering_load",)
@@ -111,17 +113,15 @@ def grouped_time_split(
     """Split holding out whole athletes (grouped), preserving per-athlete episode order.
 
     Athletes are partitioned by id so none appears in both train and test, which keeps the
-    per-athlete zero-interference normalizer from leaking across the split. Mirrors
-    ``app.ml.q2_recovery.build_training_frame.grouped_time_split``.
+    per-athlete zero-interference normalizer from leaking across the split. Binds this
+    pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
-    ids = np.sort(frame[GROUP_COLUMN].unique())
-    n_holdout = max(1, int(round(len(ids) * holdout_frac)))
-    test_ids = set(ids[-n_holdout:].tolist())
-    is_test = frame[GROUP_COLUMN].isin(test_ids)
-    order = [GROUP_COLUMN, PAIR_COLUMN, ORDER_COLUMN]
-    train_df = frame[~is_test].sort_values(order).reset_index(drop=True)
-    test_df = frame[is_test].sort_values(order).reset_index(drop=True)
-    return train_df, test_df
+    return _grouped_time_split(
+        frame,
+        group_column=GROUP_COLUMN,
+        order_columns=(PAIR_COLUMN, ORDER_COLUMN),
+        holdout_frac=holdout_frac,
+    )
 
 
 def synthetic_interference_rows(

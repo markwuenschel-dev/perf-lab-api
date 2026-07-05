@@ -20,6 +20,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 
 from app.engine.parameters import default_parameters
+from app.ml.common.standardize import standardize_label
 from app.ml.dose_calibration.build_training_frame import (
     GROUP_COLUMN,
     LABEL_COLUMN,
@@ -31,7 +32,6 @@ from app.ml.dose_calibration.build_training_frame import (
 from app.ml.dose_calibration.train import (
     _MAX_SHAPE_NUDGE,
     _MAX_WEIGHT_NUDGE,
-    _standardize,
     train,
 )
 
@@ -91,11 +91,11 @@ def _row_abs_errors(
     train_df: pd.DataFrame, test_df: pd.DataFrame, params: Any
 ) -> tuple[np.ndarray, np.ndarray]:
     """Per-row |error| of the 1-D dose->outcome map (fit on train) on train and test."""
-    y_tr, y_mean, y_std = _standardize(train_df[LABEL_COLUMN])
+    y_tr, y_mean, y_std = standardize_label(train_df[LABEL_COLUMN])
     y_te = (test_df[LABEL_COLUMN].to_numpy(dtype=float) - y_mean) / y_std
     d_tr_raw = modeled_doses(train_df, params)
     d_te_raw = modeled_doses(test_df, params)
-    d_std, d_mean, d_sd = _standardize(d_tr_raw)
+    d_std, d_mean, d_sd = standardize_label(d_tr_raw)
     d_te = (d_te_raw - d_mean) / d_sd
     model = Ridge(alpha=1.0).fit(d_std.reshape(-1, 1), y_tr)
     pred = model.predict(d_te.reshape(-1, 1))

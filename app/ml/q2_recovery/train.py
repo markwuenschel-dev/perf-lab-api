@@ -14,7 +14,7 @@ Design choices (see ``model_card``):
 * ``shadow_only: true`` — the loader forbids a production caller from applying it.
 * NO GBM / deep learning.
 
-Run ``python -m app.ml.q2_recovery.train_recovery_priors`` to build -> train -> write
+Run ``python -m app.ml.q2_recovery.train`` to build -> train -> write
 reproducibly.
 """
 from __future__ import annotations
@@ -26,10 +26,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import GroupKFold
 
 from app.engine.parameters import default_parameters
+from app.ml.common.artifact import write_validated_artifact
+from app.ml.common.model_selection import select_alpha_grouped_cv
+from app.ml.common.standardize import standardize_label
 from app.ml.q2_recovery.build_training_frame import (
     FEATURE_COLUMNS,
     FEATURE_TO_SIGNAL,
@@ -45,8 +46,6 @@ NAMESPACE = "q2_recovery"
 CLIP_MIN = 0.60
 CLIP_MAX = 1.50
 
-# Candidate ridge strengths for grouped CV.
-_ALPHAS: tuple[float, ...] = (0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
 # Map a learned coefficient to a per-axis weight relative to that axis's sleep default.
 # Because features are z-scored and the label is standardized to unit variance, a
 # coefficient IS a standardized effect size (SD of clearance per 1 SD of the signal).
@@ -73,33 +72,6 @@ _DEFAULT_CSV_PATH = (
 )
 
 
-def _standardize_label(y: pd.Series) -> tuple[np.ndarray, float, float]:
-    """Center+scale the label to unit variance so ridge coefficients are comparable."""
-    mean = float(y.mean())
-    std = float(y.std(ddof=0)) or 1.0
-    return ((y.to_numpy(dtype=float) - mean) / std), mean, std
-
-
-def _select_alpha_grouped_cv(
-    x: np.ndarray, y: np.ndarray, groups: np.ndarray, n_groups: int
-) -> float:
-    """Pick the ridge alpha by athlete-grouped K-fold CV (min mean validation MSE)."""
-    if n_groups < 2:
-        return 1.0
-    cv = GroupKFold(n_splits=min(5, n_groups))
-    best_alpha, best_mse = 1.0, np.inf
-    for alpha in _ALPHAS:
-        fold_mse: list[float] = []
-        for tr_idx, va_idx in cv.split(x, y, groups):
-            model = Ridge(alpha=alpha)
-            model.fit(x[tr_idx], y[tr_idx])
-            fold_mse.append(float(mean_squared_error(y[va_idx], model.predict(x[va_idx]))))
-        mean_mse = float(np.mean(fold_mse))
-        if mean_mse < best_mse:
-            best_alpha, best_mse = alpha, mean_mse
-    return best_alpha
-
-
 def fit_population_response(frame: pd.DataFrame) -> dict[str, Any]:
     """Fit the aggregate ridge response; return per-feature coefficients + CV metadata.
 
@@ -108,11 +80,11 @@ def fit_population_response(frame: pd.DataFrame) -> dict[str, Any]:
     z-scored; the label is standardized here for coefficient comparability.
     """
     x = frame.loc[:, list(FEATURE_COLUMNS)].to_numpy(dtype=float)
-    y_std, _, _ = _standardize_label(frame[LABEL_COLUMN])
+    y_std, _, _ = standardize_label(frame[LABEL_COLUMN])
     groups = frame[GROUP_COLUMN].to_numpy()
 
     n_groups = int(np.unique(groups).size)
-    alpha = _select_alpha_grouped_cv(x, y_std, groups, n_groups)
+    alpha = select_alpha_grouped_cv(x, y_std, groups, n_groups)
 
     model = Ridge(alpha=alpha)
     model.fit(x, y_std)
@@ -184,7 +156,7 @@ def holdout_mae(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> tuple[flo
     """
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
     x_tr = train_df.loc[:, list(FEATURE_COLUMNS)].to_numpy(dtype=float)
-    y_tr, mean, std = _standardize_label(train_df[LABEL_COLUMN])
+    y_tr, mean, std = standardize_label(train_df[LABEL_COLUMN])
     x_te = test_df.loc[:, list(FEATURE_COLUMNS)].to_numpy(dtype=float)
     y_te = (test_df[LABEL_COLUMN].to_numpy(dtype=float) - mean) / std
 
@@ -198,12 +170,7 @@ def holdout_mae(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> tuple[flo
 
 def write_artifact(artifact: dict[str, Any], path: str | Path = _DEFAULT_ARTIFACT_PATH) -> Path:
     """Validate against the loader and write the artifact JSON to ``path``."""
-    from app.engine.parameter_overrides import load_override_artifact
-
-    load_override_artifact(artifact)  # fail loudly if it drifts from the frozen schema
-    out = Path(path)
-    out.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
-    return out
+    return write_validated_artifact(artifact, path)
 
 
 def main() -> None:

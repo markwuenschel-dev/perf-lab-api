@@ -14,19 +14,21 @@ own labels. Run ``python -m app.ml.q1_decrement.evaluate`` for the current verdi
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
 
+from app.ml.common.eval_report import BaseEvalReport
+from app.ml.common.metrics import decile_calibration, mae, sign_accuracy
+from app.ml.common.standardize import standardize_label
 from app.ml.q1_decrement.build_training_frame import (
     GROUP_COLUMN,
     PREDICTOR_FEATURES,
     grouped_time_split,
 )
-from app.ml.q1_decrement.train import _standardize_label, labeled_partition
+from app.ml.q1_decrement.train import labeled_partition
 
 # Promotion thresholds — deliberately conservative; a weak predictor must clearly help.
 MIN_IMPROVEMENT = 0.005          # MAE_baseline - MAE_learned, in standardized-label units
@@ -34,34 +36,16 @@ MIN_SIGN_ACCURACY = 0.55
 MAX_SATURATION_FRACTION = 0.05   # fraction of predictions whose raw decrement is implausible
 SPARSE_OBS_THRESHOLD = 10        # athletes with < this many test rows are "sparse"
 RPE_DECREMENT_CLIP = 3.0         # |predicted decrement| beyond this many RPE points = saturated
-_N_DECILES = 10
 
 
 @dataclass
-class EvalReport:
-    n_test_rows: int
-    n_test_athletes: int
-    mae_baseline: float
-    mae_learned: float
-    improvement: float           # baseline - learned (positive = the predictor helps)
-    sign_accuracy: float
-    calibration_error: float
-    sparse_improvement: float
-    saturation_fraction: float
-    verdict: str                 # "promote" | "stay_shadow"
-    reasons: list[str] = field(default_factory=list)
-
-    def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-def _decile_calibration(pred: np.ndarray, actual: np.ndarray) -> float:
-    """Mean |bin-mean prediction - bin-mean actual| across prediction deciles."""
-    if len(pred) < _N_DECILES:
-        return float("nan")
-    bins = np.array_split(np.argsort(pred), _N_DECILES)
-    errs = [abs(float(pred[b].mean()) - float(actual[b].mean())) for b in bins if len(b)]
-    return float(np.mean(errs))
+class EvalReport(BaseEvalReport):
+    mae_baseline: float = 0.0
+    mae_learned: float = 0.0
+    improvement: float = 0.0     # baseline - learned (positive = the predictor helps)
+    sign_accuracy: float = 0.0
+    sparse_improvement: float = 0.0
+    saturation_fraction: float = 0.0
 
 
 def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
@@ -75,19 +59,18 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
     train_l, test_l, _ = labeled_partition(train_df, test_df)
 
     x_tr = train_l.loc[:, list(PREDICTOR_FEATURES)].to_numpy(dtype=float)
-    y_tr, mean, std = _standardize_label(train_l["decrement"])
+    y_tr, mean, std = standardize_label(train_l["decrement"])
     x_te = test_l.loc[:, list(PREDICTOR_FEATURES)].to_numpy(dtype=float)
     y_te = (test_l["decrement"].to_numpy(dtype=float) - mean) / std
 
     pred = Ridge(alpha=1.0).fit(x_tr, y_tr).predict(x_te)
 
-    mae_learned = float(np.mean(np.abs(y_te - pred)))
+    mae_learned = mae(pred, y_te)
     mae_baseline = float(np.mean(np.abs(y_te)))  # neutral baseline predicts 0 (no decrement)
     improvement = mae_baseline - mae_learned
 
-    nz = np.abs(y_te) > 1e-9
-    sign_accuracy = float(np.mean(np.sign(pred[nz]) == np.sign(y_te[nz]))) if nz.any() else 0.0
-    calibration_error = _decile_calibration(pred, y_te)
+    sign_acc = sign_accuracy(pred, y_te)
+    calibration_error = decile_calibration(pred, y_te)
 
     counts = test_l.groupby(GROUP_COLUMN).size()
     sparse_ids = set(counts[counts < SPARSE_OBS_THRESHOLD].index.tolist())
@@ -106,8 +89,8 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
     reasons: list[str] = []
     if improvement < MIN_IMPROVEMENT:
         reasons.append(f"improvement {improvement:.4f} < {MIN_IMPROVEMENT}")
-    if sign_accuracy < MIN_SIGN_ACCURACY:
-        reasons.append(f"sign_accuracy {sign_accuracy:.3f} < {MIN_SIGN_ACCURACY}")
+    if sign_acc < MIN_SIGN_ACCURACY:
+        reasons.append(f"sign_accuracy {sign_acc:.3f} < {MIN_SIGN_ACCURACY}")
     if sparse_improvement < 0.0:
         reasons.append(f"sparse subgroup worse ({sparse_improvement:.4f})")
     if saturation_fraction > MAX_SATURATION_FRACTION:
@@ -119,7 +102,7 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
         mae_baseline=round(mae_baseline, 4),
         mae_learned=round(mae_learned, 4),
         improvement=round(improvement, 4),
-        sign_accuracy=round(sign_accuracy, 3),
+        sign_accuracy=round(sign_acc, 3),
         calibration_error=round(calibration_error, 4),
         sparse_improvement=round(sparse_improvement, 4),
         saturation_fraction=round(saturation_fraction, 4),

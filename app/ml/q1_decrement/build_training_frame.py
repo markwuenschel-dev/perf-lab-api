@@ -30,6 +30,9 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
 
+from app.ml.common.splits import grouped_time_split as _grouped_time_split
+from app.ml.common.standardize import zscore_within_group
+
 GROUP_COLUMN = "athlete_id"
 ORDER_COLUMN = "prev_session_at"  # per-athlete time order for the grouped time split
 
@@ -80,23 +83,6 @@ _RAW_SOURCE: dict[str, str] = {
 }
 
 
-def _zscore_within_athlete(df: pd.DataFrame, raw_col: str) -> pd.Series:
-    """z-score ``raw_col`` within each athlete (removes cross-athlete scale differences).
-
-    Standardizing within an athlete keeps the fit comparable across people with very
-    different absolute RPE/volume habits. Because the grouped time split holds out WHOLE
-    athletes, a within-athlete z-score never mixes information across the train/test
-    boundary. Degenerate (single-row / zero-variance) athletes yield NaN -> imputed to
-    0.0 (neutral = at that athlete's own average).
-    """
-    grp = df.groupby(GROUP_COLUMN)[raw_col]
-    mean = grp.transform("mean")
-    std = grp.transform("std")
-    std = std.where(std > 1e-9)
-    z = (df[raw_col] - mean) / std
-    return z.replace([np.inf, -np.inf], np.nan)
-
-
 def build_feature_frame(rows: pd.DataFrame | list[dict[str, Any]]) -> pd.DataFrame:
     """Build the pre-label feature frame from session-pair rows (no decrement yet).
 
@@ -117,8 +103,8 @@ def build_feature_frame(rows: pd.DataFrame | list[dict[str, Any]]) -> pd.DataFra
     ).astype(float)
 
     for feat, raw_col in _RAW_SOURCE.items():
-        df[feat] = _zscore_within_athlete(df, raw_col)
-    df["z_prev_load"] = _zscore_within_athlete(df, "prev_load")
+        df[feat] = zscore_within_group(df, raw_col, group_column=GROUP_COLUMN)
+    df["z_prev_load"] = zscore_within_group(df, "prev_load", group_column=GROUP_COLUMN)
 
     keep = [GROUP_COLUMN, ORDER_COLUMN, *PREDICTOR_FEATURES, *PLANNED_FEATURES, OBSERVED_COLUMN]
     keep = list(dict.fromkeys(keep))  # dedupe modality_change (in both feature groups)
@@ -181,13 +167,12 @@ def grouped_time_split(
 
     Athletes are partitioned by id so none appears in both train and test — this keeps the
     within-athlete z-scores (and any per-partition expectation refit) from leaking across
-    the split. Rows stay in ``(athlete_id, order)`` order within each partition. Mirrors
-    ``app.ml.q2_recovery.build_training_frame.grouped_time_split``.
+    the split. Rows stay in ``(athlete_id, order)`` order within each partition. Binds this
+    pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
-    ids = np.sort(frame[GROUP_COLUMN].unique())
-    n_holdout = max(1, int(round(len(ids) * holdout_frac)))
-    test_ids = set(ids[-n_holdout:].tolist())
-    is_test = frame[GROUP_COLUMN].isin(test_ids)
-    train_df = frame[~is_test].sort_values([GROUP_COLUMN, ORDER_COLUMN]).reset_index(drop=True)
-    test_df = frame[is_test].sort_values([GROUP_COLUMN, ORDER_COLUMN]).reset_index(drop=True)
-    return train_df, test_df
+    return _grouped_time_split(
+        frame,
+        group_column=GROUP_COLUMN,
+        order_columns=(ORDER_COLUMN,),
+        holdout_frac=holdout_frac,
+    )
