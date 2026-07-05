@@ -207,7 +207,14 @@ async def ping() -> dict[str, str]:
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Catch any unhandled exception and return clean JSON."""
+    """Log any unhandled exception (with traceback) and return clean JSON.
+
+    The client gets a generic message (no internal detail leaked); the server
+    keeps the full stack trace so 500s are diagnosable instead of vanishing.
+    """
+    logger.exception(
+        "Unhandled exception on %s %s", request.method, request.url.path, exc_info=exc
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Please try again later."},

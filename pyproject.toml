@@ -95,13 +95,6 @@ ignore = [
     "UP042",  # keep `(str, Enum)` mixins — StrEnum changes str()/SAEnum semantics for enums serialized to the API + DB
 ]
 
-[tool.ruff.lint.flake8-tidy-imports]
-banned-module-level-imports = []
-
-[tool.ruff.lint.flake8-tidy-imports.banned-api]
-"app.logic.dose_engine".msg = "Use app.logic.dose_engine_v0 instead — dose_engine is deprecated"
-"app.logic.state_update".msg = "Use app.logic.state_update_v0 instead — state_update is deprecated"
-
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI dependency-injection helpers are idiomatic as argument defaults.
 extend-immutable-calls = [
