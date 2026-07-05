@@ -26,7 +26,12 @@ _OVERRIDES_DIR = Path(__file__).parent / "param_overrides"
 _FATIGUE_AXES = {"cns", "muscular", "metabolic", "structural", "tendon", "grip"}
 _RECOVERY_SIGNALS = {"sleep", "stress", "hrv", "rhr", "soreness", "mood"}
 
-_REQUIRED_KEYS = {"version", "namespace", "shadow_only", "recovery_clearance_beta", "clip"}
+# Explicit artifact-kind discriminator. Every override artifact declares its ``kind``
+# so the loader dispatches on it rather than sniffing which payload keys are present.
+KIND_RECOVERY = "recovery_priors"
+KIND_DOSE = "dose_overrides"
+
+_REQUIRED_KEYS = {"kind", "version", "namespace", "shadow_only", "recovery_clearance_beta", "clip"}
 
 # --- Dose-law calibration (additive path; app/ml/dose_calibration) --------------------
 # A dose-calibration artifact carries an ``engine_overrides`` block naming EngineParameters
@@ -52,7 +57,7 @@ _DOSE_SHAPE_AXES = {"volume", "intensity", "density", "impact", "skill", "metabo
 _DOSE_NESTED_MAP_FIELDS = {"dose_shape_six_by_modality"}
 
 _DOSE_FIELDS = _DOSE_SCALAR_FIELDS | set(_DOSE_MAP_SUBKEYS) | _DOSE_NESTED_MAP_FIELDS
-_DOSE_REQUIRED_KEYS = {"version", "namespace", "shadow_only", "engine_overrides"}
+_DOSE_REQUIRED_KEYS = {"kind", "version", "namespace", "shadow_only", "engine_overrides"}
 
 
 class OverrideError(ValueError):
@@ -73,12 +78,18 @@ def load_override_artifact(source: str | Path | dict[str, Any]) -> dict[str, Any
             raise OverrideError(f"override artifact not found: {path}") from e
         except json.JSONDecodeError as e:
             raise OverrideError(f"override artifact is not valid JSON: {path}") from e
-    # Dispatch: a pure dose-calibration artifact (engine_overrides, no recovery block) is
-    # validated against the dose whitelist; everything else keeps the frozen recovery schema.
-    if "engine_overrides" in artifact and "recovery_clearance_beta" not in artifact:
+    # Dispatch on the explicit ``kind`` discriminator: a dose-calibration artifact is
+    # validated against the dose whitelist, a recovery artifact against the frozen
+    # recovery schema. An absent/unknown kind is a hard error (no silent fallthrough).
+    kind = artifact.get("kind")
+    if kind == KIND_DOSE:
         _validate_dose(artifact)
-    else:
+    elif kind == KIND_RECOVERY:
         _validate(artifact)
+    else:
+        raise OverrideError(
+            f"override artifact 'kind' must be {KIND_RECOVERY!r} or {KIND_DOSE!r}, got {kind!r}"
+        )
     return artifact
 
 
@@ -218,18 +229,3 @@ def apply_parameter_overrides(
     if "engine_overrides" in a:
         _merge_engine_overrides(merged, a["engine_overrides"])
     return merged
-
-
-def apply_dose_overrides(
-    params: EngineParameters,
-    artifact: str | Path | dict[str, Any],
-    *,
-    allow_shadow: bool = False,
-) -> EngineParameters:
-    """Return a COPY of ``params`` with a dose-calibration artifact's weak priors merged in.
-
-    Thin wrapper over ``apply_parameter_overrides`` for callers that specifically want the
-    dose-law path. Same guarantees: ``params`` is never mutated, and a ``shadow_only``
-    artifact is refused unless ``allow_shadow=True`` (only the dose shadow evaluator opts in).
-    """
-    return apply_parameter_overrides(params, artifact, allow_shadow=allow_shadow)

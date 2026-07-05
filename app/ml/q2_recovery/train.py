@@ -128,6 +128,7 @@ def train(frame: pd.DataFrame, *, source: str = "synthetic:google-fit-csv") -> d
     fit = fit_population_response(frame)
     betas = _map_response_to_betas(fit["coefficients"])
     return {
+        "kind": "recovery_priors",
         "version": ARTIFACT_VERSION,
         "namespace": NAMESPACE,
         "source": source,
