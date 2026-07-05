@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic.constraint_engine import overall_readiness
+from app.logic.wellness_signals import SIGNAL_CONFIG as _SIGNAL_CONFIG
 from app.models.wellness import WellnessSample
 from app.schemas.wellness import (
     ReadinessComponent,
@@ -38,19 +39,9 @@ BASELINE_WINDOW_DAYS = 28
 # stays dominant; wellness only nudges. Calibration knob.
 WELLNESS_WEIGHT = 0.15
 
-# Per signal: (direction, default_baseline, norm)
-#   direction      +1 = higher is better, -1 = lower is better
-#   default_baseline  anchor used when the athlete has no personal history yet
-#   norm           change (in signal units) that maps to one full unit of deviation
-_SIGNAL_CONFIG: dict[str, tuple[int, float, float]] = {
-    "hrv_ms":        (+1, 60.0, 20.0),
-    "sleep_hours":   (+1, 8.0,  2.0),
-    "sleep_quality": (+1, 85.0, 15.0),
-    "resting_hr":    (-1, 55.0, 10.0),
-    "soreness":      (-1, 3.0,  3.0),   # 0–10, higher = worse
-    "mood":          (+1, 6.0,  3.0),   # 0–10, higher = better
-}
-
+# Per-signal z-score config (direction, default_baseline, norm) now lives in the shared
+# app.logic.wellness_signals.SIGNAL_CONFIG so the recovery-clearance telemetry can't drift
+# from it. Imported above as _SIGNAL_CONFIG; the readiness combine rule stays the one home.
 _SIGNALS = tuple(_SIGNAL_CONFIG)
 
 
