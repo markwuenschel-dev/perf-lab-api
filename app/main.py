@@ -26,6 +26,7 @@ from app.api.v1 import (
     objectives,
     planning,
     prescribe,
+    shadow,
     simulate,
     weak_points,
     wellness,
@@ -173,6 +174,7 @@ app.include_router(objectives.router, prefix=settings.API_V1_STR)
 app.include_router(macrocycles.router, prefix=settings.API_V1_STR)
 app.include_router(feedback.router, prefix=settings.API_V1_STR)
 app.include_router(simulate.router, prefix=settings.API_V1_STR)
+app.include_router(shadow.router, prefix=settings.API_V1_STR)
 
 # Future routers (uncomment when ready)
 # app.include_router(blocks.router, prefix=settings.API_V1_STR)
