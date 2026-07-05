@@ -91,3 +91,4 @@ and die with their PR.
 | [0040](0040-macrocycle-thin-container.md) | The macrocycle is a thin container, not a materialized plan | proposed |
 | [0041](0041-shadow-ekf-state-covariance.md) | Shadow EKF: full joint covariance over X/F/T (scalar → covariance) | accepted |
 | [0042](0042-shadow-mpc-planner.md) | Shadow MPC planner: receding-horizon re-ranking of prescriber candidates | accepted |
+| [0043](0043-hierarchical-per-athlete-parameters.md) | Hierarchical per-athlete parameters (θ_i): partial-pooled recovery β, shadow-only | accepted |

@@ -12,7 +12,11 @@ from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.models.user import User
 from app.schemas.wellness import ReadinessScore, WellnessSampleIn, WellnessSampleOut
-from app.services import readiness_service, recovery_shadow_service
+from app.services import (
+    personalization_shadow_service,
+    readiness_service,
+    recovery_shadow_service,
+)
 
 router = APIRouter()
 
@@ -27,6 +31,9 @@ async def ingest_wellness(
     # Shadow-only (Q2 recovery priors): record baseline-vs-learned clearance multipliers.
     # Best-effort — never affects the response or a live decision.
     await recovery_shadow_service.record_recovery_shadow(db, current_user.id, sample)
+    # Shadow-only (ADR-0043): per-athlete partial-pooled recovery β vs the population prior.
+    # Best-effort — never affects the response or a live decision.
+    await personalization_shadow_service.record_personalization_shadow(db, current_user.id, sample)
     return WellnessSampleOut.model_validate(sample)
 
 
