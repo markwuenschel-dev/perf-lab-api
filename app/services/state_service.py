@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -342,6 +343,14 @@ async def _match_planned_session(
     return res.scalars().first()
 
 
+async def _state_row_count(db: AsyncSession, user_id: int) -> int:
+    """Number of persisted AthleteState rows for a user (1 ⇒ only the initial baseline)."""
+    res = await db.execute(
+        select(func.count()).select_from(AthleteState).where(AthleteState.user_id == user_id)
+    )
+    return int(res.scalar_one())
+
+
 async def process_new_workout(
     db: AsyncSession,
     user_id: int,
@@ -352,13 +361,30 @@ async def process_new_workout(
     """
     last_record = await AthleteContextRepository(db).get_latest_state(user_id)
 
+    # UTC-naive workout time — the anchor for this state transition. The DB stores
+    # naive datetimes; log.timestamp may arrive tz-aware.
+    log_ts = log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+
     if not last_record:
         # Build and stage the baseline row without committing yet — the whole
         # operation (init + first workout) will commit atomically at the end.
-        current_state, baseline_row = _build_baseline_vector(user_id)
-        db.add(baseline_row)
+        current_state, initial_baseline = _build_baseline_vector(user_id)
+        db.add(initial_baseline)
     else:
         current_state = unified_from_athlete_row(last_record)
+        # S0 is stamped at the wall-clock time the account was created, which is
+        # unrelated to the athlete's training timeline. If it is still the only
+        # state row, it is the initial baseline and gets re-anchored below.
+        initial_baseline = last_record if await _state_row_count(db, user_id) == 1 else None
+
+    # Anchor the initial baseline to just before the athlete's first training event so
+    # the timeline is ordered by workouts, not by account-creation time. Without this a
+    # workout logged at/before S0 (backfill, wearable-history import, clock skew)
+    # collapses every later row's timestamp onto S0's and breaks recency ordering.
+    if initial_baseline is not None:
+        anchor = log_ts - timedelta(seconds=1)
+        initial_baseline.timestamp = anchor
+        current_state.timestamp = anchor
 
     # ADR-0031: a planned session's prescription seeds the log's exercises, so planned
     # work gets an exercise-aware dose without re-entry. Match the session up front
@@ -398,17 +424,16 @@ async def process_new_workout(
         planned_session.completed_at = datetime.utcnow()
         workout_row.planned_session_id = planned_session.id
 
-    # Normalize both timestamps to UTC-naive for comparison
-    # (DB returns naive datetimes; log.timestamp may be tz-aware)
-    log_ts = log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+    # Physical decay interval since the current state, clamped non-negative so an
+    # out-of-order/backfilled log never applies negative decay.
     state_ts = current_state.timestamp.replace(tzinfo=None) if current_state.timestamp.tzinfo else current_state.timestamp
-
-    if log_ts < state_ts:
-        dt = timedelta(seconds=0)
-    else:
-        dt = log_ts - state_ts
+    dt = timedelta(seconds=0) if log_ts < state_ts else log_ts - state_ts
 
     new_state_schema = update_athlete_state(current_state, dose, dt, log)
+    # The evolved state is valid "as of" the workout event; anchor its timestamp to the
+    # workout time. Identical to the engine's prev+dt in the normal forward case, and
+    # correct when dt was clamped for a historical log (keeps the timeline event-ordered).
+    new_state_schema.timestamp = log_ts
 
     kwargs = athlete_state_kwargs_from_unified(new_state_schema)
     new_db_record = AthleteState(user_id=user_id, **kwargs)

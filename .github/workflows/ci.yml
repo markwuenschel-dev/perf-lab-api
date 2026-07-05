@@ -43,6 +43,25 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push' ||
       needs.changes.outputs.python == 'true'
+    services:
+      # Integration tests run migrations against a real Postgres, matching prod.
+      # The suite fails loudly if this is unreachable — it no longer skips.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: perfuser
+          POSTGRES_PASSWORD: perfpass123
+          POSTGRES_DB: perflab_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U perfuser"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab_test
+      DATABASE_URL: postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab_test
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +94,7 @@ jobs:
       - name: Run pytest, ruff, and pyright in parallel
         run: |
           set -euo pipefail
-          uv run python -m pytest -q -m "not requires_db" &
+          uv run python -m pytest -q &
           pid_pytest=$!
           uv run ruff check . &
           pid_ruff=$!

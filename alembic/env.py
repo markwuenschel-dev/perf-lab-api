@@ -89,8 +89,19 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
-    asyncio.run(run_async_migrations())
+    """Run migrations in 'online' mode.
+
+    If a caller has injected a live (sync-facing) Connection via
+    ``config.attributes["connection"]`` — e.g. the test harness running inside an
+    already-open event loop — reuse it and run migrations synchronously on it.
+    Otherwise (the ``alembic`` CLI) create our own async engine and drive it.
+    This avoids ``asyncio.run()`` being called from within a running loop.
+    """
+    connection = config.attributes.get("connection", None)
+    if connection is None:
+        asyncio.run(run_async_migrations())
+    else:
+        do_run_migrations(connection)
 
 
 if context.is_offline_mode():
