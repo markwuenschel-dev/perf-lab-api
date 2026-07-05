@@ -24,10 +24,16 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.engine.parameters import default_parameters
+from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.benchmark_validity import get_validity_profile
 from app.logic.ekf.belief import EkfBelief
-from app.logic.ekf.observation import MappingSpec, build_observation, update
+from app.logic.ekf.observation import (
+    MappingSpec,
+    Observation,
+    build_observation,
+    build_wellness_observation,
+    update,
+)
 from app.logic.ekf.transition import TransitionContext, predict
 from app.models.ekf_shadow import EkfShadowLog
 from app.schemas.workouts import StressDose, WorkoutLog
@@ -120,27 +126,61 @@ async def record_ekf_update(
         if obs is None:
             return  # no score / no capacity mapping → nothing to assimilate
 
-        res = update(prior, obs, params)
-        belief = res.belief
-        db.add(
-            EkfShadowLog(
-                user_id=user_id,
-                belief_at=_naive(observed_at),
-                model_version=belief.model_version,
-                event_type="update",
-                mean_json=belief.mean_map(),
-                variance_json=belief.variance_map(),
-                covariance_json=belief.cov_list(),
-                benchmark_code=benchmark_code,
-                innovation=float(np.mean(res.innovation)),
-                gain_norm=res.gain_norm,
-                trace_pre=res.trace_pre,
-                trace_post=res.trace_post,
-                nis=res.nis,
-                n_obs=len(obs.axis_keys),
-                decision_impact="none_shadow_only",
-            )
-        )
+        db.add(_staged_update_row(user_id, prior, obs, params, observed_at))
+
+
+async def record_ekf_wellness_observation(
+    db: AsyncSession,
+    user_id: int,
+    wellness: object,
+    *,
+    observed_at: datetime,
+) -> None:
+    """Assimilate a wellness (soreness) reading into the belief's fatigue block (ADR-0041).
+
+    Lets the EKF's fatigue block actually be *observed* — its variance shrinks and correlated
+    axes are corrected — rather than only inflated by predict. Best-effort; never raises.
+    """
+    async with best_effort_write(db, f"ekf wellness update for user {user_id}"):
+        params = default_parameters()
+        state = await load_current_state(db, user_id)
+        if state is None:
+            return
+        obs = build_wellness_observation(wellness, params)
+        if obs is None:
+            return  # no soreness → nothing to assimilate
+        prior_row = await _load_latest_belief(db, user_id)
+        prior = _belief_from_row(prior_row) if prior_row is not None else EkfBelief.seed_from_unified(state, params)
+        db.add(_staged_update_row(user_id, prior, obs, params, observed_at))
+
+
+def _staged_update_row(
+    user_id: int,
+    prior: EkfBelief,
+    obs: Observation,
+    params: EngineParameters,
+    observed_at: datetime,
+) -> EkfShadowLog:
+    """Apply a measurement update and build the (unsaved) EkfShadowLog update row."""
+    res = update(prior, obs, params)
+    belief = res.belief
+    return EkfShadowLog(
+        user_id=user_id,
+        belief_at=_naive(observed_at),
+        model_version=belief.model_version,
+        event_type="update",
+        mean_json=belief.mean_map(),
+        variance_json=belief.variance_map(),
+        covariance_json=belief.cov_list(),
+        benchmark_code=obs.benchmark_code,
+        innovation=float(np.mean(res.innovation)),
+        gain_norm=res.gain_norm,
+        trace_pre=res.trace_pre,
+        trace_post=res.trace_post,
+        nis=res.nis,
+        n_obs=len(obs.axis_keys),
+        decision_impact="none_shadow_only",
+    )
 
 
 def _naive(ts: datetime) -> datetime:

@@ -254,6 +254,8 @@ class EngineParameters:
     # confidence_min_variance / confidence_max_variance).
     ekf_min_variance: float = 1e-4
     ekf_max_variance: float = 2.0
+    # Measurement noise for a soreness → fatigue observation (soreness is a noisy self-report).
+    ekf_soreness_variance: float = 0.12
 
 
 def default_parameters() -> EngineParameters:

@@ -101,6 +101,21 @@ async def test_update_shrinks_trace_and_writes_update_row(async_db):
     assert u.trace_post < u.trace_pre  # a measurement reduces total uncertainty
 
 
+async def test_wellness_observation_writes_fatigue_update_row(async_db):
+    from types import SimpleNamespace
+
+    user = await _create_user(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    await ekf_shadow_service.record_ekf_wellness_observation(
+        async_db, user.id, SimpleNamespace(soreness=7.0), observed_at=datetime.now(UTC)
+    )
+    rows = [r for r in await _ekf_rows(async_db, user.id) if r.event_type == "update"]
+    assert len(rows) == 1
+    assert rows[0].benchmark_code == "wellness_soreness"
+    assert rows[0].n_obs == 2  # muscular + structural fatigue
+    assert rows[0].trace_post < rows[0].trace_pre
+
+
 async def test_benchmark_endpoint_end_to_end_writes_update_and_keeps_production(async_db):
     user = await _create_user(async_db)
     definition = BenchmarkDefinition(

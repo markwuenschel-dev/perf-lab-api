@@ -5,6 +5,8 @@
 ``GET  /v1/readiness``  the one backend-owned readiness number (combine rule: ADR-0026)
 """
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +15,7 @@ from app.core.db import get_db
 from app.models.user import User
 from app.schemas.wellness import ReadinessScore, WellnessSampleIn, WellnessSampleOut
 from app.services import (
+    ekf_shadow_service,
     personalization_shadow_service,
     readiness_service,
     recovery_shadow_service,
@@ -34,6 +37,10 @@ async def ingest_wellness(
     # Shadow-only (ADR-0043): per-athlete partial-pooled recovery β vs the population prior.
     # Best-effort — never affects the response or a live decision.
     await personalization_shadow_service.record_personalization_shadow(db, current_user.id, sample)
+    # Shadow EKF (ADR-0041): assimilate the soreness reading into the belief's fatigue block.
+    await ekf_shadow_service.record_ekf_wellness_observation(
+        db, current_user.id, sample, observed_at=datetime.now(UTC)
+    )
     return WellnessSampleOut.model_validate(sample)
 
 
