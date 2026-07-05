@@ -42,7 +42,13 @@ async def test_simulate_dose_no_auth_required(http_client):
 async def test_simulate_dose_returns_expected_fields(http_client):
     resp = await http_client.post("/v1/simulate-dose", json=_WORKOUT_BODY)
     data = resp.json()
-    for field in ("metabolic", "neuromuscular", "structural", "skill", "recovery_quality"):
+    # simulate-dose returns a StressDose: the six dose axes live under `dose_six`,
+    # alongside the derived systemic/peripheral scalars.
+    assert "dose_six" in data
+    for field in ("volume", "intensity", "density", "impact", "skill", "metabolic"):
+        assert field in data["dose_six"], f"Missing dose_six field: {field}"
+    for field in ("d_met_systemic", "d_nm_peripheral", "d_nm_central",
+                  "d_struct_damage", "d_struct_signal"):
         assert field in data, f"Missing field: {field}"
 
 
@@ -50,7 +56,7 @@ async def test_simulate_dose_running_modality(http_client):
     body = dict(_WORKOUT_BODY, modality="Running", distance_meters=5000.0)
     resp = await http_client.post("/v1/simulate-dose", json=body)
     assert resp.status_code == 200
-    assert resp.json()["metabolic"] > 0
+    assert resp.json()["dose_six"]["metabolic"] > 0
 
 
 # ── log-workout (JWT protected) ───────────────────────────────────────────────

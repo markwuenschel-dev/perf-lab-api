@@ -96,7 +96,10 @@ async def patch_weak_point(
     if "note" in patch.model_fields_set:
         wp.note = patch.note
     if "resolved_at" in patch.model_fields_set:
-        wp.resolved_at = patch.resolved_at
+        # Columns are naive-UTC; normalize an incoming tz-aware value so asyncpg
+        # doesn't reject the naive-vs-aware bind on a TIMESTAMP column.
+        rv = patch.resolved_at
+        wp.resolved_at = rv.replace(tzinfo=None) if rv is not None and rv.tzinfo else rv
 
     await db.commit()
     await db.refresh(wp)

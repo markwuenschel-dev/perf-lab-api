@@ -19,6 +19,11 @@ class WeakPointSource(str, enum.Enum):
     PERFORMANCE_DATA = "performance_data"  # Derived statistically over time
 
 
+def _weak_point_source_values(enum_cls: type[WeakPointSource]) -> list[str]:
+    """SAEnum values_callable: persist by member value (lowercase), matching the PG type."""
+    return [str(member.value) for member in enum_cls]
+
+
 # Canonical weak point tags — used for exercise selection biasing.
 # Tags are intentionally coarse-grained so the prescriber can match them
 # against Exercise.weak_point_tags without needing exact string matches.
@@ -85,9 +90,12 @@ class WeakPoint(Base):
     # The canonical tag — must be one of WEAK_POINT_TAGS (enforced in schema layer)
     tag: Mapped[str] = mapped_column(String, nullable=False, index=True)
 
-    # How this was detected
+    # How this was detected. The PG enum type (migration a000) is built from the
+    # member *values* (lowercase), so serialize by value — SAEnum defaults to the
+    # member name, which would send "SELF_REPORT" and fail the type check.
     source: Mapped[WeakPointSource] = mapped_column(
-        SAEnum(WeakPointSource), nullable=False
+        SAEnum(WeakPointSource, values_callable=_weak_point_source_values),
+        nullable=False,
     )
 
     # 0.0–1.0. Higher = more confident signal.

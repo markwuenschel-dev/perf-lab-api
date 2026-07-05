@@ -13,7 +13,6 @@ from app.engine.state_bridge import unified_from_athlete_row
 from app.logic.prescriber import recommend_next_session
 from app.models.athlete_state import AthleteState
 from app.models.user import User
-from app.schemas.training_goals import TrainingGoal
 from app.schemas.workouts import WorkoutLog
 from app.services.state_service import initialize_athlete_state, process_new_workout
 
@@ -156,7 +155,7 @@ async def test_weak_point_tags_appear_in_prescription_constraints(async_db):
     tags = ["grip", "posterior_chain"]
     rx = recommend_next_session(
         state,
-        goal=TrainingGoal.STRENGTH,
+        goal="Strength",
         active_weak_points=tags,
     )
 
@@ -183,7 +182,7 @@ async def test_no_weak_points_no_weak_point_constraints(async_db):
         )).scalars().first()
     )
 
-    rx = recommend_next_session(state, goal=TrainingGoal.STRENGTH, active_weak_points=[])
+    rx = recommend_next_session(state, goal="Strength", active_weak_points=[])
 
     if rx.why:
         wp_entries = [c for c in rx.why.constraints_applied if c.startswith("weak_point:")]
@@ -219,17 +218,32 @@ async def test_running_workout_updates_aerobic_channel(async_db):
 
 async def test_high_fatigue_deload_candidate_selected(async_db):
     """
-    After many hard sessions, a Strength goal prescription should be a lower-
-    intensity session type (Deload / Active Recovery) rather than Max Strength.
+    A sustained block of heavy, high-volume strength sessions with insufficient
+    recovery drives structural-damage fatigue past the prescriber's hard safety
+    threshold (f_struct_damage > 70), forcing a recovery / reduced-intensity
+    session rather than Max Strength.
+
+    Note the engine's design: CNS fatigue alone is only a *soft, overridable*
+    readiness redirect — the *hard* deload stops key off tissue / structural /
+    systemic fatigue (see prescriber._safety_candidates). So a guaranteed deload
+    scenario must drive one of those axes, which a heavy high-volume block does.
     """
     user = await _user(async_db, "deload_signal@test.com")
     await initialize_athlete_state(async_db, user.id)
 
-    # Drive fatigue very high with 5 back-to-back hard sessions
-    for i in range(5):
-        hard = _log(_T0 + timedelta(hours=i * 8), rpe=10.0)
+    # A genuine overreaching block: 15 heavy, high-volume sessions ~8h apart,
+    # under poor sleep/stress — enough to push structural-damage fatigue past the
+    # safety-override threshold.
+    for i in range(15):
         hard = WorkoutLog(
-            **{**hard.model_dump(), "total_volume_load": 8000.0, "estimated_sets": 20.0}
+            timestamp=_T0 + timedelta(hours=i * 8),
+            modality="Strength",
+            duration_minutes=90.0,
+            session_rpe=10.0,
+            total_volume_load=12000.0,
+            estimated_sets=28.0,
+            sleep_quality=6.0,
+            life_stress_inverse=6.0,
         )
         await process_new_workout(async_db, user.id, hard)
 
@@ -241,12 +255,16 @@ async def test_high_fatigue_deload_candidate_selected(async_db):
     )).scalars().first()
     state = unified_from_athlete_row(final_row)
 
-    rx = recommend_next_session(state, goal=TrainingGoal.STRENGTH)
+    rx = recommend_next_session(state, goal="Strength")
 
-    # The prescription should NOT be max-intensity when severely fatigued
-    low_intensity_types = {"Deload", "Active Recovery", "Mobility", "Skill Acquisition", "Technical Volume"}
-    assert rx.type in low_intensity_types or rx.duration_min <= 50, (
+    # Under a hard safety override the prescription is a recovery/reduced-intensity
+    # type (or, failing that, a clearly shortened session).
+    reduced_intensity_types = {
+        "Recovery", "Tissue Deload", "Deload", "Active Recovery",
+        "Mobility", "Skill Acquisition", "Technical Volume",
+    }
+    assert rx.type in reduced_intensity_types or rx.duration_min <= 50, (
         f"Expected a reduced-intensity prescription under high fatigue, got: type='{rx.type}', "
-        f"duration={rx.duration_min}min, "
-        f"fatigue_cns={state.fatigue_f.cns:.1f}, fatigue_muscular={state.fatigue_f.muscular:.1f}"
+        f"duration={rx.duration_min}min, f_struct_damage={state.f_struct_damage:.1f}, "
+        f"f_nm_central={state.f_nm_central:.1f}"
     )
