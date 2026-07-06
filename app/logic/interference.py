@@ -36,6 +36,19 @@ def _endurance_load_fraction(state: UnifiedStateVector) -> float:
     return endurance_load / 100.0
 
 
+def _concurrent_endurance_excess(state: UnifiedStateVector, params: EngineParameters) -> float:
+    """Off-axis endurance load *beyond* the baseline a hard strength block itself
+    produces (ADR-0037 recalibration).
+
+    A strength block generates structural/metabolic fatigue that the raw endurance-load
+    proxy would read as interference — causing the block to suppress its own adaptation.
+    Subtracting ``interference_baseline_z0`` keys strength/hypertrophy interference on the
+    *added* concurrent-endurance load, so a strength block no longer self-penalizes and
+    only genuine concurrent conditioning blunts the gain.
+    """
+    return max(0.0, _endurance_load_fraction(state) - params.interference_baseline_z0)
+
+
 def directional_interference_multiplier(
     target_axis: str,
     state: UnifiedStateVector,
@@ -50,7 +63,7 @@ def directional_interference_multiplier(
     floor = params.interference_floor_by_axis.get(target_axis, 0.30)
 
     if target_axis == "max_strength":
-        z = _endurance_load_fraction(state)
+        z = _concurrent_endurance_excess(state, params)
         return suppression_exp(z, params.interference_e_on_strength_alpha, floor)
 
     if target_axis == "power":
@@ -67,7 +80,7 @@ def directional_interference_multiplier(
         return min(m_e, m_cns)
 
     if target_axis == "hypertrophy":
-        z = _endurance_load_fraction(state)
+        z = _concurrent_endurance_excess(state, params)
         return suppression_exp(z, params.interference_e_on_strength_alpha, floor)
 
     if target_axis == "skill":

@@ -354,22 +354,6 @@ def _adaptation_efficiency(state: UnifiedStateVector, p: EngineParameters) -> fl
     return max(floor, 1.0 - excess * (1.0 - floor))
 
 
-def _interference_factor(coef: float, fatigue: float, floor: float = 0.2) -> float:
-    """Legacy linear interference. Superseded by directional_interference_multiplier."""
-    f01 = max(0.0, min(100.0, fatigue)) / 100.0
-    return max(floor, 1.0 - coef * f01)
-
-
-def _endurance_load(f: FatigueState) -> float:
-    """Concurrent-endurance load proxy: acute metabolic + persistent structural fatigue.
-
-    Metabolic fatigue recovers within ~a day, so on its own it barely registers the
-    chronic endurance volume that actually blunts strength; structural fatigue persists
-    and carries the signal. Used to drive strength/power interference (ADR-0037).
-    """
-    return 0.4 * f.metabolic + 0.6 * f.structural
-
-
 def _apply_adaptation_gains(
     s: UnifiedStateVector,
     dose: StressDose,
@@ -474,14 +458,23 @@ def update_athlete_state(
     # interference (metabolic load blunts strength/hypertrophy adaptation, ADR-0037).
     if dose.d_struct_signal > 0.0:
         struct_drive = math.log1p(dose.d_struct_signal)
-        interference = _interference_factor(cross_talk.INTERFERENCE_MET_ON_FORCE, _endurance_load(s.fatigue_f))
+        # Concurrent interference is the single ADR-0037 authority
+        # (directional_interference_multiplier, app/logic/interference.py):
+        # apply the per-axis exponential multiplier to each structural bump
+        # rather than one shared legacy-linear scalar.
         s.capacity_x.hypertrophy = min(
             100.0,
-            s.capacity_x.hypertrophy + p.capacity_hypertrophy_bump * struct_drive * interference,
+            s.capacity_x.hypertrophy
+            + p.capacity_hypertrophy_bump
+            * struct_drive
+            * directional_interference_multiplier("hypertrophy", s, p),
         )
         s.capacity_x.max_strength = min(
             100.0,
-            s.capacity_x.max_strength + p.capacity_struct_bump * struct_drive * interference,
+            s.capacity_x.max_strength
+            + p.capacity_struct_bump
+            * struct_drive
+            * directional_interference_multiplier("max_strength", s, p),
         )
 
     # --- 5. Explicit adaptation gains (new v2 path) ---

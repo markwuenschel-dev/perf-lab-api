@@ -8,8 +8,11 @@ Tests for state_update v2:
 - Tissue impulse from dose
 """
 
+import math
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+
+import pytest
 
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.state_update_v0 import (
@@ -121,6 +124,42 @@ def test_strength_dose_increases_max_strength():
     d = _dose(max_strength=5.0)
     s1 = update_athlete_state(s0, d, timedelta(days=1), _log())
     assert s1.capacity_x.max_strength > s0.capacity_x.max_strength
+
+
+def test_structural_bump_uses_exponential_interference_authority():
+    """The step-4 Banister structural bump is gated by the exponential
+    directional_interference_multiplier (ADR-0037, one authority), not the
+    retired linear _interference_factor. Isolated by a pure d_struct_signal dose
+    with no adaptation_contribution and dt=0, so fatigue at the bump == initial."""
+    from app.engine.parameters import default_parameters
+    from app.logic.interference import directional_interference_multiplier
+
+    p = default_parameters()
+    dose = StressDose(
+        dose_six=StressDoseSix(),                          # no six-dose
+        adaptation_contribution=AdaptationContribution(),  # step-5 no-op
+        d_met_systemic=0.0,
+        d_nm_peripheral=0.0,
+        d_nm_central=0.0,
+        d_struct_damage=0.0,
+        d_struct_signal=4.0,
+    )
+    struct_drive = math.log1p(4.0)
+
+    # Endurance fatigue present so interference actually bites.
+    s0 = _state(metabolic=40.0, structural=30.0, max_strength=50.0, hypertrophy=50.0)
+    ms_before = s0.capacity_x.max_strength
+    hyp_before = s0.capacity_x.hypertrophy
+
+    s1 = update_athlete_state(s0, dose, timedelta(seconds=0), _log())
+
+    mult_ms = directional_interference_multiplier("max_strength", s0, p)
+    mult_hyp = directional_interference_multiplier("hypertrophy", s0, p)
+    expected_ms = ms_before + p.capacity_struct_bump * struct_drive * mult_ms
+    expected_hyp = hyp_before + p.capacity_hypertrophy_bump * struct_drive * mult_hyp
+
+    assert s1.capacity_x.max_strength == pytest.approx(expected_ms, rel=1e-6)
+    assert s1.capacity_x.hypertrophy == pytest.approx(expected_hyp, rel=1e-6)
 
 
 def test_aerobic_dose_increases_aerobic_capacity():

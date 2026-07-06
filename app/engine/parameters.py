@@ -186,20 +186,25 @@ class EngineParameters:
     # --- Interference parameters (exponential suppression — app/logic/interference.py) ---
     # alpha values: how quickly interference ramps with load fraction [0,1].
     # Larger alpha = steeper suppression at moderate loads.
-    # Calibrated so that suppression at median concurrent load (z≈0.39) matches
-    # the prior linear model: max(0.2, 1 - 1.3*z) ≈ 0.49 → alpha=3.34.
-    interference_e_on_strength_alpha: float = 3.34
+    # The strength/hypertrophy axes suppress on *excess* concurrent-endurance load
+    # (load beyond interference_baseline_z0, the baseline a hard strength block itself
+    # produces — ADR-0037 recalibration) so a strength block no longer self-penalizes.
+    interference_e_on_strength_alpha: float = 4.0
     interference_e_on_power_alpha: float = 3.34
     interference_cns_on_power_alpha: float = 0.8
     interference_cns_on_skill_alpha: float = 0.6
     interference_structural_on_endurance_quality_alpha: float = 0.3
+    # Block-compatible baseline endurance-load fraction: concurrent interference on
+    # strength/hypertrophy bites only on load above this (ADR-0037). Set from the
+    # observed endurance-load fraction a strength-only block produces (~0.21).
+    interference_baseline_z0: float = 0.15
     interference_floor_by_axis: dict[str, float] = field(
         default_factory=lambda: {
-            "max_strength": 0.30,
+            "max_strength": 0.20,
             "power":        0.30,
             "skill":        0.50,
             "aerobic":      0.70,
-            "hypertrophy":  0.40,
+            "hypertrophy":  0.20,
         }
     )
 
