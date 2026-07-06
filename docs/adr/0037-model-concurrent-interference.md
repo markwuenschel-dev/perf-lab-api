@@ -31,3 +31,50 @@ asymmetry (endurance blunts strength more than the reverse) and scheduling-sensi
 conditioning-heavy `modality_mix` must visibly cost strength/power adaptation. Keep
 interference relative/qualitative until benchmark calibration (B→A) justifies specific
 magnitudes.
+
+---
+
+## Amendment (2026-07-06): interference keys on *excess* concurrent load
+
+**Status: accepted.**
+
+### Decision
+
+Refine the concurrent-interference model so that suppression of strength adaptation is
+keyed to incremental off-axis endurance/metabolic load **beyond a block-compatible
+baseline**, rather than raw total fatigue.
+
+### Context
+
+The prior proxy used the raw endurance-load fraction (`0.4·metabolic + 0.6·structural`) as
+the interference input. Because a hard strength block itself generates structural/metabolic
+fatigue, the block **self-penalized**: the structural fatigue necessary for strength
+adaptation was counted as interference against strength adaptation. Simulation showed
+parameter-only tuning could only barely satisfy the guardrail (ratio 0.799 vs required
+< 0.80, with strength build 2.06 vs 2.16 today) — insufficient margin, and it slowed
+strength development.
+
+### New model
+
+Interference load for the strength/hypertrophy axes:
+
+    Z_interference = max(0, E − z0)
+
+where `E` is the off-axis endurance-load fraction (`_endurance_load_fraction`) and `z0`
+(`interference_baseline_z0`) is the block-compatible baseline a hard strength block itself
+produces (in load-fraction units, ~0.21 observed → 0.15 set with headroom). Strength
+adaptation suppression is then the same exponential authority applied to the excess:
+
+    I_strength = floor + (1 − floor) · exp(−alpha · Z_interference)
+
+Initial parameters: `z0 = 0.15`, `interference_e_on_strength_alpha = 4.0`,
+`interference_floor_by_axis[max_strength] = interference_floor_by_axis[hypertrophy] = 0.20`.
+Scoped to the strength/hypertrophy path; the `power` endurance channel is unchanged.
+
+### Consequences
+
+- Hard strength blocks no longer self-trigger concurrent-interference penalties.
+- Real endurance interference remains penalized — the guardrail clears with margin
+  (simulated ratio 0.732, strength build 2.86).
+- Touches `app/logic/interference.py`, `app/engine/parameters.py`, and this doc; adds one
+  interpretable parameter `interference_baseline_z0`.

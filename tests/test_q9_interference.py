@@ -76,11 +76,16 @@ def test_anchors_normalize_efficiency_near_one() -> None:
 
 
 def test_fit_recovers_planted_alpha() -> None:
-    frame = build_frame(synthetic_interference_rows(alpha_true=_PLANTED_ALPHA, effect=1.0, seed=3))
+    # Plant with the engine's strength floor so the fixture's floor matches the floor
+    # the fit holds fixed (pair_defaults) — otherwise a floor mismatch biases recovery.
+    floor = default_parameters().interference_floor_by_axis["max_strength"]
+    frame = build_frame(
+        synthetic_interference_rows(alpha_true=_PLANTED_ALPHA, effect=1.0, seed=3, floor=floor)
+    )
     fit = fit_pair(frame, "endurance_on_strength")
-    # The constrained NLS fit recovers the planted alpha (default is a distant 3.34).
+    # The constrained NLS fit recovers the planted alpha (default is a distant 4.0).
     assert abs(fit["learned_alpha"] - _PLANTED_ALPHA) < 0.45
-    assert fit["default_alpha"] == 3.34
+    assert fit["default_alpha"] == 4.0
     assert fit["engine_param"] == "interference_e_on_strength_alpha"
 
 
@@ -127,8 +132,8 @@ def test_train_emits_reproducible_shadow_only_artifact() -> None:
 
     pair = artifact["pairs"]["endurance_on_strength"]
     assert pair["engine_param"] == "interference_e_on_strength_alpha"
-    assert pair["floor"] == 0.30
-    assert pair["default_alpha"] == 3.34
+    assert pair["floor"] == 0.20
+    assert pair["default_alpha"] == 4.0
     assert 0.0 <= pair["learned_alpha"] <= ALPHA_MAX
     assert pair["alpha_delta"] == round(pair["learned_alpha"] - pair["default_alpha"], 4)
 
