@@ -19,20 +19,14 @@ from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.scripts.seed_benchmarks import BENCHMARKS, MAPPINGS
 
-# Deferred by design: grip domain, tissue-vector-only, and validator-only defs.
-_DEFERRED_EXTRA_CODES = {"gym_false_grip_hang"}
-
+# Deferred by design: only validator-only defs (they confirm other signals rather than
+# drive state). Grip defs + gym_false_grip_hang now map weakly into max_strength
+# (ADR-0034 amendment); tissue_targets stay metadata (no benchmark->tissue maps).
 _BENCH_BY_CODE = {b["code"]: b for b in BENCHMARKS}
 
 
 def _is_deferred(bench: dict) -> bool:
-    if bench.get("is_validator_only"):
-        return True
-    if bench["domain"] == "grip":
-        return True
-    if bench["code"] in _DEFERRED_EXTRA_CODES:
-        return True
-    return False
+    return bool(bench.get("is_validator_only"))
 
 
 def _mapped_codes() -> set[str]:
@@ -122,3 +116,30 @@ def test_good_sprint_60m_time_raises_power_capacity():
     )
 
     assert s1.capacity_x.power > baseline_power
+
+
+def test_strong_grip_hold_raises_max_strength_weakly():
+    # ADR-0034 amendment: grip benchmarks are partial evidence of general strength.
+    bench = _BENCH_BY_CODE["grip_thick_bar_hold"]
+    mapping = _mapping_namespace("grip_thick_bar_hold", "max_strength")
+    assert bench["domain"] == "grip"
+    assert mapping.target_vector == "capacity" and mapping.target_key == "max_strength"
+
+    baseline = 50.0
+    s0 = _state(max_strength=baseline)
+    raw = 55.0  # strong thick-bar hold (better_direction="higher"; floor 0 .. cap 60)
+    score01 = normalize_score01(bench["better_direction"], raw, bench["standardization_rules"])
+    assert score01 is not None
+
+    s1 = apply_benchmark_observation(
+        s0,
+        raw_value=raw,
+        normalized_value=None,
+        better_direction=bench["better_direction"],
+        observation_weight=bench["observation_weight"],
+        mappings=[mapping],
+        score01=score01,
+    )
+
+    # Moves max_strength up, but weakly (coef 0.3) — a grip PR is partial, not full evidence.
+    assert s1.capacity_x.max_strength > baseline

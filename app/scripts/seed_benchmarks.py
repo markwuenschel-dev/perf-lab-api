@@ -132,27 +132,36 @@ BENCHMARKS: list[dict[str, Any]] = [
        standardization_rules={"floor": 0.0, "cap": 40.0}),
     _b(code="gym_false_grip_hang", name="False grip hang", domain="gymnastics",
        metric_type="hold_time", unit="seconds", is_primary_anchor=True, better_direction="higher",
-       observation_weight=0.8, tissue_targets=["elbow", "finger"]),
+       observation_weight=0.8, state_targets=["max_strength"], tissue_targets=["elbow", "finger"],
+       standardization_rules={"floor": 0.0, "cap": 60.0}),
     _b(code="gym_transition_quality", name="Ring/bar transition quality (rubric)",
        domain="gymnastics", metric_type="grade", unit="score", is_validator_only=True,
        is_primary_anchor=False, better_direction="higher", observation_weight=0.4,
        state_targets=["skill"]),
-    # Grip
+    # Grip. No grip CAPACITY axis exists (grip is a fatigue axis); grip strength is a
+    # strength expression, so grip benchmarks map WEAKLY into capacity.max_strength as
+    # partial evidence of general strength (ADR-0034 amendment 2026-07-06). fatigue.grip
+    # stays dose-driven; tissue_targets remain metadata (not observation mappings).
     _b(code="grip_plate_pinch_hold", name="Plate pinch hold", domain="grip",
        metric_type="hold_time", unit="seconds", is_primary_anchor=True, better_direction="higher",
-       observation_weight=1.0, fatigue_targets=["grip"], tissue_targets=["finger"]),
+       observation_weight=1.0, state_targets=["max_strength"], fatigue_targets=["grip"],
+       tissue_targets=["finger"], standardization_rules={"floor": 0.0, "cap": 60.0}),
     _b(code="grip_thick_bar_hold", name="Thick bar hold", domain="grip",
        metric_type="hold_time", unit="seconds", is_primary_anchor=True, better_direction="higher",
-       observation_weight=1.0, fatigue_targets=["grip"]),
+       observation_weight=1.0, state_targets=["max_strength"], fatigue_targets=["grip"],
+       standardization_rules={"floor": 0.0, "cap": 60.0}),
     _b(code="grip_rolling_handle_lift", name="Rolling handle lift", domain="grip",
        metric_type="load", unit="kg", is_primary_anchor=True, better_direction="higher",
-       observation_weight=0.9, fatigue_targets=["grip"]),
+       observation_weight=0.9, state_targets=["max_strength"], fatigue_targets=["grip"],
+       standardization_rules={"floor": 20.0, "cap": 120.0}),
     _b(code="grip_crush_test", name="Crush dynamometer / standardized crush test", domain="grip",
        metric_type="score", unit="score", is_primary_anchor=True, better_direction="higher",
-       observation_weight=0.8, fatigue_targets=["grip"]),
+       observation_weight=0.8, state_targets=["max_strength"], fatigue_targets=["grip"],
+       standardization_rules={"floor": 0.0, "cap": 100.0}),
     _b(code="grip_farmers_hold", name="Farmers carry hold time @ load", domain="grip",
        metric_type="hold_time", unit="seconds", is_primary_anchor=True, better_direction="higher",
-       observation_weight=0.9, fatigue_targets=["grip"], tissue_targets=["finger"]),
+       observation_weight=0.9, state_targets=["max_strength"], fatigue_targets=["grip"],
+       tissue_targets=["finger"], standardization_rules={"floor": 0.0, "cap": 90.0}),
     # Mixed modal
     _b(code="mm_short_benchmark_wod", name="Short benchmark WOD", domain="mixed_modal",
        metric_type="time", unit="seconds", is_primary_anchor=True, better_direction="lower",
@@ -351,6 +360,22 @@ MAPPINGS: list[dict[str, Any]] = [
      "mapping_type": "residual", "coefficient": 0.7, "intercept": 0.0, "config": {}},
     {"benchmark_code": "mm_repeatability_test", "target_vector": "capacity", "target_key": "glycolytic",
      "mapping_type": "residual", "coefficient": 0.5, "intercept": 0.0, "config": {}},
+
+    # Grip coverage (ADR-0034 amendment): grip strength is a strength expression but there
+    # is no grip capacity axis, so grip benchmarks map WEAKLY into max_strength as partial
+    # evidence of general strength. tissue_targets stay metadata (no benchmark->tissue maps).
+    {"benchmark_code": "grip_plate_pinch_hold", "target_vector": "capacity", "target_key": "max_strength",
+     "mapping_type": "residual", "coefficient": 0.3, "intercept": 0.0, "config": {}},
+    {"benchmark_code": "grip_thick_bar_hold", "target_vector": "capacity", "target_key": "max_strength",
+     "mapping_type": "residual", "coefficient": 0.3, "intercept": 0.0, "config": {}},
+    {"benchmark_code": "grip_rolling_handle_lift", "target_vector": "capacity", "target_key": "max_strength",
+     "mapping_type": "residual", "coefficient": 0.35, "intercept": 0.0, "config": {}},
+    {"benchmark_code": "grip_crush_test", "target_vector": "capacity", "target_key": "max_strength",
+     "mapping_type": "residual", "coefficient": 0.3, "intercept": 0.0, "config": {}},
+    {"benchmark_code": "grip_farmers_hold", "target_vector": "capacity", "target_key": "max_strength",
+     "mapping_type": "residual", "coefficient": 0.3, "intercept": 0.0, "config": {}},
+    {"benchmark_code": "gym_false_grip_hang", "target_vector": "capacity", "target_key": "max_strength",
+     "mapping_type": "residual", "coefficient": 0.3, "intercept": 0.0, "config": {}},
 ]
 
 

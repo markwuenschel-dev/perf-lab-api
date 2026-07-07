@@ -36,3 +36,37 @@ Realizes [PDR-0003](../pdr/0003-benchmarks-are-the-measurement-layer.md); builds
 **Guardrail:** benchmark corrections are signed residuals against a model-predicted
 expectation, never absolute one-directional nudges; the backend, not the client, computes
 the normalized value used by the state math.
+
+---
+
+## Amendment (2026-07-06): coverage closure + grip/tissue routing
+
+**Status: accepted.** Closes the "13/36 mapped" follow-on above.
+
+Added `standardization_rules` + capacity/residual `observation_mappings` for the
+previously-unmapped anchor defs, taking coverage to **35 of 37** (only the two
+validator-only defs stay unmapped, by design — they confirm other signals rather than
+drive state). Two routing decisions settle the ambiguous cases:
+
+**Grip benchmarks → `capacity.max_strength` (weak), not a new axis.** Grip is a capacity,
+but the canonical capacity vector has no grip axis, and adding one is a broad state-space
+migration (vectors, adapt/decay/confidence-noise coefficients, ceilings, phi tables, EKF
+state packing 22→23, projection, MPC). In the near term grip benchmarks are **partial
+observations of general max-strength capacity** at low-to-moderate weight (0.30–0.35) — a
+grip PR is partial, not full, evidence of whole-body strength. `fatigue.grip` remains
+dose-driven. Add a dedicated `capacity.grip` axis only if grip becomes a first-class
+planning target (climbing, grappling, strongman, calisthenics, racquet sports,
+rowing/paddling, OCR, manual-work prep).
+
+**Benchmark `tissue_targets` stay metadata — no benchmark→tissue observation maps.** Tissue
+stress (`T_t`) is an accumulated load/risk state fed by training **dose**, not a
+performance capacity. A strong hold has ambiguous direction w.r.t. tissue (better
+tolerance *or* recent high loading), so raw performance must not update `T_t`. Tissue is
+updated from dose; pain/soreness observations may update tissue-risk belief; benchmark
+`tissue_targets` inform risk/scheduling display only.
+
+**Routing rule:** performance benchmarks → capacity; training dose → fatigue and tissue;
+pain/soreness → tissue-risk belief. Coefficients/standardization ranges are qualitative
+([ADR-0032](0032-relative-state-math-benchmark-anchored.md) relative frame), tunable later.
+Backfilled on existing DBs via idempotent data migrations `a016` (Phase-1B coverage) and
+`a017` (grip).
