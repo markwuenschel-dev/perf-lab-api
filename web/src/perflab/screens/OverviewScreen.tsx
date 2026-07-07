@@ -2,6 +2,7 @@
 import { useEffect, type ReactNode } from "react";
 import { usePerfLab, DEFAULT_GOAL } from "../store";
 import { Card, ReadinessRing, SectionLabel, SyncChip, Track } from "../ui";
+import { Sparkline, Gauge } from "../viz";
 import { buildCheckin, COLORS, DAYS, readinessColor, readinessNote, readinessWord } from "../sim";
 import { useAuthedResource } from "../useAuthedResource";
 import { useAuth } from "@/auth/useAuth";
@@ -357,14 +358,7 @@ export function OverviewScreen() {
   const realSeries = token && historyRes.data && historyRes.data.length ? historyRes.data.map(stateReadinessProxy) : null;
   const series = realSeries ?? DAYS.slice(Math.max(0, DAYS.length - 14)).map((d) => d.readiness);
   const sN = series.length;
-  const oW = 300, opad = 6, oTop = 8, oBot = 58;
-  const ox = (i: number) => opad + (i / (sN - 1)) * (oW - 2 * opad);
-  const oy = (r: number) => oBot - ((r - 20) / 80) * (oBot - oTop);
   const showSpark = sN >= 2;
-  const ovLine = series.map((r, i) => `${ox(i).toFixed(1)},${oy(r).toFixed(1)}`).join(" ");
-  let ovArea = `M ${ox(0).toFixed(1)} ${oBot}`;
-  series.forEach((r, i) => (ovArea += ` L ${ox(i).toFixed(1)} ${oy(r).toFixed(1)}`));
-  ovArea += ` L ${ox(sN - 1).toFixed(1)} ${oBot} Z`;
   const seriesLast = series[sN - 1];
   const ovDiff = Math.round(seriesLast - series[0]);
   const ovDelta = `${ovDiff >= 0 ? "+" : ""}${ovDiff} vs 2w ago`;
@@ -483,17 +477,7 @@ export function OverviewScreen() {
               </div>
               <div className="mt-4 font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-dim">Last 14 days</div>
               {showSpark ? (
-                <svg viewBox="0 0 300 70" preserveAspectRatio="none" className="mt-2 block h-[56px] w-full overflow-visible">
-                  <defs>
-                    <linearGradient id="ovg" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0" stopColor="rgba(198,241,53,.26)" />
-                      <stop offset="1" stopColor="rgba(198,241,53,0)" />
-                    </linearGradient>
-                  </defs>
-                  <path d={ovArea} fill="url(#ovg)" />
-                  <polyline points={ovLine} fill="none" stroke="var(--ac)" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-                  <circle cx={ox(sN - 1)} cy={oy(seriesLast)} r="3.5" fill="var(--ac)" />
-                </svg>
+                <Sparkline values={series} min={20} max={100} width={300} height={70} className="mt-2 block h-[56px] w-full" />
               ) : (
                 <div className="mt-2 flex h-[56px] items-center text-[11px] font-medium text-dim">Not enough history yet — trend appears after a few days.</div>
               )}
@@ -512,12 +496,14 @@ export function OverviewScreen() {
               <span className="font-mono text-[30px] font-semibold leading-none text-ink">{acwrText}</span>
               <span className="mb-1 text-[11px] font-medium leading-none text-faint">ACWR · 7d/28d</span>
             </div>
-            <div className="relative mt-3 h-[6px] overflow-hidden rounded-full bg-white/[0.07]">
-              <div className="absolute bottom-0 top-0 bg-good/25" style={{ left: `${acwrPct(sweetLow)}%`, right: `${100 - acwrPct(sweetHigh)}%` }} />
-              {load?.acwr != null && (
-                <div className="absolute top-[-2px] h-[10px] w-[3px] rounded-[2px] bg-ac" style={{ left: `${acwrPct(load.acwr)}%` }} />
-              )}
-            </div>
+            <Gauge
+              variant="band"
+              className="mt-3"
+              height={6}
+              band={{ start: acwrPct(sweetLow) / 100, end: acwrPct(sweetHigh) / 100 }}
+              pct={acwrPct(load?.acwr ?? 0) / 100}
+              showMarker={load?.acwr != null}
+            />
             <div className="mt-[7px] font-mono text-[10px] leading-none text-dim">sweet spot {sweetLow}–{sweetHigh}</div>
           </Card>
           <Card>

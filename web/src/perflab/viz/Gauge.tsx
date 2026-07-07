@@ -25,11 +25,13 @@ export interface GaugeProps {
   band?: { start: number; end: number };
   /** Marker color. Defaults to primary ink. */
   markerColor?: string;
+  /** Hide the marker knob (e.g. no value yet). Default true. */
+  showMarker?: boolean;
 }
 
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
-export function Gauge({ variant, pct, height = 10, className, stops, band, markerColor }: GaugeProps) {
+export function Gauge({ variant, pct, height = 10, className, stops, band, markerColor, showMarker = true }: GaugeProps) {
   const { colors, chrome, accent } = useVizTheme();
   const pos = clamp01(pct) * 100;
   const knob = markerColor ?? colors.text.ink;
@@ -63,6 +65,7 @@ export function Gauge({ variant, pct, height = 10, className, stops, band, marke
         />
       )}
       {/* marker knob */}
+      {showMarker && (
       <div
         className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
         style={{
@@ -73,6 +76,7 @@ export function Gauge({ variant, pct, height = 10, className, stops, band, marke
           border: variant === "band" ? "none" : `2px solid ${chrome.gap}`,
         }}
       />
+      )}
     </div>
   );
 }
