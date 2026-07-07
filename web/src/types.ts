@@ -42,6 +42,7 @@ export type OnboardResponse = Schemas["OnboardResponse"];
 
 /* ---------- History (GET /v1/state-history, /v1/workouts) ---------- */
 export type WorkoutLogSummary = Schemas["WorkoutLogSummary"];
+export type BenchmarkObservationRead = Schemas["BenchmarkObservationRead"];
 
 /* ---------- Athlete profile (GET / PATCH /v1/profile) ---------- */
 export type ProfileRead = Schemas["ProfileRead"];
