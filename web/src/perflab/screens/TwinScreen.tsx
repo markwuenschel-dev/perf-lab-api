@@ -6,6 +6,7 @@ import type { WorkoutPrescription } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { Card, MetricBar, Pill, ReadinessRing, SectionLabel, SyncChip } from "../ui";
+import { Chart, Line, Marker, Radar, useVizTheme } from "../viz";
 import {
   CAP_CFG,
   CAP_TIPS,
@@ -24,10 +25,10 @@ import {
 } from "../sim";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const fmtPt = ([x, y]: [number, number]) => `${x.toFixed(1)},${y.toFixed(1)}`;
 
 export function TwinScreen() {
   const { state, actions } = usePerfLab();
+  const { accent } = useVizTheme();
   const N = DAY_COUNT;
   let di = state.twinDayIdx;
   if (di == null || di > N - 1) di = N - 1;
@@ -46,11 +47,8 @@ export function TwinScreen() {
   const tProfileVal = ft ? ft.fatigue_percent : D.profile;
   const tProfileFoot = ft ? ft.fatigue_profile : "endurance-biased";
 
-  // top sparkline
-  const Wv = 560, Hv = 46;
-  const xsf = (i: number) => 10 + (i / (N - 1)) * (Wv - 20);
-  const ysf = (r: number) => Hv - 5 - ((r - 20) / 80) * (Hv - 12);
-  const tSpark = DAYS.map((d, i) => `${xsf(i).toFixed(1)},${ysf(d.readiness).toFixed(1)}`).join(" ");
+  // top sparkline (readiness over the 22-day window)
+  const sparkData = DAYS.map((d, i) => [i, d.readiness] as [number, number]);
 
   // capacities
   const tCaps = CAP_CFG.map((c, idx) => {
@@ -60,23 +58,12 @@ export function TwinScreen() {
     return { label: c.label, val: v, sub, tip: CAP_TIPS[c.key], key: c.key, first: idx === 0, pct };
   });
 
-  // radar
-  const radCx = 92, radCy = 96, radR = 64;
-  const ang = (k: number) => -Math.PI / 2 + (k * 2 * Math.PI) / 5;
-  const pt = (k: number, r: number): [number, number] => [radCx + Math.cos(ang(k)) * r, radCy + Math.sin(ang(k)) * r];
+  // radar (normalized 0–1 per axis; used for the profile stats + the axis table)
   const radVals = CAP_CFG.map((c) => Math.max(0.06, Math.min(1, D.C[c.key] / c.max)));
-  const radPoly = radVals.map((v, k) => fmtPt(pt(k, v * radR))).join(" ");
-  const radGrid = [0.25, 0.5, 0.75, 1].map((g) => CAP_CFG.map((_, k) => fmtPt(pt(k, g * radR))).join(" "));
-  const radSpokes = CAP_CFG.map((_, k) => pt(k, radR));
   const radShort = ["Aerobic", "Glyco", "Strength", "Power", "Work"];
-  const radLabels = CAP_CFG.map((_, k) => {
-    const [x, y] = pt(k, radR + 15);
-    return { x, y: y + 3, label: radShort[k] };
-  });
   const base0 = DAYS[0].C;
-  const radBaseVals = CAP_CFG.map((c) => Math.max(0.04, Math.min(1, base0[c.key] / c.max)));
-  const radBasePoly = radBaseVals.map((v, k) => fmtPt(pt(k, v * radR))).join(" ");
-  const radDots = radVals.map((v, k) => pt(k, v * radR));
+  const radarAxes = CAP_CFG.map((c, k) => ({ key: c.key, label: radShort[k], value: D.C[c.key], max: c.max }));
+  const radarBaseline = CAP_CFG.map((c) => base0[c.key]);
   const axisRows = CAP_CFG.map((c, k) => {
     const cur = D.C[c.key];
     const dl = cur - base0[c.key];
@@ -122,11 +109,18 @@ export function TwinScreen() {
           </div>
         </div>
         <div className="min-w-0 flex-1">
-          <svg viewBox="0 0 560 46" preserveAspectRatio="none" className="block h-[38px] w-full">
-            <line x1="0" y1="29" x2="560" y2="29" stroke="rgba(255,255,255,.05)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            <polyline points={tSpark} fill="none" stroke="rgba(198,241,53,.55)" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-            <circle cx={xsf(di)} cy={ysf(D.readiness)} r="4" fill="var(--ac)" />
-          </svg>
+          <Chart
+            width={560}
+            height={40}
+            padding={{ top: 5, right: 10, bottom: 5, left: 10 }}
+            xDomain={[0, N - 1]}
+            yDomain={[20, 100]}
+            ariaLabel="Readiness across the 22-day window"
+            className="h-[38px] w-full"
+          >
+            <Line data={sparkData} color={accent} opacity={0.7} />
+            <Marker x={di} y={D.readiness} color={accent} />
+          </Chart>
           <input type="range" min={0} max={N - 1} value={di} onChange={(e) => actions.setTwinDay(+e.target.value)} className="mt-[2px] w-full cursor-pointer" style={{ accentColor: "var(--ac)" }} />
           <div className="mt-[2px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>3 weeks ago</span><span>today</span></div>
         </div>
@@ -181,14 +175,7 @@ export function TwinScreen() {
         ) : (
           <div className="grid grid-cols-1 items-center gap-[26px] lg:grid-cols-[280px_1fr_250px]">
             <div>
-              <svg viewBox="0 0 184 200" className="block h-auto w-full overflow-visible">
-                {radGrid.map((p, i) => (<polygon key={i} points={p} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="1" />))}
-                {radSpokes.map(([x, y], i) => (<line key={i} x1="92" y1="96" x2={x} y2={y} stroke="rgba(255,255,255,.07)" strokeWidth="1" />))}
-                <polygon points={radBasePoly} fill="none" stroke="rgba(255,255,255,.32)" strokeWidth="1.5" strokeDasharray="3 3" />
-                <polygon points={radPoly} fill="rgba(198,241,53,.16)" stroke="var(--ac)" strokeWidth="2" strokeLinejoin="round" />
-                {radDots.map(([x, y], i) => (<circle key={i} cx={x} cy={y} r="3" fill="var(--ac)" stroke="#0a0c10" strokeWidth="1.5" />))}
-                {radLabels.map((l, i) => (<text key={i} x={l.x} y={l.y} fill="#9aa0ab" fontFamily="Geist" fontSize="9" fontWeight="600" textAnchor="middle">{l.label}</text>))}
-              </svg>
+              <Radar axes={radarAxes} baseline={radarBaseline} size={200} className="mx-auto block h-auto w-full max-w-[220px]" />
               <div className="mt-2 flex justify-center gap-[18px] text-[10px] font-medium leading-none text-[#7c818c]">
                 <span><span className="mr-[5px] inline-block h-[3px] w-[12px] rounded-[2px] bg-ac align-middle" />now</span>
                 <span><span className="mr-[5px] inline-block w-[12px] border-t-[1.5px] border-dashed border-white/50 align-middle" />block start</span>
