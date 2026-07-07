@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "gen:types": "openapi-typescript ../openapi.json -o src/types.gen.ts",
-    "check:types": "tsc --noEmit"
+    "check:types": "tsc --noEmit",
+    "tokens": "node scripts/build-tokens.mjs",
+    "tokens:check": "node scripts/build-tokens.mjs --check && node scripts/validate-palette.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

@@ -5,20 +5,12 @@
 // client-side — there is no backend call. `DAYS` is a fixed 22-day twin
 // history anchored to a "today" of 2026-06-17, exactly as in the mockup.
 
-export const COLORS = {
-  good: "#5fd08a",
-  warn: "#f5c451",
-  hot: "#ff8a5c",
-  info: "#86b8ff",
-  teal: "#7bd6c0",
-  mint: "#45d6c4",
-  lime: "#c6f135",
-  ink: "#eef0f3",
-  soft: "#cfd4dd",
-  mute: "#9aa0ab",
-  faint: "#646b78",
-  dim: "#565d69",
-} as const;
+// The palette now has a single source of truth: scripts/palette.data.mjs →
+// generated src/perflab/viz/tokens.ts. `COLORS` is the legacy brand shim
+// (pixel-identical to the old inline values) kept for screens not yet migrated
+// onto the viz layer; prefer PALETTE[mode] from ./viz/tokens in new code.
+import { COLORS } from "./viz/tokens";
+export { COLORS };
 
 export interface TwinDay {
   F: Record<string, number>;
