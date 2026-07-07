@@ -35,7 +35,7 @@ export function ExplainDrawer() {
               {ex.drivers.map((d, i) => (
                 <div key={i} className="flex items-center justify-between gap-3 border-b border-white/[0.05] py-[11px] last:border-0">
                   <div>
-                    <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">{d.n}</div>
+                    <div className="text-[13px] font-semibold leading-none text-ink">{d.n}</div>
                     <div className="mt-1 text-[11px] font-medium leading-none text-faint">{d.d}</div>
                   </div>
                   <span className="font-mono text-[15px] font-semibold leading-none" style={{ color: d.color }}>{d.delta}</span>
@@ -46,7 +46,7 @@ export function ExplainDrawer() {
           <div>
             <div className="mb-3 font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]">How it flows · D(t) → S(t)</div>
             <div className="rounded-[12px] border border-white/[0.07] bg-white/[0.02] p-4 text-center font-mono text-[15px] font-semibold leading-[1.4] text-soft">{ex.flow}</div>
-            <div className="mt-3 text-[12px] font-medium leading-[1.6] text-[#7c818c]">{ex.note}</div>
+            <div className="mt-3 text-[12px] font-medium leading-[1.6] text-mute">{ex.note}</div>
           </div>
         </div>
       </div>

@@ -138,7 +138,7 @@ export function TwinScreen() {
           <div>
             <SectionLabel className="text-faint">Readiness</SectionLabel>
             <div className="mt-2 text-[18px] font-bold leading-none" style={{ color: rc }}>{readinessWord(D.readiness)}</div>
-            <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-[#7c818c]">{readinessNote(D.readiness)}</div>
+            <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(D.readiness)}</div>
             <div className="mt-[10px] font-mono text-[10px] leading-none text-dim">100 − 0.55·F̄ − 0.45·Tₘₐₓ</div>
           </div>
         </Card>
@@ -176,7 +176,7 @@ export function TwinScreen() {
           <div className="grid grid-cols-1 items-center gap-[26px] lg:grid-cols-[280px_1fr_250px]">
             <div>
               <Radar axes={radarAxes} baseline={radarBaseline} size={200} className="mx-auto block h-auto w-full max-w-[220px]" />
-              <div className="mt-2 flex justify-center gap-[18px] text-[10px] font-medium leading-none text-[#7c818c]">
+              <div className="mt-2 flex justify-center gap-[18px] text-[10px] font-medium leading-none text-mute">
                 <span><span className="mr-[5px] inline-block h-[3px] w-[12px] rounded-[2px] bg-ac align-middle" />now</span>
                 <span><span className="mr-[5px] inline-block w-[12px] border-t-[1.5px] border-dashed border-white/50 align-middle" />block start</span>
               </div>
@@ -202,7 +202,7 @@ export function TwinScreen() {
                 <Row k="Composite" v={`${composite}`} mono />
                 <Row k="Balance" v={balanceWord} />
               </div>
-              <div className="border-t border-white/[0.06] pt-3 text-[11px] font-medium leading-[1.5] text-[#7c818c]">{profileNote}</div>
+              <div className="border-t border-white/[0.06] pt-3 text-[11px] font-medium leading-[1.5] text-mute">{profileNote}</div>
             </div>
           </div>
         )}
@@ -257,7 +257,7 @@ export function TwinScreen() {
               })}
             </div>
           </div>
-          <div className="mt-4 flex gap-4 border-t border-white/[0.06] pt-[14px] text-[11px] font-medium leading-none text-[#7c818c]">
+          <div className="mt-4 flex gap-4 border-t border-white/[0.06] pt-[14px] text-[11px] font-medium leading-none text-mute">
             <span><span className="mr-[6px] inline-block h-[8px] w-[8px] rounded-[2px] bg-good" />ready</span>
             <span><span className="mr-[6px] inline-block h-[8px] w-[8px] rounded-[2px] bg-warn" />monitor</span>
             <span><span className="mr-[6px] inline-block h-[8px] w-[8px] rounded-[2px] bg-hot" />load high</span>
@@ -301,7 +301,7 @@ function NextSessionCard() {
     return (
       <Card className="px-5 py-4">
         <SectionLabel className="text-faint">Recommended next session</SectionLabel>
-        <div className="mt-2 text-[13px] font-medium leading-[1.5] text-[#7c818c]">
+        <div className="mt-2 text-[13px] font-medium leading-[1.5] text-mute">
           Sign in to get a live prescription from your twin.
         </div>
       </Card>
@@ -316,9 +316,9 @@ function NextSessionCard() {
           {rx ? `${rx.type} · ${rx.duration_min} min` : loading ? "loading…" : ""}
         </span>
       </div>
-      {loading && <div className="text-[13px] font-medium text-[#7c818c]">Computing your prescription…</div>}
+      {loading && <div className="text-[13px] font-medium text-mute">Computing your prescription…</div>}
       {!loading && error && (
-        <div className="text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">
+        <div className="text-[12.5px] font-medium leading-[1.5] text-mute">
           No live prescription yet — log a workout or run a field test to seed your twin.
         </div>
       )}
@@ -326,7 +326,7 @@ function NextSessionCard() {
         <div className="flex flex-col gap-4">
           <div>
             <div className="text-[20px] font-bold leading-tight text-ink">{rx.focus}</div>
-            <div className="mt-1 text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">{rx.rationale}</div>
+            <div className="mt-1 text-[12.5px] font-medium leading-[1.5] text-mute">{rx.rationale}</div>
           </div>
           {rx.exercises && rx.exercises.length > 0 && (
             <div className="flex flex-col gap-2 border-t border-white/[0.06] pt-3">
@@ -362,7 +362,7 @@ function ScreenHeaderTwin({ syncLabel, onLog }: { syncLabel: string; onLog: () =
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">Digital Twin</h1>
           <Pill>S(t) · v0.3</Pill>
         </div>
-        <p className="m-0 mt-[9px] max-w-[440px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">Evolving state vector — capacities, fatigue &amp; tissue load. Seeded from the latest field-test handoff.</p>
+        <p className="m-0 mt-[9px] max-w-[440px] text-[13.5px] font-medium leading-[1.5] text-mute">Evolving state vector — capacities, fatigue &amp; tissue load. Seeded from the latest field-test handoff.</p>
       </div>
       <div className="flex items-center gap-[9px]">
         <SyncChip label={syncLabel} />
@@ -392,8 +392,8 @@ function MiniTile({ label, value, sub, foot, footColor, bar, tip }: { label: str
 function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-[11px] font-medium leading-none text-[#7c818c]">{k}</span>
-      <span className={`text-[12px] font-semibold leading-none text-[#e6e8ec] ${mono ? "font-mono" : ""}`}>{v}</span>
+      <span className="text-[11px] font-medium leading-none text-mute">{k}</span>
+      <span className={`text-[12px] font-semibold leading-none text-ink ${mono ? "font-mono" : ""}`}>{v}</span>
     </div>
   );
 }

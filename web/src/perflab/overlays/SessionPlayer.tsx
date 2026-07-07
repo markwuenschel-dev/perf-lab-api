@@ -74,7 +74,7 @@ export function SessionPlayer() {
           <div className="text-center">
             <div className="font-mono text-[12px] font-semibold uppercase leading-none tracking-[0.16em]" style={{ color: phZoneColor }}>{sessPhaseName}</div>
             <div className="mt-4 font-mono text-[124px] font-semibold leading-[0.9] tracking-[-0.03em] text-ink">{mmss(rem)}</div>
-            <div className="mt-[10px] text-[14px] font-medium leading-none text-[#7c818c]">target {ph.pace} · {ph.zone}</div>
+            <div className="mt-[10px] text-[14px] font-medium leading-none text-mute">target {ph.pace} · {ph.zone}</div>
           </div>
           <Meter variant="bare" pct={phPct} color={phZoneColor} trackClassName="h-2" className="w-[min(520px,82%)]" />
           <div className="flex gap-3">
@@ -123,7 +123,7 @@ export function SessionPlayer() {
                   <div key={i} className={`flex items-center gap-[10px] rounded-[9px] border px-[11px] py-[9px] ${current ? "border-ac/20 bg-ac/[0.06]" : "border-white/[0.06]"}`}>
                     <span className="h-[7px] w-[7px] flex-none rounded-full" style={{ background: dot }} />
                     <span className="flex-1 text-[12px] font-medium leading-none text-soft">{p.name}</span>
-                    <span className="font-mono text-[11px] font-semibold leading-none text-[#7c818c]">{mmss(p.dur)}</span>
+                    <span className="font-mono text-[11px] font-semibold leading-none text-mute">{mmss(p.dur)}</span>
                   </div>
                 );
               })}
@@ -146,7 +146,7 @@ export function SessionPlayer() {
       </div>
 
       <div className="flex flex-none items-center gap-4 border-t border-white/[0.06] bg-[rgba(8,10,14,.5)] px-7 py-4">
-        <span className="flex-none font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#7c818c]">Session</span>
+        <span className="flex-none font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-mute">Session</span>
         <Meter variant="bare" pct={overallPct} color="linear-gradient(90deg,var(--ac),#7bd6c0)" trackClassName="h-[6px]" className="flex-1" />
         {done && <button onClick={actions.sessToLog} className="flex-none rounded-[10px] bg-gradient-to-r from-mint to-teal px-[18px] py-[11px] text-[13px] font-semibold leading-none text-[#0a0c10]">Log it →</button>}
       </div>

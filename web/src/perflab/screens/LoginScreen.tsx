@@ -77,7 +77,7 @@ export function LoginScreen() {
                 <span className="font-mono text-[14px] font-bold leading-[1.4] text-ac">{n}</span>
                 <div>
                   <div className="text-[14px] font-semibold leading-none text-ink">{t}</div>
-                  <div className="mt-[5px] text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">{d}</div>
+                  <div className="mt-[5px] text-[12.5px] font-medium leading-[1.5] text-mute">{d}</div>
                 </div>
               </div>
             ))}
@@ -94,7 +94,7 @@ export function LoginScreen() {
               {isRegister ? "Create account" : "Sign in"}
             </h1>
           </div>
-          <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">
+          <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
             {isRegister
               ? "Registering signs you in and seeds your athlete profile."
               : "Sign in to unlock the live twin, planning and workout logging."}

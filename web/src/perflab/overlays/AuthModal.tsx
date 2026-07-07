@@ -130,7 +130,7 @@ export function AuthModal() {
                 : "Sign in"}
           </button>
 
-          <p className="m-0 text-center text-[11.5px] font-medium leading-[1.5] text-[#7c818c]">
+          <p className="m-0 text-center text-[11.5px] font-medium leading-[1.5] text-mute">
             {isRegister
               ? "Registering signs you in and seeds your athlete profile."
               : "Signing in unlocks the live twin, planning and workout logging."}

@@ -429,7 +429,7 @@ export function OverviewScreen() {
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">
             {greetingPrefix()}, {profile?.display_name || (user?.email ?? email).split("@")[0] || (isGuest ? "Guest" : "Athlete")}
           </h1>
-          <p className="m-0 mt-[9px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">{dateLine()}<ProgramWeek /></p>
+          <p className="m-0 mt-[9px] text-[13.5px] font-medium leading-[1.5] text-mute">{dateLine()}<ProgramWeek /></p>
         </div>
         <div className="flex items-center gap-[9px]">
           {lastSyncIso && <SyncChip label={`Synced ${relativeTime(lastSyncIso)}`} />}
@@ -557,8 +557,8 @@ export function OverviewScreen() {
               <div key={i} className="flex items-start gap-3 border-b border-white/[0.05] py-[11px] last:border-0">
                 <span className="mt-[3px] h-[9px] w-[9px] flex-none rounded-full" style={{ background: a.dot }} />
                 <div>
-                  <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">{a.title}</div>
-                  <div className="mt-1 text-[11.5px] font-medium leading-[1.5] text-[#7c818c]">{a.desc}</div>
+                  <div className="text-[13px] font-semibold leading-none text-ink">{a.title}</div>
+                  <div className="mt-1 text-[11.5px] font-medium leading-[1.5] text-mute">{a.desc}</div>
                 </div>
               </div>
             ))}
@@ -592,7 +592,7 @@ function RecentActivity({ token, workouts, loading }: { token: string | null; wo
           <div key={wk.id} className="flex items-center gap-[13px] border-b border-white/[0.05] py-[11px] last:border-0">
             <div className="h-[9px] w-[9px] flex-none rounded-full" style={{ background: dot(wk.session_rpe) }} />
             <div className="flex-1">
-              <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">
+              <div className="text-[13px] font-semibold leading-none text-ink">
                 {wk.modality.charAt(0).toUpperCase() + wk.modality.slice(1)} · {Math.round(wk.duration_minutes)} min
               </div>
               <div className="mt-1 text-[11px] font-medium leading-none text-faint">{sub}</div>

@@ -254,7 +254,7 @@ function PlanningNotice({ title, body, onRetry }: { title: string; body: string;
     <section className="flex min-h-[70vh] items-center justify-center px-[30px] pb-9 pt-[26px]">
       <Card className="flex max-w-[520px] flex-col items-center gap-4 p-[44px] text-center">
         <div className="text-[20px] font-bold leading-[1.2] text-ink">{title}</div>
-        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">{body}</div>
+        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-mute">{body}</div>
         {onRetry && (
           <button onClick={onRetry} className="mt-[6px] rounded-[10px] border border-white/10 bg-white/[0.04] px-5 py-3 text-[13px] font-semibold leading-none text-soft">Retry</button>
         )}
@@ -273,7 +273,7 @@ function PlanningEmptyState({ onCreate }: { onCreate: () => void }) {
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" strokeWidth="1.6"><path d="M12 2 4 7v10l8 5 8-5V7z" /><path d="M12 22V12M4 7l8 5 8-5" /></svg>
         </div>
         <div className="text-[22px] font-bold leading-[1.2] text-ink">No active training block</div>
-        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">Create a training block to get a week of sessions prescribed against your readiness — pick a goal, cadence and session-length preferences.</div>
+        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-mute">Create a training block to get a week of sessions prescribed against your readiness — pick a goal, cadence and session-length preferences.</div>
         <button onClick={onCreate} className="mt-[6px] rounded-[10px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-3 text-[13px] font-semibold leading-none text-[#0a0c10]">Create a training block →</button>
       </Card>
     </section>

@@ -309,7 +309,7 @@ export function SimulatorScreen() {
 
           {!auth.token && (
             <Card hover={false} className="px-5 py-[14px]">
-              <div className="text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">Sign in to project against your seeded twin — the figures above are illustrative preview data.</div>
+              <div className="text-[12.5px] font-medium leading-[1.5] text-mute">Sign in to project against your seeded twin — the figures above are illustrative preview data.</div>
             </Card>
           )}
 

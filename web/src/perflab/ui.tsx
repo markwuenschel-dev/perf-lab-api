@@ -188,7 +188,7 @@ export function ScreenHeader({
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">{title}</h1>
           {badge}
         </div>
-        {subtitle && <p className="m-0 mt-[9px] max-w-[460px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">{subtitle}</p>}
+        {subtitle && <p className="m-0 mt-[9px] max-w-[460px] text-[13.5px] font-medium leading-[1.5] text-mute">{subtitle}</p>}
       </div>
       {children && <div className="flex flex-none items-center gap-[9px]">{children}</div>}
     </header>

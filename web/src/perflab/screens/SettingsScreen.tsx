@@ -1,5 +1,6 @@
 // src/perflab/screens/SettingsScreen.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
@@ -194,7 +195,7 @@ function PerformanceProfileCard() {
     return (
       <Card className="p-[22px]">
         <SectionLabel className="mb-3">Performance profile</SectionLabel>
-        <div className="text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">
+        <div className="text-[12.5px] font-medium leading-[1.5] text-mute">
           Sign in to load and edit your athlete profile (experience, lifts, biometrics).
           Guest sessions aren't saved.
         </div>
@@ -383,7 +384,7 @@ function WearableConnectCard() {
   return (
     <Card className="p-[22px]">
       <SectionLabel className="mb-1">Wearable — Oura</SectionLabel>
-      <div className="mb-4 text-[12px] font-medium leading-[1.5] text-[#7c818c]">
+      <div className="mb-4 text-[12px] font-medium leading-[1.5] text-mute">
         Sync HRV, sleep and resting HR nightly to sharpen your readiness.
       </div>
 
@@ -477,6 +478,7 @@ function WearableConnectCard() {
 
 export function SettingsScreen() {
   const { state, actions } = usePerfLab();
+  const { resolvedTheme, setTheme } = useTheme();
   const auth = useAuth();
   const s = state.settings;
   const goalHydrated = useRef(false);
@@ -517,7 +519,7 @@ export function SettingsScreen() {
     <section className="flex max-w-[780px] flex-col gap-4 px-[30px] pb-9 pt-[26px]">
       <header>
         <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">Settings</h1>
-        <p className="m-0 mt-[9px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">Profile, units and preferences — editable any time.</p>
+        <p className="m-0 mt-[9px] text-[13.5px] font-medium leading-[1.5] text-mute">Profile, units and preferences — editable any time.</p>
       </header>
 
       <PerformanceProfileCard />
@@ -558,8 +560,18 @@ export function SettingsScreen() {
       </Card>
 
       <Card className="p-[22px]">
+        <SectionLabel className="mb-[6px]">Theme</SectionLabel>
+        <div className="mb-[14px] text-[12px] font-medium leading-[1.5] text-mute">Light or dark appearance across the app.</div>
+        <Seg
+          options={["Dark", "Light"]}
+          value={resolvedTheme === "light" ? "Light" : "Dark"}
+          onChange={(v) => setTheme(v === "Light" ? "light" : "dark")}
+        />
+      </Card>
+
+      <Card className="p-[22px]">
         <SectionLabel className="mb-[6px]">Accent</SectionLabel>
-        <div className="mb-[14px] text-[12px] font-medium leading-[1.5] text-[#7c818c]">Highlight colour for charts and active states.</div>
+        <div className="mb-[14px] text-[12px] font-medium leading-[1.5] text-mute">Highlight colour for charts and active states.</div>
         <div className="flex items-center gap-4">
           {ACCENTS.map((c) => (
             <div
@@ -578,7 +590,7 @@ export function SettingsScreen() {
           {notif.map(([key, title, desc], i) => (
             <div key={key} className={cn("flex items-center justify-between py-[11px]", i < notif.length - 1 && "border-b border-white/[0.05]")}>
               <div>
-                <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">{title}</div>
+                <div className="text-[13px] font-semibold leading-none text-ink">{title}</div>
                 <div className="mt-1 text-[11px] font-medium leading-[1.4] text-faint">{desc}</div>
               </div>
               <Toggle on={s[key] as boolean} onClick={() => actions.setSetting(key, !s[key])} />
@@ -591,7 +603,7 @@ export function SettingsScreen() {
 
       <Card className="flex items-center justify-between p-[22px]">
         <div>
-          <div className="text-[13px] font-semibold leading-none text-[#e6e8ec]">Account</div>
+          <div className="text-[13px] font-semibold leading-none text-ink">Account</div>
           <div className="mt-[5px] font-mono text-[11px] leading-none text-faint">
             {auth.isAuthenticated
               ? auth.user?.email ?? auth.email

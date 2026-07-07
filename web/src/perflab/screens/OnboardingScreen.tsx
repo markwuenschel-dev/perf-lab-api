@@ -51,7 +51,7 @@ function GoalAnchorCard({ goal }: { goal: string }) {
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-4 py-3"
       >
-        <span className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#7c818c]">
+        <span className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-mute">
           Baseline anchors · {goal}
         </span>
         <span className="font-mono text-[11px] leading-none text-faint">{open ? "▲" : "▼"}</span>
@@ -191,7 +191,7 @@ export function OnboardingScreen() {
                 <span className="font-mono text-[14px] font-bold leading-[1.4] text-ac">{n}</span>
                 <div>
                   <div className="text-[14px] font-semibold leading-none text-ink">{t}</div>
-                  <div className="mt-[5px] text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">{d}</div>
+                  <div className="mt-[5px] text-[12.5px] font-medium leading-[1.5] text-mute">{d}</div>
                 </div>
               </div>
             ))}
@@ -204,7 +204,7 @@ export function OnboardingScreen() {
       <div className="flex max-w-[620px] flex-col justify-center px-14 py-12">
         <div className="mb-2 flex items-center justify-between">
           <span className="font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.18em] text-faint">Step {ob} of 3</span>
-          <button onClick={goOverview} className="border-0 bg-transparent text-[12px] font-medium leading-none text-[#7c818c]">Skip for now →</button>
+          <button onClick={goOverview} className="border-0 bg-transparent text-[12px] font-medium leading-none text-mute">Skip for now →</button>
         </div>
         <div className="mb-[34px] h-1 overflow-hidden rounded-full bg-white/[0.07]">
           <div className="h-full rounded-full transition-all duration-300" style={{ width: ob === 1 ? "33%" : ob === 2 ? "66%" : "100%", background: "linear-gradient(90deg,var(--ac),#7bd6c0)" }} />
@@ -214,7 +214,7 @@ export function OnboardingScreen() {
         {ob === 1 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Let's set up your profile</h1>
-            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">Just the basics. You can change any of this later.</p>
+            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">Just the basics. You can change any of this later.</p>
             <div className="grid grid-cols-2 gap-4">
               <Field label="First name"><input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" className={inputCls} /></Field>
               <Field label="Last name"><input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" className={inputCls} /></Field>
@@ -229,7 +229,7 @@ export function OnboardingScreen() {
         {ob === 2 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Training context</h1>
-            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">So the plan speaks your language.</p>
+            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">So the plan speaks your language.</p>
             <div className="flex flex-col gap-4">
               <Field label="Training goal">
                 <select value={goal} onChange={(e) => actions.setSetting("goal", e.target.value)} className={inputCls} style={{ colorScheme: "dark" }}>
@@ -274,7 +274,7 @@ export function OnboardingScreen() {
         {ob === 3 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Seed your twin</h1>
-            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-[#7c818c]">
+            <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
               {isRunningGoal(goal)
                 ? "Enter a recent field test to initialize S(t) — or skip and run one from the Field Test screen."
                 : isStrengthGoal(goal)

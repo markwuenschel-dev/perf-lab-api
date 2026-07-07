@@ -174,7 +174,7 @@ export function Sidebar() {
             {initials}
           </div>
           <div className="leading-[1.3]">
-            <div className="text-[13px] font-semibold text-[#e6e8ec]">{name}</div>
+            <div className="text-[13px] font-semibold text-ink">{name}</div>
             <div className="text-[11px] font-medium text-faint">Athlete</div>
           </div>
         </div>

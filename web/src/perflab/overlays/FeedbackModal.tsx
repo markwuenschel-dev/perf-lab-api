@@ -90,7 +90,7 @@ export function FeedbackModal() {
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#5fd08a" strokeWidth="2.2"><path d="M20 6 9 17l-5-5" /></svg>
             </div>
             <div className="text-[22px] font-bold leading-[1.2] text-ink">Twin updated</div>
-            <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">Your session was folded into S(t). Fatigue and capacity advanced; tomorrow's recommendation is recomputed against the new state.</div>
+            <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-mute">Your session was folded into S(t). Fatigue and capacity advanced; tomorrow's recommendation is recomputed against the new state.</div>
             <div className="mt-[6px] grid w-full max-w-[440px] grid-cols-3 gap-[14px]">
               <ResultCard label="Readiness" value={`64 → ${readyAfter}`} color={readyColor} />
               <ResultCard label="Fatigue" value={`33 → ${fatAfter}`} color={COLORS.hot} />

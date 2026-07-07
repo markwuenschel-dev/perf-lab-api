@@ -39,11 +39,11 @@ function RecentWellnessCard() {
   const { data, loading, error } = useAuthedResource<WellnessSampleOut[]>((t) => api.listWellness(t, 10), []);
 
   const body = !token ? (
-    <div className="text-[13px] font-medium leading-[1.5] text-[#7c818c]">Sign in and log a check-in to track your wellness here.</div>
+    <div className="text-[13px] font-medium leading-[1.5] text-mute">Sign in and log a check-in to track your wellness here.</div>
   ) : loading ? (
-    <div className="text-[13px] font-medium text-[#7c818c]">Loading recent samples…</div>
+    <div className="text-[13px] font-medium text-mute">Loading recent samples…</div>
   ) : error || !data || data.length === 0 ? (
-    <div className="text-[13px] font-medium leading-[1.5] text-[#7c818c]">No wellness logged yet — use Check-in to record sleep, HRV and resting HR.</div>
+    <div className="text-[13px] font-medium leading-[1.5] text-mute">No wellness logged yet — use Check-in to record sleep, HRV and resting HR.</div>
   ) : (
     <>
       <div className="grid grid-cols-[1.1fr_1fr_1fr_1fr_1fr] gap-2 border-b border-white/[0.07] py-[10px] font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.1em] text-dim">
@@ -51,7 +51,7 @@ function RecentWellnessCard() {
       </div>
       {data.map((w) => (
         <div key={w.id} className="grid grid-cols-[1.1fr_1fr_1fr_1fr_1fr] items-center gap-2 border-b border-white/[0.05] py-[12px] last:border-0">
-          <span className="text-[13px] font-semibold leading-none text-[#e6e8ec]">{fmtDay(w.date)}</span>
+          <span className="text-[13px] font-semibold leading-none text-ink">{fmtDay(w.date)}</span>
           <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.hrv_ms, " ms")}</span>
           <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.sleep_hours, " h")}</span>
           <span className="font-mono text-[13px] font-medium leading-none text-soft">{cell(w.resting_hr)}</span>
@@ -97,7 +97,7 @@ export function HistoryScreen() {
       <header className="flex items-start justify-between gap-5">
         <div>
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">History</h1>
-          <p className="m-0 mt-[9px] max-w-[460px] text-[13.5px] font-medium leading-[1.5] text-[#7c818c]">How your twin and field tests have moved over the current 7-week build block.</p>
+          <p className="m-0 mt-[9px] max-w-[460px] text-[13.5px] font-medium leading-[1.5] text-mute">How your twin and field tests have moved over the current 7-week build block.</p>
         </div>
         <div className="flex gap-[7px] rounded-[9px] border border-white/[0.08] p-[3px]">
           {["4w", "12w", "All"].map((t) => (
@@ -136,7 +136,7 @@ export function HistoryScreen() {
           <div className="rounded-[18px] border border-mint/[0.18] p-[18px]" style={{ background: "linear-gradient(120deg,#0f1f1c,#111419 60%)" }}>
             <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#9ad6c8]">VO₂max progression</div>
             <div className="mt-3 flex items-end gap-2"><span className="font-mono text-[28px] font-semibold leading-none text-ink">58.4</span><span className="mb-1 text-[11px] font-medium leading-none text-good">+4.3 since Apr</span></div>
-            <div className="mt-3 font-mono text-[11px] leading-none text-[#7c818c]">54.1 → 55.2 → 56.9 → 58.4</div>
+            <div className="mt-3 font-mono text-[11px] leading-none text-mute">54.1 → 55.2 → 56.9 → 58.4</div>
           </div>
           <Card className="p-[18px]">
             <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">Aerobic capacity</div>
@@ -183,7 +183,7 @@ export function HistoryScreen() {
           ]}
           rows={FT_LOG.map(([date, t3, t15, vo2, profile, latest]) => ({
             date: (
-              <span className="font-semibold text-[#e6e8ec]">
+              <span className="font-semibold text-ink">
                 {date}
                 {latest && <span className="ml-1 text-[10px] font-medium text-ac">latest</span>}
               </span>
