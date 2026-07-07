@@ -5,6 +5,7 @@ import { useAuth } from "@/auth/useAuth";
 import { logWorkout, simulateDose } from "@/api/perfLabClient";
 import type { ApiError, Modality, WorkoutLog } from "@/types";
 import { usePerfLab } from "../store";
+import { MetricBar } from "../ui";
 import { COLORS, DOSE_NAMES, doseBarColor, PRESETS, projectLogDose } from "../sim";
 
 /** Build a backend WorkoutLog from the modal's form state. */
@@ -163,11 +164,16 @@ export function LogWorkoutModal() {
               <div className="mb-[13px] font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]">Projected dose · D(t)</div>
               <div className="flex flex-col gap-[10px]">
                 {bars.map((v, i) => (
-                  <div key={DOSE_NAMES[i]} className="flex items-center gap-[9px]">
-                    <span className="w-[62px] flex-none text-[11px] font-medium leading-none text-mute">{DOSE_NAMES[i]}</span>
-                    <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-white/[0.07]"><div className="h-full rounded-full" style={{ width: `${Math.min(100, v * 10)}%`, background: doseBarColor(v) }} /></div>
-                    <span className="w-[26px] text-right font-mono text-[11px] font-semibold leading-none text-soft">{v.toFixed(1)}</span>
-                  </div>
+                  <MetricBar
+                    key={DOSE_NAMES[i]}
+                    label={DOSE_NAMES[i]}
+                    value={v.toFixed(1)}
+                    pct={Math.min(100, v * 10)}
+                    color={doseBarColor(v)}
+                    labelClassName="w-[62px]"
+                    valueClassName="w-[26px] text-soft"
+                    trackClassName="h-[6px]"
+                  />
                 ))}
               </div>
             </div>
