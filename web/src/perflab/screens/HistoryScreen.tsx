@@ -1,12 +1,40 @@
 // src/perflab/screens/HistoryScreen.tsx
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
-import type { WellnessSampleOut } from "@/types";
+import type { UnifiedStateVector, WellnessSampleOut, WorkoutLogSummary } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { Card, SectionLabel, Track } from "../ui";
 import { Chart, Area, Axis, Bars, TableView, useChart, useVizTheme } from "../viz";
-import { DAYS, DAY_COUNT } from "../sim";
+import { DAYS } from "../sim";
+
+/** Readiness proxy ~ (1 − mean fatigue), scaled 0–100 — mirrors the backend
+ *  `overall_readiness` intent for the trend line (same as Overview). */
+function stateReadinessProxy(sv: UnifiedStateVector): number {
+  const f = sv.fatigue_f;
+  const vals = f
+    ? [f.cns, f.muscular, f.metabolic, f.structural, f.tendon, f.grip]
+    : [sv.f_nm_central, sv.f_nm_peripheral, sv.f_met_systemic, sv.f_struct_damage];
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return Math.round(Math.max(0, Math.min(100, 100 - mean)));
+}
+
+/** Aggregate logged workouts into the last `weeks` Mon-anchored weekly load totals
+ *  (oldest→newest). Returns null when there's nothing to show. */
+function weeklyLoad(workouts: WorkoutLogSummary[] | null, weeks = 12): number[] | null {
+  if (!workouts || workouts.length === 0) return null;
+  const msWeek = 7 * 864e5;
+  const now = Date.now();
+  const buckets = new Array(weeks).fill(0);
+  let any = false;
+  for (const w of workouts) {
+    const t = new Date(w.session_timestamp ?? w.logged_at).getTime();
+    if (Number.isNaN(t)) continue;
+    const idx = weeks - 1 - Math.floor((now - t) / msWeek);
+    if (idx >= 0 && idx < weeks) { buckets[idx] += w.total_volume_load ?? 0; any = true; }
+  }
+  return any ? buckets : null;
+}
 
 /** Clickable day dots over the readiness chart — each time-travels the twin. */
 function DayMarkers({ readiness, onPick, color }: { readiness: number[]; onPick: (i: number) => void; color: string }) {
@@ -82,11 +110,24 @@ const FT_LOG: [string, string, string, string, string, boolean][] = [
 
 export function HistoryScreen() {
   const { actions } = usePerfLab();
+  const { token } = useAuth();
   const { accent, colors } = useVizTheme();
-  const N = DAY_COUNT;
-  const readinessSeries = DAYS.map((d) => d.readiness);
-  const hDiff = DAYS[N - 1].readiness - DAYS[0].readiness;
+
+  // Real trends when signed in; the deterministic sim backs guests / empty history.
+  const historyRes = useAuthedResource<UnifiedStateVector[]>((t) => api.getStateHistory(t, 22), []);
+  const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 300), []);
+
+  const realReadiness = token && historyRes.data && historyRes.data.length ? historyRes.data.map(stateReadinessProxy) : null;
+  const readinessSeries = realReadiness ?? DAYS.map((d) => d.readiness);
+  const N = readinessSeries.length;
+  const hDiff = readinessSeries[N - 1] - readinessSeries[0];
   const hDelta = `${hDiff >= 0 ? "+" : ""}${hDiff} vs 3w ago`;
+
+  const realLoad = token ? weeklyLoad(workoutsRes.data) : null;
+  const loadSeries = realLoad ?? LOAD_BARS.map(([h]) => h);
+  const loadMax = Math.max(1, ...loadSeries) * 1.1;
+  const nowIdx = loadSeries.length - 1;
+
   const goDay = (i: number) => {
     actions.setTwinDay(i);
     actions.setScreen("twin");
@@ -157,15 +198,15 @@ export function HistoryScreen() {
           width={600}
           height={128}
           padding={{ top: 6, right: 2, bottom: 2, left: 2 }}
-          yDomain={[0, 100]}
+          yDomain={[0, loadMax]}
           ariaLabel="Weekly training load, last 12 weeks"
           className="h-[128px] w-full"
         >
           <Bars
-            data={LOAD_BARS.map(([h], i) => ({ key: `W${i + 1}`, value: h }))}
+            data={loadSeries.map((v, i) => ({ key: `W${i + 1}`, value: v }))}
             color="series"
             baseColor={colors.categorical[1]}
-            emphasisKey={`W${LOAD_BARS.length}`}
+            emphasisKey={`W${nowIdx + 1}`}
           />
         </Chart>
         <div className="mt-[10px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>W1</span><span>W12 · now</span></div>

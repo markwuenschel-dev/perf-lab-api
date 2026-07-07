@@ -3,6 +3,7 @@ import { notifyUnauthorized } from "../auth/sessionBridge";
 import type {
   ApiError,
   AuthorizeUrlResponse,
+  BenchmarkObservationRead,
   BlockCreateRequest,
   BlockRead,
   BlockUpdateRequest,
@@ -279,6 +280,23 @@ export async function listWorkouts(
     headers: { ...authHeaders(token) },
   });
   return handleResponse<WorkoutLogSummary[]>(res, { sessionOn401: true });
+}
+
+/** Past benchmark observations (field tests), newest first. Optionally filter by
+ *  benchmark_code. Feeds the History VO₂ progression + field-test log. */
+export async function listBenchmarkObservations(
+  token: string,
+  opts?: { benchmarkCode?: string; limit?: number },
+): Promise<BenchmarkObservationRead[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const q = new URLSearchParams();
+  if (opts?.benchmarkCode) q.set("benchmark_code", opts.benchmarkCode);
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  const query = q.toString() ? `?${q}` : "";
+  const res = await fetch(`${API_V1_BASE}/benchmarks/observations${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<BenchmarkObservationRead[]>(res, { sessionOn401: true });
 }
 
 /** Load the authenticated athlete's profile (Settings hydrates from this). */
