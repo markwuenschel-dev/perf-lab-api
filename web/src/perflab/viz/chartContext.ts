@@ -3,6 +3,8 @@
 // component and stay Fast-Refresh clean.
 import { createContext, useContext } from "react";
 import type { Mode, Palette } from "./tokens";
+import type { Chrome } from "./chrome";
+import type { LinearScale } from "./scales";
 
 export interface PlotRect {
   /** Inner plot area, in viewBox units, after padding. */
@@ -20,9 +22,15 @@ export interface ChartCtx {
   plot: PlotRect;
   /** Resolved palette for the active mode. */
   colors: Palette;
+  /** Non-series chrome (gridlines, gap/ring, track). */
+  chrome: Chrome;
   mode: Mode;
   /** Runtime brand accent (emphasis channel). */
   accent: string;
+  /** X scale (data→pixel), built from the Chart's xDomain. Undefined if unset. */
+  xScale?: LinearScale;
+  /** THE y scale — a Chart owns exactly one (no dual-axis). Undefined if unset. */
+  yScale?: LinearScale;
 }
 
 export const ChartContext = createContext<ChartCtx | null>(null);
