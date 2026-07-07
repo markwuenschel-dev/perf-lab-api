@@ -79,7 +79,11 @@ export function Bars({
         const top = yScale(d.value);
         const h = Math.abs(y0 - top);
         const x = cx - w / 2;
-        return <path key={d.key} d={columnPath(x, Math.min(top, y0), w, h, radius)} fill={fillFor(d, i)} />;
+        return (
+          <path key={d.key} d={columnPath(x, Math.min(top, y0), w, h, radius)} fill={fillFor(d, i)}>
+            <title>{`${d.label ?? d.key}: ${d.value}`}</title>
+          </path>
+        );
       })}
     </g>
   );

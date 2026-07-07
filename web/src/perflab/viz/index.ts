@@ -10,6 +10,9 @@ export { chrome } from "./chrome";
 export type { Chrome } from "./chrome";
 export { Chart } from "./Chart";
 export type { ChartProps } from "./Chart";
+export { Tooltip } from "./Tooltip";
+export type { TooltipRow } from "./Tooltip";
+export type { SeriesReg } from "./chartContext";
 export {
   linearScale,
   bandScale,
