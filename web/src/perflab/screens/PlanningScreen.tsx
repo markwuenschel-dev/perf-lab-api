@@ -6,6 +6,7 @@ import type { PlannedSessionRead } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { Card, MetricBar, ScreenHeader, SectionLabel } from "../ui";
+import { Chart, Bars, Line, Marker, Axis, Legend, useVizTheme } from "../viz";
 import { COLORS, PLAN_DAYS, PLAN_LOAD, PLAN_READY } from "../sim";
 
 interface WeekCell {
@@ -85,6 +86,7 @@ const DOSE: [string, number, number, string][] = [
 export function PlanningScreen() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
+  const { accent, colors } = useVizTheme();
 
   // The displayed Mon–Sun window. Defaults to the current week, but after a block
   // is created it re-derives from that block's start_date (`planningWeekAnchor`),
@@ -114,18 +116,6 @@ export function PlanningScreen() {
 
   // Guests (no token) never hit the branches above and keep the prototype preview.
   const weekCells = buildWeekCells(week.monday, sessions) ?? WEEK;
-
-  const pcL = 24, pcR = 12, pcT = 14, pcB = 150, pcW = 680;
-  const pcStep = (pcW - pcL - pcR) / 7;
-  const pxc = (i: number) => pcL + pcStep * i + pcStep / 2;
-  const ppy = (r: number) => pcT + (1 - (r - 30) / 70) * (pcB - pcT);
-  const planBars = PLAN_DAYS.map((d, i) => {
-    const cx = pxc(i);
-    const bw = pcStep * 0.46;
-    const h = (PLAN_LOAD[i] / 90) * (pcB - pcT);
-    return { x: cx - bw / 2, y: pcB - h, w: bw, h, color: PLAN_LOAD[i] === 0 ? "#3a414b" : i === 2 ? COLORS.lime : COLORS.teal, day: d, labelX: cx };
-  });
-  const planLine = PLAN_DAYS.map((_, i) => `${pxc(i).toFixed(1)},${ppy(PLAN_READY[i]).toFixed(1)}`).join(" ");
 
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
@@ -162,23 +152,50 @@ export function PlanningScreen() {
         </div>
       </Card>
 
-      {/* load vs readiness */}
+      {/* load vs readiness — two stacked small-multiples sharing one Mon–Sun x axis
+          (not a dual-axis chart: session load and readiness have different scales). */}
       <Card className="px-[22px] py-5">
         <div className="mb-2 flex items-center justify-between">
           <SectionLabel>Projected load vs readiness</SectionLabel>
-          <div className="flex gap-4 text-[11px] font-medium leading-none text-[#7c818c]">
-            <span><span className="mr-[6px] inline-block h-[9px] w-[9px] rounded-[2px] bg-teal" />session load</span>
-            <span><span className="mr-[6px] inline-block h-[3px] w-[11px] rounded-[2px] bg-ac align-middle" />readiness</span>
-          </div>
+          <Legend
+            items={[
+              { label: "session load", color: colors.categorical[1], mark: "rect" },
+              { label: "readiness", color: accent, mark: "line" },
+            ]}
+          />
         </div>
-        <svg viewBox="0 0 680 180" className="block h-[200px] w-full overflow-visible">
-          <line x1="24" y1="150" x2="668" y2="150" stroke="rgba(255,255,255,.08)" strokeWidth="1" />
-          <line x1="24" y1="96" x2="668" y2="96" stroke="rgba(255,255,255,.04)" strokeWidth="1" />
-          {planBars.map((b, i) => (<rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} rx="4" fill={b.color} />))}
-          <polyline points={planLine} fill="none" stroke="var(--ac)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-          {PLAN_DAYS.map((_, i) => (<circle key={i} cx={pxc(i)} cy={ppy(PLAN_READY[i])} r="3.5" fill="#0a0c10" stroke="var(--ac)" strokeWidth="2" />))}
-          {planBars.map((b, i) => (<text key={i} x={b.labelX} y="168" fill="#646b78" fontFamily="Geist Mono" fontSize="11" textAnchor="middle">{b.day}</text>))}
-        </svg>
+        {/* top: session load */}
+        <Chart
+          width={680}
+          height={116}
+          padding={{ top: 8, right: 12, bottom: 4, left: 24 }}
+          yDomain={[0, 90]}
+          ariaLabel="Projected session load, Mon–Sun"
+          className="h-[108px] w-full"
+        >
+          <Bars
+            data={PLAN_DAYS.map((d, i) => ({ key: d, label: d, value: PLAN_LOAD[i] }))}
+            color="series"
+            baseColor={colors.categorical[1]}
+            emphasisKey={PLAN_DAYS[2]}
+          />
+        </Chart>
+        {/* bottom: readiness — x-domain [-0.5, 6.5] puts each node at the band center above */}
+        <Chart
+          width={680}
+          height={96}
+          padding={{ top: 6, right: 12, bottom: 20, left: 24 }}
+          xDomain={[-0.5, 6.5]}
+          yDomain={[30, 100]}
+          ariaLabel="Projected readiness, Mon–Sun"
+          className="h-[96px] w-full"
+        >
+          <Axis x xLabels={PLAN_DAYS} />
+          <Line data={PLAN_READY.map((v, i) => [i, v] as [number, number])} color={accent} width={2.5} />
+          {PLAN_READY.map((v, i) => (
+            <Marker key={i} x={i} y={v} color={accent} r={3.5} />
+          ))}
+        </Chart>
       </Card>
 
       {/* session detail + impact */}
