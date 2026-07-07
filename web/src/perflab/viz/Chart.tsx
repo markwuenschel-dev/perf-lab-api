@@ -8,6 +8,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useVizTheme } from "./useVizTheme";
+import { linearScale } from "./scales";
 import { ChartContext, type ChartCtx, type PlotRect } from "./chartContext";
 
 type Padding = number | { top?: number; right?: number; bottom?: number; left?: number };
@@ -26,6 +27,10 @@ export interface ChartProps {
   padding?: Padding;
   /** Accessible name — required; a chart without one is unreadable to AT. */
   ariaLabel: string;
+  /** Data domain for the x axis [lo, hi]. Marks read the derived scale. */
+  xDomain?: readonly [number, number];
+  /** Data domain for the (single) y axis [lo, hi]. */
+  yDomain?: readonly [number, number];
   className?: string;
   /** Marks (Axis/Bars/Line/Area/…) that consume the chart context. */
   children: ReactNode;
@@ -33,8 +38,8 @@ export interface ChartProps {
   defs?: ReactNode;
 }
 
-export function Chart({ width, height, padding = 0, ariaLabel, className, children, defs }: ChartProps) {
-  const { colors, mode, accent } = useVizTheme();
+export function Chart({ width, height, padding = 0, ariaLabel, xDomain, yDomain, className, children, defs }: ChartProps) {
+  const { colors, chrome, mode, accent } = useVizTheme();
   const pad = resolvePadding(padding);
   const plot: PlotRect = {
     x: pad.left,
@@ -42,7 +47,18 @@ export function Chart({ width, height, padding = 0, ariaLabel, className, childr
     w: Math.max(0, width - pad.left - pad.right),
     h: Math.max(0, height - pad.top - pad.bottom),
   };
-  const ctx: ChartCtx = { width, height, plot, colors, mode, accent };
+  const ctx: ChartCtx = {
+    width,
+    height,
+    plot,
+    colors,
+    chrome,
+    mode,
+    accent,
+    // x grows left→right; y is inverted (data lo at the bottom of the plot).
+    xScale: xDomain ? linearScale({ domain: xDomain, range: [plot.x, plot.x + plot.w] }) : undefined,
+    yScale: yDomain ? linearScale({ domain: yDomain, range: [plot.y + plot.h, plot.y] }) : undefined,
+  };
   return (
     <ChartContext.Provider value={ctx}>
       <svg

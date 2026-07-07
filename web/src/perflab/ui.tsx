@@ -1,8 +1,15 @@
 // src/perflab/ui.tsx
 // Small presentational primitives shared across Perf Lab screens.
+//
+// ReadinessRing / MetricBar / Track are now thin SHIMS over the viz layer
+// (Ring / Meter) so every call-site keeps working unchanged while the real
+// implementation lives in one place. They are pixel-identical to the pre-viz
+// versions and will be deleted once the last screen imports the viz primitives
+// directly (per-screen migration phase).
 import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { conic } from "./sim";
+import { Ring } from "./viz/Ring";
+import { Meter } from "./viz/Meter";
 
 export function Card({
   children,
@@ -86,7 +93,7 @@ export function Pill({ children, className }: { children: ReactNode; className?:
   );
 }
 
-/** Readiness donut: conic ring with a value in the middle. */
+/** Readiness donut: conic ring with a value in the middle. Shim over viz/Ring. */
 export function ReadinessRing({
   value,
   color,
@@ -105,23 +112,14 @@ export function ReadinessRing({
   onClick?: () => void;
 }) {
   return (
-    <div
-      onClick={onClick}
-      style={{ width: size, height: size, background: conic(color, value) }}
-      className={cn("grid flex-none place-items-center rounded-full", onClick && "cursor-pointer")}
-    >
-      <div
-        style={{ width: inner, height: inner }}
-        className={cn("flex flex-col items-center justify-center rounded-full", innerClassName)}
-      >
-        <span className={cn("font-mono font-semibold leading-none text-ink", valueClassName)}>{value}</span>
-        <span className="mt-1 font-mono text-[9px] leading-none tracking-[0.14em] text-faint">/ 100</span>
-      </div>
-    </div>
+    <Ring value={value} color={color} size={size} inner={inner} innerClassName={innerClassName} onClick={onClick}>
+      <span className={cn("font-mono font-semibold leading-none text-ink", valueClassName)}>{value}</span>
+      <span className="mt-1 font-mono text-[9px] leading-none tracking-[0.14em] text-faint">/ 100</span>
+    </Ring>
   );
 }
 
-/** Label · track · value row used for fatigue / dose / skill / axis lists. */
+/** Label · track · value row used for fatigue / dose / skill / axis lists. Shim over viz/Meter. */
 export function MetricBar({
   label,
   value,
@@ -144,19 +142,22 @@ export function MetricBar({
   tip?: string;
 }) {
   return (
-    <div onClick={onClick} className={cn("flex items-center gap-3", onClick && "cursor-pointer")}>
-      <span data-tip={tip} className={cn("flex-none text-[12px] font-medium leading-none text-mute", labelClassName)}>
-        {label}
-      </span>
-      <div className={cn("flex-1 overflow-hidden rounded-full bg-white/[0.07]", trackClassName)}>
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-      </div>
-      <span className={cn("text-right font-mono text-[12px] font-semibold leading-none", valueClassName)}>{value}</span>
-    </div>
+    <Meter
+      variant="row"
+      pct={pct}
+      color={color}
+      label={label}
+      value={value}
+      labelClassName={labelClassName}
+      valueClassName={valueClassName}
+      trackClassName={trackClassName}
+      onClick={onClick}
+      tip={tip}
+    />
   );
 }
 
-/** Standalone progress track. */
+/** Standalone progress track. Shim over viz/Meter (bare). */
 export function Track({
   pct,
   background = "var(--ac)",
@@ -166,11 +167,7 @@ export function Track({
   background?: string;
   className?: string;
 }) {
-  return (
-    <div className={cn("overflow-hidden rounded-full bg-white/[0.07]", className)}>
-      <div className="h-full rounded-full" style={{ width: `${pct}%`, background }} />
-    </div>
-  );
+  return <Meter variant="bare" pct={pct} color={background} trackClassName={className} />;
 }
 
 export function ScreenHeader({

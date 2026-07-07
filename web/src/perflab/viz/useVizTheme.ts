@@ -6,11 +6,14 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { PALETTE, COLORS, type Mode, type Palette } from "./tokens";
+import { chrome, type Chrome } from "./chrome";
 
 export interface VizTheme {
   mode: Mode;
   /** The resolved palette for the current mode (concrete hexes). */
   colors: Palette;
+  /** Non-series chrome (gridlines, gap/ring, track) for the current mode. */
+  chrome: Chrome;
   /** The user-selectable brand accent (`--ac`) — the emphasis channel. */
   accent: string;
 }
@@ -42,5 +45,5 @@ export function useVizTheme(): VizTheme {
     return () => obs.disconnect();
   }, []);
 
-  return { mode, colors: PALETTE[mode], accent };
+  return { mode, colors: PALETTE[mode], chrome: chrome(mode), accent };
 }
