@@ -4,7 +4,17 @@
 import { createContext, useContext } from "react";
 import type { Mode, Palette } from "./tokens";
 import type { Chrome } from "./chrome";
-import type { LinearScale } from "./scales";
+import type { LinearScale, Vec2 } from "./scales";
+
+/** A line/area series registers itself with the Chart so the shared crosshair +
+ *  tooltip can read every series' value at the hovered x. */
+export interface SeriesReg {
+  id: string;
+  label: string;
+  color: string;
+  /** Data-space points [x, y]. */
+  points: readonly Vec2[];
+}
 
 export interface PlotRect {
   /** Inner plot area, in viewBox units, after padding. */
@@ -31,6 +41,10 @@ export interface ChartCtx {
   xScale?: LinearScale;
   /** THE y scale — a Chart owns exactly one (no dual-axis). Undefined if unset. */
   yScale?: LinearScale;
+  /** Line/Area marks register here so the Chart can drive one shared crosshair +
+   *  tooltip across every series. Undefined when the Chart is non-interactive. */
+  register?: (s: SeriesReg) => void;
+  unregister?: (id: string) => void;
 }
 
 export const ChartContext = createContext<ChartCtx | null>(null);
