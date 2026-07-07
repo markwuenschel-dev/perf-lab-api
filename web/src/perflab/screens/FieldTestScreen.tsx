@@ -83,7 +83,7 @@ export function FieldTestScreen() {
           <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 rounded-[18px] border border-hot/[0.3] bg-hot/[0.05] p-[30px] text-center">
             <div className="grid h-[46px] w-[46px] place-items-center rounded-[12px] border border-hot/[0.3] text-[20px] text-hot">!</div>
             <div className="text-[15px] font-semibold leading-none text-soft">Couldn't compute metrics</div>
-            <div className="max-w-[320px] text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">{error}</div>
+            <div className="max-w-[320px] text-[12.5px] font-medium leading-[1.5] text-mute">{error}</div>
             <button onClick={compute} className="mt-1 rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-[10px] text-[12px] font-semibold leading-none text-soft">Try again</button>
           </div>
         ) : !result ? (
@@ -95,9 +95,9 @@ export function FieldTestScreen() {
                 <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#9ad6c8]">VO₂max</div>
                 <div className="mt-3 flex items-end gap-2">
                   <span className="font-mono text-[44px] font-semibold leading-none text-ink">{result.vo2_max.toFixed(1)}</span>
-                  <span className="mb-[6px] text-[11px] font-medium leading-none text-[#7c818c]">ml·kg⁻¹·min⁻¹</span>
+                  <span className="mb-[6px] text-[11px] font-medium leading-none text-mute">ml·kg⁻¹·min⁻¹</span>
                 </div>
-                <div className="mt-3 text-[11.5px] font-medium leading-[1.5] text-[#7c818c]">{result.vo2_category} · estimated from the 1.5 mi split.</div>
+                <div className="mt-3 text-[11.5px] font-medium leading-[1.5] text-mute">{result.vo2_category} · estimated from the 1.5 mi split.</div>
               </div>
               <Card onClick={() => actions.openExplain("FT:profile")}>
                 <SectionLabel className="text-faint">Speed ↔ Endurance</SectionLabel>
@@ -129,7 +129,7 @@ export function FieldTestScreen() {
             <div className="flex items-center justify-between gap-[14px] rounded-[18px] border border-mint/[0.18] px-5 py-4" style={{ background: "linear-gradient(120deg,#0f1f1c,#111419 60%)" }}>
               <div>
                 <div className="text-[13px] font-semibold leading-none text-ink">Seed your digital twin</div>
-                <div className="mt-[5px] text-[11.5px] font-medium leading-[1.5] text-[#7c818c]">Push this snapshot into S(t) as the new baseline.</div>
+                <div className="mt-[5px] text-[11.5px] font-medium leading-[1.5] text-mute">Push this snapshot into S(t) as the new baseline.</div>
               </div>
               <div className="flex flex-none gap-[9px]">
                 <button onClick={rerun} className="rounded-[9px] border border-white/10 bg-white/[0.04] px-[14px] py-[10px] text-[12px] font-semibold leading-none text-soft">Re-run</button>
@@ -153,7 +153,7 @@ function PlaceholderBox({ children }: { children: ReactNode }) {
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c818c" strokeWidth="1.6"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
       </div>
       <div className="text-[15px] font-semibold leading-none text-soft">No results yet</div>
-      <div className="max-w-[280px] text-[12.5px] font-medium leading-[1.5] text-[#7c818c]">{children}</div>
+      <div className="max-w-[280px] text-[12.5px] font-medium leading-[1.5] text-mute">{children}</div>
     </div>
   );
 }

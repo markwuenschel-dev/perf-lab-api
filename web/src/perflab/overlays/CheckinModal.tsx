@@ -122,7 +122,7 @@ export function CheckinModal() {
               {r.drivers.map((d) => (
                 <div key={d.n} className="flex items-center justify-between gap-[10px] py-2">
                   <div>
-                    <div className="text-[12px] font-semibold leading-none text-[#e6e8ec]">{d.n}</div>
+                    <div className="text-[12px] font-semibold leading-none text-ink">{d.n}</div>
                     <div className="mt-1 text-[10.5px] font-medium leading-none text-faint">{d.v}</div>
                   </div>
                   <span className="font-mono text-[13px] font-semibold leading-none" style={{ color: d.color }}>{d.delta}</span>

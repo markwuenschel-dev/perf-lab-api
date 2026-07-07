@@ -13,33 +13,21 @@
    text-ac …) instead of inline styles. The accent `--ac` is
    user-selectable at runtime (Settings) and mapped to `text/bg-ac`.
    ============================================================ */
+/* Surface / text / status color tokens now live in viz-tokens.generated.css
+   (per-mode: light @theme default + :root.dark override). This block keeps only
+   the mode-invariant brand tokens + fonts. */
 @theme {
   --font-sans: "Geist", "Geist Variable", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
 
-  --color-canvas: #06070a; /* page background */
-  --color-panel: #0c0e13; /* sidebar / inputs */
-  --color-surface: #0e1116; /* modals / drawers */
-  --color-tile: #111419; /* cards */
-
-  --color-ink: #eef0f3; /* primary text */
-  --color-soft: #cfd4dd; /* secondary text */
-  --color-mute: #9aa0ab; /* muted labels */
-  --color-faint: #6a7180; /* faint labels */
-  --color-dim: #565d69; /* dimmest text */
-
   --color-ac: var(--ac); /* dynamic accent (default lime) */
   --color-teal: #7bd6c0;
   --color-mint: #45d6c4;
-  --color-good: #5fd08a;
-  --color-warn: #f5c451;
-  --color-hot: #ff8a5c;
   --color-info: #86b8ff;
 }
 
 @layer base {
   :root {
-    color-scheme: dark;
     --ac: #c6f135;
   }
 

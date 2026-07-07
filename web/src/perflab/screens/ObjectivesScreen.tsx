@@ -323,7 +323,7 @@ function Notice({
           </svg>
         </div>
         <div className="text-[22px] font-bold leading-[1.2] text-ink">{title}</div>
-        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">{body}</div>
+        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-mute">{body}</div>
         {action && (
           <button
             onClick={action.onClick}

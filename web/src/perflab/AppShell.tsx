@@ -50,7 +50,7 @@ function EmptyState({ screen }: { screen: Screen }) {
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--ac)" strokeWidth="1.6"><path d="M12 2 4 7v10l8 5 8-5V7z" /><path d="M12 22V12M4 7l8 5 8-5" /></svg>
         </div>
         <div className="text-[22px] font-bold leading-[1.2] text-ink">{em.t}</div>
-        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-[#7c818c]">{em.d}</div>
+        <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-mute">{em.d}</div>
         <button onClick={() => actions.setScreen("field")} className="mt-[6px] rounded-[10px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-3 text-[13px] font-semibold leading-none text-[#0a0c10]">Run field test →</button>
       </Card>
     </section>

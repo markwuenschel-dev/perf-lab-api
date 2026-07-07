@@ -71,19 +71,37 @@ export const COLORS = ${obj(BRAND)} as const;
 `;
 
 // ── viz-tokens.generated.css ─────────────────────────────────────────────────
-// Dark values are emitted as the @theme defaults (the app is dark-first today).
-// Light-mode :root/.dark overrides are wired in the light-mode phase; the light
-// hexes already live in tokens.ts PALETTE.light for the SVG layer to consume.
-const cssLines = [];
-dark.categorical.forEach((h, i) => cssLines.push(`  --color-cat-${i + 1}: ${h};`));
-dark.sequential.forEach((h, i) => cssLines.push(`  --color-seq-${i + 1}: ${h};`));
-for (const [k, v] of Object.entries(dark.status)) cssLines.push(`  --color-status-${k}: ${v};`);
-for (const [k, v] of Object.entries(dark.diverging)) cssLines.push(`  --color-diverge-${k}: ${v};`);
+// One set of token names, two values. Light is the @theme default (so Tailwind
+// emits the utilities); `:root.dark` overrides every token for dark mode. The app
+// mounts next-themes with defaultTheme="dark", which adds `.dark` to <html> before
+// paint — so there's no light flash. These tokens own the surface/text/status
+// utilities (bg-tile, text-mute, text-good, …) app-wide, per mode.
+function tokenLines(p) {
+  const L = [];
+  for (const [k, v] of Object.entries(p.surface)) L.push(`  --color-${k}: ${v};`);
+  for (const [k, v] of Object.entries(p.text)) L.push(`  --color-${k}: ${v};`);
+  p.categorical.forEach((h, i) => L.push(`  --color-cat-${i + 1}: ${h};`));
+  p.sequential.forEach((h, i) => L.push(`  --color-seq-${i + 1}: ${h};`));
+  for (const [k, v] of Object.entries(p.status)) L.push(`  --color-status-${k}: ${v};`);
+  // Legacy status utility names used across the screens (text-good/warn/hot).
+  L.push(`  --color-good: ${p.status.good};`);
+  L.push(`  --color-warn: ${p.status.warn};`);
+  L.push(`  --color-hot: ${p.status.serious};`);
+  for (const [k, v] of Object.entries(p.diverging)) L.push(`  --color-diverge-${k}: ${v};`);
+  return L;
+}
 
 const css = `/* ${BANNER} */
-/* Data-viz palette tokens. Dark defaults; light-mode overrides land in the light phase. */
+/* Per-mode palette tokens. Light = @theme default; :root.dark overrides for dark. */
 @theme {
-${cssLines.join("\n")}
+${tokenLines(light).join("\n")}
+}
+:root.dark {
+  color-scheme: dark;
+${tokenLines(dark).join("\n")}
+}
+:root:not(.dark) {
+  color-scheme: light;
 }
 `;
 
