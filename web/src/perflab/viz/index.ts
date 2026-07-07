@@ -44,3 +44,13 @@ export { StatTile } from "./StatTile";
 export type { StatTileProps } from "./StatTile";
 export { Legend } from "./Legend";
 export type { LegendItem } from "./Legend";
+
+// Composite / non-cartesian marks
+export { Radar } from "./Radar";
+export type { RadarProps, RadarAxis } from "./Radar";
+export { Gauge } from "./Gauge";
+export type { GaugeProps, GaugeStop } from "./Gauge";
+export { BodyMapHeatmap } from "./BodyMapHeatmap";
+export type { BodyMapHeatmapProps } from "./BodyMapHeatmap";
+export { TableView } from "./TableView";
+export type { TableViewProps, TableColumn } from "./TableView";
