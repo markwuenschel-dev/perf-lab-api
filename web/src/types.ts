@@ -89,6 +89,13 @@ export type MacrocycleUpdate = Schemas["MacrocycleUpdate"];
 export type MacrocycleStatus = Schemas["MacrocycleStatus"];
 export type WeekProgress = Schemas["WeekProgress"];
 
+/* ---------- Wearable sync / Oura (Phase 2: /v1/integrations/oura/*) ---------- */
+export type WearableConnectionOut = Schemas["WearableConnectionOut"];
+export type ConnectionStatus = Schemas["ConnectionStatus"];
+export type AuthorizeUrlResponse = Schemas["AuthorizeUrlResponse"];
+export type PatConnectRequest = Schemas["PatConnectRequest"];
+export type SyncResult = Schemas["SyncResult"];
+
 /* ---------- Legacy field test (POST /compute-metrics, no /v1 prefix) ---------- */
 // The backend schema is named `MetricsRequest`; the app calls it ComputeMetricsRequest.
 export type ComputeMetricsRequest = Schemas["MetricsRequest"];

@@ -2,10 +2,12 @@
 import { notifyUnauthorized } from "../auth/sessionBridge";
 import type {
   ApiError,
+  AuthorizeUrlResponse,
   BlockCreateRequest,
   BlockRead,
   BlockUpdateRequest,
   ComputeMetricsRequest,
+  ConnectionStatus,
   MacrocycleCreate,
   MacrocycleRead,
   MacrocycleUpdate,
@@ -24,10 +26,12 @@ import type {
   ProjectionResponse,
   ReadinessScore,
   StressDose,
+  SyncResult,
   TokenResponse,
   TodaySessionResponse,
   UnifiedStateVector,
   UserResponse,
+  WearableConnectionOut,
   WellnessSampleIn,
   WellnessSampleOut,
   WorkoutLog,
@@ -501,6 +505,60 @@ export async function updateObjective(
 export async function deleteObjective(id: number, token: string): Promise<void> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const res = await fetch(`${API_V1_BASE}/objectives/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<void>(res, { sessionOn401: true });
+}
+
+/* ---------- Wearable sync / Oura (Phase 2) ---------- */
+
+/** Oura: the OAuth authorize URL to open in the browser (identity is in a signed state). */
+export async function getOuraAuthorizeUrl(token: string): Promise<AuthorizeUrlResponse> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/authorize`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<AuthorizeUrlResponse>(res, { sessionOn401: true });
+}
+
+/** Oura: connect via a Personal Access Token (single-user fast path). */
+export async function connectOuraPat(
+  patToken: string,
+  token: string,
+): Promise<WearableConnectionOut> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/connect/pat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ token: patToken }),
+  });
+  return handleResponse<WearableConnectionOut>(res, { sessionOn401: true });
+}
+
+/** Oura: pull the athlete's recent data now (the nightly cron does this too). */
+export async function syncOura(token: string): Promise<SyncResult> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/sync`, {
+    method: "POST",
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<SyncResult>(res, { sessionOn401: true });
+}
+
+/** Oura: the current connection status (no tokens are ever returned). */
+export async function getWearableConnection(token: string): Promise<ConnectionStatus> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/connection`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<ConnectionStatus>(res, { sessionOn401: true });
+}
+
+/** Oura: disconnect (deletes the stored connection + tokens). */
+export async function disconnectOura(token: string): Promise<void> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/connection`, {
     method: "DELETE",
     headers: { ...authHeaders(token) },
   });

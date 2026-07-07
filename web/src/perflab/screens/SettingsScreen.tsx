@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
-import type { ApiError, ProfileRead, ProfileUpdate } from "@/types";
+import type { ApiError, ConnectionStatus, ProfileRead, ProfileUpdate } from "@/types";
 import { TRAINING_GOALS, usePerfLab } from "../store";
 import type { Settings } from "../store";
 import { Card, SectionLabel } from "../ui";
@@ -282,6 +282,199 @@ function PerformanceProfileCard() {
   );
 }
 
+// ── Oura wearable connection (Phase 2) ─────────────────────────────────────
+// Connect Oura via OAuth (opens the provider consent screen) or paste a Personal
+// Access Token. Once connected, the nightly cron pulls daily wellness and "Sync
+// now" pulls on demand. Tokens live encrypted on the backend — the client only
+// ever sees connection status, never a token.
+type WearableBusy = "idle" | "connecting" | "syncing" | "disconnecting";
+
+function WearableConnectCard() {
+  const auth = useAuth();
+  const [status, setStatus] = useState<ConnectionStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState<WearableBusy>("idle");
+  const [pat, setPat] = useState("");
+  const [showPat, setShowPat] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!auth.token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setStatus(await api.getWearableConnection(auth.token));
+    } catch (e) {
+      setError((e as ApiError).message ?? "Failed to load connection");
+    } finally {
+      setLoading(false);
+    }
+  }, [auth.token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const connected = status?.connected ?? false;
+  const conn = status?.connection ?? null;
+
+  async function onSync() {
+    if (!auth.token) return;
+    setBusy("syncing");
+    setError(null);
+    try {
+      const res = await api.syncOura(auth.token);
+      setNotice(`Synced ${res.rows_written} day${res.rows_written === 1 ? "" : "s"} of Oura data.`);
+      await load();
+    } catch (e) {
+      setError((e as ApiError).message ?? "Sync failed");
+    } finally {
+      setBusy("idle");
+    }
+  }
+
+  async function onOAuth() {
+    if (!auth.token) return;
+    setBusy("connecting");
+    setError(null);
+    try {
+      const { authorize_url } = await api.getOuraAuthorizeUrl(auth.token);
+      window.location.href = authorize_url;
+    } catch (e) {
+      setError((e as ApiError).message ?? "Could not start Oura sign-in");
+      setBusy("idle");
+    }
+  }
+
+  async function onPat() {
+    if (!auth.token || pat.trim().length < 8) return;
+    setBusy("connecting");
+    setError(null);
+    setNotice(null);
+    try {
+      await api.connectOuraPat(pat.trim(), auth.token);
+      setPat("");
+      setShowPat(false);
+      await load();
+      await onSync();
+    } catch (e) {
+      setError((e as ApiError).message ?? "Invalid Oura token");
+    } finally {
+      setBusy("idle");
+    }
+  }
+
+  async function onDisconnect() {
+    if (!auth.token) return;
+    setBusy("disconnecting");
+    setError(null);
+    setNotice(null);
+    try {
+      await api.disconnectOura(auth.token);
+      await load();
+    } catch (e) {
+      setError((e as ApiError).message ?? "Disconnect failed");
+    } finally {
+      setBusy("idle");
+    }
+  }
+
+  return (
+    <Card className="p-[22px]">
+      <SectionLabel className="mb-1">Wearable — Oura</SectionLabel>
+      <div className="mb-4 text-[12px] font-medium leading-[1.5] text-[#7c818c]">
+        Sync HRV, sleep and resting HR nightly to sharpen your readiness.
+      </div>
+
+      {!auth.isAuthenticated ? (
+        <div className="text-[12px] font-medium text-mute">Sign in to connect Oura.</div>
+      ) : loading ? (
+        <div className="text-[12px] font-medium text-mute">Loading…</div>
+      ) : connected ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-ac/[0.12] px-[10px] py-[5px] text-[11px] font-semibold leading-none text-ac">
+              Connected
+            </span>
+            <span className="text-[11.5px] font-medium text-mute">
+              {conn?.auth_type === "pat" ? "Personal token" : "OAuth"}
+              {conn?.last_sync_at
+                ? ` · last sync ${new Date(conn.last_sync_at).toLocaleString()}`
+                : " · not synced yet"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void onSync()}
+              disabled={busy !== "idle"}
+              className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-[12px] text-[13px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+            >
+              {busy === "syncing" ? "Syncing…" : "Sync now"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void onDisconnect()}
+              disabled={busy !== "idle"}
+              className="rounded-[9px] border border-hot/25 bg-hot/[0.08] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-hot disabled:opacity-60"
+            >
+              {busy === "disconnecting" ? "Disconnecting…" : "Disconnect"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void onOAuth()}
+              disabled={busy !== "idle"}
+              className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-[12px] text-[13px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+            >
+              {busy === "connecting" ? "Connecting…" : "Connect Oura"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPat((v) => !v)}
+              className="text-[12px] font-medium text-mute underline-offset-2 hover:underline"
+            >
+              Use a token instead
+            </button>
+          </div>
+          {showPat && (
+            <div>
+              <input
+                type="password"
+                value={pat}
+                onChange={(e) => setPat(e.target.value)}
+                placeholder="Oura Personal Access Token"
+                className={`${inputCls} max-w-[420px] font-mono`}
+              />
+              <button
+                type="button"
+                onClick={() => void onPat()}
+                disabled={busy !== "idle" || pat.trim().length < 8}
+                className="mt-3 rounded-[11px] border border-white/10 bg-white/[0.03] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-ink disabled:opacity-60"
+              >
+                {busy === "connecting" ? "Connecting…" : "Connect with token"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {notice && <div className="mt-4 text-[12px] font-medium text-ac">{notice}</div>}
+      {error && (
+        <div className="mt-4 flex items-start gap-[9px] rounded-[11px] border border-hot/[0.3] bg-hot/[0.05] px-3 py-[10px]">
+          <span className="text-[13px] leading-none text-hot">!</span>
+          <span className="text-[11.5px] font-medium leading-[1.45] text-[#cf9a93]">{error}</span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function SettingsScreen() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
@@ -393,6 +586,8 @@ export function SettingsScreen() {
           ))}
         </div>
       </Card>
+
+      <WearableConnectCard />
 
       <Card className="flex items-center justify-between p-[22px]">
         <div>

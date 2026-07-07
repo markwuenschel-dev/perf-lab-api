@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from app.models.mesocycle import MesocycleBlock
     from app.models.objective import Objective
     from app.models.weak_point import WeakPoint
+    from app.models.wearable_connection import WearableConnection
     from app.models.wellness import WellnessSample
 
 
@@ -67,6 +68,9 @@ class User(Base):
     )
     macrocycles: Mapped[list["Macrocycle"]] = relationship(
         "Macrocycle", back_populates="user", cascade="all, delete-orphan"
+    )
+    wearable_connections: Mapped[list["WearableConnection"]] = relationship(
+        "WearableConnection", back_populates="user", cascade="all, delete-orphan"
     )
 
 

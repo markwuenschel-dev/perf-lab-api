@@ -55,6 +55,19 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENVIRONMENT.strip().lower() in {"production", "prod"}
 
+    # Wearable sync (Phase 2 — Oura OAuth + PAT; PDR-0006/0007).
+    # OAuth client credentials from the Oura developer console; empty in dev
+    # until a real app is registered. The redirect URI must match exactly what
+    # is registered there and where the callback route is mounted (/v1/...).
+    OURA_CLIENT_ID: str = ""
+    OURA_CLIENT_SECRET: str = ""
+    OURA_REDIRECT_URI: str = "http://localhost:8000/v1/integrations/oura/callback"
+    # Fernet key (urlsafe-b64 32 bytes) for encrypting wearable tokens at rest.
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    APP_ENCRYPTION_KEY: str = ""
+    # Where the OAuth callback redirects the browser back to after connecting.
+    WEB_APP_URL: str = "http://localhost:5173"
+
     # Future features
     USE_STRUCTURED_COACHING_TEMPLATES: bool = True
 
