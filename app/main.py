@@ -21,6 +21,7 @@ from app.api.v1 import (
     dashboard,
     feedback,
     ingest,
+    integrations_oura,
     legacy,
     macrocycles,
     objectives,
@@ -175,6 +176,7 @@ app.include_router(macrocycles.router, prefix=settings.API_V1_STR)
 app.include_router(feedback.router, prefix=settings.API_V1_STR)
 app.include_router(simulate.router, prefix=settings.API_V1_STR)
 app.include_router(shadow.router, prefix=settings.API_V1_STR)
+app.include_router(integrations_oura.router, prefix=settings.API_V1_STR)
 
 # Future routers (uncomment when ready)
 # app.include_router(blocks.router, prefix=settings.API_V1_STR)

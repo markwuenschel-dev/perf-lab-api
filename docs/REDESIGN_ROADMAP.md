@@ -167,16 +167,26 @@ Both have been latent since ~2026-05-29 (per `agent_collab` outbox notes).
   divergent `sim.ts` readiness formulas).
 - **Verify:** a logged bad night lowers readiness and shifts the prescription.
 
-### P6 — Wearable sync (cloud-API providers)
+### P6 — Wearable sync (cloud-API providers) — ✅ SHIPPED (Oura) 2026-07-06
 
-- Backend: new `app/integrations/` layer — provider adapters (`oura.py`, `whoop.py`,
-  `polar.py`) normalizing HRV/sleep/RHR into `WellnessSample`; `app/models/wearable_connection.py`
-  (encrypted tokens, scopes, last_sync_at); migration `a005_wearable`; OAuth
-  connect/callback routes (`app/api/v1/integrations.py`); a nightly pull job.
-  Scheduler options: the `[tasks]` extra (celery+redis) **or** a lighter Render Cron
-  Job hitting an internal sync endpoint — decide by ops appetite (see Open Questions).
-- Web: Settings → "Connect device" (OAuth) + sync status; manual entry stays.
-- **Verify:** connect a sandbox account; nightly job writes `WellnessSample`s that move readiness.
+Provider #1 (Oura) landed on `feat/wearable-sync-oura`. Both OAuth2 and Personal Access
+Token paths, behind an adapter interface so Whoop/Polar are additive.
+
+- Backend: `app/integrations/` layer — `base.py` (`WearableAdapter` protocol +
+  `NormalizedWellness`) and `oura.py` (`OuraAdapter` over `httpx`, normalizing
+  HRV/sleep/RHR into the canonical vocab); `app/models/wearable_connection.py`
+  (Fernet-encrypted tokens, scope, `last_sync_at`); migration **`a018_wearable_connections`**;
+  routes `app/api/v1/integrations_oura.py` (authorize / callback / connect-pat / sync /
+  connection); `app/core/crypto.py` (Fernet at-rest); `app/services/wearable_service.py`
+  (state token, token refresh, sync reusing `readiness_service.upsert_wellness_sample`).
+- Scheduler: a **Railway Cron Job** runs `python -m app.scripts.sync_wearables` and exits
+  ([ADR-0027](adr/0027-background-job-scheduler.md) accepted; no celery/redis).
+- Config: `OURA_CLIENT_ID/SECRET`, `OURA_REDIRECT_URI`, `WEB_APP_URL`, `APP_ENCRYPTION_KEY`.
+- Web: Settings → "Connect Oura" (OAuth) + PAT fallback + sync status + disconnect.
+- **Verify:** connect via PAT (fastest) or OAuth; `POST /v1/integrations/oura/sync` or the
+  cron writes `WellnessSample`s (`source="oura"`) that move `GET /v1/readiness`.
+- Decisions: [ADR-0044](adr/0044-wearable-token-storage.md) (token storage + OAuth state),
+  [PDR-0007](pdr/0007-first-wearable-provider.md) (Oura first).
 
 ---
 
@@ -226,6 +236,7 @@ rather than stuffing it into `services/`.
   the seeded `run_fatigue_factor` uses 400m+1mile (Hinshaw). Reconcile when Field Test
   becomes a benchmark.
 - **Token storage for wearables** needs encryption-at-rest + refresh handling.
+  ✅ RESOLVED P6 — Fernet at-rest + OAuth refresh, see [ADR-0044](adr/0044-wearable-token-storage.md).
 - **DEV-only `user_id` override / auto-baseline** in `next-session` — confirm it's
   guarded for production.
 
@@ -249,7 +260,12 @@ land first, or Railway boot-crashes identically to Render.
 7. **Data:** `pg_dump` the old DB → restore into Railway Postgres **only** if there's
    real data worth keeping; otherwise schema (alembic) + reseed is enough.
 8. **P6 nightly wearable pull** maps onto a Railway **Cron Job** (a service on a cron
-   schedule that runs a command and exits) — no celery/redis required.
+   schedule that runs a command and exits) — no celery/redis required. Concretely: add a
+   second service from the same repo/image (`buildTarget = "backend"`), override its start
+   command to `python -m app.scripts.sync_wearables`, and set a cron schedule (e.g.
+   `0 8 * * *`). Give it the same `DATABASE_URL` plus `APP_ENCRYPTION_KEY` and `OURA_*`
+   vars. Do **not** run `alembic upgrade head` there — the API service already migrates on
+   deploy.
 
 ## Decision records & tracked cleanups
 

@@ -136,6 +136,19 @@
         "title": "AnchorObservationOut",
         "type": "object"
       },
+      "AuthorizeUrlResponse": {
+        "properties": {
+          "authorize_url": {
+            "title": "Authorize Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorize_url"
+        ],
+        "title": "AuthorizeUrlResponse",
+        "type": "object"
+      },
       "AxisProjection": {
         "description": "Projected trajectory for a single capacity axis under plan + baseline.",
         "properties": {
@@ -1025,6 +1038,30 @@
           }
         },
         "title": "CapacityState",
+        "type": "object"
+      },
+      "ConnectionStatus": {
+        "description": "Returned by GET /connection whether or not a connection exists.",
+        "properties": {
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WearableConnectionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "connected"
+        ],
+        "title": "ConnectionStatus",
         "type": "object"
       },
       "DashboardBundleOut": {
@@ -2202,6 +2239,21 @@
           "adherence"
         ],
         "title": "OverviewMetrics",
+        "type": "object"
+      },
+      "PatConnectRequest": {
+        "properties": {
+          "token": {
+            "description": "Oura Personal Access Token",
+            "minLength": 8,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "PatConnectRequest",
         "type": "object"
       },
       "PlannedSessionRead": {
@@ -3581,6 +3633,36 @@
         "title": "StressDoseSix",
         "type": "object"
       },
+      "SyncResult": {
+        "properties": {
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "rows_written": {
+            "title": "Rows Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "rows_written"
+        ],
+        "title": "SyncResult",
+        "type": "object"
+      },
       "TissueState": {
         "description": "T_t \u2014 accumulated tissue / structural stress (0\u2013100).",
         "properties": {
@@ -4059,6 +4141,65 @@
           }
         },
         "title": "WeakPointPatch",
+        "type": "object"
+      },
+      "WearableConnectionOut": {
+        "description": "Public view of a wearable connection \u2014 no tokens, ever.",
+        "properties": {
+          "auth_type": {
+            "title": "Auth Type",
+            "type": "string"
+          },
+          "connected": {
+            "default": true,
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          }
+        },
+        "required": [
+          "provider",
+          "auth_type"
+        ],
+        "title": "WearableConnectionOut",
         "type": "object"
       },
       "WeekProgress": {
@@ -5255,6 +5396,150 @@
         "summary": "Create Feedback",
         "tags": [
           "Feedback"
+        ]
+      }
+    },
+    "/v1/integrations/oura/authorize": {
+      "get": {
+        "description": "Return the Oura OAuth authorize URL for the web app to open.",
+        "operationId": "authorize_v1_integrations_oura_authorize_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeUrlResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Authorize",
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/v1/integrations/oura/connect/pat": {
+      "post": {
+        "description": "Connect using an Oura Personal Access Token (single-user fast path).",
+        "operationId": "connect_pat_v1_integrations_oura_connect_pat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatConnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WearableConnectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Connect Pat",
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/v1/integrations/oura/connection": {
+      "delete": {
+        "operationId": "delete_connection_v1_integrations_oura_connection_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Delete Connection",
+        "tags": [
+          "Integrations"
+        ]
+      },
+      "get": {
+        "operationId": "get_connection_status_v1_integrations_oura_connection_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Connection Status",
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/v1/integrations/oura/sync": {
+      "post": {
+        "description": "Pull the caller's Oura data now (on-demand; the cron does this nightly).",
+        "operationId": "sync_now_v1_integrations_oura_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Sync Now",
+        "tags": [
+          "Integrations"
         ]
       }
     },

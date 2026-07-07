@@ -255,6 +255,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Feedback
+         * @description Persist one athlete-reported ``SessionFeedback`` row, user-scoped.
+         */
+        post: operations["create_feedback_v1_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/oura/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Authorize
+         * @description Return the Oura OAuth authorize URL for the web app to open.
+         */
+        get: operations["authorize_v1_integrations_oura_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/oura/connect/pat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connect Pat
+         * @description Connect using an Oura Personal Access Token (single-user fast path).
+         */
+        post: operations["connect_pat_v1_integrations_oura_connect_pat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/oura/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Connection Status */
+        get: operations["get_connection_status_v1_integrations_oura_connection_get"];
+        put?: never;
+        post?: never;
+        /** Delete Connection */
+        delete: operations["delete_connection_v1_integrations_oura_connection_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/oura/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Now
+         * @description Pull the caller's Oura data now (on-demand; the cron does this nightly).
+         */
+        post: operations["sync_now_v1_integrations_oura_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/log-workout": {
         parameters: {
             query?: never;
@@ -495,6 +593,23 @@ export interface paths {
         };
         /** Get Readiness */
         get: operations["get_readiness_v1_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shadow/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shadow Summary */
+        get: operations["get_shadow_summary_v1_shadow_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -750,6 +865,11 @@ export interface components {
             raw_value: number;
             /** Unit */
             unit: string;
+        };
+        /** AuthorizeUrlResponse */
+        AuthorizeUrlResponse: {
+            /** Authorize Url */
+            authorize_url: string;
         };
         /**
          * AxisProjection
@@ -1129,6 +1249,15 @@ export interface components {
              * @default 50
              */
             work_capacity: number;
+        };
+        /**
+         * ConnectionStatus
+         * @description Returned by GET /connection whether or not a connection exists.
+         */
+        ConnectionStatus: {
+            /** Connected */
+            connected: boolean;
+            connection?: components["schemas"]["WearableConnectionOut"] | null;
         };
         /**
          * DashboardBundleOut
@@ -1511,6 +1640,14 @@ export interface components {
             adherence: components["schemas"]["AdherenceMetrics"];
             training_load: components["schemas"]["TrainingLoadMetrics"];
         };
+        /** PatConnectRequest */
+        PatConnectRequest: {
+            /**
+             * Token
+             * @description Oura Personal Access Token
+             */
+            token: string;
+        };
         /** PlannedSessionRead */
         PlannedSessionRead: {
             /** Benchmark Key */
@@ -1851,6 +1988,99 @@ export interface components {
             zone: string;
         };
         /**
+         * SessionFeedbackIn
+         * @description Athlete-reported outcome for one planned session.
+         *
+         *     ``planned_session_id`` must belong to the caller; ``completed_workout_log_id``
+         *     (when given) must too — both are validated server-side to prevent IDOR.
+         */
+        SessionFeedbackIn: {
+            /** Completed Workout Log Id */
+            completed_workout_log_id?: number | null;
+            /** Followed As Prescribed */
+            followed_as_prescribed?: boolean | null;
+            /** Modification Reason */
+            modification_reason?: string | null;
+            /**
+             * Modified Exercises
+             * @default false
+             */
+            modified_exercises: boolean;
+            /**
+             * Modified Intensity
+             * @default false
+             */
+            modified_intensity: boolean;
+            /**
+             * Modified Volume
+             * @default false
+             */
+            modified_volume: boolean;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Pain Flag
+             * @default false
+             */
+            pain_flag: boolean;
+            /** Perceived Fit Score */
+            perceived_fit_score?: number | null;
+            /** Planned Session Id */
+            planned_session_id: number;
+            /** Satisfaction Score */
+            satisfaction_score?: number | null;
+            /** Skip Reason */
+            skip_reason?: string | null;
+            /**
+             * Soreness Flag
+             * @default false
+             */
+            soreness_flag: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "skipped" | "modified" | "unknown";
+        };
+        /** SessionFeedbackOut */
+        SessionFeedbackOut: {
+            /** Completed Workout Log Id */
+            completed_workout_log_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Followed As Prescribed */
+            followed_as_prescribed: boolean | null;
+            /** Id */
+            id: number;
+            /** Modification Reason */
+            modification_reason: string | null;
+            /** Modified Exercises */
+            modified_exercises: boolean;
+            /** Modified Intensity */
+            modified_intensity: boolean;
+            /** Modified Volume */
+            modified_volume: boolean;
+            /** Notes */
+            notes: string | null;
+            /** Pain Flag */
+            pain_flag: boolean;
+            /** Perceived Fit Score */
+            perceived_fit_score: number | null;
+            /** Planned Session Id */
+            planned_session_id: number;
+            /** Satisfaction Score */
+            satisfaction_score: number | null;
+            /** Skip Reason */
+            skip_reason: string | null;
+            /** Soreness Flag */
+            soreness_flag: boolean;
+            /** Status */
+            status: string;
+        };
+        /**
          * SessionStatus
          * @enum {string}
          */
@@ -1941,6 +2171,15 @@ export interface components {
              * @default 0
              */
             volume: number;
+        };
+        /** SyncResult */
+        SyncResult: {
+            /** Last Sync At */
+            last_sync_at?: string | null;
+            /** Provider */
+            provider: string;
+            /** Rows Written */
+            rows_written: number;
         };
         /**
          * TissueState
@@ -2189,6 +2428,27 @@ export interface components {
             note?: string | null;
             /** Resolved At */
             resolved_at?: string | null;
+        };
+        /**
+         * WearableConnectionOut
+         * @description Public view of a wearable connection — no tokens, ever.
+         */
+        WearableConnectionOut: {
+            /** Auth Type */
+            auth_type: string;
+            /**
+             * Connected
+             * @default true
+             */
+            connected: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Last Sync At */
+            last_sync_at?: string | null;
+            /** Provider */
+            provider: string;
+            /** Scope */
+            scope?: string | null;
         };
         /**
          * WeekProgress
@@ -2834,6 +3094,150 @@ export interface operations {
             };
         };
     };
+    create_feedback_v1_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionFeedbackIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionFeedbackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    authorize_v1_integrations_oura_authorize_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizeUrlResponse"];
+                };
+            };
+        };
+    };
+    connect_pat_v1_integrations_oura_connect_pat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatConnectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WearableConnectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_connection_status_v1_integrations_oura_connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionStatus"];
+                };
+            };
+        };
+    };
+    delete_connection_v1_integrations_oura_connection_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sync_now_v1_integrations_oura_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+        };
+    };
     log_workout_v1_log_workout_post: {
         parameters: {
             query?: never;
@@ -3474,6 +3878,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessScore"];
+                };
+            };
+        };
+    };
+    get_shadow_summary_v1_shadow_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
