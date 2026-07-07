@@ -55,19 +55,21 @@ export function Bars({
   radius = 4,
   innerPad = 0.34,
 }: BarsProps) {
-  const { yScale, plot, colors, accent, chrome } = useChart();
+  const { yScale, plot, colors, accent } = useChart();
   if (!yScale || data.length === 0) return null;
   const band = bandScale({ count: data.length, range: [plot.x, plot.x + plot.w], innerPad });
   const w = Math.min(band.bandWidth, maxBarWidth);
   const y0 = yScale(yScale.domain[0]); // baseline pixel
 
+  const base = baseColor ?? colors.categorical[0];
   const fillFor = (d: BarDatum, i: number): string => {
     if (color === "categorical") {
       const slot = slotOf?.[d.key] ?? i;
       return colors.categorical[slot % colors.categorical.length];
     }
-    if (emphasisKey) return d.key === emphasisKey ? accent : chrome.baseline;
-    return baseColor ?? colors.categorical[0];
+    // Single hue over time; the emphasised key (e.g. "now") takes the accent.
+    if (emphasisKey) return d.key === emphasisKey ? accent : base;
+    return base;
   };
 
   return (

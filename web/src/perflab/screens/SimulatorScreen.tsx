@@ -11,6 +11,7 @@ import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
 import { usePerfLab, TRAINING_GOALS } from "../store";
 import { Card, Pill, ScreenHeader, SectionLabel, Tile } from "../ui";
+import { Chart, Area, Line, Marker, useVizTheme } from "../viz";
 import { COLORS, readinessColor, readinessWord } from "../sim";
 import { useAuthedResource } from "../useAuthedResource";
 import {
@@ -101,27 +102,12 @@ export function SimulatorScreen() {
   const topAxis = axes.reduce((m, a) => (relGain(a) > relGain(m) ? a : m), axes[0]);
   const avgUplift = axes.reduce((s, a) => s + relGain(a), 0) / axes.length;
 
-  // Trajectory chart geometry (hand-rolled SVG, no chart lib).
-  const cW = 520, cpL = 6, cpR = 6, cpT = 14, cH = 188, cpB = 26;
+  // Trajectory chart y-domain (padded around plan + baseline series).
+  const { accent, colors } = useVizTheme();
   const tAll = selAxis.series.concat(selAxis.baseline_series);
   const tHi = Math.max(...tAll), tLo = Math.min(...tAll);
-  const pad = (tHi - tLo) * 0.14 + 0.5;
-  const yHi = tHi + pad, yLo = tLo - pad;
-  const cx = (i: number) => cpL + (i / weeks) * (cW - cpL - cpR);
-  const cy = (v: number) => cpT + (1 - (v - yLo) / (yHi - yLo)) * (cH - cpT - cpB);
-  const planPts = selAxis.series.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
-  const basePts = selAxis.baseline_series.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
-  let planArea = `M ${cx(0).toFixed(1)} ${cy(selAxis.series[0]).toFixed(1)}`;
-  selAxis.series.forEach((v, i) => (planArea += ` L ${cx(i).toFixed(1)} ${cy(v).toFixed(1)}`));
-  planArea += ` L ${cx(weeks).toFixed(1)} ${cH - cpB} L ${cx(0).toFixed(1)} ${cH - cpB} Z`;
-
-  // Readiness chart geometry (fixed 20–100 scale).
-  const rLo = 20, rHi = 100;
-  const ry = (v: number) => cpT + (1 - (v - rLo) / (rHi - rLo)) * (cH - cpT - cpB);
-  const readyPts = proj.readiness_series.map((v, i) => `${cx(i).toFixed(1)},${ry(v).toFixed(1)}`).join(" ");
-  let readyArea = `M ${cx(0).toFixed(1)} ${ry(proj.readiness_series[0]).toFixed(1)}`;
-  proj.readiness_series.forEach((v, i) => (readyArea += ` L ${cx(i).toFixed(1)} ${ry(v).toFixed(1)}`));
-  readyArea += ` L ${cx(weeks).toFixed(1)} ${cH - cpB} L ${cx(0).toFixed(1)} ${cH - cpB} Z`;
+  const tPad = (tHi - tLo) * 0.14 + 0.5;
+  const trajData = (s: number[]) => s.map((v, i) => [i, v] as [number, number]);
 
   // Narrative.
   const advice =
@@ -278,13 +264,19 @@ export function SimulatorScreen() {
                 <button key={a.key} onClick={() => setSelKey(a.key)} className={cn("rounded-[7px] border px-[9px] py-[6px] text-[11px] font-semibold leading-none transition-colors", a.key === activeKey ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-white/[0.03] text-mute")}>{a.label}</button>
               ))}
             </div>
-            <svg viewBox="0 0 520 188" preserveAspectRatio="none" className="block h-[220px] w-full overflow-visible">
-              <defs><linearGradient id="simTraj" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="rgba(198,241,53,.24)" /><stop offset="1" stopColor="rgba(198,241,53,0)" /></linearGradient></defs>
-              <path d={planArea} fill="url(#simTraj)" />
-              <polyline points={basePts} fill="none" stroke="#5a626e" strokeWidth="2" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
-              <polyline points={planPts} fill="none" stroke="var(--ac)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-              <circle cx={cx(weeks)} cy={cy(selAxis.projected)} r="4" fill="var(--ac)" />
-            </svg>
+            <Chart
+              width={520}
+              height={188}
+              padding={{ top: 14, right: 6, bottom: 26, left: 6 }}
+              xDomain={[0, weeks]}
+              yDomain={[tLo - tPad, tHi + tPad]}
+              ariaLabel={`${selAxis.label} trajectory versus maintaining`}
+              className="h-[220px] w-full"
+            >
+              <Line data={trajData(selAxis.baseline_series)} color={colors.text.mute} dashed />
+              <Area data={trajData(selAxis.series)} color={accent} />
+              <Marker x={weeks} y={selAxis.projected} color={accent} />
+            </Chart>
             <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now · {Math.round(selAxis.start)}</span><span>{weeks} wk · {Math.round(selAxis.projected)}</span></div>
           </Card>
 
@@ -294,12 +286,18 @@ export function SimulatorScreen() {
               <SectionLabel>Readiness under this plan</SectionLabel>
               <span className="font-mono text-[10px] leading-none text-dim">0–100 scale</span>
             </div>
-            <svg viewBox="0 0 520 188" preserveAspectRatio="none" className="block h-[180px] w-full overflow-visible">
-              <defs><linearGradient id="simReady" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="rgba(123,214,192,.22)" /><stop offset="1" stopColor="rgba(123,214,192,0)" /></linearGradient></defs>
-              <path d={readyArea} fill="url(#simReady)" />
-              <polyline points={readyPts} fill="none" stroke={COLORS.teal} strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-              <circle cx={cx(weeks)} cy={ry(endReady)} r="4" fill={COLORS.teal} />
-            </svg>
+            <Chart
+              width={520}
+              height={188}
+              padding={{ top: 14, right: 6, bottom: 26, left: 6 }}
+              xDomain={[0, weeks]}
+              yDomain={[20, 100]}
+              ariaLabel="Readiness under this plan"
+              className="h-[180px] w-full"
+            >
+              <Area data={proj.readiness_series.map((v, i) => [i, v] as [number, number])} color={COLORS.teal} />
+              <Marker x={weeks} y={endReady} color={COLORS.teal} />
+            </Chart>
             <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now</span><span>{weeks} wk · {endReady}</span></div>
           </Card>
 

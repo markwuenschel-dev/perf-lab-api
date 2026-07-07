@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { usePerfLab } from "../store";
 import { Card, Pill, ScreenHeader, SectionLabel, Tile } from "../ui";
+import { Gauge } from "../viz";
 import { computeMetrics } from "@/api/perfLabClient";
 import type { ApiError, MetricsResponse } from "@/types";
 import { fmtPace, paceLabel } from "@/lib/units";
@@ -104,9 +105,7 @@ export function FieldTestScreen() {
                   <span className="font-mono text-[44px] font-semibold leading-none text-info">{result.fatigue_percent.toFixed(1)}</span>
                   <span className="mb-[6px] text-[11px] font-semibold leading-none text-info">{result.fatigue_percent <= 0 ? "endurance-biased" : "speed-biased"}</span>
                 </div>
-                <div className="relative mt-[14px] h-[6px] rounded-full" style={{ background: "linear-gradient(90deg,#86b8ff,rgba(255,255,255,.08) 50%,#ff8a5c)" }}>
-                  <div className="absolute top-[-3px] h-[12px] w-[3px] rounded-[2px] bg-ink" style={{ left: `${clamp(50 + result.fatigue_percent, 4, 96)}%` }} />
-                </div>
+                <Gauge variant="diverging" className="mt-[14px]" height={6} pct={clamp(50 + result.fatigue_percent, 4, 96) / 100} />
                 <div className="mt-[7px] flex justify-between font-mono text-[10px] leading-none text-dim"><span>endurance</span><span>speed</span></div>
               </Card>
             </div>
