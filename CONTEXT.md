@@ -20,3 +20,58 @@ The seam is being built incrementally, one migrated query at a time; every metho
 - **Transaction ownership stays with services** for now: services own `commit`; the repository owns query/read/write mechanics. A later slice may consolidate the commit boundary here.
 - **Construction:** services build `AthleteContextRepository(session)` from the `AsyncSession` they already hold; routes may use a `get_athlete_repo` FastAPI dependency.
 - **Tested** through the real interface against the `async_db` Postgres fixture — no in‑memory fake (a second adapter would be a hypothetical seam).
+
+## Session (logged)
+One training occasion an athlete records. It is a **heterogeneous bag of sets** that may span modalities (a run *and* squats *and* wall-balls in one sitting). Its `modality` is not chosen — it is **derived** from the sets it contains (uniform → that modality, otherwise `Mixed`). Distinct from a `PlannedSession` (what was prescribed) and from a `MesocycleBlock` (the strategic container).
+_Avoid_: workout (ambiguous — can mean the plan or the record), running log.
+
+## Set
+The **atomic logged unit** — one working effort of a single exercise. It references a movement-library `Exercise`, and that exercise's `load_type` decides which metrics the set carries (load+reps, reps+assist, duration, or distance). Straight sets are entered once and expanded into individual editable sets so the top set and per-set effort survive.
+_Avoid_: rep, entry.
+
+## Movement-library Exercise
+A seed-data catalog entry (`exercises`) describing a movement — its `load_type`, `movement_pattern`, phi vectors, `sport_domains`, and benchmark flag. It is the identity a logged `Set` binds to, and the switch that types a set's fields. A movement absent from the catalog is logged as **free-text** (estimated phi, no benchmark linkage) until promoted.
+_Avoid_: lift, activity.
+
+## Derived modality
+A session's modality **label computed from its sets**, never an input. Contrast the running-era assumption that a session *is* a single modality chosen up front.
+
+## Skill state
+A **domain-filtered projection** — a *view*, not a state store — over the athlete's unified state: the whole-body `capacity.skill` anchor, the per-movement `skill_state` map, skill/technique benchmark observations, and weak-point tags, filtered to the athlete's active domains. Running economy shows only under a running lens; technical grade only under lifting. There is no `skill.running.cadence` axis — domain is a lens, not a taxonomy.
+_Avoid_: skill axis, skill taxonomy, per-domain skill.
+
+## SkillEvidence
+One item in a skill view: a labelled piece of evidence with a `source` (capacity / movement / benchmark / weak-point / rating), a `value` that is **`null` when unknown** (never `0`), a `status` (`measured | estimated | not_measured`), and a confidence. The unit that makes "not yet measured" honest.
+
+## Assessable skill tag
+A skill/technique label attached to a benchmark or weak-point definition **that carries a real `measurement_protocol`** (`assessable_skill_tags`). It is the anchor for a "not yet measured" item — a skill may be shown as unmeasured only if such a tag exists for it. A label without a protocol is a backlog idea, not an assessable skill.
+_Avoid_: skill def, technique axis.
+
+## Weak-point tag
+A **hypothesis / routing label** ("this athlete may have a running-economy limitation"), not a state dimension. It biases candidate scoring, benchmark suggestion, and display — but never creates a canonical state axis on its own.
+_Avoid_: weakness axis, deficit state.
+
+## Assessment surface
+The single, domain-filtered surface for entering or performing a benchmark. It runs in **onramp** mode (during onboarding, seeding the twin) or **retest** mode (ongoing) — the difference is framing, not data. Every submission writes a `benchmark_observation`; there are no domain-specific seeders and no privileged running Field Test.
+_Avoid_: field test, compute-metrics screen.
+
+## Measurement debt
+The set of an athlete's state axes / assessable skills that are **estimated or not-yet-measured** rather than benchmark-backed. Surfaced in-app as honest, in-context prompts to sharpen the twin — never as an onboarding failure or a block.
+
+## Confidence gate
+The rule that **confidence acts, not just displays**: per-axis confidence continuously tightens the engine's aggressiveness ceiling, and thresholds suppress strong discrete claims (race prediction, high-confidence tissue-risk). Distinct from a **safety override** — a confidence gate means "we don't know you well enough to push," a safety override means "this would hurt you."
+
+## Wellness signal state
+The status of one daily-wellness signal (HRV, sleep, RHR, soreness, mood): **untracked** (a persistent user preference — hidden, never expected), **unknown today** (tracked but absent — a visible gap that lowers confidence), or **provided** (measured). Only *provided* values enter readiness; missing is never silently imputed. The 28-day personal baseline is display-only interpretation, not an input.
+_Avoid_: default value, filled, imputed reading.
+
+## Training emphasis
+The `modality_mix` (a `domain → weight` blend) the prescriber actually pursues, **computed from the athlete's active objectives** (weighted by priority × proximity × gap × status, smoothed), then floored and override-adjusted. Replaces the single-goal bottleneck. `primary_goal`/`block_goal` survive only as a fallback when no objectives exist.
+_Avoid_: primary goal, the goal.
+
+## Planning override
+User-declared structural intent the prescriber honors — pin/exclude a modality, phase, block goal, or frequency. Carries an **authority**: a **hard override** is honored unless a safety gate forbids it; a **soft preference** the optimizer may trade off. A hard override that deviates from the efficient path is honored *and* its objective cost is surfaced — never silently corrected.
+_Avoid_: setting, tweak.
+
+## Authority stack
+The fixed precedence the planner resolves intent through: **safety** (absolute) → **user hard override** → **objectives / floors** → **optimizer** → **tradeoff explanation**. Shorthand: the user owns intent and structure; the engine owns safety, feasibility, and execution quality.
