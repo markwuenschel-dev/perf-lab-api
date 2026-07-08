@@ -106,4 +106,35 @@ class AthleteProfile(Base):
     bodyweight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # === Onboarding state machine (PDR-0010) ===
+    # The app never blocks on a performance measurement; onboarding persists as
+    # a resumable state machine and the seed is provisional until measured.
+    onboarding_status: Mapped[str] = mapped_column(
+        String,
+        default="not_started",
+        nullable=False,
+        comment="not_started | in_progress | completed",
+    )
+    completed_reason: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="How onboarding ended, e.g. finished | done_for_now | skipped",
+    )
+    initial_seed_status: Mapped[str] = mapped_column(
+        String,
+        default="none",
+        nullable=False,
+        comment="none | experience_prior | benchmark_seeded",
+    )
+    initial_seed_confidence: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Confidence [0,1] of the initial provisional seed"
+    )
+
+    # === Wellness tracking preference (ADR-0049) ===
+    # Signals the user has explicitly marked "I don't track this" — hidden from
+    # the check-in and never expected. Missing-but-tracked is a gap, never imputed.
+    untracked_wellness_signals: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, nullable=False
+    )
+
     user: Mapped["User"] = relationship("User", back_populates="profile")

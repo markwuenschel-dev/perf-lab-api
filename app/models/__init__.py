@@ -20,6 +20,7 @@ from app.models.mpc_shadow import MpcShadowLog  # noqa: F401
 from app.models.objective import Objective  # noqa: F401
 from app.models.observation_mapping import ObservationMapping  # noqa: F401
 from app.models.personalization_shadow import PersonalizationShadowLog  # noqa: F401
+from app.models.planning_override import PlanningOverride  # noqa: F401
 from app.models.recovery_shadow import RecoveryShadowLog  # noqa: F401
 from app.models.telemetry import (  # noqa: F401
     CandidateDecisionLog,
@@ -35,3 +36,4 @@ from app.models.weak_point import WeakPoint  # noqa: F401
 from app.models.wearable_connection import WearableConnection  # noqa: F401
 from app.models.wellness import DailyCheckin, WellnessSample  # noqa: F401
 from app.models.workout_log import WorkoutLog  # noqa: F401
+from app.models.workout_set_log import WorkoutSetLog  # noqa: F401

@@ -9,6 +9,7 @@ from app.core.db import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.workout_set_log import WorkoutSetLog
 
 
 class WorkoutLog(Base):
@@ -66,5 +67,11 @@ class WorkoutLog(Base):
         comment="e.g. {'squat_1rm': 120.0, 'run_5k_seconds': 1320}"
     )
 
-    # Relationship
+    # Relationships
     user: Mapped["User"] = relationship("User")
+    set_logs: Mapped[list["WorkoutSetLog"]] = relationship(
+        "WorkoutSetLog",
+        back_populates="workout_log",
+        cascade="all, delete-orphan",
+        order_by="WorkoutSetLog.set_index",
+    )

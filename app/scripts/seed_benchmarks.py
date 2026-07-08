@@ -60,6 +60,22 @@ BENCHMARKS: list[dict[str, Any]] = [
        domain="running", metric_type="grade", unit="score",
        is_primary_anchor=False, is_validator_only=True, better_direction="higher",
        observation_weight=0.5, state_targets=["aerobic"]),
+    # Legacy 300 m + 1.5 mi Field Test, now a benchmark definition (ADR-0047).
+    # /compute-metrics is demoted to the internal calculator behind this def.
+    _b(code="run_vo2_field_test_300m_1p5mi", name="VO₂ field test (300 m + 1.5 mi)",
+       domain="running", metric_type="score", unit="ml_kg_min",
+       is_primary_anchor=True, better_direction="higher", observation_weight=0.9,
+       state_targets=["aerobic"],
+       protocol_summary="300 m all-out + 1.5 mi time trial; estimates VO₂max / "
+                        "aerobic capacity. The onramp aerobic benchmark.",
+       standardization_rules={"floor": 25.0, "cap": 70.0},
+       domain_lenses=["running"],
+       assessable_skill_tags=["aerobic_capacity"],
+       measurement_protocol={
+           "summary": "Two-part run test: a 300 m all-out and a 1.5 mi time trial.",
+           "inputs": ["run_300m_seconds", "run_1p5mi_seconds"],
+           "output": "estimated VO₂max (ml/kg/min)",
+       }),
     # Sprinting
     _b(code="sprint_0_30_split", name="0–30 m split", domain="sprinting", metric_type="time",
        unit="seconds", is_primary_anchor=True, better_direction="lower", observation_weight=1.0,
@@ -193,6 +209,50 @@ for row in BENCHMARKS:
     row.setdefault("is_primary_anchor", False)
 
 
+# Skill-state view metadata for benchmarks that already exist (ADR-0046/0047).
+# Applied as an idempotent enrichment pass so already-seeded DBs pick it up too —
+# the insert loop skips existing codes, so inline kwargs alone would never reach
+# them. Keyed by code; each value sets the four view-metadata columns.
+SKILL_VIEW_METADATA: dict[str, dict[str, Any]] = {
+    "wl_technical_grade_85pct": {
+        "domain_lenses": ["olympic_lifting", "strength"],
+        "movement_skill_mappings": {"clean": "value", "snatch": "value"},
+        "assessable_skill_tags": ["olympic_lifting_technique"],
+        "measurement_protocol": {
+            "summary": "Coach/self technical-grade rubric on lifts at ~85% 1RM.",
+            "scale": "0-100",
+        },
+    },
+    "gym_transition_quality": {
+        "domain_lenses": ["gymnastics"],
+        "movement_skill_mappings": {"ring_muscle_up": "value"},
+        "assessable_skill_tags": ["ring_transition"],
+        "measurement_protocol": {
+            "summary": "Rubric-scored quality of ring/bar transitions.",
+            "scale": "0-100",
+        },
+    },
+    "run_long_run_decoupling": {
+        "domain_lenses": ["running"],
+        "movement_skill_mappings": None,
+        "assessable_skill_tags": ["aerobic_durability"],
+        "measurement_protocol": {
+            "summary": "HR decoupling / cardiac drift across a steady long run.",
+            "output": "drift percent (lower is better)",
+        },
+    },
+    "run_threshold_talk_test": {
+        "domain_lenses": ["running"],
+        "movement_skill_mappings": None,
+        "assessable_skill_tags": ["threshold_awareness"],
+        "measurement_protocol": {
+            "summary": "Talk-test validator of threshold-pace effort perception.",
+            "scale": "0-100",
+        },
+    },
+}
+
+
 DERIVED_METRICS: list[dict[str, Any]] = [
     _d(
         code="pl_projected_total",
@@ -294,6 +354,9 @@ MAPPINGS: list[dict[str, Any]] = [
      "mapping_type": "residual", "coefficient": 0.9, "intercept": 0.0, "config": {}},
     {"benchmark_code": "run_5k_time", "target_vector": "capacity", "target_key": "aerobic",
      "mapping_type": "residual", "coefficient": 1.0, "intercept": 0.0, "config": {}},
+    {"benchmark_code": "run_vo2_field_test_300m_1p5mi", "target_vector": "capacity",
+     "target_key": "aerobic", "mapping_type": "residual", "coefficient": 0.9,
+     "intercept": 0.0, "config": {}},
     {"benchmark_code": "wl_snatch_1rm", "target_vector": "capacity", "target_key": "power",
      "mapping_type": "residual", "coefficient": 0.8, "intercept": 0.0, "config": {}},
     {"benchmark_code": "wl_clean_jerk_1rm", "target_vector": "capacity", "target_key": "max_strength",
@@ -392,6 +455,24 @@ async def seed() -> None:
             b_inserted += 1
         await db.commit()
         print(f"Benchmark definitions: inserted {b_inserted} new rows.")
+
+        # Idempotent skill-state view-metadata enrichment (ADR-0046/0047).
+        # Runs after inserts so it covers both fresh and pre-existing rows.
+        b_enriched = 0
+        for code, meta in SKILL_VIEW_METADATA.items():
+            res = await db.execute(
+                select(BenchmarkDefinition).where(BenchmarkDefinition.code == code)
+            )
+            defn = res.scalars().first()
+            if defn is None:
+                continue
+            defn.domain_lenses = meta.get("domain_lenses")
+            defn.movement_skill_mappings = meta.get("movement_skill_mappings")
+            defn.assessable_skill_tags = meta.get("assessable_skill_tags")
+            defn.measurement_protocol = meta.get("measurement_protocol")
+            b_enriched += 1
+        await db.commit()
+        print(f"Benchmark definitions: enriched {b_enriched} with view metadata.")
 
         d_inserted = 0
         for row in DERIVED_METRICS:
