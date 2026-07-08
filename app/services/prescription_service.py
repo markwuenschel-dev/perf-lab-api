@@ -15,7 +15,8 @@ from app.models.weak_point import WeakPoint
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.services import dashboard_service
+from app.schemas.wellness import ReadinessScore
+from app.services import dashboard_service, readiness_service
 from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
@@ -40,6 +41,46 @@ class BlockContext(TypedDict, total=False):
     # whether an active block/planned session exists — see prescribe_for_athlete.
     objective_taper: bool
     objective_domain: str | None
+
+
+def _readiness_audit(
+    readiness: ReadinessScore, readiness_override: float | None
+) -> dict[str, Any]:
+    """Shadow-history audit of how readiness influenced the plan (ADR-0052).
+
+    Records that the *score* nudged the plan and that *confidence* did NOT gate it
+    (``enforced``/``confidence_used_by_prescriber`` are always false in P8), so P13 can
+    later answer "what would confidence-gating have changed?" from real history.
+    """
+    conf = getattr(readiness, "confidence", None)
+    gate = conf.recommendation_gate if conf is not None else None
+    score = readiness.score
+    modeled = readiness.modeled
+    adjustment = (
+        round((score - modeled) / 100.0, 4)
+        if score is not None and modeled is not None
+        else None
+    )
+    return {
+        "readiness_score_used_by_prescriber": readiness_override is not None,
+        "readiness_score": score,
+        "modeled": modeled,
+        "readiness_score_adjustment": adjustment,
+        "confidence_score": conf.score if conf is not None else None,
+        "confidence_band": conf.band if conf is not None else None,
+        "recommendation_gate": (
+            {
+                "max_recommendation_authority": gate.max_recommendation_authority,
+                "enforced": gate.enforced,
+            }
+            if gate is not None
+            else None
+        ),
+        "confidence_used_by_prescriber": False,
+        "signal_summary": (
+            conf.signal_summary.model_dump() if conf is not None else None
+        ),
+    }
 
 
 def resolve_effective_goal(
@@ -166,6 +207,14 @@ async def prescribe_for_athlete(
     # (Workstream B). Passing an empty list is a no-op for selection — the
     # prescriber only fills it, never reads it (see recommend_next_session).
     candidate_log: list[SessionCandidate] = []
+
+    # ADR-0052: acute wellness may transparently nudge the plan through the readiness
+    # *score* channel (bounded by WELLNESS_WEIGHT). Confidence is computed here too but is
+    # REPORT-ONLY — it is logged for P13 shadow history and never gates the prescription.
+    readiness = await readiness_service.compute_readiness(db, user_id)
+    readiness_override = None if readiness.score is None else readiness.score / 100.0
+    readiness_audit = _readiness_audit(readiness, readiness_override)
+
     rx = recommend_next_session(
         state,
         # Block goals aren't 1:1 with TrainingGoal; the prescriber resolves any
@@ -177,6 +226,7 @@ async def prescribe_for_athlete(
         available_equipment=(profile.equipment if profile else None),
         block_context=cast(dict[str, Any] | None, block_context),
         candidate_log_out=candidate_log,
+        readiness_override=readiness_override,
     )
     # Persist prescription back to the planned session slot
     if target_session is not None:
@@ -194,7 +244,7 @@ async def prescribe_for_athlete(
         decision_mode="adaptive",
         planned_session_id=target_session.id if target_session is not None else None,
         state_snapshot=state.model_dump(mode="json"),
-        block_context=cast(dict[str, Any], dict(block_context)),
+        block_context={**dict(block_context), "readiness_audit": readiness_audit},
     )
 
     # Best-effort shadow MPC (ADR-0042): re-rank the same candidate pool by

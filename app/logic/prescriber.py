@@ -233,15 +233,21 @@ def _generate_candidates(
     goal: TrainingGoal,
     kpi: dict[str, float],
     recent: list[dict[str, Any]] | None,
+    readiness_override: float | None = None,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
     Dispatches on canonical domain, not the raw goal, so BlockGoal-derived
     intent (e.g. Hyrox/CrossFit → "mixed") reaches a real candidate pool.
     Running and gymnastics use the original goal for sub-distinctions.
+
+    ``readiness_override`` (ADR-0052) lets the caller pass the wellness-combined readiness
+    *score* (0–1) so a bad night transparently nudges candidate scoring; when ``None`` the
+    modeled-only ``overall_readiness`` is used. This is the score channel only — confidence
+    never enters here.
     """
     domain = _candidate_domain(goal)
-    r = _readiness(state)
+    r = readiness_override if readiness_override is not None else _readiness(state)
     templates = get_templates(domain, kpi, goal=str(goal), state=state)
     return [score_template(t, state, kpi, readiness=r) for t in templates]
 
@@ -473,6 +479,7 @@ def recommend_next_session(
     block_context: dict[str, Any] | None = None,
     candidate_log_out: list[SessionCandidate] | None = None,
     prescription_arm: str = "adaptive",
+    readiness_override: float | None = None,
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -508,7 +515,9 @@ def recommend_next_session(
     deload_need = compute_deload_need(state)
 
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
-    goal_candidates = _generate_candidates(state, goal, kpi, recent_sessions)
+    goal_candidates = _generate_candidates(state, goal, kpi, recent_sessions, readiness_override)
+    # Readiness redirects stay modeled-only: acute wellness has no honest per-axis mapping,
+    # so it enters via the score channel above, not here (ADR-0052).
     redirects = _readiness_redirect(state, goal, kpi)
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
@@ -543,7 +552,7 @@ def recommend_next_session(
 
     if not scored:
         # Fallback — should not happen unless generator returns empty
-        r = _readiness(state)
+        r = readiness_override if readiness_override is not None else _readiness(state)
         fallback_templates = get_templates("general", kpi, state=state)
         scored = [score_template(t, state, kpi, readiness=r) for t in fallback_templates]
 

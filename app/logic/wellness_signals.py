@@ -19,4 +19,5 @@ SIGNAL_CONFIG: dict[str, tuple[int, float, float]] = {
     "resting_hr":    (-1, 55.0, 10.0),
     "soreness":      (-1, 3.0,  3.0),   # 0–10, higher = worse
     "mood":          (+1, 6.0,  3.0),   # 0–10, higher = better
+    "stress":        (-1, 4.0,  3.0),   # 0–10, higher = worse (P8; provisional, calibrate)
 }
