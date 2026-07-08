@@ -68,6 +68,32 @@ class BenchmarkDefinition(Base):
 
     provenance: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # --- Skill-state view metadata (ADR-0046 / ADR-0047) ---
+    # These enrich a definition for domain-filtered projection; they add no new
+    # state axes. Null falls back to the canonical `domain`.
+    domain_lenses: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String),
+        nullable=True,
+        comment="Domain cards that surface this benchmark; defaults to [domain]",
+    )
+    movement_skill_mappings: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Which skill_state movements an observation updates, e.g. "
+        "{'clean': 'value', 'snatch': 'value'}",
+    )
+    assessable_skill_tags: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String),
+        nullable=True,
+        comment="Skill tags this benchmark can measure (labels for 'not yet measured')",
+    )
+    measurement_protocol: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="How to measure it (protocol steps/inputs) — required for an "
+        "assessable tag to show as 'not yet measured'",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
