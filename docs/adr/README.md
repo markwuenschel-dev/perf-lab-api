@@ -92,3 +92,11 @@ and die with their PR.
 | [0041](0041-shadow-ekf-state-covariance.md) | Shadow EKF: full joint covariance over X/F/T (scalar → covariance) | accepted |
 | [0042](0042-shadow-mpc-planner.md) | Shadow MPC planner: receding-horizon re-ranking of prescriber candidates | accepted |
 | [0043](0043-hierarchical-per-athlete-parameters.md) | Hierarchical per-athlete parameters (θ_i): partial-pooled recovery β, shadow-only | accepted |
+| [0044](0044-wearable-token-storage.md) | Wearable token storage: Fernet at-rest + OAuth state | accepted |
+| [0045](0045-per-set-catalog-bound-workout-logging.md) | Workout logging is per-set, catalog-bound, and modality-heterogeneous | proposed |
+| [0046](0046-skill-state-domain-filtered-projection.md) | Skill state is a domain-filtered projection over measured evidence | proposed |
+| [0047](0047-one-benchmark-assessment-surface.md) | One benchmark assessment surface; no domain-specific seeders | proposed |
+| [0048](0048-confidence-gates-recommendations.md) | Confidence gates recommendations — continuous ceiling + discrete claim thresholds | proposed |
+| [0049](0049-missing-wellness-is-a-gap-not-imputed.md) | Missing wellness signals are gaps, not imputed | proposed |
+| [0050](0050-objectives-drive-training-emphasis.md) | Objectives drive concurrent training emphasis (compute modality_mix) | proposed |
+| [0051](0051-user-owns-structure-engine-owns-safety.md) | The user owns intent and structure; the engine owns safety and execution | proposed |

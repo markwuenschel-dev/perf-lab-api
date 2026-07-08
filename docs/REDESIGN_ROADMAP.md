@@ -190,6 +190,101 @@ Token paths, behind an adapter interface so Whoop/Polar are additive.
 
 ---
 
+### Wave 2 — Multi-Domain UX (direction settled 2026-07-07; PDR-0010, ADR-0045–0051)
+
+Closes the running-centric UX gaps surfaced once the shell was in use: the backend is
+already multi-domain; the `web/` frontend is still running-shaped and partly `sim.ts`-driven.
+Dependency-ordered below. **Cross-cutting:** every phase that changes a schema re-runs
+OpenAPI export → web `gen:types` → `tsc`, and the CI gate (import app + generate OpenAPI +
+pytest). New prescriber control inputs compose with — and stay behind — the shadow EKF/MPC
+([ADR-0041](adr/0041-shadow-ekf-state-covariance.md)/[ADR-0042](adr/0042-shadow-mpc-planner.md));
+this wave does not promote them. The unifying spine across all of it: the *honesty ladder*
+(measured / estimated / unknown, never fake) and *the model informs and self-limits — it
+never blocks or overrules the user* ([PDR-0010](pdr/0010-model-self-limits-never-blocks-user.md)).
+
+#### P7 — Foundation: schemas & contracts (the shared substrate)
+- Migrations + models + Pydantic: `workout_set_logs` (session header → set rows,
+  [ADR-0045](adr/0045-per-set-catalog-bound-workout-logging.md)); benchmark-definition
+  enrichment cols `domain_lenses` / `movement_skill_mappings` / `assessable_skill_tags` /
+  `measurement_protocol` ([ADR-0046](adr/0046-skill-state-domain-filtered-projection.md),
+  [ADR-0047](adr/0047-one-benchmark-assessment-surface.md)); `planning_overrides`
+  ([ADR-0051](adr/0051-user-owns-structure-engine-owns-safety.md)); `AthleteProfile`
+  onboarding state-machine fields (`onboarding_status`, `completed_reason`,
+  `initial_seed_status`, `initial_seed_confidence`) + a per-user tracked-signals preference
+  ([ADR-0049](adr/0049-missing-wellness-is-a-gap-not-imputed.md),
+  [PDR-0010](pdr/0010-model-self-limits-never-blocks-user.md)).
+- Seed: the `run_vo2_field_test_300m_1p5mi` definition; skill/assessable-tag metadata on the
+  existing skill benchmarks (`wl_technical_grade_85pct`, `gym_transition_quality`,
+  `run_long_run_decoupling`, `run_threshold_talk_test`). Regenerate OpenAPI → web types.
+- **Verify:** migrations up/down clean on a seeded DB; `gen:types` + `tsc` green; no route
+  drops from `/openapi.json`.
+
+#### P8 — Honest morning check-in ([ADR-0049](adr/0049-missing-wellness-is-a-gap-not-imputed.md)) — low-dependency, high-visibility
+- Wire `CheckinModal → ingestWellness`, `ReadinessCard → getReadiness`; retire the `sim.ts`
+  readiness path.
+- Three-state signals: untracked (hidden), unknown-today (null + confidence penalty),
+  provided. Per-field tooltips + "readiness works without it" education; display-only
+  baseline hint.
+- **Verify:** a bad night / omitted HRV lowers readiness *and* confidence, never fills a
+  value; the one backend number renders everywhere (no client formula).
+
+#### P9 — Per-set logging + strength loop ([ADR-0045](adr/0045-per-set-catalog-bound-workout-logging.md))
+- Persist sets to `workout_set_logs`; catalog-bound log UI with `load_type`-typed fields +
+  quick-entry expansion; heterogeneous session, derived modality.
+- Write-time e1RM/benchmark extraction into `benchmark_observations` (measurement layer, not
+  set-log scans).
+- Strength prescription speaks in load: `%e1RM → suggested kg` (current e1RM + the
+  [ADR-0029](adr/0029-periodization-intent-envelope.md) envelope) + RPE cap; seed carries it;
+  dose uses actual load × RPE (closes [ADR-0039](adr/0039-dose-law-external-load-vs-effort.md));
+  RPE-only fallback when no e1RM.
+- **Verify:** log a mixed run+lift session — sets persist, a top set emits an e1RM
+  observation, a prescribed squat pre-fills kg and its dose reflects external load.
+
+#### P10 — One assessment surface + non-blocking onboarding ([ADR-0047](adr/0047-one-benchmark-assessment-surface.md) + [PDR-0010](pdr/0010-model-self-limits-never-blocks-user.md))
+- `BenchmarkAssessmentSurface` (mode `onramp|retest`), domain-filtered; every submit writes a
+  `benchmark_observation`; `/compute-metrics` demoted to the internal calculator behind the
+  run VO₂ def; retire the standalone running Field Test.
+- Onboarding: profile-basics (the only hard gate) → pick domains/objectives → per-domain
+  recommended benchmarks → seed via [ADR-0035](adr/0035-benchmark-seeded-initial-state.md);
+  explicit "I'm done for now" at every step + per-benchmark "do this later"; persisted
+  completion; experience-prior fallback seed (low confidence, `estimated`); measurement-debt
+  prompts in-app.
+- **Verify:** a user who skips all benchmarks still reaches a usable, visibly-provisional
+  twin; a strength user gets strength benchmarks, not a run test; reload doesn't re-trap.
+
+#### P11 — Objectives drive training emphasis ([ADR-0050](adr/0050-objectives-drive-training-emphasis.md))
+- Objective → weighted modality-vector blend (priority×proximity×gap×status), smoothed to a
+  block-level `modality_mix`; multi-domain candidate generation from the mix; min-dose floors
+  + phase logic; `primary_goal`/`block_goal` demoted to objective-less fallback.
+- **Verify:** two cross-domain objectives produce a blended plan that shifts emphasis as
+  dates/gaps change with no manual mode switch; objective-less users still get the fallback.
+
+#### P12 — User overrides + authority stack ([ADR-0051](adr/0051-user-owns-structure-engine-owns-safety.md))
+- `PlanningOverride` application in the pipeline: blend → floors → overrides →
+  safety/confidence gates → candidates → optimize-within → tradeoff explanation; hard-override
+  vs soft-preference; tradeoff-cost estimator; override UI ("use this structure / make it more
+  efficient").
+- **Verify:** a pinned hypertrophy block is honored, surfaces its objective cost, and is never
+  silently re-optimized toward efficiency; an unsafe pin is modified/refused with an
+  explanation.
+
+#### P13 — Confidence-gated recommendations ([ADR-0048](adr/0048-confidence-gates-recommendations.md))
+- Thread per-axis confidence ([ADR-0036](adr/0036-per-axis-confidence-scalar.md)) into the
+  prescriber: continuous aggressiveness ceiling; discrete thresholds suppressing strong claims
+  (race prediction, high-confidence tissue-risk). Distinct from safety overrides.
+- **Verify:** a provisional athlete gets conservative progressions + suppressed strong claims;
+  rising confidence restores them; safe-but-unmeasured is still trained, not blocked.
+
+#### P14 — Skill-state projection ([ADR-0046](adr/0046-skill-state-domain-filtered-projection.md))
+- `SkillView` projection service/endpoint: domain-filtered evidence over `capacity.skill` +
+  open movement-keyed `skill_state` + skill benchmarks + weak-point tags; "not yet measured"
+  only from assessable tags with a protocol; kill `sim.ts` `SKILL_DEFS`; rewrite the Twin
+  skill card (demo mode explicit).
+- **Verify:** the running skill card shows only evidence-backed items + honest "not yet
+  measured"; a lifter sees lifting technique, not running economy; zero faked values.
+
+---
+
 ## Consolidated feature list (goal #1)
 
 **Implemented (backend) — keep / wire:** auth + onboarding + baseline state seeding;
@@ -301,3 +396,7 @@ two long-open calls:
   (Oura vs Whoop) by actual user device mix.
 - **Prescriber quality (cross-phase):** DB-driven exercise selection from the
   `Exercise` table (currently equipment-mapped fallback) — roadmap §5 of `ROADMAP.md`.
+- **Wave 2 (P11–P13):** objective proximity/gap curve shapes + smoothing ρ (per-objective-type
+  urgency curves); the confidence aggressiveness-ceiling curve + discrete claim thresholds; and
+  the tradeoff-cost estimator's model (how "adds ~3 weeks to your squat objective" is computed).
+  Deferred to their phases — the ADRs fix the *shape*, not the constants.

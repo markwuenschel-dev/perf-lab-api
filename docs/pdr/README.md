@@ -25,3 +25,4 @@ implies an architectural one, write both and cross-link them
 | [0007](0007-first-wearable-provider.md) | First wearable provider to integrate | proposed |
 | [0008](0008-plan-is-a-seed-not-a-rail.md) | The training plan is a seed, not a rail | proposed |
 | [0009](0009-onboarding-benchmark-onramp.md) | Onboarding establishes baselines through a benchmark onramp | proposed |
+| [0010](0010-model-self-limits-never-blocks-user.md) | The app never blocks the user; the model self-limits by confidence | proposed |
