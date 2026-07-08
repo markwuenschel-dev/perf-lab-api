@@ -64,5 +64,7 @@ async def test_readiness_no_state_returns_none(http_client):
     resp = await http_client.get("/v1/readiness", headers=hdr)
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["readiness"] is None
+    assert data["score"] is None
     assert data["note"] == "no_modeled_state"
+    # Confidence is reported even with no modeled state (report-only; ADR-0052).
+    assert data["confidence"]["recommendation_gate"]["enforced"] is False

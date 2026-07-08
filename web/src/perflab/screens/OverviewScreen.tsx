@@ -347,7 +347,8 @@ export function OverviewScreen() {
   }, [token, wellnessLoading, wellnessData, actions]);
 
   // ---- Readiness (real when signed in; sim as guest / no-state fallback) ----
-  const realReadiness = token ? readinessRes.data?.readiness ?? null : null;
+  const realReadiness = token ? readinessRes.data?.score ?? null : null;
+  const readinessConfidence = token ? readinessRes.data?.confidence ?? null : null;
   const simReady = buildCheckin(ci).readiness;
   const todayD = DAYS[DAYS.length - 1];
   const ovVal = realReadiness != null ? Math.round(realReadiness) : ci.done ? simReady : todayD.readiness;
@@ -473,6 +474,14 @@ export function OverviewScreen() {
                   <SectionLabel className="text-faint">Readiness</SectionLabel>
                   <div className="mt-2 text-[17px] font-bold leading-none" style={{ color: ovColor }}>{ovWord}</div>
                   {showSpark && <div className="mt-[7px] text-[11px] font-medium leading-none text-good">{ovDelta}</div>}
+                  {readinessConfidence && (
+                    <div className="mt-[7px] text-[10.5px] font-semibold leading-none text-dim">
+                      Confidence: <span className="text-mute">{readinessConfidence.band}</span>
+                      {readinessConfidence.band === "low" && (
+                        <span className="ml-1 text-warn">· limited data — check in to improve</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mt-4 font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-dim">Last 14 days</div>

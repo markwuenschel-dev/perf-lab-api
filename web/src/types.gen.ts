@@ -1770,6 +1770,8 @@ export interface components {
             session_duration_minutes: number;
             /** Squat 1Rm Kg */
             squat_1rm_kg: number | null;
+            /** Untracked Wellness Signals */
+            untracked_wellness_signals?: string[];
         };
         /**
          * ProfileUpdate
@@ -1811,6 +1813,8 @@ export interface components {
             session_duration_minutes?: number | null;
             /** Squat 1Rm Kg */
             squat_1rm_kg?: number | null;
+            /** Untracked Wellness Signals */
+            untracked_wellness_signals?: string[] | null;
         };
         /**
          * ProgressBlock
@@ -1907,6 +1911,37 @@ export interface components {
             /** Value */
             value: number;
         };
+        /**
+         * ReadinessConfidence
+         * @description How well-supported today's readiness estimate is (ADR-0052).
+         *
+         *     ``confidence`` answers "how much evidence supports the score", NOT "is readiness high".
+         *     Evidence-coverage over load / wellness-signal coverage / freshness / baseline maturity.
+         */
+        ReadinessConfidence: {
+            /**
+             * Band
+             * @enum {string}
+             */
+            band: "low" | "medium" | "high";
+            /**
+             * Reasons
+             * @description Machine-readable reason codes for explainability
+             */
+            reasons?: string[];
+            recommendation_gate?: components["schemas"]["RecommendationGate"];
+            /**
+             * Score
+             * @description Evidence-coverage confidence, 0–1
+             */
+            score: number;
+            signal_summary?: components["schemas"]["SignalSummary"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "well_supported" | "partial_data" | "sparse_data" | "stale_data";
+        };
         /** ReadinessOut */
         ReadinessOut: {
             /**
@@ -1922,8 +1957,9 @@ export interface components {
          * ReadinessScore
          * @description The one backend-owned readiness number (PDR-0005) + its breakdown.
          *
-         *     ``readiness`` is ``None`` only when there is no modeled ``AthleteState`` to
-         *     anchor against — wellness modulates the model, it is not a standalone score.
+         *     ``score`` is ``None`` only when there is no modeled ``AthleteState`` to anchor against —
+         *     wellness modulates the model, it is not a standalone score. ``confidence`` reports how
+         *     well-supported that score is (ADR-0052) and is report-only in P8.
          */
         ReadinessScore: {
             /**
@@ -1931,8 +1967,14 @@ export interface components {
              * @description Timestamp of the modeled state used
              */
             as_of?: string | null;
+            /**
+             * Band
+             * @description Coarse band over ``score`` for UI
+             */
+            band?: ("low" | "moderate" | "good" | "high") | null;
             /** Components */
             components?: components["schemas"]["ReadinessComponent"][];
+            confidence?: components["schemas"]["ReadinessConfidence"] | null;
             /**
              * Modeled
              * @description Modeled-only readiness from fatigue state, 0–100
@@ -1941,10 +1983,10 @@ export interface components {
             /** Note */
             note?: string | null;
             /**
-             * Readiness
-             * @description Combined readiness, 0–100 (1 = fully fresh)
+             * Score
+             * @description Combined readiness, 0–100 (100 = fully fresh)
              */
-            readiness?: number | null;
+            score?: number | null;
             /**
              * Wellness Delta
              * @description Signed acute-wellness adjustment applied, in 0–100 points (0 if no sample)
@@ -1952,6 +1994,31 @@ export interface components {
              */
             wellness_delta: number;
             wellness_sample?: components["schemas"]["WellnessSampleOut"] | null;
+        };
+        /**
+         * RecommendationGate
+         * @description Advisory recommendation authority derived from confidence (ADR-0052).
+         *
+         *     **Report-only in P8:** ``enforced`` is always ``False`` and the prescriber does not
+         *     consume this — confidence cannot gate the plan yet (that is P13). It is displayed and
+         *     logged so P13 inherits shadow history. Distinct from the readiness *score*, which may
+         *     transparently nudge the plan.
+         */
+        RecommendationGate: {
+            /**
+             * Enforced
+             * @description Always False in P8 — see ADR-0052
+             * @default false
+             */
+            enforced: boolean;
+            /**
+             * Max Recommendation Authority
+             * @default normal
+             * @enum {string}
+             */
+            max_recommendation_authority: "normal" | "conservative" | "very_conservative" | "assessment_prompt_only";
+            /** Message */
+            message?: string | null;
         };
         /** RecomputeDerivedResponse */
         RecomputeDerivedResponse: {
@@ -2085,6 +2152,27 @@ export interface components {
          * @enum {string}
          */
         SessionStatus: "pending" | "completed" | "skipped" | "rescheduled";
+        /**
+         * SignalSummary
+         * @description Honesty-ladder buckets over the athlete's logical wellness signals (ADR-0053).
+         *
+         *     ``provided`` measured today; ``unknown_today`` tracked but absent today (a gap,
+         *     penalizes confidence, never imputed); ``untracked`` not expected (hidden, no penalty);
+         *     ``stale`` last sample is not fresh; ``estimated`` reserved for a future carry-forward
+         *     promotion (always empty in P8 — ADR-0049 ships clean gaps, not imputation).
+         */
+        SignalSummary: {
+            /** Estimated */
+            estimated?: string[];
+            /** Provided */
+            provided?: string[];
+            /** Stale */
+            stale?: string[];
+            /** Unknown Today */
+            unknown_today?: string[];
+            /** Untracked */
+            untracked?: string[];
+        };
         /** StrengthSession */
         StrengthSession: {
             /** Accessory */
@@ -2524,6 +2612,11 @@ export interface components {
              * @default manual
              */
             source: string;
+            /**
+             * Stress
+             * @description 0–10, higher = worse
+             */
+            stress?: number | null;
         };
         /** WellnessSampleOut */
         WellnessSampleOut: {
@@ -2557,6 +2650,8 @@ export interface components {
             soreness: number | null;
             /** Source */
             source: string;
+            /** Stress */
+            stress: number | null;
             /** User Id */
             user_id: number;
         };

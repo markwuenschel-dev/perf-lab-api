@@ -1,8 +1,15 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-07
 ---
 # Missing wellness signals are gaps, not imputed
+
+> **Accepted & implemented in P8** (2026-07-08). The three states, the no-carry-forward
+> rule, and the display-only baseline are realized by `app/logic/wellness_registry.py`,
+> `app/logic/wellness_tracking.py`, and the freshness fix + confidence object in
+> `app/services/readiness_service.py`. See [ADR-0052](0052-readiness-confidence-report-only.md)
+> (confidence object, report-only gate) and [ADR-0053](0053-wellness-signal-registry.md)
+> (registry, categories, implicit tracking, `stress`).
 
 The web check-in was a client-side simulation: every field a slider that always held a
 value, no way to say "I don't track this" or "I don't know today," and readiness faked

@@ -62,8 +62,16 @@ The set of an athlete's state axes / assessable skills that are **estimated or n
 The rule that **confidence acts, not just displays**: per-axis confidence continuously tightens the engine's aggressiveness ceiling, and thresholds suppress strong discrete claims (race prediction, high-confidence tissue-risk). Distinct from a **safety override** — a confidence gate means "we don't know you well enough to push," a safety override means "this would hurt you."
 
 ## Wellness signal state
-The status of one daily-wellness signal (HRV, sleep, RHR, soreness, mood): **untracked** (a persistent user preference — hidden, never expected), **unknown today** (tracked but absent — a visible gap that lowers confidence), or **provided** (measured). Only *provided* values enter readiness; missing is never silently imputed. The 28-day personal baseline is display-only interpretation, not an input.
+The status of one daily-wellness signal (HRV, sleep, RHR, soreness, mood, **stress**): **untracked** (not expected — hidden, no penalty; *implicit* until first provided, or an *explicit* opt-out on `AthleteProfile.untracked_wellness_signals`), **unknown today** (tracked but absent — a visible gap that lowers confidence), or **provided** (measured). A signal becomes *expected* once provided ≥1 time or explicitly opted in. Only *provided* values enter readiness; missing is never silently imputed, and a stale sample is never reused as if fresh. The 28-day personal baseline is display-only interpretation, not an input.
 _Avoid_: default value, filled, imputed reading.
+
+## Logical signal vs metric
+A **logical signal** is what an athlete recognizes (e.g. `sleep`); a **metric** is a stored column (`sleep_hours`, `sleep_quality`). The canonical `WELLNESS_SIGNAL_REGISTRY` maps one logical signal to ≥1 metric. Coverage, the `signal_summary`, and UI copy count *logical* signals (so sleep counts once); the readiness modifier's `components` stay *metric*-grained. Signals carry a category — `wellness_readiness` / `biometric_recovery` / `safety_symptom` — and only `coverage=true` ones enter the coverage denominator (pain is `safety_symptom`, excluded).
+_Avoid_: field, column (when you mean the user-facing signal).
+
+## Readiness score vs confidence
+`readiness.score` = how ready the athlete appears today; `readiness.confidence` = how well-supported that estimate is (an evidence-coverage reliability object, not a second score). The **score** may transparently nudge the plan (bounded ±0.15); **confidence** is **report-only** in P8 — its `recommendation_gate` carries `enforced=false` and never gates the prescriber (that is the P13 [confidence gate](#confidence-gate)). Shorthand: *score can nudge, confidence cannot gate*.
+_Avoid_: treating confidence as low readiness, or as an enforced cap (pre-P13).
 
 ## Training emphasis
 The `modality_mix` (a `domain → weight` blend) the prescriber actually pursues, **computed from the athlete's active objectives** (weighted by priority × proximity × gap × status, smoothed), then floored and override-adjusted. Replaces the single-goal bottleneck. `primary_goal`/`block_goal` survive only as a fallback when no objectives exist.

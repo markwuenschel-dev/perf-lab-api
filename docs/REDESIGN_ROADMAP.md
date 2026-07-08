@@ -219,14 +219,23 @@ never blocks or overrules the user* ([PDR-0010](pdr/0010-model-self-limits-never
 - **Verify:** migrations up/down clean on a seeded DB; `gen:types` + `tsc` green; no route
   drops from `/openapi.json`.
 
-#### P8 — Honest morning check-in ([ADR-0049](adr/0049-missing-wellness-is-a-gap-not-imputed.md)) — low-dependency, high-visibility
-- Wire `CheckinModal → ingestWellness`, `ReadinessCard → getReadiness`; retire the `sim.ts`
-  readiness path.
-- Three-state signals: untracked (hidden), unknown-today (null + confidence penalty),
-  provided. Per-field tooltips + "readiness works without it" education; display-only
-  baseline hint.
-- **Verify:** a bad night / omitted HRV lowers readiness *and* confidence, never fills a
-  value; the one backend number renders everywhere (no client formula).
+#### P8 — Honest morning check-in ([ADR-0049](adr/0049-missing-wellness-is-a-gap-not-imputed.md)) — ✅ SHIPPED 2026-07-08 (re-scoped)
+The modal→`ingestWellness` / `getReadiness` wiring the original bullet called for **already shipped
+in P5** (endpoints are `POST /v1/wellness` + `GET /v1/readiness`; the `sim.ts` path is now the
+signed-out fallback only). P8 was re-scoped to what was genuinely missing, adding
+[ADR-0052](adr/0052-readiness-confidence-report-only.md) (confidence object, report-only gate) and
+[ADR-0053](adr/0053-wellness-signal-registry.md) (registry, categories, implicit tracking, `stress`).
+- **Three-state signals** (untracked / unknown-today / provided) via a canonical signal registry;
+  profile-persisted explicit opt-out (`untracked_wellness_signals`) + implicit tracking; inline
+  "I don't know today" / "I don't track this" + "add more signals" in the check-in modal.
+- **Confidence** = a structured reliability object on `ReadinessScore` (`score`/`band`/`confidence`),
+  evidence-coverage blend; **report-only** (`enforced=false`) — the *score* may nudge the plan
+  (bounded ±0.15), *confidence* may not gate (that's P13). Shadow-logged for P13.
+- **Freshness fix:** stale samples are no longer used as if fresh (no silent carry-forward); `stress`
+  signal added (`a023`).
+- **Verified:** a bad night lowers the score *and* shifts the prescription; an omitted-but-tracked
+  signal lowers confidence but not the score; an untracked signal incurs no penalty; migrations
+  up/down/up clean; 805 pytest passed; ruff + pyright clean; OpenAPI regenerated + web `tsc`/build green.
 
 #### P9 — Per-set logging + strength loop ([ADR-0045](adr/0045-per-set-catalog-bound-workout-logging.md))
 - Persist sets to `workout_set_logs`; catalog-bound log UI with `load_type`-typed fields +

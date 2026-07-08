@@ -2649,6 +2649,13 @@
               }
             ],
             "title": "Squat 1Rm Kg"
+          },
+          "untracked_wellness_signals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Untracked Wellness Signals",
+            "type": "array"
           }
         },
         "required": [
@@ -2866,6 +2873,20 @@
               }
             ],
             "title": "Squat 1Rm Kg"
+          },
+          "untracked_wellness_signals": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Untracked Wellness Signals"
           }
         },
         "title": "ProfileUpdate",
@@ -3049,6 +3070,58 @@
         "title": "ReadinessComponent",
         "type": "object"
       },
+      "ReadinessConfidence": {
+        "description": "How well-supported today's readiness estimate is (ADR-0052).\n\n``confidence`` answers \"how much evidence supports the score\", NOT \"is readiness high\".\nEvidence-coverage over load / wellness-signal coverage / freshness / baseline maturity.",
+        "properties": {
+          "band": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "reasons": {
+            "description": "Machine-readable reason codes for explainability",
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "recommendation_gate": {
+            "$ref": "#/components/schemas/RecommendationGate"
+          },
+          "score": {
+            "description": "Evidence-coverage confidence, 0\u20131",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          },
+          "signal_summary": {
+            "$ref": "#/components/schemas/SignalSummary"
+          },
+          "status": {
+            "enum": [
+              "well_supported",
+              "partial_data",
+              "sparse_data",
+              "stale_data"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "band",
+          "status"
+        ],
+        "title": "ReadinessConfidence",
+        "type": "object"
+      },
       "ReadinessOut": {
         "properties": {
           "kpi_flags": {
@@ -3075,7 +3148,7 @@
         "type": "object"
       },
       "ReadinessScore": {
-        "description": "The one backend-owned readiness number (PDR-0005) + its breakdown.\n\n``readiness`` is ``None`` only when there is no modeled ``AthleteState`` to\nanchor against \u2014 wellness modulates the model, it is not a standalone score.",
+        "description": "The one backend-owned readiness number (PDR-0005) + its breakdown.\n\n``score`` is ``None`` only when there is no modeled ``AthleteState`` to anchor against \u2014\nwellness modulates the model, it is not a standalone score. ``confidence`` reports how\nwell-supported that score is (ADR-0052) and is report-only in P8.",
         "properties": {
           "as_of": {
             "anyOf": [
@@ -3090,12 +3163,40 @@
             "description": "Timestamp of the modeled state used",
             "title": "As Of"
           },
+          "band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "moderate",
+                  "good",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coarse band over ``score`` for UI",
+            "title": "Band"
+          },
           "components": {
             "items": {
               "$ref": "#/components/schemas/ReadinessComponent"
             },
             "title": "Components",
             "type": "array"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadinessConfidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "modeled": {
             "anyOf": [
@@ -3120,7 +3221,7 @@
             ],
             "title": "Note"
           },
-          "readiness": {
+          "score": {
             "anyOf": [
               {
                 "type": "number"
@@ -3129,8 +3230,8 @@
                 "type": "null"
               }
             ],
-            "description": "Combined readiness, 0\u2013100 (1 = fully fresh)",
-            "title": "Readiness"
+            "description": "Combined readiness, 0\u2013100 (100 = fully fresh)",
+            "title": "Score"
           },
           "wellness_delta": {
             "default": 0.0,
@@ -3150,6 +3251,41 @@
           }
         },
         "title": "ReadinessScore",
+        "type": "object"
+      },
+      "RecommendationGate": {
+        "description": "Advisory recommendation authority derived from confidence (ADR-0052).\n\n**Report-only in P8:** ``enforced`` is always ``False`` and the prescriber does not\nconsume this \u2014 confidence cannot gate the plan yet (that is P13). It is displayed and\nlogged so P13 inherits shadow history. Distinct from the readiness *score*, which may\ntransparently nudge the plan.",
+        "properties": {
+          "enforced": {
+            "default": false,
+            "description": "Always False in P8 \u2014 see ADR-0052",
+            "title": "Enforced",
+            "type": "boolean"
+          },
+          "max_recommendation_authority": {
+            "default": "normal",
+            "enum": [
+              "normal",
+              "conservative",
+              "very_conservative",
+              "assessment_prompt_only"
+            ],
+            "title": "Max Recommendation Authority",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "title": "RecommendationGate",
         "type": "object"
       },
       "RecomputeDerivedResponse": {
@@ -3513,6 +3649,48 @@
         ],
         "title": "SessionStatus",
         "type": "string"
+      },
+      "SignalSummary": {
+        "description": "Honesty-ladder buckets over the athlete's logical wellness signals (ADR-0053).\n\n``provided`` measured today; ``unknown_today`` tracked but absent today (a gap,\npenalizes confidence, never imputed); ``untracked`` not expected (hidden, no penalty);\n``stale`` last sample is not fresh; ``estimated`` reserved for a future carry-forward\npromotion (always empty in P8 \u2014 ADR-0049 ships clean gaps, not imputation).",
+        "properties": {
+          "estimated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Estimated",
+            "type": "array"
+          },
+          "provided": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Provided",
+            "type": "array"
+          },
+          "stale": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stale",
+            "type": "array"
+          },
+          "unknown_today": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unknown Today",
+            "type": "array"
+          },
+          "untracked": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Untracked",
+            "type": "array"
+          }
+        },
+        "title": "SignalSummary",
+        "type": "object"
       },
       "StrengthSession": {
         "properties": {
@@ -4381,6 +4559,20 @@
             "maxLength": 50,
             "title": "Source",
             "type": "string"
+          },
+          "stress": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0\u201310, higher = worse",
+            "title": "Stress"
           }
         },
         "required": [
@@ -4487,6 +4679,17 @@
             "title": "Source",
             "type": "string"
           },
+          "stress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stress"
+          },
           "user_id": {
             "title": "User Id",
             "type": "integer"
@@ -4503,6 +4706,7 @@
           "resting_hr",
           "soreness",
           "mood",
+          "stress",
           "raw",
           "created_at"
         ],

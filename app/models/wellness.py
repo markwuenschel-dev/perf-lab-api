@@ -46,6 +46,7 @@ class WellnessSample(Base):
     resting_hr: Mapped[float | None] = mapped_column(Float, nullable=True)
     soreness: Mapped[float | None] = mapped_column(Float, nullable=True)
     mood: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stress: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-10, higher = worse
 
     # Full source payload for provenance / future signals not yet modeled.
     raw: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

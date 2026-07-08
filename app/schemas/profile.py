@@ -26,6 +26,9 @@ class ProfileRead(BaseModel):
     run_1p5mi_seconds: float | None
     bodyweight_kg: float | None
     height_cm: float | None
+    # Wellness signals the athlete explicitly marked "I don't track this" (ADR-0049);
+    # hidden from the check-in and never expected. Missing-but-tracked stays an honest gap.
+    untracked_wellness_signals: list[str] = Field(default_factory=list)
 
 
 class ProfileUpdate(BaseModel):
@@ -51,3 +54,5 @@ class ProfileUpdate(BaseModel):
     run_1p5mi_seconds: float | None = Field(None, gt=0)
     bodyweight_kg: float | None = Field(None, gt=0)
     height_cm: float | None = Field(None, gt=0)
+    # Full replacement of the explicit "don't track" opt-out list when present.
+    untracked_wellness_signals: list[str] | None = None

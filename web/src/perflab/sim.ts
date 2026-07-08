@@ -131,6 +131,7 @@ export interface CheckinState {
   rhr: number;
   soreness: "none" | "mild" | "moderate" | "high";
   mood: number;
+  stress: number; // 1–5 self-report, higher = more stressed
   done: boolean;
 }
 
@@ -149,6 +150,7 @@ export function buildCheckin(c: CheckinState): { readiness: number; drivers: Che
     { n: "Resting HR", v: c.rhr + " bpm", x: (58 - c.rhr) * 0.9 },
     { n: "Soreness", v: c.soreness.charAt(0).toUpperCase() + c.soreness.slice(1), x: soreMap[c.soreness] || 0 },
     { n: "Motivation", v: c.mood + " / 5", x: (c.mood - 3) * 2 },
+    { n: "Stress", v: c.stress + " / 5", x: (3 - c.stress) * 3 },
   ];
   let r = 50;
   parts.forEach((p) => (r += p.x));

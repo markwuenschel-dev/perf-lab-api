@@ -55,6 +55,7 @@ def _to_read(p: AthleteProfile) -> ProfileRead:
         run_1p5mi_seconds=p.run_1p5mi_seconds,
         bodyweight_kg=p.bodyweight_kg,
         height_cm=p.height_cm,
+        untracked_wellness_signals=list(p.untracked_wellness_signals or []),
     )
 
 
