@@ -28,7 +28,11 @@ export type UnifiedStateVector = Schemas["UnifiedStateVector"];
 /* ---------- Workouts / dose ---------- */
 export type Modality = Schemas["WorkoutLog"]["modality"];
 export type WorkoutLog = Schemas["WorkoutLog"];
+export type WorkoutSetEntry = Schemas["WorkoutSetEntry"];
 export type StressDose = Schemas["StressDose"];
+
+/* ---------- Exercise catalog (GET /v1/exercises) ---------- */
+export type ExerciseCatalogOut = Schemas["ExerciseCatalogOut"];
 
 /* ---------- Prescription ---------- */
 export type ValidationSummary = Schemas["ValidationSummary"];

@@ -9,6 +9,7 @@ import type {
   BlockUpdateRequest,
   ComputeMetricsRequest,
   ConnectionStatus,
+  ExerciseCatalogOut,
   MacrocycleCreate,
   MacrocycleRead,
   MacrocycleUpdate,
@@ -221,6 +222,25 @@ export async function logWorkout(
     body: JSON.stringify(log),
   });
   return handleResponse<UnifiedStateVector>(res, { sessionOn401: true });
+}
+
+/**
+ * Exercise catalog (ADR-0045): the movement library backing the per-set log UI.
+ * Public — the catalog is seed data. `q`/`loadType`/`modality` filter server-side.
+ */
+export async function listExercises(
+  opts?: { q?: string; loadType?: string; modality?: string },
+): Promise<ExerciseCatalogOut[]> {
+  if (!API_V1_BASE) {
+    throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  }
+  const params = new URLSearchParams();
+  if (opts?.q) params.set("q", opts.q);
+  if (opts?.loadType) params.set("load_type", opts.loadType);
+  if (opts?.modality) params.set("modality", opts.modality);
+  const qs = params.toString();
+  const res = await fetch(`${API_V1_BASE}/exercises${qs ? `?${qs}` : ""}`);
+  return handleResponse<ExerciseCatalogOut[]>(res);
 }
 
 /**

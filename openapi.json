@@ -1118,6 +1118,81 @@
         "title": "DomainSummaryOut",
         "type": "object"
       },
+      "ExerciseCatalogOut": {
+        "description": "The fields the log UI needs to render a catalog-bound set entry.",
+        "properties": {
+          "e1rm_benchmark_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Benchmark Code"
+          },
+          "equipment_required": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Equipment Required",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_benchmark": {
+            "title": "Is Benchmark",
+            "type": "boolean"
+          },
+          "load_type": {
+            "title": "Load Type",
+            "type": "string"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "movement_pattern": {
+            "title": "Movement Pattern",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sport_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sport Domains",
+            "type": "array"
+          },
+          "weak_point_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Weak Point Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "modality",
+          "movement_pattern",
+          "load_type",
+          "equipment_required",
+          "weak_point_tags",
+          "sport_domains",
+          "is_benchmark",
+          "e1rm_benchmark_code"
+        ],
+        "title": "ExerciseCatalogOut",
+        "type": "object"
+      },
       "ExerciseEntry": {
         "description": "A single exercise within a session log.\n\n`phi_*` and `energy_mix` are resolved from the Exercise DB row by the\nservice layer before the dose engine runs. They are left blank in\nclient-submitted logs; the engine falls back to modality defaults when absent.",
         "properties": {
@@ -5800,6 +5875,110 @@
         "summary": "Get Readiness",
         "tags": [
           "Dashboard"
+        ]
+      }
+    },
+    "/v1/exercises": {
+      "get": {
+        "description": "List the movement catalog, optionally filtered \u2014 powers the log's exercise picker.",
+        "operationId": "list_exercises_v1_exercises_get",
+        "parameters": [
+          {
+            "description": "Case-insensitive name search.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive name search.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Filter by load_type.",
+            "in": "query",
+            "name": "load_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by load_type.",
+              "title": "Load Type"
+            }
+          },
+          {
+            "description": "Filter by modality.",
+            "in": "query",
+            "name": "modality",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by modality.",
+              "title": "Modality"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExerciseCatalogOut"
+                  },
+                  "title": "Response List Exercises V1 Exercises Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Exercises",
+        "tags": [
+          "Exercises"
         ]
       }
     },

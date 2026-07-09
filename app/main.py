@@ -19,6 +19,7 @@ from app.api.v1 import (
     auth,
     benchmarks,
     dashboard,
+    exercises,
     feedback,
     ingest,
     integrations_oura,
@@ -181,6 +182,7 @@ app.include_router(integrations_oura.router, prefix=settings.API_V1_STR)
 # Future routers (uncomment when ready)
 # app.include_router(blocks.router, prefix=settings.API_V1_STR)
 app.include_router(weak_points.router, prefix=settings.API_V1_STR)
+app.include_router(exercises.router, prefix=settings.API_V1_STR)
 # app.include_router(onboarding.router, prefix=settings.API_V1_STR)
 
 

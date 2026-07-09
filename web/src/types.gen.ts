@@ -255,6 +255,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/exercises": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Exercises
+         * @description List the movement catalog, optionally filtered — powers the log's exercise picker.
+         */
+        get: operations["list_exercises_v1_exercises_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/feedback": {
         parameters: {
             query?: never;
@@ -1277,6 +1297,32 @@ export interface components {
             kpis: components["schemas"]["KPIValueOut"][];
             /** Primary Anchors */
             primary_anchors: components["schemas"]["AnchorObservationOut"][];
+        };
+        /**
+         * ExerciseCatalogOut
+         * @description The fields the log UI needs to render a catalog-bound set entry.
+         */
+        ExerciseCatalogOut: {
+            /** E1Rm Benchmark Code */
+            e1rm_benchmark_code: string | null;
+            /** Equipment Required */
+            equipment_required: string[];
+            /** Id */
+            id: number;
+            /** Is Benchmark */
+            is_benchmark: boolean;
+            /** Load Type */
+            load_type: string;
+            /** Modality */
+            modality: string;
+            /** Movement Pattern */
+            movement_pattern: string;
+            /** Name */
+            name: string;
+            /** Sport Domains */
+            sport_domains: string[];
+            /** Weak Point Tags */
+            weak_point_tags: string[];
         };
         /**
          * ExerciseEntry
@@ -3268,6 +3314,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessOut"];
+                };
+            };
+        };
+    };
+    list_exercises_v1_exercises_get: {
+        parameters: {
+            query?: {
+                /** @description Case-insensitive name search. */
+                q?: string | null;
+                /** @description Filter by load_type. */
+                load_type?: string | null;
+                /** @description Filter by modality. */
+                modality?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExerciseCatalogOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
