@@ -13,7 +13,6 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analysis.feature_builders.ekf_calibration_features import summarize_ekf_shadow
 from app.models.mpc_shadow import MpcShadowLog
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.recovery_shadow import RecoveryShadowLog
@@ -22,6 +21,14 @@ _MPC_WINDOW = 30
 
 
 async def _ekf_section(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
+    # Lazy import: ``ekf_calibration_features`` transitively pulls in the offline ML
+    # stack (``app.ml.q10_confidence`` → pandas), which is NOT installed in the lean
+    # production image. Importing it at module load crashed app startup (uvicorn could
+    # not import app.main → the container stopped → /ping healthcheck failed, breaking
+    # every deploy since 2026-07-07). Deferring it here keeps the whole app bootable;
+    # only this one read-only shadow-summary section needs the heavy dep.
+    from app.analysis.feature_builders.ekf_calibration_features import summarize_ekf_shadow
+
     s = await summarize_ekf_shadow(db, user_id)
     if s["n_predict"] == 0 and s["n_update"] == 0:
         return None
