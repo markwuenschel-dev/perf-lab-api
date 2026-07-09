@@ -2,13 +2,19 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
-import { logWorkout, simulateDose } from "@/api/perfLabClient";
+import { getNextSession, listExercises, logWorkout, simulateDose } from "@/api/perfLabClient";
 import type { ApiError, Modality, WorkoutLog } from "@/types";
 import { usePerfLab } from "../store";
 import { MetricBar } from "../ui";
 import { COLORS, DOSE_NAMES, doseBarColor, PRESETS, projectLogDose } from "../sim";
+import { SetBuilder } from "./SetBuilder";
+import { deriveModality, groupsToSets, type SetGroup } from "./setBuilderLogic";
 
-/** Build a backend WorkoutLog from the modal's form state. */
+/** Build a backend WorkoutLog from the modal's form state.
+ *
+ * When per-set groups are present (ADR-0045) they are the record: `sets` is sent,
+ * the session modality is derived from them (the backend derives it too), and the
+ * running-shaped session distance is dropped so the backend rolls it up from sets. */
 function buildWorkoutLog(
   logType: string,
   rpe: number,
@@ -16,8 +22,12 @@ function buildWorkoutLog(
   distanceKm: number,
   sleepQ: number,
   mood: number,
+  setGroups: SetGroup[] = [],
 ): WorkoutLog {
-  const modality: Modality = logType === "strength" ? "Strength" : "Running";
+  const sets = groupsToSets(setGroups);
+  const modality: Modality =
+    (sets.length ? deriveModality(setGroups) : null) ??
+    (logType === "strength" ? "Strength" : "Running");
   // We send only what the form captures; the backend fills server-side defaults
   // for omitted fields (is_benchmark, novelty, total_volume_load, …). `satisfies`
   // still type-checks the fields we DO set against the contract; the cast covers
@@ -30,7 +40,7 @@ function buildWorkoutLog(
     // Required by the backend; sourced from the morning check-in (1–5 scales).
     sleep_quality: sleepQ,
     life_stress_inverse: mood,
-    ...(modality === "Running" ? { distance_meters: Math.round(distanceKm * 1000) } : {}),
+    ...(sets.length ? { sets } : modality === "Running" ? { distance_meters: Math.round(distanceKm * 1000) } : {}),
   } satisfies Partial<WorkoutLog> as WorkoutLog;
 }
 
@@ -40,20 +50,64 @@ export function LogWorkoutModal() {
   const [doseSix, setDoseSix] = useState<number[] | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [sets, setSets] = useState<SetGroup[]>([]);
 
   const { logOpen, logType, rpe, durationMin, distanceKm } = state;
   const { sleepQ, mood } = state.checkin;
+
+  const derivedModality = sets.length ? deriveModality(sets) : null;
+  // A stable key over just the fields the dose depends on, so the preview effect
+  // re-runs when a set's load/reps/rpe change without chasing object identity.
+  const setsKey = JSON.stringify(groupsToSets(sets));
+
+  // On open, best-effort pre-fill from today's prescription so a prescribed lift's
+  // suggested kg (ADR-0045) lands in the log. Resolves each exercise against the
+  // catalog for its load_type. Silent no-op when signed out or nothing is prescribed.
+  useEffect(() => {
+    if (!logOpen || !auth.token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rx = await getNextSession("hybrid", auth.token!);
+        const prescribed = (rx.exercises ?? []).filter((e) => e.prescribed_load_kg != null);
+        if (!prescribed.length) return;
+        const groups: SetGroup[] = [];
+        let key = Date.now();
+        for (const ex of prescribed) {
+          const matches = await listExercises({ q: ex.name });
+          const cat = matches.find((m) => m.name === ex.name) ?? null;
+          groups.push({
+            key: key++,
+            exercise: cat,
+            freeText: cat ? "" : ex.name,
+            loadType: cat?.load_type ?? "barbell",
+            count: ex.sets ?? 3,
+            reps: parseInt(ex.reps ?? "5") || 5,
+            loadKg: ex.prescribed_load_kg ?? undefined,
+            rpe: ex.rpe_cap ?? undefined,
+          });
+        }
+        if (!cancelled && groups.length) setSets(groups);
+      } catch {
+        // best-effort — never block the log on a prescription fetch
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [logOpen, auth.token]);
 
   // Real D(t) preview from POST /v1/simulate-dose (debounced); falls back to the
   // sim bars while loading or if the call fails. Unauthenticated — works signed out.
   useEffect(() => {
     if (!logOpen) {
       setDoseSix(null);
+      setSets([]);
       return;
     }
     let cancelled = false;
     const id = window.setTimeout(() => {
-      simulateDose(buildWorkoutLog(logType, rpe, durationMin, distanceKm, sleepQ, mood))
+      simulateDose(buildWorkoutLog(logType, rpe, durationMin, distanceKm, sleepQ, mood, sets))
         .then((d) => {
           if (cancelled) return;
           const s = d.dose_six;
@@ -67,7 +121,10 @@ export function LogWorkoutModal() {
       cancelled = true;
       window.clearTimeout(id);
     };
-  }, [logOpen, logType, rpe, durationMin, distanceKm, sleepQ, mood]);
+    // setsKey is a stable serialization of `sets` — it captures every set field the
+    // dose depends on without re-running on unrelated object-identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logOpen, logType, rpe, durationMin, distanceKm, sleepQ, mood, setsKey]);
 
   if (!state.logOpen) return null;
 
@@ -85,7 +142,7 @@ export function LogWorkoutModal() {
     setApplyError(null);
     try {
       const sv = await logWorkout(
-        buildWorkoutLog(logType, rpe, durationMin, distanceKm, sleepQ, mood),
+        buildWorkoutLog(logType, rpe, durationMin, distanceKm, sleepQ, mood, sets),
         auth.token,
       );
       actions.cacheTwinState(sv);
@@ -155,6 +212,20 @@ export function LogWorkoutModal() {
                 <span className="font-mono text-[14px] font-semibold leading-none text-ac">{state.rpe} <span className="text-[11px] text-dim">/ 10 RPE</span></span>
               </div>
               <input type="range" min={1} max={10} value={state.rpe} onChange={(e) => actions.setRpe(+e.target.value)} className="w-full cursor-pointer" style={{ accentColor: "var(--ac)" }} />
+            </div>
+
+            {/* Per-set, catalog-bound entry (ADR-0045). Optional — leaving it empty
+                logs a session-level workout exactly as before. */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]">Exercises · per set</span>
+                {derivedModality && (
+                  <span className="rounded-[7px] border border-ac/25 bg-ac/[0.1] px-2 py-[5px] font-mono text-[10px] font-semibold leading-none tracking-[0.08em] text-ac">
+                    {derivedModality}
+                  </span>
+                )}
+              </div>
+              <SetBuilder groups={sets} onChange={setSets} />
             </div>
           </div>
 
