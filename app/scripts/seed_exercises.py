@@ -68,6 +68,7 @@ EXERCISES = [
          "skill_demand": 0.7, "impact_level": 0.6,
          "weak_point_tags": ["squat_pattern", "anterior_chain"],
          "is_benchmark": True,
+         "e1rm_benchmark_code": "pl_e1rm_squat",
          "coaching_notes": "Brace hard, knees track toes, depth below parallel.",
          "meta": {
              "provenance_primitive_ids": [
@@ -109,6 +110,7 @@ EXERCISES = [
          "skill_demand": 0.7, "impact_level": 0.7,
          "weak_point_tags": ["hip_hinge", "posterior_chain", "grip"],
          "is_benchmark": True,
+         "e1rm_benchmark_code": "pl_e1rm_deadlift",
          "coaching_notes": "Lat engagement, neutral spine, push floor away."},
 
     {"name": "Romanian Deadlift", "modality": "Hypertrophy", "movement_pattern": "hinge",
@@ -135,7 +137,8 @@ EXERCISES = [
          "equipment_required": ["barbell"], "load_type": "barbell",
          "skill_demand": 0.5, "impact_level": 0.4,
          "weak_point_tags": ["push_horizontal"],
-         "is_benchmark": True},
+         "is_benchmark": True,
+         "e1rm_benchmark_code": "pl_e1rm_bench"},
 
     {"name": "Dumbbell Bench Press", "modality": "Hypertrophy", "movement_pattern": "push_horizontal",
          "primary_muscles": ["pecs", "triceps"], "secondary_muscles": ["front_delts"],
@@ -435,6 +438,16 @@ EXERCISES = [
 ]
 
 
+# P9 (ADR-0045): estimated-1RM benchmark code per lift. The base seeder is
+# insert-only, so already-seeded databases need an idempotent enrichment pass to
+# populate the column added in migration a024 on existing rows.
+_E1RM_CODE_BY_EXERCISE = {
+    "Back Squat": "pl_e1rm_squat",
+    "Bench Press": "pl_e1rm_bench",
+    "Conventional Deadlift": "pl_e1rm_deadlift",
+}
+
+
 async def seed() -> None:
     combined = EXERCISES + bulk_exercises()
     async with AsyncSessionLocal() as db:
@@ -446,8 +459,22 @@ async def seed() -> None:
                 continue
             db.add(Exercise(**clean))
             inserted += 1
+
+        # Idempotent enrichment: backfill e1rm_benchmark_code on lifts that predate
+        # a024 (insert-only above skips them). Only writes where currently unset.
+        enriched = 0
+        for name, code in _E1RM_CODE_BY_EXERCISE.items():
+            res = await db.execute(select(Exercise).where(Exercise.name == name))
+            row = res.scalars().first()
+            if row is not None and row.e1rm_benchmark_code != code:
+                row.e1rm_benchmark_code = code
+                enriched += 1
+
         await db.commit()
-        print(f"Exercise seed: inserted {inserted} new rows ({len(combined)} in catalog).")
+        print(
+            f"Exercise seed: inserted {inserted} new rows "
+            f"({len(combined)} in catalog); enriched {enriched} e1RM code(s)."
+        )
 
 
 if __name__ == "__main__":

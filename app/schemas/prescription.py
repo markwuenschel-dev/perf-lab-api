@@ -51,6 +51,23 @@ class ExercisePrescription(BaseModel):
     load_note: str | None = None
     weak_point_tags: list[str] = Field(default_factory=list)
 
+    # ADR-0045: strength prescriptions speak in load. When the athlete has a current
+    # e1RM for this lift, the service resolves %e1RM → a suggested working kg against
+    # the ADR-0029 intensity envelope, plus an RPE cap. Absent an e1RM these stay null
+    # and the lift degrades to RPE-only autoregulation (the ``load_note`` fallback).
+    prescribed_load_kg: float | None = Field(
+        default=None, description="Suggested working load in kg (pre-fills the log)."
+    )
+    percent_e1rm: float | None = Field(
+        default=None, description="Fraction of estimated 1RM the suggested load targets (0–1)."
+    )
+    rpe_cap: float | None = Field(
+        default=None, description="Upper RPE bound for the working sets (ADR-0029 envelope)."
+    )
+    e1rm_basis_kg: float | None = Field(
+        default=None, description="The current e1RM the suggestion was resolved against."
+    )
+
 
 class WorkoutPrescription(BaseModel):
     """
