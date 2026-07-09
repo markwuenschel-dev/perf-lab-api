@@ -114,11 +114,12 @@ async def test_sets_persist_with_derived_modality_and_top_set(async_db):
 async def test_sets_feed_external_load_into_dose(async_db):
     """The synthesized per-exercise breakdown carries real reps/load, which is how
     external load (ADR-0039 I) reaches the exercise-aware dose path."""
-    user = await _create_user(async_db, "p9c@test.com")
     await _seed_catalog(async_db)
 
-    updated, rows, specs = await _apply_sets_to_log(async_db, _mixed_log())
+    updated, set_rows, e1rm_specs = await _apply_sets_to_log(async_db, _mixed_log())
 
+    assert len(set_rows) == 4  # 3 squat + 1 run materialized
+    assert [s["code"] for s in e1rm_specs] == ["pl_e1rm_squat"]  # top set → e1RM spec
     squat = next(e for e in updated.exercises if e.exercise_name == "Back Squat")
     assert squat.reps == 5 and squat.load_kg == 100.0 and squat.sets == 3.0
     # A session-only log has no external load (I=1); the set-fed log routes through
