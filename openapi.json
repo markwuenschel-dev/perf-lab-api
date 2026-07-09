@@ -328,6 +328,28 @@
       },
       "BenchmarkObservationCreate": {
         "properties": {
+          "affects_capacity": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affects Capacity"
+          },
+          "affects_prescription": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affects Prescription"
+          },
           "benchmark_code": {
             "description": "Stable code from benchmark_definitions",
             "title": "Benchmark Code",
@@ -343,6 +365,72 @@
               }
             ],
             "title": "Bodyweight Kg"
+          },
+          "can_regress_capacity": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Regress Capacity"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "effort_fidelity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort Fidelity"
+          },
+          "evidence_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Type"
+          },
+          "exercise_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Id"
+          },
+          "formula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formula"
           },
           "heart_rate_avg": {
             "anyOf": [
@@ -366,6 +454,28 @@
             ],
             "title": "Heart Rate Drift Pct"
           },
+          "load_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Kg"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
           "normalized_value": {
             "anyOf": [
               {
@@ -387,6 +497,28 @@
               }
             ],
             "title": "Notes"
+          },
+          "observation_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Model"
+          },
+          "observation_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Weight"
           },
           "observed_at": {
             "anyOf": [
@@ -416,6 +548,28 @@
             "title": "Raw Value",
             "type": "number"
           },
+          "reps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir"
+          },
           "rpe": {
             "anyOf": [
               {
@@ -438,6 +592,17 @@
             ],
             "title": "Secondary Value"
           },
+          "set_log_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Log Id"
+          },
           "source": {
             "default": "manual",
             "title": "Source",
@@ -447,6 +612,28 @@
             "default": "valid",
             "title": "Validity Status",
             "type": "string"
+          },
+          "value_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Semantics"
+          },
+          "workout_log_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workout Log Id"
           }
         },
         "required": [

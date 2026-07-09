@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
+from app.logic import strength_evidence as se
 from app.logic.ekf.observation import mapping_specs_from_orm
 from app.logic.state_update_v0 import apply_benchmark_observation, normalize_score01
 from app.models.athlete_state import AthleteState
@@ -159,6 +160,47 @@ async def list_observations(
     return out
 
 
+def _resolve_authority(body: BenchmarkObservationCreate) -> dict[str, object]:
+    """Fill evidence authority/provenance from the caller, defaulting by ``source``.
+
+    A benchmark/manual entry defaults to a capacity-authoritative direct measurement;
+    ``workout_extraction`` defaults to an estimated, non-regressing training row that
+    never touches capacity. Explicit caller values win — except that
+    ``workout_extraction`` can **never** be granted capacity regression (fail-closed).
+    """
+    is_workout = body.source == se.SOURCE_WORKOUT_EXTRACTION
+    if is_workout:
+        evidence_type = body.evidence_type or se.EV_ESTIMATED_FROM_TRAINING_SET
+        value_semantics = body.value_semantics or se.VS_ESTIMATED
+        affects_capacity = False
+        can_regress_capacity = False
+        affects_prescription = (
+            body.affects_prescription if body.affects_prescription is not None else True
+        )
+        observation_model = body.observation_model or "workout_e1rm_extraction_v1"
+    else:
+        evidence_type = body.evidence_type or se.EV_DIRECT_MEASUREMENT
+        value_semantics = body.value_semantics or se.VS_MEASURED
+        affects_capacity = (
+            body.affects_capacity if body.affects_capacity is not None else True
+        )
+        can_regress_capacity = (
+            body.can_regress_capacity if body.can_regress_capacity is not None else True
+        )
+        affects_prescription = (
+            body.affects_prescription if body.affects_prescription is not None else True
+        )
+        observation_model = body.observation_model or "benchmark_protocol"
+    return {
+        "evidence_type": evidence_type,
+        "value_semantics": value_semantics,
+        "observation_model": observation_model,
+        "affects_capacity": affects_capacity,
+        "can_regress_capacity": can_regress_capacity,
+        "affects_prescription": affects_prescription,
+    }
+
+
 async def create_observation(
     db: AsyncSession,
     user_id: int,
@@ -183,6 +225,7 @@ async def create_observation(
     if normalized_value is None and score01 is not None:
         normalized_value = round(score01 * 100.0, 2)
 
+    authority = _resolve_authority(body)
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
@@ -198,16 +241,40 @@ async def create_observation(
         protocol_metadata=body.protocol_metadata,
         validity_status=body.validity_status,
         source=body.source,
+        exercise_id=body.exercise_id,
+        workout_log_id=body.workout_log_id,
+        set_log_id=body.set_log_id,
+        reps=body.reps,
+        load_kg=body.load_kg,
+        rir=body.rir,
+        formula=body.formula,
+        effort_fidelity=body.effort_fidelity,
+        confidence=body.confidence,
+        observation_weight=body.observation_weight,
+        model_version=body.model_version,
+        **authority,
     )
     db.add(obs)
     await db.flush()
 
     mappings = list(definition.observation_mappings or [])
     observation_time = body.observed_at or datetime.utcnow()
+    # ADR-0055 fail-closed capacity guard: only a protocol-grade, capacity-authoritative
+    # observation may enter the bidirectional capacity residual path. Recomputed from
+    # provenance here — a mismarked row is still refused. Training-derived e1RM
+    # (workout_extraction) is recorded for tracking but never touches canonical capacity.
+    capacity_authoritative = se.capacity_authoritative(obs)
+    apply_to_state = body.validity_status == "valid" and bool(mappings) and capacity_authoritative
+    if mappings and body.validity_status == "valid" and not capacity_authoritative:
+        logger.info(
+            "capacity update skipped (non-authoritative evidence): user=%s code=%s "
+            "source=%s evidence_type=%s",
+            user_id, body.benchmark_code, obs.source, obs.evidence_type,
+        )
     # Snapshot mapping data for the shadow EKF *before* commit — ORM attributes expire on
     # commit, so lazy-loading them afterward in async would fail.
-    ekf_specs = mapping_specs_from_orm(mappings) if (body.validity_status == "valid" and mappings) else []
-    if body.validity_status == "valid" and mappings:
+    ekf_specs = mapping_specs_from_orm(mappings) if apply_to_state else []
+    if apply_to_state:
         current = await state_service.load_or_init_current_state(db, user_id)
 
         new_state = apply_benchmark_observation(
@@ -223,8 +290,10 @@ async def create_observation(
         kwargs = athlete_state_kwargs_from_unified(new_state)
         db.add(AthleteState(user_id=user_id, **kwargs))
 
-    # Weak-point feedback: flag deficits, resolve improvements
-    if body.validity_status == "valid" and normalized_value is not None:
+    # Weak-point feedback: flag deficits, resolve improvements. Gated on capacity
+    # authority — training-derived tracking evidence must not flag/resolve weak points
+    # as if it were a measurement (ADR-0055).
+    if apply_to_state and normalized_value is not None:
         await _apply_weak_point_feedback(
             db, user_id, definition, normalized_value, obs.id
         )

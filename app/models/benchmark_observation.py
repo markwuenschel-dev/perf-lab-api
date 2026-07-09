@@ -48,6 +48,43 @@ class BenchmarkObservation(Base):
     )
     source: Mapped[str] = mapped_column(String(50), default="manual", nullable=False)
 
+    # --- Evidence authority + provenance (ADR-0055) --------------------------
+    # validity_status stays for backward compat; capacity authority is decided by
+    # source + evidence_type + these flags via app.logic.strength_evidence (fail-closed).
+    evidence_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    value_semantics: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="measured | estimated | lower_bound | unknown"
+    )
+    observation_model: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    affects_capacity: Mapped[bool | None] = mapped_column(nullable=True)
+    can_regress_capacity: Mapped[bool | None] = mapped_column(nullable=True)
+    affects_prescription: Mapped[bool | None] = mapped_column(nullable=True)
+
+    observation_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Nullable on purpose: unknown confidence is NULL, never a fake 0.5.
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Causal provenance — a workout's own extraction must not grade that workout.
+    exercise_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("exercises.id"), nullable=True, index=True
+    )
+    workout_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("workout_logs.id"), nullable=True, index=True
+    )
+    set_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("workout_set_logs.id"), nullable=True
+    )
+    reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    load_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rir: Mapped[float | None] = mapped_column(Float, nullable=True)
+    formula: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    effort_fidelity: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    quarantine_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
     benchmark_definition: Mapped["BenchmarkDefinition"] = relationship(
         "BenchmarkDefinition",
         back_populates="observations",

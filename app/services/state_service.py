@@ -15,6 +15,7 @@ from app.engine.state_bridge import (
     unified_from_athlete_row,
 )
 from app.logic import e1rm as e1rm_logic
+from app.logic import strength_evidence as se
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
@@ -411,6 +412,9 @@ async def _apply_sets_to_log(
     # exercise (or one free-text movement) across the whole session.
     groups: dict[str, tuple[Exercise | None, list[WorkoutSetLog]]] = {}
     group_order: list[str] = []
+    # A group whose rows were cloned from a sets=N quick-entry carries group-level
+    # effort, not true per-set effort (ADR-0045) — lowers e1RM evidence authority.
+    group_quick: dict[str, bool] = {}
     set_rows: list[WorkoutSetLog] = []
     set_index = 0
 
@@ -428,6 +432,7 @@ async def _apply_sets_to_log(
         if key not in groups:
             groups[key] = (ex_row, [])
             group_order.append(key)
+        group_quick[key] = group_quick.get(key, False) or (entry.sets > 1)
 
         for _ in range(max(1, entry.sets)):
             row = WorkoutSetLog(
@@ -471,12 +476,16 @@ async def _apply_sets_to_log(
             top.is_top_set = True
 
         top_set = next((r for r in rows if r.is_top_set), None)
+        fidelity = "group_level" if group_quick.get(key) else "set_level"
+        # Extraction gate (ADR-0055): only low-rep, high-effort top sets of a mapped lift
+        # yield e1RM evidence — and it is always estimated/lower-bound, never capacity.
         if (
             top_set is not None
             and ex_row is not None
             and ex_row.e1rm_benchmark_code
             and top_set.load_kg is not None
             and top_set.reps is not None
+            and se.is_e1rm_informative(top_set.reps, top_set.rpe, top_set.rir, fidelity)
         ):
             e1rm_specs.append(
                 {
@@ -484,7 +493,12 @@ async def _apply_sets_to_log(
                     "raw_value": round(
                         e1rm_logic.epley_e1rm(top_set.load_kg, top_set.reps), 1
                     ),
+                    "exercise_id": ex_row.id,
+                    "reps": top_set.reps,
                     "rpe": top_set.rpe,
+                    "rir": top_set.rir,
+                    "load_kg": top_set.load_kg,
+                    "effort_fidelity": fidelity,
                 }
             )
 
@@ -541,17 +555,43 @@ async def _apply_sets_to_log(
     return updated, set_rows, e1rm_specs
 
 
+async def _e1rm_watermark(db: AsyncSession, user_id: int, code: str) -> float | None:
+    """Highest e1RM observed for this code (demonstrated high-watermark).
+
+    Excludes quarantined/invalid rows. Used to keep training-derived evidence
+    upward-only — a set below the watermark is history, never a lower bound.
+    """
+    from app.models.benchmark_definition import BenchmarkDefinition
+    from app.models.benchmark_observation import BenchmarkObservation
+
+    res = await db.execute(
+        select(func.max(BenchmarkObservation.raw_value))
+        .join(
+            BenchmarkDefinition,
+            BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id,
+        )
+        .where(
+            BenchmarkObservation.user_id == user_id,
+            BenchmarkDefinition.code == code,
+            BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
+        )
+    )
+    return res.scalar_one_or_none()
+
+
 async def _extract_e1rm_observations(
     db: AsyncSession,
     user_id: int,
     specs: list[dict[str, Any]],
     observed_at: datetime,
+    workout_log_id: int | None,
 ) -> int:
-    """Write e1RM benchmark observations from logged top sets (measurement layer).
+    """Write training-derived e1RM evidence from gated top sets (ADR-0055).
 
-    Runs *after* the workout state commit — ``create_observation`` commits and
-    advances state itself, so it must not interleave with the workout transaction.
-    Best-effort per spec: an unknown/misconfigured code must not fail the log.
+    This is **estimated / lower-bound** evidence, never a capacity measurement — it
+    can raise a lower-bound floor (a PR beyond a small deadband) but never regresses
+    capacity (enforced by ``benchmark_service`` + the DB guard). Runs *after* the
+    workout state commit; best-effort per spec.
     """
     from app.schemas.benchmarks import BenchmarkObservationCreate
     from app.services import benchmark_service
@@ -559,15 +599,33 @@ async def _extract_e1rm_observations(
     written = 0
     for spec in specs:
         try:
+            watermark = await _e1rm_watermark(db, user_id, spec["code"])
+            is_pr = watermark is None or spec["raw_value"] > watermark * 1.005
+            fidelity = spec.get("effort_fidelity", "set_level")
             await benchmark_service.create_observation(
                 db,
                 user_id,
                 BenchmarkObservationCreate(
                     benchmark_code=spec["code"],
                     raw_value=spec["raw_value"],
-                    rpe=spec.get("rpe"),
                     observed_at=observed_at,
-                    source="workout_extraction",
+                    source=se.SOURCE_WORKOUT_EXTRACTION,
+                    evidence_type=(
+                        se.EV_LOWER_BOUND if is_pr else se.EV_ESTIMATED_FROM_TRAINING_SET
+                    ),
+                    value_semantics=(se.VS_LOWER_BOUND if is_pr else se.VS_ESTIMATED),
+                    # A below-watermark set is history only — not even a prescription basis.
+                    affects_prescription=is_pr,
+                    observation_weight=(0.10 if is_pr else 0.0),
+                    confidence=(0.15 if fidelity == "group_level" else 0.30) if is_pr else None,
+                    exercise_id=spec.get("exercise_id"),
+                    workout_log_id=workout_log_id,
+                    reps=spec.get("reps"),
+                    load_kg=spec.get("load_kg"),
+                    rpe=spec.get("rpe"),
+                    rir=spec.get("rir"),
+                    formula="epley",
+                    effort_fidelity=fidelity,
                 ),
             )
             written += 1
@@ -657,6 +715,7 @@ async def process_new_workout(
         workout_row.set_logs = set_rows
     db.add(workout_row)
     await db.flush()
+    workout_log_id = workout_row.id  # capture before commit expires the object
 
     if planned_session is not None:
         planned_session.workout_log_id = workout_row.id
@@ -696,7 +755,9 @@ async def process_new_workout(
     # after the workout commit; each observation advances max_strength on its own, so
     # the returned state is re-materialized to reflect them.
     if e1rm_specs:
-        written = await _extract_e1rm_observations(db, user_id, e1rm_specs, log_ts)
+        written = await _extract_e1rm_observations(
+            db, user_id, e1rm_specs, log_ts, workout_log_id
+        )
         if written:
             latest = await AthleteContextRepository(db).get_latest_state(user_id)
             if latest is not None:
