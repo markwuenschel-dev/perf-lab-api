@@ -149,6 +149,14 @@ class Exercise(Base):
         default=False,
         comment="If True, this exercise is used in periodic re-test / assessment protocols"
     )
+    e1rm_benchmark_code: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        comment="benchmark_definitions.code for this lift's estimated 1RM (e.g. "
+                "'pl_e1rm_squat'). Set only on barbell lifts with a seeded e1RM "
+                "anchor; drives write-time e1RM extraction and %e1RM prescription "
+                "(ADR-0045). See app/logic/e1rm.py."
+    )
 
     # Optional notes for the prescriber / LLM context
     coaching_notes: Mapped[str | None] = mapped_column(

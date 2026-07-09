@@ -44,6 +44,56 @@ class ExerciseEntry(BaseModel):
     sport_domains: list[str] | None = None
 
 
+class WorkoutSetEntry(BaseModel):
+    """
+    A single logged set — the atomic unit of a workout (ADR-0045).
+
+    Binds to a catalog ``Exercise`` (by ``exercise_id`` or ``exercise_name``); the
+    exercise's ``load_type`` types which fields are meaningful. Movements not yet in
+    the catalog log via ``free_text_name`` (no benchmark linkage). ``sets`` is a
+    quick-entry multiplier: ``3×5 @ 100kg @ RPE8`` is one entry with ``sets=3`` that
+    the service materializes into three editable ``workout_set_logs`` rows, so per-set
+    RPE and the top set survive instead of being averaged away.
+    """
+
+    exercise_id: int | None = None
+    exercise_name: str | None = None
+    free_text_name: str | None = Field(
+        default=None,
+        description="Fallback name for a movement not in the catalog (no benchmark linkage).",
+    )
+    load_type: str | None = Field(
+        default=None,
+        description="Overrides the catalog load_type snapshot; usually left to the service.",
+    )
+
+    sets: int = Field(
+        default=1,
+        ge=1,
+        le=50,
+        description="Quick-entry multiplier: materialize this many identical set rows.",
+    )
+    # load_type-typed fields (which matter depends on load_type)
+    load_kg: float | None = Field(default=None, ge=0)
+    reps: int | None = Field(default=None, ge=0)
+    duration_s: float | None = Field(default=None, ge=0)
+    distance_m: float | None = Field(default=None, ge=0)
+
+    rpe: float | None = Field(default=None, ge=1, le=10)
+    rir: float | None = Field(default=None, ge=0, le=10)
+    is_top_set: bool | None = Field(
+        default=None,
+        description="Force this as the exercise's top set; else the service infers it "
+        "(heaviest set) to drive e1RM extraction.",
+    )
+
+    # Bodyweight / execution modifiers
+    band: str | None = None
+    elevation: str | None = None
+    tempo: str | None = None
+    notes: str | None = None
+
+
 class WorkoutLog(BaseModel):
     """
     Raw input log (Sensor Data).
@@ -84,7 +134,18 @@ class WorkoutLog(BaseModel):
         description="1 = Very high life stress, 10 = No life stress",
     )
 
-    # Concrete exercise entries (optional; enables exercise-aware dose computation)
+    # Per-set breakdown (ADR-0045). The atomic logged unit; when present the sets
+    # are persisted to workout_set_logs, the session modality is derived from them,
+    # the dose reflects real per-set external load, and top sets emit e1RM
+    # observations. Takes precedence over the legacy ``exercises`` breakdown.
+    sets: list[WorkoutSetEntry] = Field(
+        default_factory=lambda: [],
+        description="Per-set log rows. When present, the session is a heterogeneous "
+        "bag of sets and modality is derived (uniform → that modality, else Mixed).",
+    )
+
+    # Concrete exercise entries (optional; enables exercise-aware dose computation).
+    # Legacy per-exercise breakdown; ``sets`` supersedes it when both are sent.
     exercises: list[ExerciseEntry] = Field(
         default_factory=lambda: [],
         description="Per-exercise breakdown. When present, dose reflects actual exercise phi vectors.",

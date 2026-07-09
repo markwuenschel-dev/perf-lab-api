@@ -1345,12 +1345,32 @@ export interface components {
          * @description A single prescribed exercise within a session.
          */
         ExercisePrescription: {
+            /**
+             * E1Rm Basis Kg
+             * @description The current e1RM the suggestion was resolved against.
+             */
+            e1rm_basis_kg?: number | null;
             /** Load Note */
             load_note?: string | null;
             /** Name */
             name: string;
+            /**
+             * Percent E1Rm
+             * @description Fraction of estimated 1RM the suggested load targets (0–1).
+             */
+            percent_e1rm?: number | null;
+            /**
+             * Prescribed Load Kg
+             * @description Suggested working load in kg (pre-fills the log).
+             */
+            prescribed_load_kg?: number | null;
             /** Reps */
             reps?: string | null;
+            /**
+             * Rpe Cap
+             * @description Upper RPE bound for the working sets (ADR-0029 envelope).
+             */
+            rpe_cap?: number | null;
             /** Sets */
             sets?: number | null;
             /** Weak Point Tags */
@@ -2721,6 +2741,11 @@ export interface components {
             /** Session Rpe */
             session_rpe: number;
             /**
+             * Sets
+             * @description Per-set log rows. When present, the session is a heterogeneous bag of sets and modality is derived (uniform → that modality, else Mixed).
+             */
+            sets?: components["schemas"]["WorkoutSetEntry"][];
+            /**
              * Sleep Quality
              * @default 5
              */
@@ -2789,6 +2814,64 @@ export interface components {
             /** Type */
             type: string;
             why?: components["schemas"]["PrescriptionExplanation"] | null;
+        };
+        /**
+         * WorkoutSetEntry
+         * @description A single logged set — the atomic unit of a workout (ADR-0045).
+         *
+         *     Binds to a catalog ``Exercise`` (by ``exercise_id`` or ``exercise_name``); the
+         *     exercise's ``load_type`` types which fields are meaningful. Movements not yet in
+         *     the catalog log via ``free_text_name`` (no benchmark linkage). ``sets`` is a
+         *     quick-entry multiplier: ``3×5 @ 100kg @ RPE8`` is one entry with ``sets=3`` that
+         *     the service materializes into three editable ``workout_set_logs`` rows, so per-set
+         *     RPE and the top set survive instead of being averaged away.
+         */
+        WorkoutSetEntry: {
+            /** Band */
+            band?: string | null;
+            /** Distance M */
+            distance_m?: number | null;
+            /** Duration S */
+            duration_s?: number | null;
+            /** Elevation */
+            elevation?: string | null;
+            /** Exercise Id */
+            exercise_id?: number | null;
+            /** Exercise Name */
+            exercise_name?: string | null;
+            /**
+             * Free Text Name
+             * @description Fallback name for a movement not in the catalog (no benchmark linkage).
+             */
+            free_text_name?: string | null;
+            /**
+             * Is Top Set
+             * @description Force this as the exercise's top set; else the service infers it (heaviest set) to drive e1RM extraction.
+             */
+            is_top_set?: boolean | null;
+            /** Load Kg */
+            load_kg?: number | null;
+            /**
+             * Load Type
+             * @description Overrides the catalog load_type snapshot; usually left to the service.
+             */
+            load_type?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Reps */
+            reps?: number | null;
+            /** Rir */
+            rir?: number | null;
+            /** Rpe */
+            rpe?: number | null;
+            /**
+             * Sets
+             * @description Quick-entry multiplier: materialize this many identical set rows.
+             * @default 1
+             */
+            sets: number;
+            /** Tempo */
+            tempo?: string | null;
         };
         /** Zone */
         Zone: {

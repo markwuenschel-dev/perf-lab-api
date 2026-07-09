@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import datetime, timedelta
 from typing import Any
@@ -13,16 +14,20 @@ from app.engine.state_bridge import (
     capacity_from_legacy,
     unified_from_athlete_row,
 )
+from app.logic import e1rm as e1rm_logic
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
 from app.models.exercise import Exercise
 from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
+from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
-from app.schemas.workouts import ExerciseEntry, WorkoutLog
+from app.schemas.workouts import ExerciseEntry, WorkoutLog, WorkoutSetEntry
+
+logger = logging.getLogger(__name__)
 
 _BASELINE_CAPACITIES = {
     "beginner":     {"c_met_aerobic": 180.0,  "c_nm_force": 500.0,   "c_struct": 60.0,  "b_met_anaerobic": 8000.0},
@@ -351,6 +356,229 @@ async def _state_row_count(db: AsyncSession, user_id: int) -> int:
     return int(res.scalar_one())
 
 
+# Exercise.modality → the WorkoutLog session-modality Literal. Anything without a
+# direct session-level counterpart collapses to "Mixed".
+_EXERCISE_TO_SESSION_MODALITY = {
+    "Running": "Running",
+    "Strength": "Strength",
+    "Hypertrophy": "Hypertrophy",
+    "Power": "Power",
+    "Calisthenics": "Strength",
+    "Conditioning": "Mixed",
+    "Mixed": "Mixed",
+}
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+async def _resolve_set_exercises(
+    db: AsyncSession, sets: list[WorkoutSetEntry]
+) -> tuple[dict[int, Exercise], dict[str, Exercise]]:
+    """Fetch the catalog rows referenced by a set list, by id and by name."""
+    ids = [s.exercise_id for s in sets if s.exercise_id is not None]
+    names = [s.exercise_name for s in sets if s.exercise_name and s.exercise_id is None]
+    by_id: dict[int, Exercise] = {}
+    by_name: dict[str, Exercise] = {}
+    if ids:
+        res = await db.execute(select(Exercise).where(Exercise.id.in_(ids)))
+        by_id = {row.id: row for row in res.scalars().all()}
+    if names:
+        res = await db.execute(select(Exercise).where(Exercise.name.in_(names)))
+        by_name = {row.name: row for row in res.scalars().all()}
+    return by_id, by_name
+
+
+async def _apply_sets_to_log(
+    db: AsyncSession, log: WorkoutLog
+) -> tuple[WorkoutLog, list[WorkoutSetLog], list[dict[str, Any]]]:
+    """Materialize ``log.sets`` (ADR-0045) into persistable rows + a dose-ready log.
+
+    Returns ``(updated_log, set_rows, e1rm_specs)``:
+
+    * ``set_rows`` — one ``WorkoutSetLog`` per atomic set (a ``sets=N`` quick-entry
+      expands to N rows), top set marked per exercise;
+    * ``updated_log`` — the session with a **derived** modality (uniform → that
+      modality, else Mixed), rolled-up volume/distance, and a synthesized
+      per-exercise ``exercises`` breakdown so the dose reflects real external load;
+    * ``e1rm_specs`` — ``{code, raw_value, rpe}`` for each loaded top set of a lift
+      carrying an ``e1rm_benchmark_code``, written after commit as observations.
+    """
+    by_id, by_name = await _resolve_set_exercises(db, log.sets)
+
+    # Group key → (exercise row | None, list of materialized rows). A group is one
+    # exercise (or one free-text movement) across the whole session.
+    groups: dict[str, tuple[Exercise | None, list[WorkoutSetLog]]] = {}
+    group_order: list[str] = []
+    set_rows: list[WorkoutSetLog] = []
+    set_index = 0
+
+    for entry in log.sets:
+        ex_row: Exercise | None = None
+        if entry.exercise_id is not None:
+            ex_row = by_id.get(entry.exercise_id)
+        elif entry.exercise_name:
+            ex_row = by_name.get(entry.exercise_name)
+
+        load_type = entry.load_type or (ex_row.load_type if ex_row else None)
+        name = ex_row.name if ex_row else entry.exercise_name
+        free_text = None if ex_row else (entry.free_text_name or entry.exercise_name)
+        key = f"id:{ex_row.id}" if ex_row else f"free:{free_text or name or 'unknown'}"
+        if key not in groups:
+            groups[key] = (ex_row, [])
+            group_order.append(key)
+
+        for _ in range(max(1, entry.sets)):
+            row = WorkoutSetLog(
+                set_index=set_index,
+                exercise_id=ex_row.id if ex_row else None,
+                free_text_name=free_text,
+                load_type=load_type,
+                load_kg=entry.load_kg,
+                reps=entry.reps,
+                duration_s=entry.duration_s,
+                distance_m=entry.distance_m,
+                rpe=entry.rpe,
+                rir=entry.rir,
+                is_top_set=bool(entry.is_top_set),
+                band=entry.band,
+                elevation=entry.elevation,
+                tempo=entry.tempo,
+                notes=entry.notes,
+            )
+            groups[key][1].append(row)
+            set_rows.append(row)
+            set_index += 1
+
+    # Per exercise: mark exactly one top set (heaviest loaded set, ties → last),
+    # unless the client already forced one. Drives e1RM extraction.
+    e1rm_specs: list[dict[str, Any]] = []
+    session_modalities: list[str] = []
+    synthesized: list[ExerciseEntry] = []
+    total_volume = 0.0
+    total_distance = 0.0
+
+    for key in group_order:
+        ex_row, rows = groups[key]
+        loaded_rows = [
+            r for r in rows if e1rm_logic.is_loaded(r.load_type) and r.load_kg is not None
+        ]
+        if not any(r.is_top_set for r in rows) and loaded_rows:
+            top = max(loaded_rows, key=lambda r: (r.load_kg or 0.0))
+            # ties → last submitted
+            top = [r for r in loaded_rows if (r.load_kg or 0.0) == (top.load_kg or 0.0)][-1]
+            top.is_top_set = True
+
+        top_set = next((r for r in rows if r.is_top_set), None)
+        if (
+            top_set is not None
+            and ex_row is not None
+            and ex_row.e1rm_benchmark_code
+            and top_set.load_kg is not None
+            and top_set.reps is not None
+        ):
+            e1rm_specs.append(
+                {
+                    "code": ex_row.e1rm_benchmark_code,
+                    "raw_value": round(
+                        e1rm_logic.epley_e1rm(top_set.load_kg, top_set.reps), 1
+                    ),
+                    "rpe": top_set.rpe,
+                }
+            )
+
+        if ex_row is not None:
+            mapped = _EXERCISE_TO_SESSION_MODALITY.get(ex_row.modality, "Mixed")
+            session_modalities.append(mapped)
+
+        # Volume-load + distance roll-ups from real sets.
+        for r in rows:
+            if r.load_kg is not None and r.reps is not None:
+                total_volume += r.load_kg * r.reps
+            if r.distance_m is not None:
+                total_distance += r.distance_m
+
+        # Synthesize a per-exercise entry so the dose engine sees real external load.
+        loads = [r.load_kg for r in rows if r.load_kg is not None]
+        reps = [float(r.reps) for r in rows if r.reps is not None]
+        durations = [r.duration_s for r in rows if r.duration_s is not None]
+        distances = [r.distance_m for r in rows if r.distance_m is not None]
+        rpes = [r.rpe for r in rows if r.rpe is not None]
+        rirs = [r.rir for r in rows if r.rir is not None]
+        synthesized.append(
+            ExerciseEntry(
+                exercise_id=ex_row.id if ex_row else None,
+                exercise_name=(ex_row.name if ex_row else None),
+                sets=float(len(rows)),
+                reps=_mean(reps),
+                load_kg=_mean(loads),
+                duration_seconds=(sum(durations) if durations else None),
+                distance_meters=(sum(distances) if distances else None),
+                avg_rpe=_mean(rpes),
+                avg_rir=_mean(rirs),
+            )
+        )
+
+    # Derived session modality: uniform → that modality, else Mixed. Falls back to
+    # the client-supplied modality when no set resolved to a catalog exercise.
+    distinct = set(session_modalities)
+    if len(distinct) == 1:
+        derived_modality = distinct.pop()
+    elif distinct:
+        derived_modality = "Mixed"
+    else:
+        derived_modality = log.modality
+
+    updated = log.model_copy(
+        update={
+            "modality": derived_modality,
+            "exercises": synthesized,
+            "total_volume_load": round(total_volume, 2) if total_volume else log.total_volume_load,
+            "distance_meters": round(total_distance, 2) if total_distance else log.distance_meters,
+        }
+    )
+    return updated, set_rows, e1rm_specs
+
+
+async def _extract_e1rm_observations(
+    db: AsyncSession,
+    user_id: int,
+    specs: list[dict[str, Any]],
+    observed_at: datetime,
+) -> int:
+    """Write e1RM benchmark observations from logged top sets (measurement layer).
+
+    Runs *after* the workout state commit — ``create_observation`` commits and
+    advances state itself, so it must not interleave with the workout transaction.
+    Best-effort per spec: an unknown/misconfigured code must not fail the log.
+    """
+    from app.schemas.benchmarks import BenchmarkObservationCreate
+    from app.services import benchmark_service
+
+    written = 0
+    for spec in specs:
+        try:
+            await benchmark_service.create_observation(
+                db,
+                user_id,
+                BenchmarkObservationCreate(
+                    benchmark_code=spec["code"],
+                    raw_value=spec["raw_value"],
+                    rpe=spec.get("rpe"),
+                    observed_at=observed_at,
+                    source="workout_extraction",
+                ),
+            )
+            written += 1
+        except Exception:
+            logger.warning(
+                "e1RM extraction failed for user %s code %s",
+                user_id, spec.get("code"), exc_info=True,
+            )
+    return written
+
+
 async def process_new_workout(
     db: AsyncSession,
     user_id: int,
@@ -390,8 +618,17 @@ async def process_new_workout(
     # work gets an exercise-aware dose without re-entry. Match the session up front
     # (also reused below for completion linkage).
     planned_session = await _match_planned_session(db, user_id, log)
-    if not log.exercises and planned_session is not None:
+    if not log.exercises and not log.sets and planned_session is not None:
         log = _seed_exercises_from_prescription(log, planned_session)
+
+    # ADR-0045: per-set logging. When the client sends atomic sets, they are the
+    # record — materialize the rows, derive the session modality, roll up volume,
+    # and synthesize a per-exercise breakdown so the dose reflects real external
+    # load. Top sets yield e1RM observations after the workout commits.
+    set_rows: list[WorkoutSetLog] = []
+    e1rm_specs: list[dict[str, Any]] = []
+    if log.sets:
+        log, set_rows, e1rm_specs = await _apply_sets_to_log(db, log)
 
     # Resolve exercise phi vectors from DB so dose engine is exercise-aware
     log = await _resolve_exercise_phis(db, log)
@@ -415,6 +652,9 @@ async def process_new_workout(
         is_benchmark=log.is_benchmark,
         benchmark_results=log.benchmark_results,
     )
+    # Attach materialized set rows; the relationship cascade inserts them.
+    if set_rows:
+        workout_row.set_logs = set_rows
     db.add(workout_row)
     await db.flush()
 
@@ -450,5 +690,16 @@ async def process_new_workout(
     from app.services import ekf_shadow_service
 
     await ekf_shadow_service.record_ekf_predict(db, user_id, dose, dt, log)
+
+    # ADR-0045: write-time e1RM extraction. Top sets become benchmark observations
+    # (the measurement layer, PDR-0003) — never read back by scanning set logs. Runs
+    # after the workout commit; each observation advances max_strength on its own, so
+    # the returned state is re-materialized to reflect them.
+    if e1rm_specs:
+        written = await _extract_e1rm_observations(db, user_id, e1rm_specs, log_ts)
+        if written:
+            latest = await AthleteContextRepository(db).get_latest_state(user_id)
+            if latest is not None:
+                result = unified_from_athlete_row(latest)
 
     return result

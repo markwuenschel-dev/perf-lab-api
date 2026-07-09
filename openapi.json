@@ -1390,6 +1390,18 @@
       "ExercisePrescription": {
         "description": "A single prescribed exercise within a session.",
         "properties": {
+          "e1rm_basis_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The current e1RM the suggestion was resolved against.",
+            "title": "E1Rm Basis Kg"
+          },
           "load_note": {
             "anyOf": [
               {
@@ -1405,6 +1417,30 @@
             "title": "Name",
             "type": "string"
           },
+          "percent_e1rm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fraction of estimated 1RM the suggested load targets (0\u20131).",
+            "title": "Percent E1Rm"
+          },
+          "prescribed_load_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested working load in kg (pre-fills the log).",
+            "title": "Prescribed Load Kg"
+          },
           "reps": {
             "anyOf": [
               {
@@ -1415,6 +1451,18 @@
               }
             ],
             "title": "Reps"
+          },
+          "rpe_cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper RPE bound for the working sets (ADR-0029 envelope).",
+            "title": "Rpe Cap"
           },
           "sets": {
             "anyOf": [
@@ -4839,6 +4887,14 @@
             "title": "Session Rpe",
             "type": "number"
           },
+          "sets": {
+            "description": "Per-set log rows. When present, the session is a heterogeneous bag of sets and modality is derived (uniform \u2192 that modality, else Mixed).",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutSetEntry"
+            },
+            "title": "Sets",
+            "type": "array"
+          },
           "sleep_quality": {
             "default": 5.0,
             "maximum": 10.0,
@@ -4979,6 +5035,197 @@
           "duration_min"
         ],
         "title": "WorkoutPrescription",
+        "type": "object"
+      },
+      "WorkoutSetEntry": {
+        "description": "A single logged set \u2014 the atomic unit of a workout (ADR-0045).\n\nBinds to a catalog ``Exercise`` (by ``exercise_id`` or ``exercise_name``); the\nexercise's ``load_type`` types which fields are meaningful. Movements not yet in\nthe catalog log via ``free_text_name`` (no benchmark linkage). ``sets`` is a\nquick-entry multiplier: ``3\u00d75 @ 100kg @ RPE8`` is one entry with ``sets=3`` that\nthe service materializes into three editable ``workout_set_logs`` rows, so per-set\nRPE and the top set survive instead of being averaged away.",
+        "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance M"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "elevation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevation"
+          },
+          "exercise_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Id"
+          },
+          "exercise_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Name"
+          },
+          "free_text_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fallback name for a movement not in the catalog (no benchmark linkage).",
+            "title": "Free Text Name"
+          },
+          "is_top_set": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Force this as the exercise's top set; else the service infers it (heaviest set) to drive e1RM extraction.",
+            "title": "Is Top Set"
+          },
+          "load_kg": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Kg"
+          },
+          "load_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides the catalog load_type snapshot; usually left to the service.",
+            "title": "Load Type"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "sets": {
+            "default": 1,
+            "description": "Quick-entry multiplier: materialize this many identical set rows.",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Sets",
+            "type": "integer"
+          },
+          "tempo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempo"
+          }
+        },
+        "title": "WorkoutSetEntry",
         "type": "object"
       },
       "Zone": {
