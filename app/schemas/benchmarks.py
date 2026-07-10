@@ -39,6 +39,28 @@ class BenchmarkObservationCreate(BaseModel):
     validity_status: str = Field(default="valid")
     source: str = Field(default="manual")
 
+    # Evidence authority + provenance (ADR-0055). Optional — the service resolves
+    # sensible defaults from `source` (manual/benchmark → capacity-authoritative;
+    # workout_extraction → estimated, non-regressing). Capacity authority is decided
+    # fail-closed in the service via app.logic.strength_evidence, not by the caller.
+    evidence_type: str | None = None
+    value_semantics: str | None = None
+    observation_model: str | None = None
+    model_version: str | None = None
+    affects_capacity: bool | None = None
+    can_regress_capacity: bool | None = None
+    affects_prescription: bool | None = None
+    observation_weight: float | None = None
+    confidence: float | None = None
+    exercise_id: int | None = None
+    workout_log_id: int | None = None
+    set_log_id: int | None = None
+    reps: int | None = None
+    load_kg: float | None = None
+    rir: float | None = None
+    formula: str | None = None
+    effort_fidelity: str | None = None
+
 
 class BenchmarkObservationRead(BaseModel):
     id: int

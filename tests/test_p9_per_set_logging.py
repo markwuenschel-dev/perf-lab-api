@@ -80,7 +80,9 @@ def _mixed_log() -> WorkoutLog:
         duration_minutes=60.0,
         session_rpe=8.0,
         sets=[
-            WorkoutSetEntry(exercise_name="Back Squat", sets=3, load_kg=100.0, reps=5, rpe=8.0),
+            # RPE 9: clears the group_level extraction gate (ADR-0055) so a top set
+            # from a sets=N quick-entry still yields e1RM evidence.
+            WorkoutSetEntry(exercise_name="Back Squat", sets=3, load_kg=100.0, reps=5, rpe=9.0),
             WorkoutSetEntry(exercise_name="Easy Run", distance_m=5000.0, duration_s=1500.0),
         ],
     )

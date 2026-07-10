@@ -83,3 +83,23 @@ _Avoid_: setting, tweak.
 
 ## Authority stack
 The fixed precedence the planner resolves intent through: **safety** (absolute) → **user hard override** → **objectives / floors** → **optimizer** → **tradeoff explanation**. Shorthand: the user owns intent and structure; the engine owns safety, feasibility, and execution quality.
+
+## External intensity (dose `I`)
+The dose law's external-load term — load relative to capacity (`load / e1RM_pre` for lifts), **independent** of internal effort `F` (RPE/RIR). Per [ADR-0039](docs/adr/0039-dose-law-external-load-vs-effort.md) it was accepted but **never delivered**: the engine hardcoded `I = 1.0`, so equal-volume sessions at different relative loads produced the same dose. Closes on **Model A** (session-scalar `I` enters the session base) with per-exercise routing deferred to [ADR-0054](docs/adr/0054-per-exercise-dose-routing.md).
+_Avoid_: conflating with effort `F` or with volume.
+
+## Strength evidence ledger
+The single canonical store of strength observations (today `benchmark_observations`), where **validity ≠ authority** ([ADR-0055](docs/adr/0055-strength-evidence-ledger.md)). A row's `evidence_type` / `observation_model` sets what it may do: a **benchmark test** (`direct_capacity_measurement`) may move capacity bidirectionally; a **training-derived e1RM** (`training_estimate` / `censored_lower_bound`) feeds prescription, tracking, PR detection, and the dose intensity denominator but **never regresses capacity**. Coverage is **wide** (any e1RM-eligible movement, keyed by `exercise_id`); capacity **authority is narrow** (benchmarked/protocol-grade only).
+_Avoid_: "e1RM table", treating a working set as a measurement.
+
+## Lower-bound evidence
+A logged hard set proves the athlete is **at least** this strong (`X ≥ L`), not that their max *equals* L. So training-derived e1RM ratchets the estimate **upward only** (past a small deadband) and never pulls it down. The durable rule: *training can demonstrate you are stronger; it cannot prove you are weaker.*
+_Avoid_: modeling a working set as a noisy direct observation `y = X + η` (that regresses capacity on easy days).
+
+## Effort fidelity
+The provenance of a set's effort value ([ADR-0045](docs/adr/0045-per-set-catalog-bound-workout-logging.md) amendment): `set_level` (logged per set) > `group_level` (cloned from a `sets=N` quick-entry) > `session_level` > `missing`. It is an **evidence-authority multiplier** — `group_level` RPE may inform dose and conservative lower-bound evidence but never carries `set_level` authority. *The set is atomic; the group is UX; effort fidelity is evidence authority.*
+_Avoid_: treating cloned quick-entry RPE as true per-set effort.
+
+## %1RM calibration
+The one versioned service ([ADR-0056](docs/adr/0056-canonical-percent-1rm-calibration.md)) that maps between load, reps, effort, and %1RM for **every** consumer (prescription, e1RM extraction, dose intensity fallback), always emitting `source` + `confidence` + `model_version`. Ladder: actual `load/e1RM_pre` → RPE/RIR chart → reps-beyond-first Epley (to-failure only) → default → neutral. Replaces the three divergent Epley forms P9 left behind. *The same set must resolve to the same base `I_set` everywhere; downstream may transform it, never recompute it.*
+_Avoid_: inline Epley formulas, an unversioned chart.

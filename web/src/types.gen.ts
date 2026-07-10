@@ -967,6 +967,10 @@ export interface components {
         };
         /** BenchmarkObservationCreate */
         BenchmarkObservationCreate: {
+            /** Affects Capacity */
+            affects_capacity?: boolean | null;
+            /** Affects Prescription */
+            affects_prescription?: boolean | null;
             /**
              * Benchmark Code
              * @description Stable code from benchmark_definitions
@@ -974,14 +978,34 @@ export interface components {
             benchmark_code: string;
             /** Bodyweight Kg */
             bodyweight_kg?: number | null;
+            /** Can Regress Capacity */
+            can_regress_capacity?: boolean | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Effort Fidelity */
+            effort_fidelity?: string | null;
+            /** Evidence Type */
+            evidence_type?: string | null;
+            /** Exercise Id */
+            exercise_id?: number | null;
+            /** Formula */
+            formula?: string | null;
             /** Heart Rate Avg */
             heart_rate_avg?: number | null;
             /** Heart Rate Drift Pct */
             heart_rate_drift_pct?: number | null;
+            /** Load Kg */
+            load_kg?: number | null;
+            /** Model Version */
+            model_version?: string | null;
             /** Normalized Value */
             normalized_value?: number | null;
             /** Notes */
             notes?: string | null;
+            /** Observation Model */
+            observation_model?: string | null;
+            /** Observation Weight */
+            observation_weight?: number | null;
             /** Observed At */
             observed_at?: string | null;
             /** Protocol Metadata */
@@ -990,10 +1014,16 @@ export interface components {
             } | null;
             /** Raw Value */
             raw_value: number;
+            /** Reps */
+            reps?: number | null;
+            /** Rir */
+            rir?: number | null;
             /** Rpe */
             rpe?: number | null;
             /** Secondary Value */
             secondary_value?: number | null;
+            /** Set Log Id */
+            set_log_id?: number | null;
             /**
              * Source
              * @default manual
@@ -1004,6 +1034,10 @@ export interface components {
              * @default valid
              */
             validity_status: string;
+            /** Value Semantics */
+            value_semantics?: string | null;
+            /** Workout Log Id */
+            workout_log_id?: number | null;
         };
         /** BenchmarkObservationRead */
         BenchmarkObservationRead: {
