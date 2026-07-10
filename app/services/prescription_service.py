@@ -8,7 +8,7 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.logic import e1rm as e1rm_logic
+from app.logic import strength_calibration as sc
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.planning import periodization_envelope
 from app.logic.prescriber import recommend_next_session
@@ -197,8 +197,8 @@ async def _enrich_exercises_with_load(
         if e1rm is None:
             continue
         reps = _first_int(ex.reps) or 5
-        pct = e1rm_logic.percent_1rm(reps, rpe_cap)
-        load = e1rm_logic.suggested_load_kg(e1rm, reps, rpe_cap)
+        pct = sc.percent_1rm_for_prescription(reps, rpe_cap).value
+        load = sc.suggested_load_kg(e1rm, reps, rpe_cap)
         ex.percent_e1rm = round(pct, 3)
         ex.prescribed_load_kg = load
         ex.rpe_cap = rpe_cap

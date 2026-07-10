@@ -163,6 +163,50 @@ class WorkoutLog(BaseModel):
     )
 
 
+class IntensityContribution(BaseModel):
+    """One exercise's contribution to the session external intensity (ADR-0039).
+
+    Carries the intensity value **and its provenance** so the dose is auditable: the
+    e1RM denominator that produced a ``relative_load`` reading (value + semantics +
+    the observation it came from), which ladder rung was taken, and the aggregation
+    weight (``w = reps · load``).
+    """
+
+    exercise_id: int | None = None
+    exercise_name: str | None = None
+    external_intensity: float
+    source: str = Field(
+        description="Ladder rung: relative_load | rpe_rir_chart | epley_failure | "
+        "neutral_missing",
+    )
+    confidence: float = 0.0
+    weight: float = Field(0.0, description="Aggregation weight w = reps · load.")
+    # e1RM denominator provenance (only for a relative_load reading).
+    e1rm_denominator_kg: float | None = None
+    e1rm_source: str | None = None
+    e1rm_value_semantics: str | None = None
+    e1rm_observation_id: int | None = None
+
+
+class ExternalIntensity(BaseModel):
+    """The session-scalar external intensity ``I`` that entered the dose base (ADR-0039).
+
+    Model A: a weighted session-level intensity replaces the old hardcoded ``1.0``.
+    ``value`` is what the dose law raised to ``dose_alpha``; ``fallback_path`` names
+    the rung that dominated; ``known_limitation`` records the ADR-0054 routing caveat
+    (a session scalar shapes every exercise via the aggregate-φ path, so a hard
+    accessory partially inherits the session's intensity).
+    """
+
+    value: float = 1.0
+    source: str = "neutral_missing"
+    model_version: str = ""
+    confidence: float = 0.0
+    fallback_path: str = "session_no_external_load"
+    known_limitation: str | None = None
+    contributions: list[IntensityContribution] = Field(default_factory=lambda: [])
+
+
 class StressDose(BaseModel):
     """
     Stress dose: six-dimensional engine vector plus legacy scalars for clients.
@@ -181,3 +225,7 @@ class StressDose(BaseModel):
     d_nm_central: float = 0.0
     d_struct_damage: float = 0.0
     d_struct_signal: float = 0.0
+
+    # ADR-0039: the external intensity that shaped this dose, with full provenance.
+    # None on paths that never computed one (kept optional for backward-compat dumps).
+    external_intensity: ExternalIntensity | None = None

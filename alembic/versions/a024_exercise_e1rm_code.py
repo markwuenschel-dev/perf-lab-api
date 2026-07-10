@@ -3,7 +3,7 @@
 Links a catalog lift to its estimated-1RM benchmark definition so a logged top
 set can emit an e1RM observation and a prescribed lift can resolve %e1RM → kg.
 Nullable — only the barbell lifts with a seeded ``pl_e1rm_*`` anchor carry it.
-See app/models/exercise.py and app/logic/e1rm.py.
+See app/models/exercise.py and app/logic/strength_calibration.py.
 
 Revision ID: a024_exercise_e1rm_code
 Revises: a023_add_wellness_stress

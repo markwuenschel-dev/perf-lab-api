@@ -65,3 +65,13 @@ sites are deleted, not wrapped-and-left.
   estimates use the RPE/RIR chart; unknown-effort estimates use Epley **only** when the
   failure/AMRAP assumption is explicit; `5 @ RPE8 < 5 @ RPE10`; `5 @ 2RIR ≈ 5 @ RPE8`;
   prescription path and dose fallback agree for identical input.
+
+## Delivered (2026-07-10, with the ADR-0039 PR)
+
+`app/logic/strength_calibration.py` is the sole home for reps/load/RPE/RIR → %1RM. It owns
+`external_intensity_for_set` (the ladder), `percent_1rm_for_prescription` (chart, clamped
+`[0.30, 1.00]`), `suggested_load_kg`, `epley_e1rm`, and `is_loaded`, with a versioned
+`RPE_CHART` (`model_version = "rpe_rir_chart_v1"`). Every result is a `CalibrationResult`
+(value + source + confidence + model_version). The three ad-hoc sites are **deleted**:
+`app/logic/e1rm.py` is removed, `dose_engine._external_intensity_from_reps` is gone, and
+prescription/extraction/dose all call the service. Golden cases live in `tests/test_dose_split.py`.

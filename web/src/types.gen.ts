@@ -1457,6 +1457,47 @@ export interface components {
             weak_point_tags?: string[];
         };
         /**
+         * ExternalIntensity
+         * @description The session-scalar external intensity ``I`` that entered the dose base (ADR-0039).
+         *
+         *     Model A: a weighted session-level intensity replaces the old hardcoded ``1.0``.
+         *     ``value`` is what the dose law raised to ``dose_alpha``; ``fallback_path`` names
+         *     the rung that dominated; ``known_limitation`` records the ADR-0054 routing caveat
+         *     (a session scalar shapes every exercise via the aggregate-φ path, so a hard
+         *     accessory partially inherits the session's intensity).
+         */
+        ExternalIntensity: {
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /** Contributions */
+            contributions?: components["schemas"]["IntensityContribution"][];
+            /**
+             * Fallback Path
+             * @default session_no_external_load
+             */
+            fallback_path: string;
+            /** Known Limitation */
+            known_limitation?: string | null;
+            /**
+             * Model Version
+             * @default
+             */
+            model_version: string;
+            /**
+             * Source
+             * @default neutral_missing
+             */
+            source: string;
+            /**
+             * Value
+             * @default 1
+             */
+            value: number;
+        };
+        /**
          * FatigueState
          * @description F_t — multi-component fatigue (0–100). Higher = more fatigued.
          */
@@ -1496,6 +1537,47 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * IntensityContribution
+         * @description One exercise's contribution to the session external intensity (ADR-0039).
+         *
+         *     Carries the intensity value **and its provenance** so the dose is auditable: the
+         *     e1RM denominator that produced a ``relative_load`` reading (value + semantics +
+         *     the observation it came from), which ladder rung was taken, and the aggregation
+         *     weight (``w = reps · load``).
+         */
+        IntensityContribution: {
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /** E1Rm Denominator Kg */
+            e1rm_denominator_kg?: number | null;
+            /** E1Rm Observation Id */
+            e1rm_observation_id?: number | null;
+            /** E1Rm Source */
+            e1rm_source?: string | null;
+            /** E1Rm Value Semantics */
+            e1rm_value_semantics?: string | null;
+            /** Exercise Id */
+            exercise_id?: number | null;
+            /** Exercise Name */
+            exercise_name?: string | null;
+            /** External Intensity */
+            external_intensity: number;
+            /**
+             * Source
+             * @description Ladder rung: relative_load | rpe_rir_chart | epley_failure | neutral_missing
+             */
+            source: string;
+            /**
+             * Weight
+             * @description Aggregation weight w = reps · load.
+             * @default 0
+             */
+            weight: number;
         };
         /** KPIValueOut */
         KPIValueOut: {
@@ -2323,6 +2405,7 @@ export interface components {
              */
             d_struct_signal: number;
             dose_six?: components["schemas"]["StressDoseSix"];
+            external_intensity?: components["schemas"]["ExternalIntensity"] | null;
         };
         /**
          * StressDoseSix

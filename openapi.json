@@ -1751,6 +1751,56 @@
         "title": "ExercisePrescription",
         "type": "object"
       },
+      "ExternalIntensity": {
+        "description": "The session-scalar external intensity ``I`` that entered the dose base (ADR-0039).\n\nModel A: a weighted session-level intensity replaces the old hardcoded ``1.0``.\n``value`` is what the dose law raised to ``dose_alpha``; ``fallback_path`` names\nthe rung that dominated; ``known_limitation`` records the ADR-0054 routing caveat\n(a session scalar shapes every exercise via the aggregate-\u03c6 path, so a hard\naccessory partially inherits the session's intensity).",
+        "properties": {
+          "confidence": {
+            "default": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "contributions": {
+            "items": {
+              "$ref": "#/components/schemas/IntensityContribution"
+            },
+            "title": "Contributions",
+            "type": "array"
+          },
+          "fallback_path": {
+            "default": "session_no_external_load",
+            "title": "Fallback Path",
+            "type": "string"
+          },
+          "known_limitation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known Limitation"
+          },
+          "model_version": {
+            "default": "",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "source": {
+            "default": "neutral_missing",
+            "title": "Source",
+            "type": "string"
+          },
+          "value": {
+            "default": 1.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "title": "ExternalIntensity",
+        "type": "object"
+      },
       "FatigueState": {
         "description": "F_t \u2014 multi-component fatigue (0\u2013100). Higher = more fatigued.",
         "properties": {
@@ -1811,6 +1861,103 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntensityContribution": {
+        "description": "One exercise's contribution to the session external intensity (ADR-0039).\n\nCarries the intensity value **and its provenance** so the dose is auditable: the\ne1RM denominator that produced a ``relative_load`` reading (value + semantics +\nthe observation it came from), which ladder rung was taken, and the aggregation\nweight (``w = reps \u00b7 load``).",
+        "properties": {
+          "confidence": {
+            "default": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "e1rm_denominator_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Denominator Kg"
+          },
+          "e1rm_observation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Observation Id"
+          },
+          "e1rm_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Source"
+          },
+          "e1rm_value_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Value Semantics"
+          },
+          "exercise_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Id"
+          },
+          "exercise_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exercise Name"
+          },
+          "external_intensity": {
+            "title": "External Intensity",
+            "type": "number"
+          },
+          "source": {
+            "description": "Ladder rung: relative_load | rpe_rir_chart | epley_failure | neutral_missing",
+            "title": "Source",
+            "type": "string"
+          },
+          "weight": {
+            "default": 0.0,
+            "description": "Aggregation weight w = reps \u00b7 load.",
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "external_intensity",
+          "source"
+        ],
+        "title": "IntensityContribution",
         "type": "object"
       },
       "KPIValueOut": {
@@ -4073,6 +4220,16 @@
           },
           "dose_six": {
             "$ref": "#/components/schemas/StressDoseSix"
+          },
+          "external_intensity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExternalIntensity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "StressDose",

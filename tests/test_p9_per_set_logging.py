@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 
-from app.logic import e1rm
+from app.logic import strength_calibration as sc
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -32,18 +32,21 @@ pytestmark = pytest.mark.asyncio
 
 async def test_epley_and_percent_are_inverse_shaped():
     # 100 kg × 5 reps → 100 × (1 + 4/30) ≈ 113.3 kg estimated 1RM
-    assert e1rm.epley_e1rm(100.0, 5) == pytest.approx(100.0 * (1 + 4 / 30))
-    assert e1rm.epley_e1rm(120.0, 1) == pytest.approx(120.0)  # a single is its own e1RM
-    assert e1rm.percent_1rm(1, 10.0) == pytest.approx(1.0)  # 1 rep to failure = 100%
+    assert sc.epley_e1rm(100.0, 5) == pytest.approx(100.0 * (1 + 4 / 30))
+    assert sc.epley_e1rm(120.0, 1) == pytest.approx(120.0)  # a single is its own e1RM
+    assert sc.percent_1rm_for_prescription(1, 10.0).value == pytest.approx(1.0)  # 1 to failure = 100%
     # an RPE cap leaves reps in reserve → a lighter %1RM
-    assert e1rm.percent_1rm(5, 8.0) < e1rm.percent_1rm(5, None)
+    assert (
+        sc.percent_1rm_for_prescription(5, 8.0).value
+        < sc.percent_1rm_for_prescription(5, None).value
+    )
 
 
 async def test_suggested_load_is_plate_rounded_and_loaded_types():
-    load = e1rm.suggested_load_kg(140.0, 5, 8.0)
+    load = sc.suggested_load_kg(140.0, 5, 8.0)
     assert load % 2.5 == 0
     assert 0 < load < 140.0
-    assert e1rm.is_loaded("barbell") and not e1rm.is_loaded("distance")
+    assert sc.is_loaded("barbell") and not sc.is_loaded("distance")
 
 
 # ── DB seeding ────────────────────────────────────────────────────────────────
@@ -114,20 +117,28 @@ async def test_sets_persist_with_derived_modality_and_top_set(async_db):
 
 
 async def test_sets_feed_external_load_into_dose(async_db):
-    """The synthesized per-exercise breakdown carries real reps/load, which is how
-    external load (ADR-0039 I) reaches the exercise-aware dose path."""
+    """The materialized sets yield a session-scalar external intensity (ADR-0039
+    Model A) and a synthesized per-exercise breakdown — both make the dose differ
+    from the session-only (neutral I=1) path."""
+    user = await _create_user(async_db, "p9c@test.com")
     await _seed_catalog(async_db)
 
-    updated, set_rows, e1rm_specs = await _apply_sets_to_log(async_db, _mixed_log())
+    updated, set_rows, e1rm_specs, ext = await _apply_sets_to_log(
+        async_db, user.id, _mixed_log()
+    )
 
     assert len(set_rows) == 4  # 3 squat + 1 run materialized
     assert [s["code"] for s in e1rm_specs] == ["pl_e1rm_squat"]  # top set → e1RM spec
     squat = next(e for e in updated.exercises if e.exercise_name == "Back Squat")
     assert squat.reps == 5 and squat.load_kg == 100.0 and squat.sets == 3.0
-    # A session-only log has no external load (I=1); the set-fed log routes through
-    # the exercise path instead — the dose is genuinely exercise-aware, not identical.
+
+    # No e1RM logged yet → intensity comes from the RPE chart (5 @ RPE9), not neutral.
+    assert ext.value < 1.0 and ext.confidence > 0
+    assert ext.contributions and ext.contributions[0].exercise_name == "Back Squat"
+
     session_only = _mixed_log().model_copy(update={"sets": [], "exercises": []})
-    assert calculate_stress_dose(updated).dose_six != calculate_stress_dose(session_only).dose_six
+    with_ext = calculate_stress_dose(updated, external_intensity=ext)
+    assert with_ext.dose_six != calculate_stress_dose(session_only).dose_six
 
 
 # ── write-time e1RM extraction (measurement layer) ────────────────────────────
@@ -146,7 +157,7 @@ async def test_top_set_emits_e1rm_observation(async_db):
         )
     ).scalars().all()
     assert len(obs) == 1
-    assert obs[0].raw_value == pytest.approx(e1rm.epley_e1rm(100.0, 5), abs=0.1)
+    assert obs[0].raw_value == pytest.approx(sc.epley_e1rm(100.0, 5), abs=0.1)
 
 
 async def test_no_e1rm_code_no_extraction(async_db):
@@ -196,8 +207,10 @@ async def test_prescription_resolves_percent_e1rm_to_kg(async_db):
     ex = rx.exercises[0]
     assert ex.e1rm_basis_kg == 140.0
     assert ex.rpe_cap == 7.5  # accumulation (week 1 of 4) → rpe_high 7.5
-    assert ex.percent_e1rm == pytest.approx(e1rm.percent_1rm(5, 7.5), abs=1e-3)
-    assert ex.prescribed_load_kg == e1rm.suggested_load_kg(140.0, 5, 7.5)
+    assert ex.percent_e1rm == pytest.approx(
+        sc.percent_1rm_for_prescription(5, 7.5).value, abs=1e-3
+    )
+    assert ex.prescribed_load_kg == sc.suggested_load_kg(140.0, 5, 7.5)
     assert "e1RM" in (ex.load_note or "")
 
 
