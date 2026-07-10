@@ -479,7 +479,7 @@ async def _apply_sets_to_log(
         for ex_row, _ in groups.values()
         if ex_row is not None and ex_row.e1rm_benchmark_code
     }
-    e1rm_denoms = await _prelog_e1rm_denominators(db, user_id, e1rm_codes)
+    e1rm_denoms = await prelog_e1rm_denominators(db, user_id, e1rm_codes)
 
     # Per exercise: mark exactly one top set (heaviest loaded set, ties → last),
     # unless the client already forced one. Drives e1RM extraction.
@@ -617,7 +617,7 @@ async def _apply_sets_to_log(
     return updated, set_rows, e1rm_specs, external_intensity
 
 
-async def _prelog_e1rm_denominators(
+async def prelog_e1rm_denominators(
     db: AsyncSession, user_id: int, codes: set[str]
 ) -> dict[str, dict[str, Any]]:
     """Current (pre-log) e1RM per benchmark code, with denominator provenance.
@@ -872,5 +872,16 @@ async def process_new_workout(
             latest = await AthleteContextRepository(db).get_latest_state(user_id)
             if latest is not None:
                 result = unified_from_athlete_row(latest)
+
+    # ADR-0054: Model B per-exercise dose routing, shadow-only. Records the raw Σφ·D
+    # routed dose + its 0–100 compatibility-scaled control-space values for offline
+    # old-vs-new comparison and the future tuning harness. Capture-only — never affects
+    # the returned state (state_update still consumes the Model A paths).
+    from app.services import dose_routing_shadow_service
+
+    await dose_routing_shadow_service.record_dose_routing(
+        db, user_id, log, workout_log_id,
+        external_intensity=session_external_intensity, routed_at=log_ts,
+    )
 
     return result
