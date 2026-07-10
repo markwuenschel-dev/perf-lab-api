@@ -19,8 +19,24 @@ from typing import Any
 
 from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
+from app.logic import strength_calibration as sc
+from app.logic.strength_calibration import CalibrationResult
 from app.schemas.engine_vectors import AdaptationContribution, StressDoseSix
-from app.schemas.workouts import ExerciseEntry, StressDose, WorkoutLog
+from app.schemas.workouts import (
+    ExerciseEntry,
+    ExternalIntensity,
+    IntensityContribution,
+    StressDose,
+    WorkoutLog,
+)
+
+# ADR-0054 routing caveat carried on every Model A dose: a session-scalar intensity
+# flows through the aggregate-φ / derived-modality shaping path, so a hard accessory
+# partially inherits the session's shape. Per-exercise φ routing is ADR-0054's job.
+_ADR_0054_KNOWN_LIMITATION = (
+    "session-scalar external intensity (ADR-0039 Model A): a single session I shapes "
+    "every exercise via the aggregate-φ path; per-exercise dose routing is ADR-0054."
+)
 
 # ---------------------------------------------------------------------------
 # Internal per-exercise dose bundle (not exposed in API)
@@ -35,6 +51,139 @@ class _ExerciseDose:
     phi_tissue: dict[str, float]
     energy_mix: dict[str, float]
     volume_weight: float   # relative contribution weight for aggregation
+
+
+# ---------------------------------------------------------------------------
+# ADR-0039 Model A: session external intensity assembly
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SetIntensitySample:
+    """One logged set's external-intensity reading plus its denominator provenance.
+
+    Built by the service layer (which owns the DB read of the pre-log e1RM) and
+    aggregated by :func:`build_session_external_intensity` into the session scalar.
+    """
+
+    exercise_id: int | None
+    exercise_name: str | None
+    result: CalibrationResult          # from strength_calibration.external_intensity_for_set
+    weight: float                      # w = reps · load (0 for non-loaded sets)
+    e1rm_source: str | None = None
+    e1rm_value_semantics: str | None = None
+    e1rm_observation_id: int | None = None
+
+
+@dataclass
+class _ExerciseIntensityAgg:
+    exercise_id: int | None
+    exercise_name: str | None
+    weighted_value: float = 0.0
+    weighted_conf: float = 0.0
+    weight: float = 0.0
+    # Provenance from the heaviest-weighted sample of this exercise.
+    top_weight: float = 0.0
+    source: str = sc.SRC_NEUTRAL_MISSING
+    e1rm_denominator_kg: float | None = None
+    e1rm_source: str | None = None
+    e1rm_value_semantics: str | None = None
+    e1rm_observation_id: int | None = None
+
+
+def build_session_external_intensity(
+    samples: list[SetIntensitySample],
+) -> ExternalIntensity:
+    """Roll per-set intensities up to the session scalar (set → exercise → session).
+
+    Weights by ``w = reps · load`` at each level (ADR-0039). Only loaded sets carry
+    external intensity; non-loaded sets (weight 0) do not dilute it. With no loaded
+    set the session degrades to a labeled neutral ``I = 1.0`` (``neutral_missing``).
+    """
+    contributing = [s for s in samples if s.weight > 0]
+    if not contributing:
+        return _neutral_external_intensity()
+
+    # Group by exercise (id when present, else name), weighted by w = reps · load.
+    by_ex: dict[Any, _ExerciseIntensityAgg] = {}
+    all_sources: set[str] = set()
+    for s in contributing:
+        key = ("id", s.exercise_id) if s.exercise_id is not None else ("name", s.exercise_name)
+        agg = by_ex.get(key)
+        if agg is None:
+            agg = _ExerciseIntensityAgg(s.exercise_id, s.exercise_name)
+            by_ex[key] = agg
+        agg.weighted_value += s.result.value * s.weight
+        agg.weighted_conf += s.result.confidence * s.weight
+        agg.weight += s.weight
+        all_sources.add(s.result.source)
+        if s.weight >= agg.top_weight:
+            agg.top_weight = s.weight
+            agg.source = s.result.source
+            agg.e1rm_denominator_kg = s.result.e1rm_pre
+            agg.e1rm_source = s.e1rm_source
+            agg.e1rm_value_semantics = s.e1rm_value_semantics
+            agg.e1rm_observation_id = s.e1rm_observation_id
+
+    contributions: list[IntensityContribution] = []
+    session_wv = 0.0
+    session_wc = 0.0
+    session_w = 0.0
+    dominant_source = sc.SRC_NEUTRAL_MISSING
+    dominant_weight = -1.0
+
+    for agg in by_ex.values():
+        ex_value = agg.weighted_value / agg.weight
+        ex_conf = agg.weighted_conf / agg.weight
+        contributions.append(
+            IntensityContribution(
+                exercise_id=agg.exercise_id,
+                exercise_name=agg.exercise_name,
+                external_intensity=round(ex_value, 4),
+                source=agg.source,
+                confidence=round(ex_conf, 4),
+                weight=round(agg.weight, 2),
+                e1rm_denominator_kg=agg.e1rm_denominator_kg,
+                e1rm_source=agg.e1rm_source,
+                e1rm_value_semantics=agg.e1rm_value_semantics,
+                e1rm_observation_id=agg.e1rm_observation_id,
+            )
+        )
+        session_wv += ex_value * agg.weight
+        session_wc += ex_conf * agg.weight
+        session_w += agg.weight
+        if agg.weight > dominant_weight:
+            dominant_weight = agg.weight
+            dominant_source = agg.source
+
+    value = session_wv / session_w
+    confidence = session_wc / session_w
+    source = "aggregate" if len(all_sources) > 1 else dominant_source
+    return ExternalIntensity(
+        value=round(value, 4),
+        source=source,
+        model_version=sc.MODEL_VERSION,
+        confidence=round(confidence, 4),
+        fallback_path=dominant_source,
+        known_limitation=_ADR_0054_KNOWN_LIMITATION,
+        contributions=contributions,
+    )
+
+
+def _neutral_external_intensity() -> ExternalIntensity:
+    """The honest ``I = 1.0`` for a session with no external-load signal.
+
+    Labeled ``neutral_missing`` with zero confidence so it never reads as "moderate
+    intensity" — it means "unknown, so the dose degrades to effort-only" (ADR-0039).
+    """
+    return ExternalIntensity(
+        value=1.0,
+        source=sc.SRC_NEUTRAL_MISSING,
+        model_version=sc.MODEL_VERSION,
+        confidence=0.0,
+        fallback_path="session_no_external_load",
+        known_limitation=None,
+        contributions=[],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -107,25 +256,6 @@ def _entry_failure_proximity(entry: ExerciseEntry, session_rpe: float) -> float:
     return max(0.2, session_rpe / 10.0)
 
 
-def _external_intensity_from_reps(
-    reps: float | None,
-    rir: float | None,
-) -> float:
-    """External load as a fraction of 1RM, estimated from reps + reps-in-reserve (ADR-0039).
-
-    This is the *external* intensity term I — independent of internal effort F: a heavy
-    triple and a set of twelve to failure carry different loads at the same effort.
-    Epley: %1RM = 1 / (1 + reps_to_failure / 30). Falls back to a neutral 1.0 when reps
-    are unknown (so the dose degrades to effort-only rather than squaring effort).
-    """
-    if reps is None:
-        return 1.0
-    reserve = rir if rir is not None else 0.0
-    reps_to_failure = max(1.0, float(reps) + float(reserve))
-    pct = 1.0 / (1.0 + reps_to_failure / 30.0)
-    return max(0.3, min(1.0, pct))
-
-
 def _aggregate_phi(
     exercise_doses: list[_ExerciseDose],
 ) -> tuple[dict[str, float], dict[str, float], dict[str, float], dict[str, float]]:
@@ -182,7 +312,9 @@ def _compute_adaptation_contribution(
 # ---------------------------------------------------------------------------
 
 def calculate_stress_dose(
-    log: WorkoutLog, params: EngineParameters | None = None
+    log: WorkoutLog,
+    params: EngineParameters | None = None,
+    external_intensity: ExternalIntensity | None = None,
 ) -> StressDose:
     """
     Compute session stress dose from a WorkoutLog.
@@ -191,12 +323,20 @@ def calculate_stress_dose(
     reflects the actual exercise selection. Otherwise falls back to
     modality-level defaults (legacy behavior, fully preserved).
 
+    ``external_intensity`` (ADR-0039 Model A) is the session-scalar load-relative-to-
+    capacity ``I`` computed by the service layer from logged sets and the athlete's
+    pre-log e1RM. When ``None`` — every path without per-set load — a labeled neutral
+    ``I = 1.0`` is used and recorded, so the dose degrades to effort-only rather than
+    silently pretending the load was moderate.
+
     Returns StressDose including:
     - dose_six: 6-axis session dose
     - adaptation_contribution: per-capacity-axis adaptation signal
+    - external_intensity: the ``I`` that shaped this dose, with provenance
     - legacy scalar channels (backward compat)
     """
     p = params or default_parameters()
+    ext = external_intensity or _neutral_external_intensity()
     movement = _infer_movement_pattern(log)
 
     # ------------------------------------------------------------------
@@ -239,14 +379,15 @@ def calculate_stress_dose(
 
     w_phi = max(p.dose_w_phi_floor, sum(phi_fatigue.values()) / max(1, len(phi_fatigue)))
 
-    # ADR-0039: separate external load (I) from internal effort (F). A session log has
-    # no per-exercise load, so I=1 (effort-only via F) — this stops the old double-count
-    # where intensity (RPE) and proximity-to-failure (also RPE-derived) were multiplied.
-    external_intensity = 1.0
+    # ADR-0039 Model A: separate external load (I) from internal effort (F). The
+    # service layer computes a session-scalar I = load / e1RM_pre (weighted set →
+    # exercise → session); absent per-set load it is a labeled neutral 1.0 (effort-
+    # only via F). This replaces the old hardcoded 1.0 and stops the double-count
+    # where intensity (RPE) and proximity-to-failure (also RPE-derived) were squared.
     base = (
         w_phi
         * math.log1p(V)
-        * (external_intensity ** p.dose_alpha)
+        * (ext.value ** p.dose_alpha)
         * (Delta ** p.dose_beta)
         * (N ** p.dose_gamma)
         * (F ** p.dose_rho)
@@ -296,6 +437,7 @@ def calculate_stress_dose(
         d_nm_central=max(0.0, d_nm_central),
         d_struct_damage=max(0.0, d_struct_damage),
         d_struct_signal=max(0.0, d_struct_signal),
+        external_intensity=ext,
     )
 
 
@@ -309,8 +451,6 @@ def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_Exercis
     for entry in log.exercises:
         phi_pack = _phi_for_entry(entry, log.modality)
         vol_proxy = _entry_volume_proxy(entry, p)
-        # ADR-0039: external load from reps+RIR (I), independent of effort (F).
-        external_intensity = _external_intensity_from_reps(entry.reps, entry.avg_rir)
         fp = _entry_failure_proximity(entry, log.session_rpe)
 
         N = max(p.dose_novelty_floor, log.novelty)
@@ -323,10 +463,14 @@ def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_Exercis
             sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])),
         )
 
+        # ADR-0039 Model A: external intensity is a session-scalar applied once in the
+        # session base (calculate_stress_dose), not re-derived per exercise here. This
+        # per-exercise base feeds only the φ aggregation (its scalar magnitude is not
+        # consumed), so it carries no intensity term — the retired reps-based Epley
+        # form (_external_intensity_from_reps) is gone (ADR-0056).
         base = (
             w_phi
             * math.log1p(max(0.1, vol_proxy))
-            * (external_intensity ** p.dose_alpha)
             * (Delta ** p.dose_beta)
             * (N ** p.dose_gamma)
             * (fp ** p.dose_rho)

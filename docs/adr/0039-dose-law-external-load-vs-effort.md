@@ -1,6 +1,6 @@
 ---
 status: accepted
-delivery: not-delivered
+delivery: delivered
 date: 2026-06-21
 ---
 # Dose-law intensity splits external load from internal effort
@@ -80,3 +80,28 @@ is the one canonical calibration service of
 pre-log e1RM exists, else the ADR-0056 RPE/RIR chart, else reps-beyond-first Epley (only when
 the set is to-failure/AMRAP), else a labeled neutral. Set→exercise→session aggregation weights
 by `w = reps · load`; `_external_intensity_from_reps`'s classic `1/(1+rtf/30)` form is retired.
+
+---
+
+## Delivered (2026-07-10, PR2 of the P9 remediation)
+
+Model A is built and the four closure criteria hold:
+
+1. **Wired in.** `state_service._apply_sets_to_log` reads each loaded set's pre-log e1RM
+   (`_prelog_e1rm_denominators`, latest *valid* observation — uncorrupted per ADR-0055),
+   computes a per-set `I` via the ADR-0056 service, aggregates set→exercise→session by
+   `w = reps · load` (`dose_engine_v0.build_session_external_intensity`), and passes the
+   scalar to `calculate_stress_dose(log, external_intensity=…)`.
+2. **No hardcoded `1.0`.** The session base uses `ext.value`; every path without per-set
+   load passes `None` → a **labeled** neutral `1.0` (`neutral_missing`, zero confidence),
+   never a silent `1.0`.
+3. **Equal-volume/different-intensity differ.** Proven by
+   `test_equal_volume_different_intensity_differ_and_order` (5×5 @ 50/75/90% → monotone dose).
+4. **Provenance emitted.** `StressDose.external_intensity` (`ExternalIntensity`) carries the
+   value, `source`, `confidence`, `model_version`, `fallback_path`, the ADR-0054
+   `known_limitation`, and per-exercise `contributions` (each with the e1RM denominator's
+   value + `source` + `value_semantics` + observation id).
+
+Retired `_external_intensity_from_reps`; the discarded per-exercise intensity term in
+`_build_exercise_doses` is gone. Scope stays session-scalar — per-exercise φ routing remains
+[ADR-0054](0054-per-exercise-dose-routing.md), recorded as the `known_limitation`.

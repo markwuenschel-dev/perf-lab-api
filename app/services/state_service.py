@@ -14,11 +14,17 @@ from app.engine.state_bridge import (
     capacity_from_legacy,
     unified_from_athlete_row,
 )
-from app.logic import e1rm as e1rm_logic
+from app.logic import strength_calibration as sc
 from app.logic import strength_evidence as se
-from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.logic.dose_engine_v0 import (
+    SetIntensitySample,
+    build_session_external_intensity,
+    calculate_stress_dose,
+)
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
+from app.models.benchmark_definition import BenchmarkDefinition
+from app.models.benchmark_observation import BenchmarkObservation
 from app.models.exercise import Exercise
 from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
@@ -26,7 +32,12 @@ from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
-from app.schemas.workouts import ExerciseEntry, WorkoutLog, WorkoutSetEntry
+from app.schemas.workouts import (
+    ExerciseEntry,
+    ExternalIntensity,
+    WorkoutLog,
+    WorkoutSetEntry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -392,11 +403,11 @@ async def _resolve_set_exercises(
 
 
 async def _apply_sets_to_log(
-    db: AsyncSession, log: WorkoutLog
-) -> tuple[WorkoutLog, list[WorkoutSetLog], list[dict[str, Any]]]:
+    db: AsyncSession, user_id: int, log: WorkoutLog
+) -> tuple[WorkoutLog, list[WorkoutSetLog], list[dict[str, Any]], ExternalIntensity]:
     """Materialize ``log.sets`` (ADR-0045) into persistable rows + a dose-ready log.
 
-    Returns ``(updated_log, set_rows, e1rm_specs)``:
+    Returns ``(updated_log, set_rows, e1rm_specs, external_intensity)``:
 
     * ``set_rows`` — one ``WorkoutSetLog`` per atomic set (a ``sets=N`` quick-entry
       expands to N rows), top set marked per exercise;
@@ -404,7 +415,11 @@ async def _apply_sets_to_log(
       modality, else Mixed), rolled-up volume/distance, and a synthesized
       per-exercise ``exercises`` breakdown so the dose reflects real external load;
     * ``e1rm_specs`` — ``{code, raw_value, rpe}`` for each loaded top set of a lift
-      carrying an ``e1rm_benchmark_code``, written after commit as observations.
+      carrying an ``e1rm_benchmark_code``, written after commit as observations;
+    * ``external_intensity`` — the session-scalar ``I`` (ADR-0039 Model A), computed
+      from each loaded set's ``load / e1RM_pre`` (weighted set → exercise → session)
+      against the athlete's **pre-log** e1RM, with full provenance. This is read here,
+      before write-time extraction runs, so the denominator is uncorrupted (ADR-0055).
     """
     by_id, by_name = await _resolve_set_exercises(db, log.sets)
 
@@ -456,18 +471,29 @@ async def _apply_sets_to_log(
             set_rows.append(row)
             set_index += 1
 
+    # Pre-log e1RM denominators for the intensity computation (ADR-0039/0056). Read
+    # once, up front — before any write-time extraction — so I = load / e1RM_pre uses
+    # an uncorrupted denominator.
+    e1rm_codes = {
+        ex_row.e1rm_benchmark_code
+        for ex_row, _ in groups.values()
+        if ex_row is not None and ex_row.e1rm_benchmark_code
+    }
+    e1rm_denoms = await _prelog_e1rm_denominators(db, user_id, e1rm_codes)
+
     # Per exercise: mark exactly one top set (heaviest loaded set, ties → last),
     # unless the client already forced one. Drives e1RM extraction.
     e1rm_specs: list[dict[str, Any]] = []
     session_modalities: list[str] = []
     synthesized: list[ExerciseEntry] = []
+    intensity_samples: list[SetIntensitySample] = []
     total_volume = 0.0
     total_distance = 0.0
 
     for key in group_order:
         ex_row, rows = groups[key]
         loaded_rows = [
-            r for r in rows if e1rm_logic.is_loaded(r.load_type) and r.load_kg is not None
+            r for r in rows if sc.is_loaded(r.load_type) and r.load_kg is not None
         ]
         if not any(r.is_top_set for r in rows) and loaded_rows:
             top = max(loaded_rows, key=lambda r: (r.load_kg or 0.0))
@@ -491,7 +517,7 @@ async def _apply_sets_to_log(
                 {
                     "code": ex_row.e1rm_benchmark_code,
                     "raw_value": round(
-                        e1rm_logic.epley_e1rm(top_set.load_kg, top_set.reps), 1
+                        sc.epley_e1rm(top_set.load_kg, top_set.reps), 1
                     ),
                     "exercise_id": ex_row.id,
                     "reps": top_set.reps,
@@ -512,6 +538,41 @@ async def _apply_sets_to_log(
                 total_volume += r.load_kg * r.reps
             if r.distance_m is not None:
                 total_distance += r.distance_m
+
+        # ADR-0039 Model A: one external-intensity sample per loaded set. Weight is
+        # w = reps · load; the pre-log e1RM (if any) is the relative-load denominator.
+        denom = (
+            e1rm_denoms.get(ex_row.e1rm_benchmark_code)
+            if ex_row is not None and ex_row.e1rm_benchmark_code
+            else None
+        )
+        e1rm_pre = denom["value"] if denom else None
+        for r in rows:
+            if not (sc.is_loaded(r.load_type) and r.load_kg and r.reps):
+                continue
+            to_failure = (r.rir is not None and r.rir <= 0) or (
+                r.rpe is not None and r.rpe >= 9.5
+            )
+            result = sc.external_intensity_for_set(
+                reps=r.reps,
+                load_kg=r.load_kg,
+                rpe=r.rpe,
+                rir=r.rir,
+                e1rm_pre=e1rm_pre,
+                to_failure=to_failure,
+                effort_fidelity=fidelity,
+            )
+            intensity_samples.append(
+                SetIntensitySample(
+                    exercise_id=ex_row.id if ex_row else None,
+                    exercise_name=(ex_row.name if ex_row else None),
+                    result=result,
+                    weight=float(r.reps) * float(r.load_kg),
+                    e1rm_source=(denom["source"] if denom else None),
+                    e1rm_value_semantics=(denom["value_semantics"] if denom else None),
+                    e1rm_observation_id=(denom["observation_id"] if denom else None),
+                )
+            )
 
         # Synthesize a per-exercise entry so the dose engine sees real external load.
         loads = [r.load_kg for r in rows if r.load_kg is not None]
@@ -552,7 +613,54 @@ async def _apply_sets_to_log(
             "distance_meters": round(total_distance, 2) if total_distance else log.distance_meters,
         }
     )
-    return updated, set_rows, e1rm_specs
+    external_intensity = build_session_external_intensity(intensity_samples)
+    return updated, set_rows, e1rm_specs, external_intensity
+
+
+async def _prelog_e1rm_denominators(
+    db: AsyncSession, user_id: int, codes: set[str]
+) -> dict[str, dict[str, Any]]:
+    """Current (pre-log) e1RM per benchmark code, with denominator provenance.
+
+    The intensity denominator for ADR-0039's ``I = load / e1RM_pre``. Reads the latest
+    **valid** observation per code — the same prescription-grade denominator that
+    ``prescription_service`` uses — so dose intensity and prescribed load agree on the
+    number (the ADR-0056 invariant). Uncorrupted by construction: the ADR-0055 guard
+    keeps training-derived rows from regressing capacity, and quarantined rows are
+    excluded by the ``valid`` filter. Returns
+    ``code -> {value, observation_id, value_semantics, source}``.
+    """
+    if not codes:
+        return {}
+    res = await db.execute(
+        select(
+            BenchmarkDefinition.code,
+            BenchmarkObservation.raw_value,
+            BenchmarkObservation.id,
+            BenchmarkObservation.value_semantics,
+            BenchmarkObservation.source,
+        )
+        .join(
+            BenchmarkObservation,
+            BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id,
+        )
+        .where(
+            BenchmarkObservation.user_id == user_id,
+            BenchmarkDefinition.code.in_(codes),
+            BenchmarkObservation.validity_status == "valid",
+        )
+        .order_by(BenchmarkObservation.observed_at.desc())
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for code, raw, obs_id, semantics, source in res.all():
+        if code not in out and raw is not None:
+            out[code] = {
+                "value": float(raw),
+                "observation_id": obs_id,
+                "value_semantics": semantics,
+                "source": source,
+            }
+    return out
 
 
 async def _e1rm_watermark(db: AsyncSession, user_id: int, code: str) -> float | None:
@@ -561,9 +669,6 @@ async def _e1rm_watermark(db: AsyncSession, user_id: int, code: str) -> float | 
     Excludes quarantined/invalid rows. Used to keep training-derived evidence
     upward-only — a set below the watermark is history, never a lower bound.
     """
-    from app.models.benchmark_definition import BenchmarkDefinition
-    from app.models.benchmark_observation import BenchmarkObservation
-
     res = await db.execute(
         select(func.max(BenchmarkObservation.raw_value))
         .join(
@@ -685,13 +790,18 @@ async def process_new_workout(
     # load. Top sets yield e1RM observations after the workout commits.
     set_rows: list[WorkoutSetLog] = []
     e1rm_specs: list[dict[str, Any]] = []
+    session_external_intensity: ExternalIntensity | None = None
     if log.sets:
-        log, set_rows, e1rm_specs = await _apply_sets_to_log(db, log)
+        log, set_rows, e1rm_specs, session_external_intensity = await _apply_sets_to_log(
+            db, user_id, log
+        )
 
     # Resolve exercise phi vectors from DB so dose engine is exercise-aware
     log = await _resolve_exercise_phis(db, log)
 
-    dose = calculate_stress_dose(log)
+    # ADR-0039 Model A: the per-set path supplies a real session-scalar external
+    # intensity; every other path passes None → a labeled neutral I=1.0 in the engine.
+    dose = calculate_stress_dose(log, external_intensity=session_external_intensity)
 
     # Persist raw workout event for replay/audit and planning linkage.
     workout_row = WorkoutLogORM(
