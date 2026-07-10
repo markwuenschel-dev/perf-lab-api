@@ -302,7 +302,7 @@ def _grow_confidence_variance(
         setattr(confidence, key, min(max_v, v))
 
 
-def _fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
+def fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
     """Map legacy + six-vector dose into F increments (aligned with prior magnitudes)."""
     six = dose.dose_six
     return FatigueState(
@@ -318,7 +318,7 @@ def _fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
     )
 
 
-def _tissue_impulse_from_dose(dose: StressDose, log: WorkoutLog) -> dict[str, float]:
+def tissue_impulse_from_dose(dose: StressDose, log: WorkoutLog) -> dict[str, float]:
     movement = log.dominant_movement_pattern or (
         "run" if log.modality == "Running" else "mixed"
     )
@@ -438,12 +438,12 @@ def update_athlete_state(
         setattr(s.tissue_t, key, _exp_decay(v, hours, tau))
 
     # --- 3. Impulses from training dose ---
-    d_f = _fatigue_impulse_from_dose(dose)
+    d_f = fatigue_impulse_from_dose(dose)
     for key in FatigueState.KEYS:
         v = getattr(s.fatigue_f, key) + getattr(d_f, key)
         setattr(s.fatigue_f, key, max(0.0, min(100.0, v)))
 
-    d_t = _tissue_impulse_from_dose(dose, log)
+    d_t = tissue_impulse_from_dose(dose, log)
     for key in TissueState.KEYS:
         v = getattr(s.tissue_t, key) + d_t[key]
         setattr(s.tissue_t, key, max(0.0, min(100.0, v)))

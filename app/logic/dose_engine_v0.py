@@ -190,7 +190,7 @@ def _neutral_external_intensity() -> ExternalIntensity:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _infer_movement_pattern(log: WorkoutLog) -> str:
+def infer_movement_pattern(log: WorkoutLog) -> str:
     if log.dominant_movement_pattern:
         return log.dominant_movement_pattern
     if log.modality == "Running":
@@ -337,7 +337,7 @@ def calculate_stress_dose(
     """
     p = params or default_parameters()
     ext = external_intensity or _neutral_external_intensity()
-    movement = _infer_movement_pattern(log)
+    movement = infer_movement_pattern(log)
 
     # ------------------------------------------------------------------
     # Resolve phi pack: exercise-aware or modality fallback
@@ -445,37 +445,46 @@ def calculate_stress_dose(
 # Exercise-level dose building
 # ---------------------------------------------------------------------------
 
+def exercise_base_bundle(
+    entry: ExerciseEntry, log: WorkoutLog, p: EngineParameters
+) -> tuple[float, dict[str, Any], float]:
+    """The one intensity-free per-exercise base, its φ pack, and its volume proxy.
+
+    Returns ``(base, phi_pack, vol_proxy)`` where
+    ``base = w_phi · log1p(vol_proxy) · Δ^β · N^γ · fp^ρ`` — no intensity term (ADR-0039
+    Model A applies ``I`` once at the session level). This is the single source for the
+    per-exercise base, shared by the aggregate-φ dose path (``_build_exercise_doses``)
+    and the shadow per-exercise routing (``app.logic.dose_routing``, ADR-0054) so the
+    two never drift onto divergent base formulas.
+    """
+    phi_pack = _phi_for_entry(entry, log.modality)
+    vol_proxy = _entry_volume_proxy(entry, p)
+    fp = _entry_failure_proximity(entry, log.session_rpe)
+
+    N = max(p.dose_novelty_floor, log.novelty)
+    Delta = max(
+        p.dose_delta_floor,
+        min(p.dose_delta_cap, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)),
+    )
+    w_phi = max(
+        p.dose_w_phi_floor,
+        sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])),
+    )
+    base = (
+        w_phi
+        * math.log1p(max(0.1, vol_proxy))
+        * (Delta ** p.dose_beta)
+        * (N ** p.dose_gamma)
+        * (fp ** p.dose_rho)
+    )
+    return base, phi_pack, vol_proxy
+
+
 def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_ExerciseDose]:
     """Build per-exercise dose bundles, then return for aggregation."""
     doses: list[_ExerciseDose] = []
     for entry in log.exercises:
-        phi_pack = _phi_for_entry(entry, log.modality)
-        vol_proxy = _entry_volume_proxy(entry, p)
-        fp = _entry_failure_proximity(entry, log.session_rpe)
-
-        N = max(p.dose_novelty_floor, log.novelty)
-        Delta = max(
-            p.dose_delta_floor,
-            min(p.dose_delta_cap, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)),
-        )
-        w_phi = max(
-            p.dose_w_phi_floor,
-            sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])),
-        )
-
-        # ADR-0039 Model A: external intensity is a session-scalar applied once in the
-        # session base (calculate_stress_dose), not re-derived per exercise here. This
-        # per-exercise base feeds only the φ aggregation (its scalar magnitude is not
-        # consumed), so it carries no intensity term — the retired reps-based Epley
-        # form (_external_intensity_from_reps) is gone (ADR-0056).
-        base = (
-            w_phi
-            * math.log1p(max(0.1, vol_proxy))
-            * (Delta ** p.dose_beta)
-            * (N ** p.dose_gamma)
-            * (fp ** p.dose_rho)
-        )
-
+        base, phi_pack, vol_proxy = exercise_base_bundle(entry, log, p)
         doses.append(
             _ExerciseDose(
                 base=base,
