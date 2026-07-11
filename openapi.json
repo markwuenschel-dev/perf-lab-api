@@ -1468,6 +1468,17 @@
         "title": "CapacityState",
         "type": "object"
       },
+      "CompleteOnboardingRequest": {
+        "properties": {
+          "reason": {
+            "default": "done_for_now",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "CompleteOnboardingRequest",
+        "type": "object"
+      },
       "ConnectionStatus": {
         "description": "Returned by GET /connection whether or not a connection exists.",
         "properties": {
@@ -2920,6 +2931,91 @@
           "message"
         ],
         "title": "OnboardResponse",
+        "type": "object"
+      },
+      "OnboardingStateResponse": {
+        "properties": {
+          "can_prescribe": {
+            "title": "Can Prescribe",
+            "type": "boolean"
+          },
+          "completed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Reason"
+          },
+          "measurement_debt": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Measurement Debt",
+            "type": "array"
+          },
+          "missing_basics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Basics",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "twin": {
+            "$ref": "#/components/schemas/OnboardingTwinSummary"
+          }
+        },
+        "required": [
+          "status",
+          "completed_reason",
+          "can_prescribe",
+          "missing_basics",
+          "twin",
+          "measurement_debt"
+        ],
+        "title": "OnboardingStateResponse",
+        "type": "object"
+      },
+      "OnboardingTwinSummary": {
+        "properties": {
+          "overall_confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Confidence"
+          },
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "seed_status": {
+            "title": "Seed Status",
+            "type": "string"
+          },
+          "seeded": {
+            "title": "Seeded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "seeded",
+          "seed_status",
+          "provisional",
+          "overall_confidence"
+        ],
+        "title": "OnboardingTwinSummary",
         "type": "object"
       },
       "OverviewMetrics": {
@@ -7408,6 +7504,80 @@
           }
         ],
         "summary": "Onboard Athlete",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding/complete": {
+      "post": {
+        "description": "Leave onboarding with a reason (finished | done_for_now | skipped). A user may\nalways leave; leaving early is not failure and does not lock them out.",
+        "operationId": "complete_onboarding_v1_onboarding_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteOnboardingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Complete Onboarding",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding/state": {
+      "get": {
+        "description": "Non-blocking onboarding state (PDR-0010): status, the safety hard-gate\n(`can_prescribe` / `missing_basics`), the provisional twin summary, and progressive\nmeasurement-debt prompts. Access is never gated on a measurement.",
+        "operationId": "get_onboarding_state_v1_onboarding_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Onboarding State",
         "tags": [
           "onboarding"
         ]

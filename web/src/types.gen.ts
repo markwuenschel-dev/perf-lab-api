@@ -525,6 +525,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/onboarding/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Onboarding
+         * @description Leave onboarding with a reason (finished | done_for_now | skipped). A user may
+         *     always leave; leaving early is not failure and does not lock them out.
+         */
+        post: operations["complete_onboarding_v1_onboarding_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/onboarding/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Onboarding State
+         * @description Non-blocking onboarding state (PDR-0010): status, the safety hard-gate
+         *     (`can_prescribe` / `missing_basics`), the provisional twin summary, and progressive
+         *     measurement-debt prompts. Access is never gated on a measurement.
+         */
+        get: operations["get_onboarding_state_v1_onboarding_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/planning/blocks": {
         parameters: {
             query?: never;
@@ -1394,6 +1437,14 @@ export interface components {
              */
             work_capacity: number;
         };
+        /** CompleteOnboardingRequest */
+        CompleteOnboardingRequest: {
+            /**
+             * Reason
+             * @default done_for_now
+             */
+            reason: string;
+        };
         /**
          * ConnectionStatus
          * @description Returned by GET /connection whether or not a connection exists.
@@ -1903,6 +1954,31 @@ export interface components {
             profile_id: number;
             /** User Id */
             user_id: number;
+        };
+        /** OnboardingStateResponse */
+        OnboardingStateResponse: {
+            /** Can Prescribe */
+            can_prescribe: boolean;
+            /** Completed Reason */
+            completed_reason: string | null;
+            /** Measurement Debt */
+            measurement_debt: string[];
+            /** Missing Basics */
+            missing_basics: string[];
+            /** Status */
+            status: string;
+            twin: components["schemas"]["OnboardingTwinSummary"];
+        };
+        /** OnboardingTwinSummary */
+        OnboardingTwinSummary: {
+            /** Overall Confidence */
+            overall_confidence: string | null;
+            /** Provisional */
+            provisional: boolean;
+            /** Seed Status */
+            seed_status: string;
+            /** Seeded */
+            seeded: boolean;
         };
         /**
          * OverviewMetrics
@@ -4118,6 +4194,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_onboarding_v1_onboarding_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteOnboardingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_onboarding_state_v1_onboarding_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStateResponse"];
                 };
             };
         };
