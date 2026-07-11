@@ -53,7 +53,9 @@ USER appuser
 
 EXPOSE 8000
 
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
+# Migrate (must succeed), then seed the catalog (idempotent + fault-tolerant, so a `;` — a
+# seed hiccup must never block boot), then serve.
+CMD alembic upgrade head && python -m app.scripts.seed_catalog ; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
 
 # ── Target: monolith (API + embedded SPA) ─────────────────────────────────────
 FROM backend AS backend-with-frontend
