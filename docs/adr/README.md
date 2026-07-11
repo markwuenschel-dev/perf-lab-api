@@ -100,3 +100,17 @@ and die with their PR.
 | [0049](0049-missing-wellness-is-a-gap-not-imputed.md) | Missing wellness signals are gaps, not imputed | proposed |
 | [0050](0050-objectives-drive-training-emphasis.md) | Objectives drive concurrent training emphasis (compute modality_mix) | proposed |
 | [0051](0051-user-owns-structure-engine-owns-safety.md) | The user owns intent and structure; the engine owns safety and execution | proposed |
+| [0052](0052-readiness-confidence-report-only.md) | Readiness confidence is a report-only reliability object; gating waits for P13 | accepted |
+| [0053](0053-wellness-signal-registry.md) | Canonical wellness signal registry, categories, and implicit tracking | accepted |
+| [0054](0054-per-exercise-dose-routing.md) | Per-exercise dose routing through exercise φ vectors | accepted |
+| [0055](0055-strength-evidence-ledger.md) | Training-derived e1RM is estimated lower-bound evidence, not benchmark measurement | accepted |
+| [0056](0056-canonical-percent-1rm-calibration.md) | One canonical, versioned %1RM ↔ load calibration service | accepted |
+| [0057](0057-domaincode-three-roles-one-vocabulary.md) | DomainCode is one vocabulary with three distinct roles | proposed |
+| [0058](0058-observation-provenance-capacity-authority.md) | Observation capacity authority is policy-derived, not caller-asserted | proposed |
+| [0059](0059-seed-uncertainty-and-provisionality-views.md) | Per-axis seed uncertainty by evidence tier; debt and provisionality are views over live confidence | proposed |
+| [0060](0060-objective-mix-live-receding-horizon-microcycle.md) | The objective mix is recomputed live per request; the microcycle is the accounting horizon | proposed |
+| [0061](0061-objective-target-share-function.md) | The objective target-share function: multiplicative score, diminishing aggregation, true share floors | proposed |
+| [0062](0062-session-load-au-allocation-ledger.md) | Session-RPE load (AU) is the microcycle allocation currency, distinct from state-update dose | proposed |
+| [0063](0063-session-commitment-and-issuance.md) | Session commitment is execution state; issuance is a user-visible event, not materialization | proposed |
+| [0064](0064-receding-horizon-modality-assignment.md) | Objective mix reaches the plan through hierarchical receding-horizon assignment | proposed |
+| [0065](0065-objective-progress-signal-evidence-contract.md) | Objective progress is a derived signal over P10 evidence, not a column | proposed |
