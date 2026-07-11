@@ -136,6 +136,192 @@
         "title": "AnchorObservationOut",
         "type": "object"
       },
+      "AssessmentBenchmarkCard": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "confidence_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Status"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "domain_lenses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Domain Lenses",
+            "type": "array"
+          },
+          "domain_lenses_source": {
+            "title": "Domain Lenses Source",
+            "type": "string"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Observed At"
+          },
+          "measures_axes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Measures Axes",
+            "type": "array"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Summary"
+          },
+          "recommend_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommend Rank"
+          },
+          "recommended": {
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "utility": {
+            "title": "Utility",
+            "type": "number"
+          },
+          "utility_model_version": {
+            "title": "Utility Model Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "domain",
+          "domain_lenses",
+          "domain_lenses_source",
+          "metric_type",
+          "unit",
+          "protocol_summary",
+          "measures_axes",
+          "confidence_status",
+          "last_observed_at",
+          "eligible",
+          "recommended",
+          "recommend_rank",
+          "utility",
+          "utility_model_version"
+        ],
+        "title": "AssessmentBenchmarkCard",
+        "type": "object"
+      },
+      "AssessmentDomainGroup": {
+        "properties": {
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentBenchmarkCard"
+            },
+            "title": "Cards",
+            "type": "array"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "cards"
+        ],
+        "title": "AssessmentDomainGroup",
+        "type": "object"
+      },
+      "AssessmentSurfaceRead": {
+        "properties": {
+          "active_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Active Domains",
+            "type": "array"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentDomainGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "recommended": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "active_domains",
+          "groups",
+          "recommended",
+          "policy_version"
+        ],
+        "title": "AssessmentSurfaceRead",
+        "type": "object"
+      },
       "AuthorizeUrlResponse": {
         "properties": {
           "authorize_url": {
@@ -5870,6 +6056,7 @@
     },
     "/compute-metrics": {
       "post": {
+        "deprecated": true,
         "operationId": "compute_metrics_compute_metrics_post",
         "requestBody": {
           "content": {
@@ -5976,6 +6163,56 @@
         "summary": "Get Strength Program",
         "tags": [
           "Legacy"
+        ]
+      }
+    },
+    "/v1/benchmarks/assessment-surface": {
+      "get": {
+        "description": "The one domain-filtered assessment surface (ADR-0047), with a measurement-debt\nranking of which benchmarks to assess next. ``mode`` is product framing only \u2014\nonboarding (``onramp``) vs ongoing (``retest``); the data path is identical.",
+        "operationId": "get_assessment_surface_v1_benchmarks_assessment_surface_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "onramp",
+              "pattern": "^(onramp|retest)$",
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentSurfaceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Assessment Surface",
+        "tags": [
+          "Benchmarks"
         ]
       }
     },

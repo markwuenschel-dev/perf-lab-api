@@ -120,7 +120,47 @@ PRESCRIPTION_SUPPORTED_DOMAINS: frozenset[str] = frozenset(
 # `domain_lenses_source` values distinguishing a curated lens list from a lens
 # list defaulted to `[domain]` (ADR-0057 surfacing-lens role).
 DOMAIN_LENSES_SOURCE_EXPLICIT = "explicit_curated"
+DOMAIN_LENSES_SOURCE_CURATED_BY_DOMAIN = "curated_by_domain"
 DOMAIN_LENSES_SOURCE_DEFAULT = "home_domain_default"
+
+# Reviewed per-home-domain surfacing-lens curation (ADR-0047 blocking closure of the
+# domain-filtered onramp). A benchmark surfaces under these athlete-domain cards; the
+# home domain always leads. Discoverability only — never adaptation/authority routing.
+# All values are canonical DomainCodes.
+DOMAIN_LENS_CURATION: dict[str, list[str]] = {
+    "powerlifting": ["powerlifting", "strength", "general"],
+    "weightlifting": ["weightlifting", "power", "strength"],
+    "strength": ["strength", "general"],
+    "hypertrophy": ["hypertrophy", "strength"],
+    "power": ["power", "strength"],
+    "running": ["running", "general"],
+    "gymnastics": ["gymnastics", "calisthenics"],
+    "calisthenics": ["calisthenics", "gymnastics"],
+    "grip": ["grip", "strength"],
+    "mixed": ["mixed", "general"],
+    "general": ["general"],
+}
+
+assert all(
+    set(lenses) <= DOMAINS for lenses in DOMAIN_LENS_CURATION.values()
+), "every curated domain lens must be a canonical DomainCode"
+
+
+def resolve_domain_lenses(
+    home_domain: str, explicit_lenses: list[str] | None
+) -> tuple[list[str], str]:
+    """Resolve a benchmark's surfacing lenses + their source (ADR-0047/0057).
+
+    An explicitly-stored ``domain_lenses`` wins (``explicit_curated``); otherwise the
+    reviewed per-domain curation (``curated_by_domain``); otherwise ``[home_domain]``
+    as a compatibility fallback (``home_domain_default``).
+    """
+    if explicit_lenses:
+        return list(explicit_lenses), DOMAIN_LENSES_SOURCE_EXPLICIT
+    curated = DOMAIN_LENS_CURATION.get(home_domain)
+    if curated:
+        return list(curated), DOMAIN_LENSES_SOURCE_CURATED_BY_DOMAIN
+    return [home_domain], DOMAIN_LENSES_SOURCE_DEFAULT
 
 # Invariants (checked at import so a drifted edit fails fast, and asserted again
 # in tests/test_domain_vocab_canonical.py).

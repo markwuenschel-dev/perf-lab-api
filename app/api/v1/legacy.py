@@ -192,8 +192,13 @@ for _wk in range(8, 11):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/compute-metrics", response_model=MetricsResponse)
+@router.post("/compute-metrics", response_model=MetricsResponse, deprecated=True)
 def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
+    # DEMOTED (ADR-0047): a stateless calculator behind the
+    # run_vo2_field_test_300m_1p5mi benchmark definition — never a seeding source of
+    # truth. The run field test is now assessed via the one assessment surface
+    # (POST /v1/benchmarks/observations), which owns the state seed. This endpoint
+    # remains only to compute VO₂/zones for display; it writes no state.
     t300 = parse_time_to_seconds(payload.time_300m)
     t15 = parse_time_to_seconds(payload.time_1p5mi)
     vo2 = vo2_from_1p5(t15)

@@ -67,7 +67,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Compute Metrics */
+        /**
+         * Compute Metrics
+         * @deprecated
+         */
         post: operations["compute_metrics_compute_metrics_post"];
         delete?: never;
         options?: never;
@@ -121,6 +124,28 @@ export interface paths {
         };
         /** Get Strength Program */
         get: operations["get_strength_program_program_strength_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/benchmarks/assessment-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Assessment Surface
+         * @description The one domain-filtered assessment surface (ADR-0047), with a measurement-debt
+         *     ranking of which benchmarks to assess next. ``mode`` is product framing only —
+         *     onboarding (``onramp``) vs ongoing (``retest``); the data path is identical.
+         */
+        get: operations["get_assessment_surface_v1_benchmarks_assessment_surface_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -885,6 +910,61 @@ export interface components {
             raw_value: number;
             /** Unit */
             unit: string;
+        };
+        /** AssessmentBenchmarkCard */
+        AssessmentBenchmarkCard: {
+            /** Code */
+            code: string;
+            /** Confidence Status */
+            confidence_status: string | null;
+            /** Domain */
+            domain: string;
+            /** Domain Lenses */
+            domain_lenses: string[];
+            /** Domain Lenses Source */
+            domain_lenses_source: string;
+            /** Eligible */
+            eligible: boolean;
+            /** Last Observed At */
+            last_observed_at: string | null;
+            /** Measures Axes */
+            measures_axes: string[];
+            /** Metric Type */
+            metric_type: string;
+            /** Name */
+            name: string;
+            /** Protocol Summary */
+            protocol_summary: string | null;
+            /** Recommend Rank */
+            recommend_rank: number | null;
+            /** Recommended */
+            recommended: boolean;
+            /** Unit */
+            unit: string;
+            /** Utility */
+            utility: number;
+            /** Utility Model Version */
+            utility_model_version: string;
+        };
+        /** AssessmentDomainGroup */
+        AssessmentDomainGroup: {
+            /** Cards */
+            cards: components["schemas"]["AssessmentBenchmarkCard"][];
+            /** Domain */
+            domain: string;
+        };
+        /** AssessmentSurfaceRead */
+        AssessmentSurfaceRead: {
+            /** Active Domains */
+            active_domains: string[];
+            /** Groups */
+            groups: components["schemas"]["AssessmentDomainGroup"][];
+            /** Mode */
+            mode: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Recommended */
+            recommended: string[];
         };
         /** AuthorizeUrlResponse */
         AuthorizeUrlResponse: {
@@ -3245,6 +3325,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StrengthSession"][];
+                };
+            };
+        };
+    };
+    get_assessment_surface_v1_benchmarks_assessment_surface_get: {
+        parameters: {
+            query?: {
+                mode?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSurfaceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -1,8 +1,31 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-07
+delivery: delivered
 ---
 # One benchmark assessment surface; no domain-specific seeders
+
+> **Delivered — backend (P10 Slice 4, 2026-07-11).** `GET /v1/benchmarks/assessment-surface?mode=onramp|retest`
+> (`assessment_surface_service`): the catalog filtered by the athlete's active domains
+> (objectives' domains ∪ `primary_goal` → domain; empty ⇒ show-all so the measurement
+> layer is never hidden), grouped by home domain, each card annotated with resolved
+> `domain_lenses` (+source), the axes it measures, live-variance `confidence_status`
+> (ADR-0059), last-observed time, eligibility, and a measurement-debt recommendation
+> rank via `information_gain_proxy_v1` (`w_u·uncertainty + w_c·coverage − w_b·burden`,
+> top-N per domain). Every submit is a `benchmark_observation` through the ADR-0058
+> authority path (no domain-specific seeder). Per-domain `domain_lenses` curation is the
+> reviewed `DOMAIN_LENS_CURATION` policy + `resolve_domain_lenses` (explicit_curated →
+> curated_by_domain → home_domain_default), closing the ADR-0057 requirement.
+> `/compute-metrics` marked `deprecated` — a stateless VO₂/zones calculator, never a
+> seeding source of truth. Verified: ruff+pyright clean; 10 new tests (pure active-domain
+> + utility helpers, DB domain-filtering/eligibility/recommendation/mode-guard) + a
+> 48-test vocab/benchmark/seed/corruption sweep green; OpenAPI 42→43 paths + web types
+> regenerated; web build green.
+>
+> **Deferred:** the running Field Test *screen* retirement + wiring the onramp/onboarding
+> flow are the web + onboarding slices (P10 Slice 5/6). Full `measurement_debt`
+> eligibility gating (safe ∧ protocol_valid ∧ equipment ∧ capable) + hysteresis
+> (ADR-0059) layer onto this ranking as data allows.
 
 The running Field Test was accidentally privileged: it had its own screen and its own
 endpoint (`300m + 1.5mi → /compute-metrics → running-derived seed`), while the
