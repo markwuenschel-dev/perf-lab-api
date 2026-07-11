@@ -27,6 +27,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Resolve ssh/curl by name, falling back to the Windows OpenSSH/System32 paths — a non-login
+# PowerShell (and some minimal setups) doesn't always have System32\OpenSSH on PATH, and a bare
+# `ssh` there fails with "not recognized" before the deploy ever reaches the box.
+function Resolve-Exe([string]$name, [string[]]$fallbacks) {
+  $cmd = Get-Command $name -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  foreach ($p in $fallbacks) { if (Test-Path $p) { return $p } }
+  throw "$name not found on PATH or at: $($fallbacks -join ', ')"
+}
+$Ssh  = Resolve-Exe "ssh"      @("$env:WINDIR\System32\OpenSSH\ssh.exe")
+$Curl = Resolve-Exe "curl.exe" @("$env:WINDIR\System32\curl.exe")
+
 # The box's clone is deploy-only (never edited in place), so main can be hard-synced to origin.
 # Any other ref — a rollback SHA, a tag — is checked out detached; `git checkout main` restores.
 $sync = if ($Ref -eq "main") {
@@ -57,10 +69,10 @@ if (-not (Test-Path $SshKey)) { throw "SSH key not found: $SshKey" }
 # PowerShell's pipe to a native command appends CRLF to the FINAL line (and a CRLF checkout of this
 # file would put \r on every line), so bash on the box would see 'perf-lab-api\r' — "no such
 # service". Strip CRs on the remote side before bash reads the script.
-$remote | ssh -i $SshKey $BoxHost "tr -d '\r' | bash -s"
+$remote | & $Ssh -i $SshKey $BoxHost "tr -d '\r' | bash -s"
 if ($LASTEXITCODE -ne 0) { throw "deploy failed (ssh exit $LASTEXITCODE)" }
 
 # Prove the public URL serves the new build — logs alone don't show what Caddy is fronting.
-$code = & curl.exe -fsSL -o NUL -w "%{http_code}" --max-time 30 "$Url/ping"
+$code = & $Curl -fsSL -o NUL -w "%{http_code}" --max-time 30 "$Url/ping"
 if ($LASTEXITCODE -ne 0) { throw "deployed, but the health check against $Url/ping failed" }
 Write-Host "$Url/ping -> HTTP $code"
