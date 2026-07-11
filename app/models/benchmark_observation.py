@@ -62,6 +62,40 @@ class BenchmarkObservation(Base):
     can_regress_capacity: Mapped[bool | None] = mapped_column(nullable=True)
     affects_prescription: Mapped[bool | None] = mapped_column(nullable=True)
 
+    # --- Policy-derived capacity authority (ADR-0058) ------------------------
+    # Five orthogonal provenance dimensions; capacity authority is the meet of
+    # their independent caps (app.logic.observation_authority). affects_capacity /
+    # can_regress_capacity above are now DERIVED from capacity_effect, never the
+    # reverse. All nullable + additive; conservative backfill in a028.
+    source_type: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, comment="athlete_entry | workout_extraction | legacy_unknown"
+    )
+    collection_mode: Mapped[str | None] = mapped_column(
+        String(40), nullable=True,
+        comment="onboarding_onramp | retest | ad_hoc | workout | legacy_unknown",
+    )
+    provenance_operation: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    migration_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    migrated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    actor_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    requested_capacity_effect: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    capacity_effect: Mapped[str | None] = mapped_column(
+        String(30), nullable=True,
+        comment="none | initialize_prior | upward_lower_bound | bidirectional_update",
+    )
+    protocol_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    protocol_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    protocol_validity: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="not_evaluated | incomplete | valid | invalid"
+    )
+    authority_policy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    authority_resolution_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Confidence hook (ADR-0058 structural; #106 assigns the numbers).
+    confidence_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    confidence_model_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
     observation_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Nullable on purpose: unknown confidence is NULL, never a fake 0.5.
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)

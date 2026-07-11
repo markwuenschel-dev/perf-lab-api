@@ -23,3 +23,25 @@ class OnboardResponse(BaseModel):
     profile_id: int
     message: str
     next_step: str = "Call GET /v1/next-session?goal=Strength to get first prescription"
+
+
+class OnboardingTwinSummary(BaseModel):
+    seeded: bool
+    seed_status: str  # initial_seed_status_rollup_v1: none|experience_prior_only|benchmark_seeded|mixed
+    provisional: bool
+    overall_confidence: str | None  # worst-axis band (established|provisional|insufficient), live variance
+
+
+class OnboardingStateResponse(BaseModel):
+    status: str  # not_started | in_progress | completed
+    completed_reason: str | None
+    can_prescribe: bool  # the ONLY hard gate — safety/feasibility basics present
+    missing_basics: list[str]
+    twin: OnboardingTwinSummary
+    # Progressive measurement-debt prompts: benchmark codes to assess next (never a gate).
+    measurement_debt: list[str]
+
+
+class CompleteOnboardingRequest(BaseModel):
+    # A user may always leave; leaving early is not failure.
+    reason: str = "done_for_now"  # finished | done_for_now | skipped

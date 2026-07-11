@@ -1,8 +1,30 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-07
+delivery: partial
 ---
 # The app never blocks the user; the model self-limits by confidence
+
+> **Delivered — backend state machine (P10 Slice 5, 2026-07-11).**
+> `app/logic/onboarding_state.py` (pure): the non-blocking status machine
+> (not_started → in_progress → completed), `required_basics_missing` (the ONLY hard
+> gate — primary objective + declared equipment/environment + available days; precision
+> inputs are never listed), `can_prescribe`, and the completion reasons (finished /
+> done_for_now / skipped). `onboarding_service` surfaces `GET /v1/onboarding/state`
+> (status, `can_prescribe` / `missing_basics`, a provisional twin summary derived from
+> live variance + the ADR-0059 seed rollup, and progressive measurement-debt prompts
+> from the ADR-0047 assessment surface) and `POST /v1/onboarding/complete` (leave any
+> time, records the reason — never locks the user out). `/onboard` advances the machine
+> to in_progress on basics; the experience-prior fallback seed already ships (ADR-0035 +
+> Slice 3 tiers it as `experience_prior`, shown provisional). Verified: ruff+pyright
+> clean; 12 new tests (pure gate/transition/reason + DB state, provisional-but-usable
+> twin, non-blocking exit, bad-reason guard); OpenAPI 43→45 paths + web types
+> regenerated; web build green.
+>
+> **Deferred:** the onboarding *UI* (skippable steps, per-benchmark "do this later",
+> the provisional-twin display) is P10 Slice 6; age/minor + contraindication profile
+> fields join `required_basics_missing` when modeled; confidence-gated recommendation
+> aggressiveness is ADR-0048 (P13).
 
 Onboarding was heading toward a gate — "measure a benchmark before you can use the
 product." We reject that. The app must get a user to value quickly; benchmarks *increase

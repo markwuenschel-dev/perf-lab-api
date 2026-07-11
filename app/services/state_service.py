@@ -14,6 +14,8 @@ from app.engine.state_bridge import (
     capacity_from_legacy,
     unified_from_athlete_row,
 )
+from app.logic import seed_snapshot
+from app.logic import seed_variance as sv
 from app.logic import strength_calibration as sc
 from app.logic import strength_evidence as se
 from app.logic.dose_engine_v0 import (
@@ -138,8 +140,28 @@ def _build_baseline_vector(
             experience_level, squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg
         ),
     )
+    # Per-axis seed uncertainty by evidence tier (ADR-0059): retires the uniform seed
+    # variance. Applied to the LIVE CapacityConfidence — the single runtime authority.
+    plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
+    for axis, variance in sv.seed_confidence_overrides(plan).items():
+        setattr(u.capacity_confidence, axis, variance)
     row = AthleteState(user_id=user_id, **athlete_state_kwargs_from_unified(u))
     return u, row
+
+
+def _baseline_tier_plan(
+    squat_1rm_kg: float | None,
+    deadlift_1rm_kg: float | None,
+    bench_1rm_kg: float | None,
+    run_5k_seconds: float | None,
+) -> dict[str, tuple[str, str]]:
+    """Per-axis (evidence_tier, source) for the baseline seed inputs (ADR-0059)."""
+    return sv.baseline_tier_plan(
+        has_strength_input=any(
+            v is not None for v in (squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg)
+        ),
+        has_run_input=run_5k_seconds is not None,
+    )
 
 
 async def initialize_athlete_state(
@@ -168,7 +190,44 @@ async def initialize_athlete_state(
     db.add(row)
     await db.commit()
     await db.refresh(row)
+
+    # Persist the immutable per-axis seed provenance snapshot (ADR-0059). Best-effort:
+    # provenance capture must not fail account seeding. Never read at runtime for
+    # current provisionality — the live CapacityConfidence above is the sole authority.
+    await _persist_seed_snapshot(
+        db, user_id, squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds
+    )
     return unified_from_athlete_row(row)
+
+
+async def _persist_seed_snapshot(
+    db: AsyncSession,
+    user_id: int,
+    squat_1rm_kg: float | None,
+    deadlift_1rm_kg: float | None,
+    bench_1rm_kg: float | None,
+    run_5k_seconds: float | None,
+) -> None:
+    from app.models.user import AthleteProfile
+
+    try:
+        plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
+        seeded_at = datetime.utcnow()
+        snapshot = seed_snapshot.build_seed_snapshot(plan, seeded_at=seeded_at)
+        result = await db.execute(
+            select(AthleteProfile).where(AthleteProfile.user_id == user_id)
+        )
+        profile = result.scalars().first()
+        if profile is None:
+            return
+        profile.initial_seed_by_axis = snapshot
+        profile.seed_policy_version = snapshot["policy_version"]
+        profile.seeded_at = seeded_at
+        profile.initial_seed_status = seed_snapshot.initial_seed_status_rollup(snapshot)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning("seed snapshot persist failed for user %s", user_id, exc_info=True)
 
 
 async def load_current_state(

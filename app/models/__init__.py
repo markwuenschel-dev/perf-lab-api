@@ -9,6 +9,7 @@ from app.core.db import Base  # noqa: F401
 from app.models.athlete_state import AthleteState  # noqa: F401
 from app.models.benchmark_definition import BenchmarkDefinition  # noqa: F401
 from app.models.benchmark_observation import BenchmarkObservation  # noqa: F401
+from app.models.capacity_floor_shadow import CapacityFloorShadowLog  # noqa: F401
 from app.models.derived_metric_definition import DerivedMetricDefinition  # noqa: F401
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot  # noqa: F401
 from app.models.dose_routing_shadow import DoseRoutingShadowLog  # noqa: F401

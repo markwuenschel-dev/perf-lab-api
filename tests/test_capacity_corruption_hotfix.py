@@ -110,11 +110,15 @@ async def test_workout_extraction_never_updates_capacity(async_db):
             benchmark_code="pl_e1rm_squat", raw_value=120.0, source="workout_extraction",
         ),
     )
-    # Observation recorded, but NO new capacity state row appended.
+    # e1RM 120 sits below the baseline watermark → it raises no floor, so NO new
+    # capacity state row. Its policy authority is upward_lower_bound (ADR-0058): it
+    # may raise a floor when it exceeds the watermark, but can never regress capacity.
     assert len(await _obs(async_db, user.id)) == 1
     assert await _state_count(async_db, user.id) == before
     row = (await _obs(async_db, user.id))[0]
-    assert row.affects_capacity is False and row.can_regress_capacity is False
+    assert row.capacity_effect == "upward_lower_bound"
+    assert row.can_regress_capacity is False
+    assert row.affects_capacity is True  # may raise a floor (upward only)
 
 
 async def test_mismarked_workout_extraction_refused_at_boundary(async_db):
@@ -184,10 +188,11 @@ async def test_easy_training_does_not_lower_max_strength(async_db):
     await process_new_workout(async_db, user.id, log)
 
     assert await _max_strength(async_db, user.id) >= strength_before  # never regressed
-    # The extraction wrote a non-capacity, below-watermark (history-only) row.
+    # The extracted e1RM (~113) sits below the measured 150 watermark → it raised no
+    # floor (history-only), and can never regress capacity (ADR-0055/0058).
     ext = [o for o in await _obs(async_db, user.id) if o.source == "workout_extraction"]
     assert len(ext) == 1
-    assert ext[0].affects_capacity is False
+    assert ext[0].can_regress_capacity is False  # workout extraction never regresses
     assert ext[0].evidence_type == se.EV_ESTIMATED_FROM_TRAINING_SET  # below watermark → estimated
 
 

@@ -136,6 +136,192 @@
         "title": "AnchorObservationOut",
         "type": "object"
       },
+      "AssessmentBenchmarkCard": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "confidence_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Status"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "domain_lenses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Domain Lenses",
+            "type": "array"
+          },
+          "domain_lenses_source": {
+            "title": "Domain Lenses Source",
+            "type": "string"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Observed At"
+          },
+          "measures_axes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Measures Axes",
+            "type": "array"
+          },
+          "metric_type": {
+            "title": "Metric Type",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Summary"
+          },
+          "recommend_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommend Rank"
+          },
+          "recommended": {
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "utility": {
+            "title": "Utility",
+            "type": "number"
+          },
+          "utility_model_version": {
+            "title": "Utility Model Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "domain",
+          "domain_lenses",
+          "domain_lenses_source",
+          "metric_type",
+          "unit",
+          "protocol_summary",
+          "measures_axes",
+          "confidence_status",
+          "last_observed_at",
+          "eligible",
+          "recommended",
+          "recommend_rank",
+          "utility",
+          "utility_model_version"
+        ],
+        "title": "AssessmentBenchmarkCard",
+        "type": "object"
+      },
+      "AssessmentDomainGroup": {
+        "properties": {
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentBenchmarkCard"
+            },
+            "title": "Cards",
+            "type": "array"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "cards"
+        ],
+        "title": "AssessmentDomainGroup",
+        "type": "object"
+      },
+      "AssessmentSurfaceRead": {
+        "properties": {
+          "active_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Active Domains",
+            "type": "array"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentDomainGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "recommended": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommended",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "active_domains",
+          "groups",
+          "recommended",
+          "policy_version"
+        ],
+        "title": "AssessmentSurfaceRead",
+        "type": "object"
+      },
       "AuthorizeUrlResponse": {
         "properties": {
           "authorize_url": {
@@ -377,6 +563,17 @@
             ],
             "title": "Can Regress Capacity"
           },
+          "collection_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Mode"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -387,6 +584,28 @@
               }
             ],
             "title": "Confidence"
+          },
+          "confidence_model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Model Version"
+          },
+          "confidence_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Source"
           },
           "effort_fidelity": {
             "anyOf": [
@@ -559,6 +778,17 @@
             ],
             "title": "Reps"
           },
+          "requested_capacity_effect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Capacity Effect"
+          },
           "rir": {
             "anyOf": [
               {
@@ -607,6 +837,17 @@
             "default": "manual",
             "title": "Source",
             "type": "string"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
           },
           "validity_status": {
             "default": "valid",
@@ -1225,6 +1466,17 @@
           }
         },
         "title": "CapacityState",
+        "type": "object"
+      },
+      "CompleteOnboardingRequest": {
+        "properties": {
+          "reason": {
+            "default": "done_for_now",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "CompleteOnboardingRequest",
         "type": "object"
       },
       "ConnectionStatus": {
@@ -2679,6 +2931,91 @@
           "message"
         ],
         "title": "OnboardResponse",
+        "type": "object"
+      },
+      "OnboardingStateResponse": {
+        "properties": {
+          "can_prescribe": {
+            "title": "Can Prescribe",
+            "type": "boolean"
+          },
+          "completed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Reason"
+          },
+          "measurement_debt": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Measurement Debt",
+            "type": "array"
+          },
+          "missing_basics": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Basics",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "twin": {
+            "$ref": "#/components/schemas/OnboardingTwinSummary"
+          }
+        },
+        "required": [
+          "status",
+          "completed_reason",
+          "can_prescribe",
+          "missing_basics",
+          "twin",
+          "measurement_debt"
+        ],
+        "title": "OnboardingStateResponse",
+        "type": "object"
+      },
+      "OnboardingTwinSummary": {
+        "properties": {
+          "overall_confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Confidence"
+          },
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "seed_status": {
+            "title": "Seed Status",
+            "type": "string"
+          },
+          "seeded": {
+            "title": "Seeded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "seeded",
+          "seed_status",
+          "provisional",
+          "overall_confidence"
+        ],
+        "title": "OnboardingTwinSummary",
         "type": "object"
       },
       "OverviewMetrics": {
@@ -5815,6 +6152,7 @@
     },
     "/compute-metrics": {
       "post": {
+        "deprecated": true,
         "operationId": "compute_metrics_compute_metrics_post",
         "requestBody": {
           "content": {
@@ -5921,6 +6259,56 @@
         "summary": "Get Strength Program",
         "tags": [
           "Legacy"
+        ]
+      }
+    },
+    "/v1/benchmarks/assessment-surface": {
+      "get": {
+        "description": "The one domain-filtered assessment surface (ADR-0047), with a measurement-debt\nranking of which benchmarks to assess next. ``mode`` is product framing only \u2014\nonboarding (``onramp``) vs ongoing (``retest``); the data path is identical.",
+        "operationId": "get_assessment_surface_v1_benchmarks_assessment_surface_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "onramp",
+              "pattern": "^(onramp|retest)$",
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentSurfaceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Assessment Surface",
+        "tags": [
+          "Benchmarks"
         ]
       }
     },
@@ -7116,6 +7504,80 @@
           }
         ],
         "summary": "Onboard Athlete",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding/complete": {
+      "post": {
+        "description": "Leave onboarding with a reason (finished | done_for_now | skipped). A user may\nalways leave; leaving early is not failure and does not lock them out.",
+        "operationId": "complete_onboarding_v1_onboarding_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteOnboardingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Complete Onboarding",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding/state": {
+      "get": {
+        "description": "Non-blocking onboarding state (PDR-0010): status, the safety hard-gate\n(`can_prescribe` / `missing_basics`), the provisional twin summary, and progressive\nmeasurement-debt prompts. Access is never gated on a measurement.",
+        "operationId": "get_onboarding_state_v1_onboarding_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Onboarding State",
         "tags": [
           "onboarding"
         ]

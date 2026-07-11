@@ -8,15 +8,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
+from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
 from app.logic.ekf.observation import mapping_specs_from_orm
-from app.logic.state_update_v0 import apply_benchmark_observation, normalize_score01
+from app.logic.state_update_v0 import (
+    apply_benchmark_observation,
+    capacity_increased,
+    floor_capacity_at_prior,
+    normalize_score01,
+)
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
-from app.services import state_service
+from app.services import capacity_floor_shadow_service, state_service
 
 logger = logging.getLogger(__name__)
 
@@ -160,44 +166,78 @@ async def list_observations(
     return out
 
 
-def _resolve_authority(body: BenchmarkObservationCreate) -> dict[str, object]:
-    """Fill evidence authority/provenance from the caller, defaulting by ``source``.
+def _resolve_authority(
+    body: BenchmarkObservationCreate, definition: BenchmarkDefinition
+) -> dict[str, object]:
+    """Derive the full five-dimension provenance + policy capacity authority (ADR-0058).
 
-    A benchmark/manual entry defaults to a capacity-authoritative direct measurement;
-    ``workout_extraction`` defaults to an estimated, non-regressing training row that
-    never touches capacity. Explicit caller values win — except that
-    ``workout_extraction`` can **never** be granted capacity regression (fail-closed).
+    ``capacity_effect`` is resolved as the meet of independent caps (source /
+    collection_mode / evidence / protocol) narrowed by any caller request — a caller
+    may only ever *narrow*, never elevate. The legacy ADR-0055 booleans
+    (``affects_capacity`` / ``can_regress_capacity``) are DERIVED from the resolved
+    effect, never the reverse. Rejected writer source_types are refused here.
     """
-    is_workout = body.source == se.SOURCE_WORKOUT_EXTRACTION
+    source_type = body.source_type or oa.default_source_type(body.source)
+    if source_type in oa.REJECTED_SOURCE_TYPES:
+        raise ValueError(
+            f"source_type {source_type!r} is not an accepted writer yet "
+            "(no validated writer/UX/tests) — ADR-0058"
+        )
+    collection_mode = body.collection_mode or oa.default_collection_mode(body.source)
+
+    is_workout = source_type == oa.ST_WORKOUT_EXTRACTION
     if is_workout:
         evidence_type = body.evidence_type or se.EV_ESTIMATED_FROM_TRAINING_SET
         value_semantics = body.value_semantics or se.VS_ESTIMATED
-        affects_capacity = False
-        can_regress_capacity = False
-        affects_prescription = (
-            body.affects_prescription if body.affects_prescription is not None else True
-        )
         observation_model = body.observation_model or "workout_e1rm_extraction_v1"
+        actor_type = "system"
     else:
         evidence_type = body.evidence_type or se.EV_DIRECT_MEASUREMENT
         value_semantics = body.value_semantics or se.VS_MEASURED
-        affects_capacity = (
-            body.affects_capacity if body.affects_capacity is not None else True
-        )
-        can_regress_capacity = (
-            body.can_regress_capacity if body.can_regress_capacity is not None else True
-        )
-        affects_prescription = (
-            body.affects_prescription if body.affects_prescription is not None else True
-        )
         observation_model = body.observation_model or "benchmark_protocol"
+        actor_type = "athlete"
+
+    protocol_validity = oa.derive_protocol_validity(
+        has_standardization_rules=definition.standardization_rules is not None,
+        value_semantics=value_semantics,
+        raw_value_present=True,  # raw_value is required on BenchmarkObservationCreate
+    )
+    resolution = oa.resolve_authority(
+        source_type=source_type,
+        collection_mode=collection_mode,
+        evidence_type=evidence_type,
+        value_semantics=value_semantics,
+        protocol_validity=protocol_validity,
+        requested_capacity_effect=body.requested_capacity_effect,
+    )
+    if resolution.over_request_clamped:
+        logger.warning(
+            "capacity_effect over-request clamped: user requested=%s -> resolved=%s (%s)",
+            body.requested_capacity_effect, resolution.capacity_effect, resolution.resolution_reason,
+        )
+    flags = resolution.legacy_flags()
+    affects_prescription = (
+        body.affects_prescription if body.affects_prescription is not None else True
+    )
     return {
+        "source_type": source_type,
+        "collection_mode": collection_mode,
+        "actor_type": actor_type,
+        "provenance_operation": oa.OP_LIVE_WRITE,
         "evidence_type": evidence_type,
         "value_semantics": value_semantics,
         "observation_model": observation_model,
-        "affects_capacity": affects_capacity,
-        "can_regress_capacity": can_regress_capacity,
+        "protocol_code": definition.code,
+        "protocol_validity": protocol_validity,
+        "requested_capacity_effect": resolution.requested_capacity_effect,
+        "capacity_effect": resolution.capacity_effect,
+        "authority_policy_version": resolution.policy_version,
+        "authority_resolution_reason": resolution.resolution_reason,
+        "affects_capacity": flags["affects_capacity"],
+        "can_regress_capacity": flags["can_regress_capacity"],
         "affects_prescription": affects_prescription,
+        "confidence_source": body.confidence_source,
+        "confidence_model_version": body.confidence_model_version,
     }
 
 
@@ -225,7 +265,7 @@ async def create_observation(
     if normalized_value is None and score01 is not None:
         normalized_value = round(score01 * 100.0, 2)
 
-    authority = _resolve_authority(body)
+    authority = _resolve_authority(body, definition)
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
@@ -259,22 +299,41 @@ async def create_observation(
 
     mappings = list(definition.observation_mappings or [])
     observation_time = body.observed_at or datetime.utcnow()
-    # ADR-0055 fail-closed capacity guard: only a protocol-grade, capacity-authoritative
-    # observation may enter the bidirectional capacity residual path. Recomputed from
-    # provenance here — a mismarked row is still refused. Training-derived e1RM
-    # (workout_extraction) is recorded for tracking but never touches canonical capacity.
-    capacity_authoritative = se.capacity_authoritative(obs)
-    apply_to_state = body.validity_status == "valid" and bool(mappings) and capacity_authoritative
-    if mappings and body.validity_status == "valid" and not capacity_authoritative:
+    # Policy-derived capacity authority (ADR-0058): the resolved capacity_effect is
+    # the state-transition operator. Re-derive it from provenance fail-closed and
+    # take the stricter of stored-vs-law — a mismarked row can never earn authority
+    # it wasn't granted. Four distinct handlers, not one residual path behind flags:
+    #   bidirectional_update → full signed residual (may regress)
+    #   upward_lower_bound   → residual then non-regressing capacity floor
+    #   initialize_prior     → seed only when no twin exists yet (idempotency guard)
+    #   none                 → recorded for history/tracking, never touches capacity
+    effect = oa.meet(obs.capacity_effect or oa.CE_NONE, oa.capacity_effect_of(obs))
+    is_valid = body.validity_status == "valid" and bool(mappings)
+    capacity_authoritative = is_valid and effect == oa.CE_BIDIRECTIONAL_UPDATE
+    if mappings and body.validity_status == "valid" and effect == oa.CE_NONE:
         logger.info(
-            "capacity update skipped (non-authoritative evidence): user=%s code=%s "
-            "source=%s evidence_type=%s",
-            user_id, body.benchmark_code, obs.source, obs.evidence_type,
+            "capacity update skipped (no policy authority): user=%s code=%s "
+            "source_type=%s mode=%s protocol=%s",
+            user_id, body.benchmark_code, obs.source_type, obs.collection_mode,
+            obs.protocol_validity,
         )
     # Snapshot mapping data for the shadow EKF *before* commit — ORM attributes expire on
-    # commit, so lazy-loading them afterward in async would fail.
-    ekf_specs = mapping_specs_from_orm(mappings) if apply_to_state else []
-    if apply_to_state:
+    # commit, so lazy-loading them afterward in async would fail. Shadow EKF + weak-point
+    # feedback stay gated on measurement-grade (bidirectional) authority.
+    ekf_specs = mapping_specs_from_orm(mappings) if capacity_authoritative else []
+
+    # Live promotion boundary: only bidirectional_update (measured, may regress) and
+    # initialize_prior (seed an empty twin) mutate canonical state in this slice.
+    # upward_lower_bound is fully resolved + recorded, but promoting its floor-ratchet
+    # to live capacity is DEFERRED — that would flip the deployed ADR-0055 invariant
+    # (a workout-derived estimate never mutates canonical capacity) on the highest-risk
+    # path, so it graduates behind a shadow old-vs-new comparison (ADR-0058 deferred).
+    apply_state = is_valid and effect in (oa.CE_BIDIRECTIONAL_UPDATE, oa.CE_INITIALIZE_PRIOR)
+    if apply_state and effect == oa.CE_INITIALIZE_PRIOR:
+        # A prior seeds an uncertain twin; it may not overwrite an established one.
+        if await state_service.load_current_state(db, user_id) is not None:
+            apply_state = False
+    if apply_state:
         current = await state_service.load_or_init_current_state(db, user_id)
 
         new_state = apply_benchmark_observation(
@@ -287,13 +346,42 @@ async def create_observation(
             observed_at=observation_time,
             score01=score01,
         )
-        kwargs = athlete_state_kwargs_from_unified(new_state)
-        db.add(AthleteState(user_id=user_id, **kwargs))
+        if effect in (oa.CE_UPWARD_LOWER_BOUND, oa.CE_INITIALIZE_PRIOR):
+            # Non-regressing: clamp capacity axes up to at least their prior. If the
+            # lower bound lands below the current watermark it raised nothing — record
+            # the observation for history but write no redundant capacity row.
+            new_state = floor_capacity_at_prior(current, new_state)
+            if not capacity_increased(current, new_state):
+                new_state = None
+        if new_state is not None:
+            kwargs = athlete_state_kwargs_from_unified(new_state)
+            db.add(AthleteState(user_id=user_id, **kwargs))
+    elif is_valid and effect == oa.CE_UPWARD_LOWER_BOUND:
+        # Deferred floor-ratchet (ADR-0058): the authority is resolved but NOT promoted
+        # to a live mutation. Record the candidate — proposed floor, projected uplift,
+        # application-policy version, not-applied reason — as shadow evidence, separate
+        # from any applied transition. Canonical capacity is untouched.
+        current = await state_service.load_or_init_current_state(db, user_id)
+        candidate = apply_benchmark_observation(
+            current,
+            raw_value=body.raw_value,
+            normalized_value=normalized_value,
+            better_direction=definition.better_direction,
+            observation_weight=float(definition.observation_weight),
+            mappings=mappings,
+            observed_at=observation_time,
+            score01=score01,
+        )
+        floored = floor_capacity_at_prior(current, candidate)
+        await capacity_floor_shadow_service.record_floor_candidate(
+            db, user_id, observation=obs, benchmark_code=body.benchmark_code,
+            prior=current, floored=floored,
+        )
 
-    # Weak-point feedback: flag deficits, resolve improvements. Gated on capacity
-    # authority — training-derived tracking evidence must not flag/resolve weak points
-    # as if it were a measurement (ADR-0055).
-    if apply_to_state and normalized_value is not None:
+    # Weak-point feedback: flag deficits, resolve improvements. Gated on measurement-
+    # grade (bidirectional) authority — training-derived / estimated / seeding evidence
+    # must not flag/resolve weak points as if it were a measurement (ADR-0055/0058).
+    if capacity_authoritative and normalized_value is not None:
         await _apply_weak_point_feedback(
             db, user_id, definition, normalized_value, obs.id
         )

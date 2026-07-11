@@ -4,13 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.db import get_db
 from app.models.user import User
+from app.schemas.assessment import AssessmentSurfaceRead
 from app.schemas.benchmarks import (
     BenchmarkDefinitionRead,
     BenchmarkObservationCreate,
     BenchmarkObservationRead,
     RecomputeDerivedResponse,
 )
-from app.services import benchmark_service, dashboard_service
+from app.services import assessment_surface_service, benchmark_service, dashboard_service
 
 router = APIRouter(prefix="/benchmarks", tags=["Benchmarks"])
 
@@ -22,6 +23,23 @@ async def get_benchmark_definitions(
 ) -> list[BenchmarkDefinitionRead]:
     rows = await benchmark_service.list_definitions(db)
     return [BenchmarkDefinitionRead.model_validate(r) for r in rows]
+
+
+@router.get("/assessment-surface", response_model=AssessmentSurfaceRead)
+async def get_assessment_surface(
+    mode: str = Query("onramp", pattern="^(onramp|retest)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AssessmentSurfaceRead:
+    """The one domain-filtered assessment surface (ADR-0047), with a measurement-debt
+    ranking of which benchmarks to assess next. ``mode`` is product framing only —
+    onboarding (``onramp``) vs ongoing (``retest``); the data path is identical."""
+    try:
+        return await assessment_surface_service.build_assessment_surface(
+            db, current_user.id, mode
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/observations", response_model=BenchmarkObservationRead)

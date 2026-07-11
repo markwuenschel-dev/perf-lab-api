@@ -1,8 +1,45 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-10
+delivery: delivered
 ---
 # Observation capacity authority is policy-derived, not caller-asserted
+
+> **Delivered (P10 Slice 2, 2026-07-11).** New `app/logic/observation_authority.py`:
+> the five provenance dimensions as vocabularies, a `capacity_effect`
+> meet-semilattice, per-dimension caps (source/mode/evidence/protocol),
+> server-derived `protocol_validity` (keyed on the definition's
+> `standardization_rules`, never a client flag), and `resolve_authority` =
+> `narrow_only(meet(caps), requested)` with hard denials in the caps and over-
+> requests clamped-and-flagged (elevation can never be requested). The ADR-0055
+> booleans are now **derived** from the resolved effect. Migration `a028` adds the
+> additive nullable columns (source_type, collection_mode, provenance_operation,
+> migration_version, migrated_at, actor_type, requested/`capacity_effect`,
+> protocol_code/version/validity, authority_policy_version/resolution_reason,
+> confidence_source/model_version), backfills every legacy row conservatively
+> (workout→system/workout/none; else legacy_unknown/none — never fabricated into a
+> measurement), and adds NOT VALID invariant guards. `create_observation` resolves
+> authority and routes state by the four handlers.
+>
+> **Scoped promotion:** only `bidirectional_update` (measured, may regress) and
+> `initialize_prior` (seed an empty twin, idempotency-guarded) mutate canonical
+> state in this slice. `upward_lower_bound` is fully resolved + recorded, but
+> promoting its floor-ratchet to live capacity is **deferred** — flipping it now
+> would change the deployed ADR-0055 invariant (a workout-derived estimate never
+> mutates canonical capacity) on the highest-risk path. Resolved authority and the
+> applied transition are recorded **separately**: migration `a029` +
+> `capacity_floor_shadow_log` + `capacity_floor_shadow_service` capture each deferred
+> candidate — the proposed floor, projected uplift, `application_policy_version`
+> (`capacity_floor_apply_v0_shadow_only`, distinct from the authority policy
+> version), and the not-applied reason (`upward_lower_bound_promotion_deferred` /
+> `below_watermark_no_uplift`) — as `decision_impact = none_shadow_only`. Live
+> floor-ratchet activation is a **separate, observable promotion decision** requiring
+> this shadow evidence, an idempotency proof, bounded-uplift guards, canary rollout,
+> and rollback. `floor_capacity_at_prior` + `capacity_increased` helpers exist for
+> when it graduates. Verified: 33 new/updated unit + DB tests green (resolver
+> min-of-caps/hard-denials/narrow-only, the capacity-corruption invariants, and the
+> floor-shadow capture), a028/a029 up/down/up + backfill on local Postgres,
+> ruff+pyright clean, OpenAPI unchanged + web types regenerated, web build green.
 
 [ADR-0055](0055-strength-evidence-ledger.md) established that only protocol-grade benchmark
 observations may update capacity bidirectionally; workout extraction may raise a lower bound

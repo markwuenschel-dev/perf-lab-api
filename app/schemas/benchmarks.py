@@ -50,6 +50,16 @@ class BenchmarkObservationCreate(BaseModel):
     affects_capacity: bool | None = None
     can_regress_capacity: bool | None = None
     affects_prescription: bool | None = None
+
+    # Policy-derived capacity authority (ADR-0058). All optional — the service
+    # derives source_type/collection_mode from `source` when omitted, and resolves
+    # capacity_effect from the five provenance dimensions (a caller may only ever
+    # *narrow* via requested_capacity_effect, never elevate).
+    source_type: str | None = None
+    collection_mode: str | None = None
+    requested_capacity_effect: str | None = None
+    confidence_source: str | None = None
+    confidence_model_version: str | None = None
     observation_weight: float | None = None
     confidence: float | None = None
     exercise_id: int | None = None

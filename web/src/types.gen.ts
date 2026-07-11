@@ -67,7 +67,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Compute Metrics */
+        /**
+         * Compute Metrics
+         * @deprecated
+         */
         post: operations["compute_metrics_compute_metrics_post"];
         delete?: never;
         options?: never;
@@ -121,6 +124,28 @@ export interface paths {
         };
         /** Get Strength Program */
         get: operations["get_strength_program_program_strength_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/benchmarks/assessment-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Assessment Surface
+         * @description The one domain-filtered assessment surface (ADR-0047), with a measurement-debt
+         *     ranking of which benchmarks to assess next. ``mode`` is product framing only —
+         *     onboarding (``onramp``) vs ongoing (``retest``); the data path is identical.
+         */
+        get: operations["get_assessment_surface_v1_benchmarks_assessment_surface_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -494,6 +519,49 @@ export interface paths {
         put?: never;
         /** Onboard Athlete */
         post: operations["onboard_athlete_v1_onboard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/onboarding/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Onboarding
+         * @description Leave onboarding with a reason (finished | done_for_now | skipped). A user may
+         *     always leave; leaving early is not failure and does not lock them out.
+         */
+        post: operations["complete_onboarding_v1_onboarding_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/onboarding/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Onboarding State
+         * @description Non-blocking onboarding state (PDR-0010): status, the safety hard-gate
+         *     (`can_prescribe` / `missing_basics`), the provisional twin summary, and progressive
+         *     measurement-debt prompts. Access is never gated on a measurement.
+         */
+        get: operations["get_onboarding_state_v1_onboarding_state_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -886,6 +954,61 @@ export interface components {
             /** Unit */
             unit: string;
         };
+        /** AssessmentBenchmarkCard */
+        AssessmentBenchmarkCard: {
+            /** Code */
+            code: string;
+            /** Confidence Status */
+            confidence_status: string | null;
+            /** Domain */
+            domain: string;
+            /** Domain Lenses */
+            domain_lenses: string[];
+            /** Domain Lenses Source */
+            domain_lenses_source: string;
+            /** Eligible */
+            eligible: boolean;
+            /** Last Observed At */
+            last_observed_at: string | null;
+            /** Measures Axes */
+            measures_axes: string[];
+            /** Metric Type */
+            metric_type: string;
+            /** Name */
+            name: string;
+            /** Protocol Summary */
+            protocol_summary: string | null;
+            /** Recommend Rank */
+            recommend_rank: number | null;
+            /** Recommended */
+            recommended: boolean;
+            /** Unit */
+            unit: string;
+            /** Utility */
+            utility: number;
+            /** Utility Model Version */
+            utility_model_version: string;
+        };
+        /** AssessmentDomainGroup */
+        AssessmentDomainGroup: {
+            /** Cards */
+            cards: components["schemas"]["AssessmentBenchmarkCard"][];
+            /** Domain */
+            domain: string;
+        };
+        /** AssessmentSurfaceRead */
+        AssessmentSurfaceRead: {
+            /** Active Domains */
+            active_domains: string[];
+            /** Groups */
+            groups: components["schemas"]["AssessmentDomainGroup"][];
+            /** Mode */
+            mode: string;
+            /** Policy Version */
+            policy_version: string;
+            /** Recommended */
+            recommended: string[];
+        };
         /** AuthorizeUrlResponse */
         AuthorizeUrlResponse: {
             /** Authorize Url */
@@ -980,8 +1103,14 @@ export interface components {
             bodyweight_kg?: number | null;
             /** Can Regress Capacity */
             can_regress_capacity?: boolean | null;
+            /** Collection Mode */
+            collection_mode?: string | null;
             /** Confidence */
             confidence?: number | null;
+            /** Confidence Model Version */
+            confidence_model_version?: string | null;
+            /** Confidence Source */
+            confidence_source?: string | null;
             /** Effort Fidelity */
             effort_fidelity?: string | null;
             /** Evidence Type */
@@ -1016,6 +1145,8 @@ export interface components {
             raw_value: number;
             /** Reps */
             reps?: number | null;
+            /** Requested Capacity Effect */
+            requested_capacity_effect?: string | null;
             /** Rir */
             rir?: number | null;
             /** Rpe */
@@ -1029,6 +1160,8 @@ export interface components {
              * @default manual
              */
             source: string;
+            /** Source Type */
+            source_type?: string | null;
             /**
              * Validity Status
              * @default valid
@@ -1303,6 +1436,14 @@ export interface components {
              * @default 50
              */
             work_capacity: number;
+        };
+        /** CompleteOnboardingRequest */
+        CompleteOnboardingRequest: {
+            /**
+             * Reason
+             * @default done_for_now
+             */
+            reason: string;
         };
         /**
          * ConnectionStatus
@@ -1813,6 +1954,31 @@ export interface components {
             profile_id: number;
             /** User Id */
             user_id: number;
+        };
+        /** OnboardingStateResponse */
+        OnboardingStateResponse: {
+            /** Can Prescribe */
+            can_prescribe: boolean;
+            /** Completed Reason */
+            completed_reason: string | null;
+            /** Measurement Debt */
+            measurement_debt: string[];
+            /** Missing Basics */
+            missing_basics: string[];
+            /** Status */
+            status: string;
+            twin: components["schemas"]["OnboardingTwinSummary"];
+        };
+        /** OnboardingTwinSummary */
+        OnboardingTwinSummary: {
+            /** Overall Confidence */
+            overall_confidence: string | null;
+            /** Provisional */
+            provisional: boolean;
+            /** Seed Status */
+            seed_status: string;
+            /** Seeded */
+            seeded: boolean;
         };
         /**
          * OverviewMetrics
@@ -3239,6 +3405,37 @@ export interface operations {
             };
         };
     };
+    get_assessment_surface_v1_benchmarks_assessment_surface_get: {
+        parameters: {
+            query?: {
+                mode?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSurfaceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_benchmark_definitions_v1_benchmarks_definitions_get: {
         parameters: {
             query?: never;
@@ -3997,6 +4194,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_onboarding_v1_onboarding_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteOnboardingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_onboarding_state_v1_onboarding_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingStateResponse"];
                 };
             };
         };

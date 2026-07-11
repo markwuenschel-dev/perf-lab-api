@@ -1,8 +1,37 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-10
+delivery: partial
 ---
 # Per-axis seed uncertainty by evidence tier; debt and provisionality are views over live confidence
+
+> **Delivered — foundation (P10 Slice 3, 2026-07-11).** `app/logic/seed_variance.py`
+> (`seed_variance_policy_v1`, `calibration_basis = synthetic_and_expert_prior`): the
+> six-tier `SEED_TIER_ORDER`, `axis_base_variance × tier_multiplier`, import-time +
+> tested strict per-axis ordering, bounded unseeded placeholder (capped at the engine's
+> 1.5). The uniform seed is retired **in the service seed path** — `_build_baseline_vector`
+> now writes per-axis, tier-derived variance to the LIVE `CapacityConfidence` (the sole
+> runtime authority); the `CapacityConfidence()` default stays uniform only as the
+> legacy/engine fallback. `app/logic/seed_snapshot.py` + migration `a030` add the
+> immutable per-axis snapshot (`AthleteProfile.initial_seed_by_axis` /
+> `seed_policy_version` / `seeded_at`; `source`/`evidence_tier`/`variance` as three
+> separate facts + cross-axis `seed_group` lineage), persisted at seed time; the P7
+> scalar `initial_seed_status` is now a derived `initial_seed_status_rollup_v1`.
+> `app/logic/confidence_presentation.py` (`confidence_presentation_policy_v1`) gives the
+> `evidence_status` ⟂ `confidence_status` split (the latter from live variance only).
+> **Static guard** `tests/test_seed_snapshot_not_runtime_read.py` fails if any runtime
+> engine module reads the snapshot. Verified: ruff+pyright clean; 20 new tests + a
+> 61-test engine/confidence/benchmark/simulation sweep + 125 state/prescriber tests
+> green (no engine-numerics regression); a030 up/down/up on local Postgres; OpenAPI
+> unchanged.
+>
+> **Deferred (this ADR is broader than Slice 3):** the `measurement_debt` /
+> `actionable_measurement_debt` ranking, eligibility, `information_gain_proxy_v1`
+> utility, and hysteresis land with the assessment surface (P10 Slice 4, which ranks
+> benchmarks). The conservative diagonal-covariance variance *inflation* for
+> same-`seed_group` axes, the full `uncertainty_policy_bundle_v1`, and the
+> recommendation-level provisionality aggregation are follow-ups. Empirical calibration
+> stays deferred until seed→retest data exists (per the ADR).
 
 [ADR-0036](0036-per-axis-confidence-scalar.md) gave every capacity axis a live variance
 (`CapacityConfidence`), but the seed writes a **uniform** `SEED_CAPACITY_VARIANCE` to all
