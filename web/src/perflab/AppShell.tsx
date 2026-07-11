@@ -5,7 +5,7 @@ import type { Screen } from "./store";
 import { Sidebar } from "./Sidebar";
 import { Card } from "./ui";
 import { OverviewScreen } from "./screens/OverviewScreen";
-import { FieldTestScreen } from "./screens/FieldTestScreen";
+import { AssessmentSurfaceScreen } from "./screens/AssessmentSurfaceScreen";
 import { TwinScreen } from "./screens/TwinScreen";
 import { PlanningScreen } from "./screens/PlanningScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
@@ -24,7 +24,7 @@ import { MacrocycleCreateModal } from "./overlays/MacrocycleCreateModal";
 
 const SCREENS: Partial<Record<Screen, ComponentType>> = {
   overview: OverviewScreen,
-  field: FieldTestScreen,
+  assess: AssessmentSurfaceScreen,
   twin: TwinScreen,
   planning: PlanningScreen,
   history: HistoryScreen,
@@ -34,10 +34,10 @@ const SCREENS: Partial<Record<Screen, ComponentType>> = {
 };
 
 const EMPTY: Partial<Record<Screen, { t: string; d: string }>> = {
-  overview: { t: "Welcome to Perf Lab", d: "Run your first field test to seed your digital twin — two timed runs and you are modelled." },
-  twin: { t: "Your twin isn’t seeded yet", d: "S(t) initializes from your first field test. Run one, then Send to Twin to start tracking your state." },
-  planning: { t: "Planning unlocks after your first test", d: "Sessions are prescribed against readiness, which needs a seeded twin to compute." },
-  history: { t: "No history yet", d: "Once you log workouts and field tests, your trends and progressions build up here." },
+  overview: { t: "Welcome to Perf Lab", d: "Your twin seeds from a provisional experience prior — assess a benchmark whenever you like to sharpen it." },
+  twin: { t: "Your twin is provisional", d: "S(t) starts from an experience-level prior. Assess a benchmark to replace an estimate with a measurement." },
+  planning: { t: "Planning is ready", d: "Sessions are prescribed against readiness. Assess a benchmark to raise confidence in the plan." },
+  history: { t: "No history yet", d: "Once you log workouts and assess benchmarks, your trends and progressions build up here." },
 };
 
 function EmptyState({ screen }: { screen: Screen }) {
@@ -51,7 +51,7 @@ function EmptyState({ screen }: { screen: Screen }) {
         </div>
         <div className="text-[22px] font-bold leading-[1.2] text-ink">{em.t}</div>
         <div className="max-w-[380px] text-[13.5px] font-medium leading-[1.6] text-mute">{em.d}</div>
-        <button onClick={() => actions.setScreen("field")} className="mt-[6px] rounded-[10px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-3 text-[13px] font-semibold leading-none text-[#0a0c10]">Run field test →</button>
+        <button onClick={() => actions.setScreen("assess")} className="mt-[6px] rounded-[10px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-3 text-[13px] font-semibold leading-none text-[#0a0c10]">Assess a benchmark →</button>
       </Card>
     </section>
   );
@@ -60,7 +60,7 @@ function EmptyState({ screen }: { screen: Screen }) {
 export function AppShell() {
   const { state } = usePerfLab();
   const { screen, fresh } = state;
-  const showEmpty = fresh && screen !== "field" && screen !== "onboarding" && screen !== "settings";
+  const showEmpty = fresh && screen !== "assess" && screen !== "onboarding" && screen !== "settings";
   const ScreenComp = SCREENS[screen] ?? OverviewScreen;
 
   return (

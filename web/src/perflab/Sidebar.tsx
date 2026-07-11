@@ -78,7 +78,7 @@ const ICONS: Record<string, ReactNode> = {
 
 const WORKSPACE: { screen: Screen; label: string }[] = [
   { screen: "overview", label: "Overview" },
-  { screen: "field", label: "Field Test" },
+  { screen: "assess", label: "Assess" },
   { screen: "twin", label: "Digital Twin" },
   { screen: "simulate", label: "Simulator" },
   { screen: "objectives", label: "Objectives" },

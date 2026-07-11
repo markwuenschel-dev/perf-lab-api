@@ -13,7 +13,7 @@ import type { MetricsResponse, ReadinessScore, UnifiedStateVector } from "../typ
 
 export type Screen =
   | "overview"
-  | "field"
+  | "assess"
   | "twin"
   | "planning"
   | "history"

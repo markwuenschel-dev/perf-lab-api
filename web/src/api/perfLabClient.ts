@@ -2,8 +2,12 @@
 import { notifyUnauthorized } from "../auth/sessionBridge";
 import type {
   ApiError,
+  AssessmentSurfaceRead,
   AuthorizeUrlResponse,
+  BenchmarkObservationCreate,
   BenchmarkObservationRead,
+  CompleteOnboardingRequest,
+  OnboardingStateResponse,
   BlockCreateRequest,
   BlockRead,
   BlockUpdateRequest,
@@ -517,6 +521,58 @@ export async function createObjective(
     body: JSON.stringify(body),
   });
   return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+}
+
+/** Benchmark assessment surface (P10, ADR-0047): the one domain-filtered catalog view
+ *  with a measurement-debt ranking. `mode` is product framing only (onramp vs retest). */
+export async function getAssessmentSurface(
+  token: string,
+  mode: "onramp" | "retest" = "onramp",
+): Promise<AssessmentSurfaceRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/benchmarks/assessment-surface?mode=${mode}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<AssessmentSurfaceRead>(res, { sessionOn401: true });
+}
+
+/** Submit a benchmark assessment as a single observation (P10). The backend owns the
+ *  state seed/update via the ADR-0058 authority path; the frontend never seeds capacity. */
+export async function submitBenchmarkObservation(
+  body: BenchmarkObservationCreate,
+  token: string,
+): Promise<BenchmarkObservationRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/benchmarks/observations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<BenchmarkObservationRead>(res, { sessionOn401: true });
+}
+
+/** Non-blocking onboarding state (P10, PDR-0010): status, the safety hard-gate,
+ *  the provisional twin summary, and progressive measurement-debt prompts. */
+export async function getOnboardingState(token: string): Promise<OnboardingStateResponse> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/onboarding/state`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<OnboardingStateResponse>(res, { sessionOn401: true });
+}
+
+/** Leave onboarding with a reason (finished | done_for_now | skipped) — never locks out. */
+export async function completeOnboarding(
+  token: string,
+  reason: CompleteOnboardingRequest["reason"] = "done_for_now",
+): Promise<OnboardingStateResponse> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/onboarding/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ reason }),
+  });
+  return handleResponse<OnboardingStateResponse>(res, { sessionOn401: true });
 }
 
 /** Objectives (P4a): list the athlete's objectives, optionally filtered by status. */

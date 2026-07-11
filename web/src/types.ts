@@ -43,6 +43,15 @@ export type WorkoutPrescription = Schemas["WorkoutPrescription"];
 /* ---------- Onboarding ---------- */
 export type OnboardRequest = Schemas["OnboardRequest"];
 export type OnboardResponse = Schemas["OnboardResponse"];
+export type OnboardingStateResponse = Schemas["OnboardingStateResponse"];
+export type OnboardingTwinSummary = Schemas["OnboardingTwinSummary"];
+export type CompleteOnboardingRequest = Schemas["CompleteOnboardingRequest"];
+
+/* ---------- Benchmark assessment surface (P10, ADR-0047) ---------- */
+export type AssessmentSurfaceRead = Schemas["AssessmentSurfaceRead"];
+export type AssessmentDomainGroup = Schemas["AssessmentDomainGroup"];
+export type AssessmentBenchmarkCard = Schemas["AssessmentBenchmarkCard"];
+export type BenchmarkObservationCreate = Schemas["BenchmarkObservationCreate"];
 
 /* ---------- History (GET /v1/state-history, /v1/workouts) ---------- */
 export type WorkoutLogSummary = Schemas["WorkoutLogSummary"];
