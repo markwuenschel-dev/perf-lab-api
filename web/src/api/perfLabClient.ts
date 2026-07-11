@@ -43,9 +43,17 @@ import type {
 
 const RAW_BASE = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const API_ROOT = RAW_BASE ? RAW_BASE.replace(/\/$/, "") : "";
-const API_V1_BASE = API_ROOT ? `${API_ROOT}/v1` : "";
 
-if (!API_ROOT) {
+// Monolith deploy: the SPA is served same-origin by the API host (embedded at /static), so no
+// absolute base URL is baked into the build. Fall back to relative ("same-origin") request paths
+// — `${API_ROOT}/ping` becomes `/ping`, `${API_V1_BASE}/…` becomes `/v1/…`. Guard on PROD so that
+// a missing base in local dev (where the API is a separate origin, :8000) still fails loudly
+// instead of silently hitting the Vite dev server.
+const SAME_ORIGIN = !API_ROOT && import.meta.env.PROD;
+const IS_CONFIGURED = Boolean(API_ROOT) || SAME_ORIGIN;
+const API_V1_BASE = API_ROOT ? `${API_ROOT}/v1` : SAME_ORIGIN ? "/v1" : "";
+
+if (!IS_CONFIGURED) {
   console.warn("VITE_API_BASE_URL is not set. API calls will fail.");
 }
 
@@ -120,7 +128,7 @@ export type PingResponse = {
 };
 
 export async function ping(): Promise<PingResponse> {
-  if (!API_ROOT) {
+  if (!IS_CONFIGURED) {
     throw new Error("VITE_API_BASE_URL is not configured");
   }
   const res = await fetch(`${API_ROOT}/ping`);
@@ -134,7 +142,7 @@ export async function ping(): Promise<PingResponse> {
 export async function computeMetrics(
   req: ComputeMetricsRequest,
 ): Promise<MetricsResponse> {
-  if (!API_ROOT) {
+  if (!IS_CONFIGURED) {
     throw new Error("VITE_API_BASE_URL is not configured");
   }
   const res = await fetch(`${API_ROOT}/compute-metrics`, {
@@ -149,7 +157,7 @@ export async function register(
   email: string,
   password: string,
 ): Promise<UserResponse> {
-  if (!API_ROOT) {
+  if (!IS_CONFIGURED) {
     throw new Error("VITE_API_BASE_URL is not configured");
   }
   const res = await fetch(`${API_ROOT}/auth/register`, {
@@ -164,7 +172,7 @@ export async function login(
   email: string,
   password: string,
 ): Promise<TokenResponse> {
-  if (!API_ROOT) {
+  if (!IS_CONFIGURED) {
     throw new Error("VITE_API_BASE_URL is not configured");
   }
   const body = new URLSearchParams();
@@ -179,7 +187,7 @@ export async function login(
 }
 
 export async function fetchMe(token: string): Promise<UserResponse> {
-  if (!API_ROOT) {
+  if (!IS_CONFIGURED) {
     throw new Error("VITE_API_BASE_URL is not configured");
   }
   const res = await fetch(`${API_ROOT}/auth/me`, {
