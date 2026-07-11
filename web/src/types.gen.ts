@@ -980,8 +980,14 @@ export interface components {
             bodyweight_kg?: number | null;
             /** Can Regress Capacity */
             can_regress_capacity?: boolean | null;
+            /** Collection Mode */
+            collection_mode?: string | null;
             /** Confidence */
             confidence?: number | null;
+            /** Confidence Model Version */
+            confidence_model_version?: string | null;
+            /** Confidence Source */
+            confidence_source?: string | null;
             /** Effort Fidelity */
             effort_fidelity?: string | null;
             /** Evidence Type */
@@ -1016,6 +1022,8 @@ export interface components {
             raw_value: number;
             /** Reps */
             reps?: number | null;
+            /** Requested Capacity Effect */
+            requested_capacity_effect?: string | null;
             /** Rir */
             rir?: number | null;
             /** Rpe */
@@ -1029,6 +1037,8 @@ export interface components {
              * @default manual
              */
             source: string;
+            /** Source Type */
+            source_type?: string | null;
             /**
              * Validity Status
              * @default valid

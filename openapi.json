@@ -377,6 +377,17 @@
             ],
             "title": "Can Regress Capacity"
           },
+          "collection_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Mode"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -387,6 +398,28 @@
               }
             ],
             "title": "Confidence"
+          },
+          "confidence_model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Model Version"
+          },
+          "confidence_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Source"
           },
           "effort_fidelity": {
             "anyOf": [
@@ -559,6 +592,17 @@
             ],
             "title": "Reps"
           },
+          "requested_capacity_effect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Capacity Effect"
+          },
           "rir": {
             "anyOf": [
               {
@@ -607,6 +651,17 @@
             "default": "manual",
             "title": "Source",
             "type": "string"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
           },
           "validity_status": {
             "default": "valid",

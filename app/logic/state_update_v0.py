@@ -48,6 +48,44 @@ def _write_axis(state: UnifiedStateVector, vector: str, key: str, value: float) 
     setattr(sub, key, max(0.0, min(cap, value)))
 
 
+def floor_capacity_at_prior(
+    prior: UnifiedStateVector, updated: UnifiedStateVector
+) -> UnifiedStateVector:
+    """Non-regressing ratchet for the ``upward_lower_bound`` capacity_effect (ADR-0058).
+
+    Given the prior state and a candidate post-observation state, clamp every
+    capacity axis up to at least its prior value so a lower-bound/estimated
+    observation can only raise a floor, never pull capacity down. Fatigue and
+    tissue vectors are untouched (they are transient, re-driven each session).
+    """
+    from app.domain.vectors import CapacityState
+
+    for key in CapacityState.KEYS:
+        prior_v = _read_axis(prior, "capacity", key)
+        new_v = _read_axis(updated, "capacity", key)
+        if new_v < prior_v:
+            _write_axis(updated, "capacity", key, prior_v)
+    return updated
+
+
+def capacity_increased(
+    prior: UnifiedStateVector, updated: UnifiedStateVector, *, eps: float = 1e-9
+) -> bool:
+    """True iff any capacity axis in ``updated`` exceeds ``prior``.
+
+    Lets the ``upward_lower_bound`` / ``initialize_prior`` handlers skip persisting a
+    no-op state row when a lower-bound observation lands *below* the current
+    watermark (it raised nothing) — a training-derived e1RM below your measured
+    max writes history only, never a redundant capacity row.
+    """
+    from app.domain.vectors import CapacityState
+
+    return any(
+        _read_axis(updated, "capacity", key) - _read_axis(prior, "capacity", key) > eps
+        for key in CapacityState.KEYS
+    )
+
+
 def _mapping_delta(
     mapping: Any,
     signal: float,
