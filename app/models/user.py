@@ -1,6 +1,6 @@
 # app/models/user.py
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     ARRAY,
@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -120,15 +121,29 @@ class AthleteProfile(Base):
         nullable=True,
         comment="How onboarding ended, e.g. finished | done_for_now | skipped",
     )
+    # Derived analytics rollups over `initial_seed_by_axis` (ADR-0059) — NOT a
+    # parallel confidence authority. The live per-axis CapacityConfidence is the sole
+    # runtime source for provisionality; these are versioned summaries for display/ops.
     initial_seed_status: Mapped[str] = mapped_column(
         String,
         default="none",
         nullable=False,
-        comment="none | experience_prior | benchmark_seeded",
+        comment="Rollup (initial_seed_status_rollup_v1): none | experience_prior_only "
+        "| benchmark_seeded | mixed",
     )
     initial_seed_confidence: Mapped[float | None] = mapped_column(
-        Float, nullable=True, comment="Confidence [0,1] of the initial provisional seed"
+        Float, nullable=True, comment="Legacy scalar summary; superseded by initial_seed_by_axis"
     )
+
+    # === Immutable per-axis seed provenance snapshot (ADR-0059) ===
+    # How each capacity axis was seeded at onboarding (source / evidence_tier /
+    # seed_variance). Immutable provenance — never read at runtime for current
+    # provisionality (enforced by tests/test_seed_snapshot_not_runtime_read.py).
+    initial_seed_by_axis: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    seed_policy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    seeded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # === Wellness tracking preference (ADR-0049) ===
     # Signals the user has explicitly marked "I don't track this" — hidden from
