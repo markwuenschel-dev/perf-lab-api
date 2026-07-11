@@ -29,6 +29,16 @@ from app.logic import strength_evidence as se
 
 POLICY_VERSION = "authority_policy_v1"
 
+# Live capacity APPLICATION policy — deliberately distinct from authority resolution
+# above. Resolving an `upward_lower_bound` authority does NOT promote it to a live
+# canonical-state mutation: the floor-ratchet is shadow-only until a separate,
+# observable promotion decision (shadow evidence + idempotency proof + bounded-uplift
+# guards + canary + rollback). This version stamps every shadow candidate so a future
+# promotion can be scoped to exactly the evidence a given policy produced.
+FLOOR_APPLY_POLICY_VERSION = "capacity_floor_apply_v0_shadow_only"
+FLOOR_NOT_APPLIED_DEFERRED = "upward_lower_bound_promotion_deferred"
+FLOOR_NOT_APPLIED_BELOW_WATERMARK = "below_watermark_no_uplift"
+
 # ---------------------------------------------------------------------------
 # Dimension 1 — source_type (origin/actor)
 # ---------------------------------------------------------------------------

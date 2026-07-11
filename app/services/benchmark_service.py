@@ -22,7 +22,7 @@ from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
-from app.services import state_service
+from app.services import capacity_floor_shadow_service, state_service
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +356,27 @@ async def create_observation(
         if new_state is not None:
             kwargs = athlete_state_kwargs_from_unified(new_state)
             db.add(AthleteState(user_id=user_id, **kwargs))
+    elif is_valid and effect == oa.CE_UPWARD_LOWER_BOUND:
+        # Deferred floor-ratchet (ADR-0058): the authority is resolved but NOT promoted
+        # to a live mutation. Record the candidate — proposed floor, projected uplift,
+        # application-policy version, not-applied reason — as shadow evidence, separate
+        # from any applied transition. Canonical capacity is untouched.
+        current = await state_service.load_or_init_current_state(db, user_id)
+        candidate = apply_benchmark_observation(
+            current,
+            raw_value=body.raw_value,
+            normalized_value=normalized_value,
+            better_direction=definition.better_direction,
+            observation_weight=float(definition.observation_weight),
+            mappings=mappings,
+            observed_at=observation_time,
+            score01=score01,
+        )
+        floored = floor_capacity_at_prior(current, candidate)
+        await capacity_floor_shadow_service.record_floor_candidate(
+            db, user_id, observation=obs, benchmark_code=body.benchmark_code,
+            prior=current, floored=floored,
+        )
 
     # Weak-point feedback: flag deficits, resolve improvements. Gated on measurement-
     # grade (bidirectional) authority — training-derived / estimated / seeding evidence

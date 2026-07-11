@@ -24,14 +24,22 @@ delivery: delivered
 > **Scoped promotion:** only `bidirectional_update` (measured, may regress) and
 > `initialize_prior` (seed an empty twin, idempotency-guarded) mutate canonical
 > state in this slice. `upward_lower_bound` is fully resolved + recorded, but
-> promoting its floor-ratchet to live capacity is **deferred behind a shadow
-> old-vs-new comparison** — flipping it now would change the deployed ADR-0055
-> invariant (a workout-derived estimate never mutates canonical capacity) on the
-> highest-risk path. `floor_capacity_at_prior` + `capacity_increased` helpers exist
-> for when it graduates. Verified: 30 new/updated unit + DB tests green (resolver
-> min-of-caps/hard-denials/narrow-only + the capacity-corruption invariants), a028
-> up/down/up + backfill on local Postgres, ruff+pyright clean, OpenAPI + web types
-> regenerated, web build green.
+> promoting its floor-ratchet to live capacity is **deferred** — flipping it now
+> would change the deployed ADR-0055 invariant (a workout-derived estimate never
+> mutates canonical capacity) on the highest-risk path. Resolved authority and the
+> applied transition are recorded **separately**: migration `a029` +
+> `capacity_floor_shadow_log` + `capacity_floor_shadow_service` capture each deferred
+> candidate — the proposed floor, projected uplift, `application_policy_version`
+> (`capacity_floor_apply_v0_shadow_only`, distinct from the authority policy
+> version), and the not-applied reason (`upward_lower_bound_promotion_deferred` /
+> `below_watermark_no_uplift`) — as `decision_impact = none_shadow_only`. Live
+> floor-ratchet activation is a **separate, observable promotion decision** requiring
+> this shadow evidence, an idempotency proof, bounded-uplift guards, canary rollout,
+> and rollback. `floor_capacity_at_prior` + `capacity_increased` helpers exist for
+> when it graduates. Verified: 33 new/updated unit + DB tests green (resolver
+> min-of-caps/hard-denials/narrow-only, the capacity-corruption invariants, and the
+> floor-shadow capture), a028/a029 up/down/up + backfill on local Postgres,
+> ruff+pyright clean, OpenAPI unchanged + web types regenerated, web build green.
 
 [ADR-0055](0055-strength-evidence-ledger.md) established that only protocol-grade benchmark
 observations may update capacity bidirectionally; workout extraction may raise a lower bound
