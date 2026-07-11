@@ -2,7 +2,7 @@
   {
     "template_id": "tmpl_olift_pendlay_style_v1",
     "name": "Pendlay-style Olympic Lifting Base",
-    "domain": "olympic_lifting",
+    "domain": "weightlifting",
     "source_type": "coach_system",
     "source_name": "Pendlay-style public principles",
     "evidence_level": "moderate",

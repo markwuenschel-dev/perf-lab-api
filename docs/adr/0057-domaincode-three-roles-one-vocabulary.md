@@ -1,8 +1,25 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-10
+delivery: delivered
 ---
 # DomainCode is one vocabulary with three distinct roles
+
+> **Delivered (P10 Slice 1, 2026-07-11).** `domain_vocab` gained
+> `PRESCRIPTION_SUPPORTED_DOMAINS` (explicit reviewed `frozenset`, == `DOMAINS`
+> for v1), `is_canonical_domain`/`is_prescription_supported`, and
+> `normalize_domain_at_boundary` (folds inbound aliases, rejects non-canonical) —
+> wired into the operational `Objective.domain` write path (400 on bad input).
+> Owned seed corrected (`mixed_modal→mixed`, `olympic_lifting→weightlifting`,
+> `sprinting→running`) across `seed_benchmarks` home domains + `domain_lenses` +
+> `coaching_templates/bundled.json`. Idempotent set-based data migration
+> `a027_normalize_domain_codes` normalizes already-materialized rows
+> (`benchmark_definitions.domain` + `domain_lenses[]`, defensively
+> `objectives`/`derived_metric_definitions`); downgrade is a deliberate no-op.
+> CI guard `tests/test_domain_vocab_canonical.py` fails on any non-canonical seed
+> value. The movement/exercise/weak-point/MPC-key axes are untouched, as scoped.
+> Per-benchmark `domain_lenses` curation remains a blocking closure requirement
+> of the assessment-surface API work (Slice 4).
 
 [ADR-0038](0038-canonical-domain-taxonomy.md) made `domain_vocab.DOMAINS` the single
 canonical domain/goal/modality taxonomy, with the guardrail *"new goals/sports are added as

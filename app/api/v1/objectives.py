@@ -26,7 +26,10 @@ async def create_objective(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ObjectiveRead:
-    objective = await objective_service.create_objective(db, current_user.id, payload)
+    try:
+        objective = await objective_service.create_objective(db, current_user.id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return await objective_service.to_read_schema(db, objective)
 
 
@@ -47,7 +50,12 @@ async def update_objective(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ObjectiveRead:
-    objective = await objective_service.update_objective(db, current_user.id, objective_id, payload)
+    try:
+        objective = await objective_service.update_objective(
+            db, current_user.id, objective_id, payload
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if objective is None:
         raise HTTPException(status_code=404, detail="Objective not found")
     return await objective_service.to_read_schema(db, objective)

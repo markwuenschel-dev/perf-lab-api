@@ -12,6 +12,7 @@ from typing import TypedDict, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.domain_vocab import normalize_domain_at_boundary
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.objective import Objective, ObjectiveStatus
@@ -133,7 +134,10 @@ async def to_read_schema(db: AsyncSession, objective: Objective) -> ObjectiveRea
 # ---------------------------------------------------------------------------
 
 async def create_objective(db: AsyncSession, user_id: int, payload: ObjectiveCreate) -> Objective:
-    domain = payload.domain
+    # Operational DomainCode: canonicalize an inbound user value and reject a
+    # non-canonical one (ADR-0057). A benchmark-derived domain is already
+    # canonical after the seed correction, so we only normalize the user path.
+    domain = normalize_domain_at_boundary(payload.domain)
     if payload.benchmark_code is not None and domain is None:
         definition_result = await db.execute(
             select(BenchmarkDefinition).where(BenchmarkDefinition.code == payload.benchmark_code)
@@ -183,6 +187,8 @@ async def update_objective(
     if objective is None:
         return None
     data = payload.model_dump(exclude_unset=True)
+    if "domain" in data:
+        data["domain"] = normalize_domain_at_boundary(data["domain"])
     for field, value in data.items():
         setattr(objective, field, value)
     await db.commit()
