@@ -7,6 +7,11 @@ from urllib.parse import urlparse, urlunparse
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The public default signing key. A production boot with this (or an empty/weak) value
+# is refused by `app.main._check_production_secrets` (INT-01) — it would let anyone forge
+# JWTs. Kept as a named constant so the field default and the boot guard cannot drift.
+DEFAULT_SECRET_KEY = "change-me-in-production"
+
 
 def _asyncpg_database_url(url: str) -> str:
     """Convert postgresql:// → postgresql+asyncpg:// for SQLAlchemy async engine."""
@@ -29,7 +34,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # Auth
-    SECRET_KEY: str = "change-me-in-production"
+    SECRET_KEY: str = DEFAULT_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
