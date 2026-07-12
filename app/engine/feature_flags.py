@@ -13,3 +13,13 @@ ENABLE_MPC_PRESCRIPTION: bool = False
 # False, personalization runs shadow-only — it logs population-vs-personalized but the engine
 # keeps using the global/population parameters.
 ENABLE_PERSONALIZED_RECOVERY: bool = False
+
+# INT-02 (ADR-0066): candidate-aware prescription basis. Tri-state — the flag governs the
+# ENTIRE basis selection, not an incidental min():
+#   "off"    → legacy: latest valid raw e1RM is the basis (the prescription half of the
+#              max_strength defect stays OPEN in this state).
+#   "shadow" → compute + record legacy vs candidate-aware, still select legacy.
+#   "on"     → basis is canonical current capacity capped by an active decline-candidate
+#              ceiling; the chronologically-latest raw observation is no longer direct
+#              durable prescription authority.
+DECLINE_CANDIDATE_PRESCRIPTION_BASIS: str = "off"

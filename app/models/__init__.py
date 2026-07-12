@@ -24,6 +24,7 @@ from app.models.observation_mapping import ObservationMapping  # noqa: F401
 from app.models.personalization_shadow import PersonalizationShadowLog  # noqa: F401
 from app.models.planning_override import PlanningOverride  # noqa: F401
 from app.models.recovery_shadow import RecoveryShadowLog  # noqa: F401
+from app.models.strength_decline_candidate import StrengthDeclineCandidate  # noqa: F401
 from app.models.telemetry import (  # noqa: F401
     CandidateDecisionLog,
     OutcomeEvent,

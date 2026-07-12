@@ -756,11 +756,31 @@ async def prelog_e1rm_denominators(
     return out
 
 
+async def best_currently_validated_e1rm(
+    db: AsyncSession, user_id: int, code: str
+) -> float | None:
+    """Best *currently valid* demonstrated e1RM for this code (INT-02, ADR-0066).
+
+    The historical-best concept, held separately from the current latent strength
+    estimate (`capacity_x.max_strength`). Derived from ``max(valid, non-quarantined
+    raw_value)``, so it is monotone while valid observations are added but is
+    **allowed to fall** when the top observation is corrected, invalidated, or
+    quarantined — a bad observation must not stay immortal to preserve monotonicity.
+    Data correction and physiological decline are distinct transition reasons; a
+    watermark drop from quarantine is NOT a decline candidate. Delegates to
+    :func:`_e1rm_watermark`, the existing derivation.
+    """
+    return await _e1rm_watermark(db, user_id, code)
+
+
 async def _e1rm_watermark(db: AsyncSession, user_id: int, code: str) -> float | None:
     """Highest e1RM observed for this code (demonstrated high-watermark).
 
     Excludes quarantined/invalid rows. Used to keep training-derived evidence
     upward-only — a set below the watermark is history, never a lower bound.
+
+    Prefer the public :func:`best_currently_validated_e1rm` alias at call sites that
+    mean "best currently valid demonstrated strength" (ADR-0066 semantics).
     """
     res = await db.execute(
         select(func.max(BenchmarkObservation.raw_value))

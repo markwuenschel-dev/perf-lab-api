@@ -92,6 +92,16 @@ class BenchmarkObservation(Base):
     authority_policy_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     authority_resolution_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Applied (vs resolved) capacity effect (ADR-0066) --------------------
+    # `capacity_effect` above is the RESOLVED authority. `applied_capacity_effect`
+    # records what the downward-decline transition policy actually exercised: on a
+    # first material low observation the resolved authority is `bidirectional_update`
+    # but the applied effect is `none` (a candidate is opened, canonical capacity
+    # unchanged). The caller may narrow application; it may never elevate beyond
+    # resolved authority.
+    applied_capacity_effect: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    decline_transition_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
     # Confidence hook (ADR-0058 structural; #106 assigns the numbers).
     confidence_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
     confidence_model_version: Mapped[str | None] = mapped_column(String(30), nullable=True)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,9 +23,23 @@ from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
-from app.services import capacity_floor_shadow_service, state_service
+from app.services import (
+    capacity_floor_shadow_service,
+    state_service,
+    strength_decline_service,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _capacity_changed(prior: Any, updated: Any, *, eps: float = 1e-9) -> bool:
+    """True iff any capacity axis differs between two states (up or down)."""
+    from app.domain.vectors import CapacityState
+
+    return any(
+        abs(float(getattr(updated.capacity_x, k)) - float(getattr(prior.capacity_x, k))) > eps
+        for k in CapacityState.KEYS
+    )
 
 # Normalized score thresholds for weak-point feedback.
 # Below DEFICIT → flag as a weakness; above IMPROVEMENT → resolve the weakness.
@@ -353,6 +368,30 @@ async def create_observation(
             new_state = floor_capacity_at_prior(current, new_state)
             if not capacity_increased(current, new_state):
                 new_state = None
+        elif effect == oa.CE_BIDIRECTIONAL_UPDATE:
+            # INT-02 (ADR-0066): a single low bidirectional benchmark must not durably
+            # regress max_strength. The decline machine holds the axis on first
+            # evidence + opens a candidate; applies a bounded decline only once an
+            # independent observation confirms it; dismisses on re-demonstration.
+            outcome = await strength_decline_service.resolve_bidirectional_observation(
+                db, user_id, current=current, observation=obs, definition=definition,
+                mappings=mappings, observed_raw=body.raw_value,
+            )
+            if outcome.intercepted:
+                if outcome.apply_posterior is not None:
+                    # Confirmed decline: a bounded, auditable downward axis move.
+                    obs_state = new_state.capacity_x
+                    obs_state.max_strength = outcome.apply_posterior
+                elif outcome.hold_axis:
+                    strength_decline_service.hold_axis_at_prior(current, new_state)
+                if outcome.decline_transition_status is not None:
+                    obs.applied_capacity_effect = outcome.applied_capacity_effect
+                    obs.decline_transition_status = outcome.decline_transition_status
+                if not _capacity_changed(current, new_state):
+                    new_state = None
+            else:
+                # Upward / first-measurement / non-strength: normal bidirectional apply.
+                obs.applied_capacity_effect = oa.CE_BIDIRECTIONAL_UPDATE
         if new_state is not None:
             kwargs = athlete_state_kwargs_from_unified(new_state)
             db.add(AthleteState(user_id=user_id, **kwargs))

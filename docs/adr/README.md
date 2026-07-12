@@ -114,3 +114,4 @@ and die with their PR.
 | [0063](0063-session-commitment-and-issuance.md) | Session commitment is execution state; issuance is a user-visible event, not materialization | proposed |
 | [0064](0064-receding-horizon-modality-assignment.md) | Objective mix reaches the plan through hierarchical receding-horizon assignment | proposed |
 | [0065](0065-objective-progress-signal-evidence-contract.md) | Objective progress is a derived signal over P10 evidence, not a column | proposed |
+| [0066](0066-strength-decline-hysteresis.md) | A single low benchmark must not durably regress max_strength (downward confirmation hysteresis) | proposed |
