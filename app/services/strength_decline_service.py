@@ -435,10 +435,32 @@ def _first_observation_outcome(
             "strength decline candidate capture failed for user %s (obs %s)",
             user_id, getattr(observation, "id", None), exc_info=True,
         )
+    if severe:
+        _route_severe_to_safety(user_id, definition, assessment)
     return BidirectionalOutcome(
         intercepted=True, hold_axis=True,
         applied_capacity_effect=APPLIED_NONE,
         decline_transition_status=TS_SAFETY_ROUTED if severe else TS_DECLINE_CANDIDATE,
+    )
+
+
+def _route_severe_to_safety(
+    user_id: int, definition: BenchmarkDefinition, assessment: DeclineAssessment
+) -> None:
+    """Route a severe unexplained drop to the existing safety/review surface.
+
+    Ownership boundary (ADR-0066): the decline policy only *identifies* and *routes* a
+    severe drop and records the result (``status = safety_routed``, this signal). The
+    existing safety subsystem owns the response; NO new clinical/contraindication logic
+    is introduced here. Canonical state is unchanged and prescription is conservatively
+    constrained — those outcomes are compatible with a safety review.
+    """
+    logger.warning(
+        "SAFETY-ROUTE severe unexplained strength drop: user=%s code=%s prior=%.1f "
+        "observed=%.1f delta=%.1f threshold=%.2f — canonical state UNCHANGED, "
+        "candidate=safety_routed (not auto-detrained)",
+        user_id, definition.code, assessment.prior_mean, assessment.observed_value,
+        assessment.delta_down, assessment.threshold.threshold,
     )
 
 

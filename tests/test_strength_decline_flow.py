@@ -14,6 +14,7 @@ from app.models.strength_decline_candidate import (
     STATUS_ACTIVE,
     STATUS_CONFIRMED,
     STATUS_DISMISSED,
+    STATUS_SAFETY_ROUTED,
     StrengthDeclineCandidate,
 )
 from app.models.user import User
@@ -225,3 +226,20 @@ async def test_second_low_too_soon_does_not_confirm(async_db):
     assert cands[0].status == STATUS_ACTIVE  # not confirmed — insufficient separation
     # Held: no durable regression from the un-corroborated second low.
     assert await _max_strength(async_db, user.id) >= strength_before - 0.01
+
+
+@pytest.mark.asyncio
+async def test_severe_drop_routes_to_safety_without_regressing(async_db):
+    user = await _user(async_db, "d7@test.com")
+    await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    base = _timeline()
+    await _benchmark(async_db, user.id, 150.0, base)
+    strength_after_150 = await _max_strength(async_db, user.id)
+    await _benchmark(async_db, user.id, 110.0, base + timedelta(days=10))  # severe: delta 40 >> 3·me
+
+    cands = await _candidates(async_db, user.id)
+    assert len(cands) == 1
+    assert cands[0].status == STATUS_SAFETY_ROUTED  # routed, not auto-detrained
+    # No durable regression on the single severe observation.
+    assert await _max_strength(async_db, user.id) >= strength_after_150 - 0.01
