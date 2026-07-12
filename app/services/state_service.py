@@ -23,6 +23,7 @@ from app.logic.dose_engine_v0 import (
     build_session_external_intensity,
     calculate_stress_dose,
 )
+from app.logic.goal_seed_emphasis import apply_goal_emphasis
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -44,10 +45,22 @@ from app.schemas.workouts import (
 logger = logging.getLogger(__name__)
 
 _BASELINE_CAPACITIES = {
-    "beginner":     {"c_met_aerobic": 180.0,  "c_nm_force": 500.0,   "c_struct": 60.0,  "b_met_anaerobic": 8000.0},
+    # beginner c_nm_force raised 500→720 so a beginner without a supplied lift no longer
+    # seeds max_strength ≈ 4.8 (near-zero); (720-400)/21 ≈ 15 is a saner "untrained" prior.
+    "beginner":     {"c_met_aerobic": 180.0,  "c_nm_force": 720.0,   "c_struct": 60.0,  "b_met_anaerobic": 8000.0},
     "intermediate": {"c_met_aerobic": 300.0,  "c_nm_force": 1000.0,  "c_struct": 100.0, "b_met_anaerobic": 15000.0},
     "advanced":     {"c_met_aerobic": 500.0,  "c_nm_force": 1800.0,  "c_struct": 160.0, "b_met_anaerobic": 25000.0},
     "elite":        {"c_met_aerobic": 650.0,  "c_nm_force": 2500.0,  "c_struct": 220.0, "b_met_anaerobic": 35000.0},
+}
+
+# Estimated squat as a multiple of bodyweight by experience level — used to seed the
+# strength scalar from bodyweight when no squat 1RM is supplied (previously bodyweight was
+# collected but unused). Deliberately conservative.
+_REL_STRENGTH_BY_LEVEL = {
+    "beginner": 0.9,
+    "intermediate": 1.4,
+    "advanced": 1.9,
+    "elite": 2.4,
 }
 
 # Per-lift skill seed by experience level (0–1). The prescriber triggers a
@@ -110,10 +123,20 @@ def _build_baseline_vector(
     bodyweight_kg: float | None = None,
     run_5k_seconds: float | None = None,
     experience_years: float = 0.0,
+    goal: str | None = None,
 ) -> tuple[UnifiedStateVector, AthleteState]:
     """Build S0 and the matching ORM row — does NOT touch the DB."""
     caps = _BASELINE_CAPACITIES.get(experience_level, _BASELINE_CAPACITIES["intermediate"])
-    c_nm_force = squat_1rm_kg * 10.0 if squat_1rm_kg is not None else caps["c_nm_force"]
+    # Strength scalar: a supplied squat is best; otherwise estimate absolute strength from
+    # bodyweight × an experience-level relative-strength multiple (uses the previously-dead
+    # bodyweight input); otherwise fall back to the coarse experience table.
+    if squat_1rm_kg is not None:
+        c_nm_force = squat_1rm_kg * 10.0
+    elif bodyweight_kg is not None:
+        rel = _REL_STRENGTH_BY_LEVEL.get(experience_level, _REL_STRENGTH_BY_LEVEL["intermediate"])
+        c_nm_force = bodyweight_kg * rel * 10.0
+    else:
+        c_nm_force = caps["c_nm_force"]
     # A supplied 5K time seeds aerobic capacity directly; otherwise use the table.
     c_met_aerobic = (
         _aerobic_from_run_5k(run_5k_seconds)
@@ -126,6 +149,15 @@ def _build_baseline_vector(
         caps["c_struct"],
         caps["b_met_anaerobic"],
     )
+    # Goal-aware emphasis: tilt the domain's UN-measured axes up from the coarse floor so a
+    # specialist doesn't start near zero on their own specialty (twin-seed quality). Never
+    # overrides a real input.
+    measured_axes: set[str] = set()
+    if squat_1rm_kg is not None or deadlift_1rm_kg is not None or bench_1rm_kg is not None:
+        measured_axes.add("max_strength")
+    if run_5k_seconds is not None:
+        measured_axes.add("aerobic")
+    apply_goal_emphasis(x, goal, measured_axes)
     f = FatigueState()
     t = TissueState()
 
@@ -175,6 +207,7 @@ async def initialize_athlete_state(
     bodyweight_kg: float | None = None,
     run_5k_seconds: float | None = None,
     experience_years: float = 0.0,
+    goal: str | None = None,
 ) -> UnifiedStateVector:
     """Creates baseline S0 for a new user and commits it."""
     _, row = _build_baseline_vector(
@@ -186,6 +219,7 @@ async def initialize_athlete_state(
         bodyweight_kg,
         run_5k_seconds,
         experience_years,
+        goal=goal,
     )
     db.add(row)
     await db.commit()
