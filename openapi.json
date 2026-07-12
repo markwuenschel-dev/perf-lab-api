@@ -2819,6 +2819,18 @@
             ],
             "title": "Bodyweight Kg"
           },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
           "deadlift_1rm_kg": {
             "anyOf": [
               {
@@ -2949,6 +2961,11 @@
               }
             ],
             "title": "Completed Reason"
+          },
+          "is_minor": {
+            "default": false,
+            "title": "Is Minor",
+            "type": "boolean"
           },
           "measurement_debt": {
             "items": {
@@ -3326,6 +3343,18 @@
             ],
             "title": "Bodyweight Kg"
           },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
           "deadlift_1rm_kg": {
             "anyOf": [
               {
@@ -3512,6 +3541,18 @@
               }
             ],
             "title": "Bodyweight Kg"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
           },
           "deadlift_1rm_kg": {
             "anyOf": [

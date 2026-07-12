@@ -2,9 +2,10 @@
 import { useState } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { isImperial, kgToLbs, lbsToKg, parseMMSS, weightLabel } from "@/lib/units";
-import { computeMetrics } from "@/api/perfLabClient";
+import { computeMetrics, createObjective } from "@/api/perfLabClient";
 import { isRunningGoal, isStrengthGoal, TRAINING_GOALS, usePerfLab } from "../store";
 import { getGoalLoadDefinition } from "../goalLoadDefinitions";
+import { DOMAIN_OPTIONS, domainLabel } from "../domains";
 
 const labelCls = "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-[#9aa0ab]";
 const inputCls = "mt-[9px] w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[14px] text-ink";
@@ -86,8 +87,11 @@ function GoalAnchorCard({ goal }: { goal: string }) {
 
 export function OnboardingScreen() {
   const { state, actions } = usePerfLab();
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, token } = useAuth();
   const [seeding, setSeeding] = useState(false);
+  const [domains, setDomains] = useState<string[]>([]); // extra domains → Objectives
+  const toggleDomain = (d: string) =>
+    setDomains((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
 
   const sex = state.settings.sex;
   const units = state.settings.units;
@@ -99,6 +103,16 @@ export function OnboardingScreen() {
   // Step 1 — profile
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [dob, setDob] = useState(""); // ISO "YYYY-MM-DD" from <input type="date">
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const dobAge = dob ? Math.floor((Date.now() - new Date(`${dob}T00:00:00`).getTime()) / 3.15576e10) : null;
+  const dobError: string | null =
+    !dob ? null
+    : Number.isNaN(new Date(`${dob}T00:00:00`).getTime()) ? "Enter a valid date."
+    : dob > todayISO ? "Date of birth can't be in the future."
+    : dobAge !== null && (dobAge < 5 || dobAge > 100) ? "Enter a realistic date of birth."
+    : null;
 
   // Step 2 — training context
   const [weeklyVol, setWeeklyVol] = useState(imperial ? "30" : "48");
@@ -144,11 +158,12 @@ export function OnboardingScreen() {
 
       const displayName = `${firstName.trim()} ${lastName.trim()}`.trim();
       if (displayName) req.display_name = displayName;
+      if (dob && !dobError) req.date_of_birth = dob;
 
       if (isRunningGoal(goal) && t300 && t15) {
-        // Best-effort: compute metrics and cache them for the Field Test screen.
+        // Best-effort: compute metrics and cache them for legacy VO₂/zones display.
         try {
-          const r = await computeMetrics({ age: 28, sex, time_300m: t300, time_1p5mi: t15 });
+          const r = await computeMetrics({ age: dobAge ?? 28, sex, time_300m: t300, time_1p5mi: t15 });
           actions.ftCompute(r);
         } catch { /* non-fatal — user can run the field test later */ }
       }
@@ -166,6 +181,17 @@ export function OnboardingScreen() {
       if (run5k) { const s = parseMMSS(run5k); if (s) req.run_5k_seconds = s; }
 
       await completeOnboarding(req);
+
+      // Each picked domain becomes an Objective (drives plan emphasis + the Assess
+      // filter). Best-effort + only for a signed-in user; a failure never blocks entry.
+      if (token && domains.length) {
+        await Promise.all(
+          domains.map((d, i) =>
+            createObjective({ label: domainLabel(d), domain: d, priority: Math.min(i + 1, 5) }, token)
+              .catch(() => undefined),
+          ),
+        );
+      }
     } finally {
       setSeeding(false);
       goOverview();
@@ -218,10 +244,16 @@ export function OnboardingScreen() {
             <div className="grid grid-cols-2 gap-4">
               <Field label="First name"><input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="First name" className={inputCls} /></Field>
               <Field label="Last name"><input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Last name" className={inputCls} /></Field>
-              <Field label="Date of birth"><input type="date" className={inputCls} style={{ colorScheme: "dark" }} /></Field>
+              <Field label="Date of birth">
+                <input type="date" value={dob} max={todayISO} onChange={(e) => setDob(e.target.value)}
+                  className={inputCls} style={{ colorScheme: "dark" }} />
+                {dobError && <span className="mt-[6px] block text-[11.5px] font-medium leading-none text-hot">{dobError}</span>}
+              </Field>
               <div className="block"><span className={labelCls}>Sex</span><Seg options={["Female", "Male"]} value={sex} onChange={(v) => actions.setSetting("sex", v)} /></div>
             </div>
-            <div className="mt-[30px] flex justify-end"><button onClick={actions.obNext} className={btnPrimary}>Continue →</button></div>
+            <div className="mt-[30px] flex justify-end">
+              <button onClick={actions.obNext} disabled={!!dobError} className={`${btnPrimary} disabled:opacity-50`}>Continue →</button>
+            </div>
           </div>
         )}
 
@@ -231,11 +263,24 @@ export function OnboardingScreen() {
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Training context</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">So the plan speaks your language.</p>
             <div className="flex flex-col gap-4">
-              <Field label="Training goal">
+              <Field label="Primary goal">
                 <select value={goal} onChange={(e) => actions.setSetting("goal", e.target.value)} className={inputCls} style={{ colorScheme: "dark" }}>
                   {TRAINING_GOALS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
                 </select>
               </Field>
+              <div className="block">
+                <span className={labelCls}>What are you training for? (pick all that apply)</span>
+                <p className="mb-2 mt-2 text-[11.5px] font-medium leading-[1.5] text-mute">Each becomes an objective — they drive what the plan emphasizes and which benchmarks Assess suggests.</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {DOMAIN_OPTIONS.map((d) => (
+                    <button key={d.value} type="button" aria-pressed={domains.includes(d.value)}
+                      onClick={() => toggleDomain(d.value)}
+                      className={domains.includes(d.value) ? segOn : segOff}>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="block"><span className={labelCls}>Units</span>
                 <Seg options={["Metric (km)", "Imperial (mi)"]} value={units} onChange={handleUnitsChange} />
               </div>

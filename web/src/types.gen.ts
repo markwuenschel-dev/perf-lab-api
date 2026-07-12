@@ -1908,6 +1908,8 @@ export interface components {
             bench_1rm_kg?: number | null;
             /** Bodyweight Kg */
             bodyweight_kg?: number | null;
+            /** Date Of Birth */
+            date_of_birth?: string | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg?: number | null;
             /** Display Name */
@@ -1961,6 +1963,11 @@ export interface components {
             can_prescribe: boolean;
             /** Completed Reason */
             completed_reason: string | null;
+            /**
+             * Is Minor
+             * @default false
+             */
+            is_minor: boolean;
             /** Measurement Debt */
             measurement_debt: string[];
             /** Missing Basics */
@@ -2092,6 +2099,8 @@ export interface components {
             bench_1rm_kg: number | null;
             /** Bodyweight Kg */
             bodyweight_kg: number | null;
+            /** Date Of Birth */
+            date_of_birth?: string | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg: number | null;
             /** Display Name */
@@ -2135,6 +2144,8 @@ export interface components {
             bench_1rm_kg?: number | null;
             /** Bodyweight Kg */
             bodyweight_kg?: number | null;
+            /** Date Of Birth */
+            date_of_birth?: string | null;
             /** Deadlift 1Rm Kg */
             deadlift_1rm_kg?: number | null;
             /** Display Name */

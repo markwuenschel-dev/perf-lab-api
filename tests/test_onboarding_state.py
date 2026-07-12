@@ -14,14 +14,38 @@ pytestmark = pytest.mark.asyncio
 # ── pure state machine ────────────────────────────────────────────────────────
 
 def test_required_basics_missing_is_only_safety_gate() -> None:
-    complete = SimpleNamespace(primary_goal="Strength", equipment=["barbell"], available_days_per_week=4)
+    from datetime import date
+
+    complete = SimpleNamespace(
+        primary_goal="Strength", equipment=["barbell"], available_days_per_week=4,
+        date_of_birth=date(1990, 1, 1),
+    )
     assert ob.required_basics_missing(complete) == []
     assert ob.can_prescribe(complete) is True
     # precision inputs (1RM/5K) are never a gate — only the safety basics are
-    bare = SimpleNamespace(primary_goal=None, equipment=[], available_days_per_week=0)
+    bare = SimpleNamespace(
+        primary_goal=None, equipment=[], available_days_per_week=0, date_of_birth=None,
+    )
     missing = ob.required_basics_missing(bare)
-    assert set(missing) == {"primary_goal", "equipment", "available_days_per_week"}
+    assert set(missing) == {"primary_goal", "equipment", "available_days_per_week", "date_of_birth"}
     assert ob.can_prescribe(bare) is False
+
+
+def test_dob_validation_and_minor_flag() -> None:
+    from datetime import date
+
+    today = date(2026, 7, 11)
+    # future / implausible DOB rejected
+    with pytest.raises(ValueError):
+        ob.validate_dob(date(2027, 1, 1), today)
+    with pytest.raises(ValueError):
+        ob.validate_dob(date(1900, 1, 1), today)  # age > 100
+    ob.validate_dob(date(2000, 1, 1), today)  # ok
+    # minor is a flag, computed from age — never raises
+    assert ob.is_minor(date(2015, 1, 1), today) is True   # 11
+    assert ob.is_minor(date(2000, 1, 1), today) is False  # 26
+    assert ob.is_minor(None, today) is False
+    assert ob.age_from_dob(date(2000, 7, 12), today) == 25  # birthday not yet reached
 
 
 def test_status_after_basics_advances_but_never_regresses_completed() -> None:
@@ -62,9 +86,11 @@ async def test_no_profile_is_not_started_and_not_prescribable(async_db):
 
 
 async def test_seeded_experience_prior_twin_is_provisional_but_usable(async_db):
+    from datetime import date
+
     user = await _user_with_profile(
         async_db, "onb1@test.com", primary_goal="Powerlifting", equipment=["barbell"],
-        available_days_per_week=4,
+        available_days_per_week=4, date_of_birth=date(1990, 1, 1),
     )
     # experience-prior seed, no benchmarks → usable but provisional (PDR-0010)
     await initialize_athlete_state(async_db, user.id, experience_level="intermediate")

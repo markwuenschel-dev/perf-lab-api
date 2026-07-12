@@ -6,12 +6,17 @@ Read/update schemas for the athlete profile. Field names mirror OnboardRequest
 the endpoint maps those to the AthleteProfile columns (``squat_1rm`` etc.).
 """
 
-from pydantic import BaseModel, Field
+from datetime import date
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.logic.onboarding_state import validate_dob
 
 
 class ProfileRead(BaseModel):
     display_name: str | None
     primary_goal: str | None
+    date_of_birth: date | None = None
     experience_years: float
     experience_level: str
     available_days_per_week: int
@@ -40,6 +45,7 @@ class ProfileUpdate(BaseModel):
 
     display_name: str | None = None
     primary_goal: str | None = None
+    date_of_birth: date | None = None
     experience_years: float | None = Field(None, ge=0)
     experience_level: str | None = None
     available_days_per_week: int | None = Field(None, ge=1, le=7)
@@ -56,3 +62,10 @@ class ProfileUpdate(BaseModel):
     height_cm: float | None = Field(None, gt=0)
     # Full replacement of the explicit "don't track" opt-out list when present.
     untracked_wellness_signals: list[str] | None = None
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def _check_dob(cls, v: date | None) -> date | None:
+        if v is not None:
+            validate_dob(v, date.today())
+        return v

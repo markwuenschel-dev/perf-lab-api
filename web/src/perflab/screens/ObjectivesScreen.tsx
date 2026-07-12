@@ -11,20 +11,8 @@ import type { ApiError, MacrocycleRead, ObjectiveRead } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { sortObjectives } from "../objectives";
+import { domainLabel } from "../domains";
 import { Card, Pill, ScreenHeader, Track } from "../ui";
-
-const DOMAIN_LABELS: Record<string, string> = {
-  general: "General",
-  strength: "Strength",
-  powerlifting: "Powerlifting",
-  running: "Running",
-  hyrox: "Hyrox",
-};
-
-function domainLabel(domain: string | null): string {
-  if (!domain) return "General";
-  return DOMAIN_LABELS[domain.toLowerCase()] ?? domain;
-}
 
 function statusLabel(status: ObjectiveRead["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -112,9 +100,18 @@ export function ObjectivesScreen() {
 
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
-      <ScreenHeader title="Objectives" subtitle="A race, a meet, a Hyrox, a PR — everything your plan is pointed at.">
+      <ScreenHeader title="Objectives" subtitle="A race, a meet, a Hyrox, a PR — the targets your training is pointed at.">
         <button onClick={actions.openObjectiveCreate} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-4 py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">New objective →</button>
       </ScreenHeader>
+
+      <div className="flex items-start gap-[10px] rounded-[12px] border border-ac/[0.18] bg-ac/[0.05] px-4 py-3">
+        <span className="mt-[1px] text-[13px] text-ac">◆</span>
+        <p className="m-0 text-[12px] font-medium leading-[1.5] text-mute">
+          Objectives aren’t just a wishlist — they <span className="text-soft">drive what your plan emphasizes</span>
+          {" "}(more work toward a near, high-priority goal), <span className="text-soft">taper you before a target date</span>,
+          and <span className="text-soft">decide which benchmarks the Assess tab suggests</span>. Set a priority and, for measurable goals, link a benchmark so progress tracks automatically.
+        </p>
+      </div>
 
       {mutateError && (
         <div className="rounded-[11px] border border-hot/25 bg-hot/[0.08] px-[14px] py-[11px] text-[12px] font-medium leading-[1.5] text-hot">{mutateError}</div>

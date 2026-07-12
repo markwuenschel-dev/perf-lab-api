@@ -8,6 +8,8 @@ hard gate.
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,11 +69,13 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> OnboardingStat
     except Exception:
         debt = []
 
+    minor = ob.is_minor(getattr(profile, "date_of_birth", None), date.today()) if profile else False
     return OnboardingStateResponse(
         status=status,
         completed_reason=completed_reason,
         can_prescribe=(not missing),
         missing_basics=missing,
+        is_minor=minor,
         twin=twin,
         measurement_debt=debt,
     )

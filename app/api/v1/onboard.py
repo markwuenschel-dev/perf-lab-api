@@ -36,6 +36,7 @@ async def onboard_athlete(
     if request.display_name is not None:
         profile.display_name = request.display_name
     profile.primary_goal = request.goal
+    profile.date_of_birth = request.date_of_birth
     profile.experience_years = request.experience_years
     profile.experience_level = request.experience_level
     profile.available_days_per_week = request.available_days_per_week

@@ -4,7 +4,7 @@ import { useAuth } from "@/auth/useAuth";
 import type { UnifiedStateVector, WellnessSampleOut, WorkoutLogSummary } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
-import { Card, SectionLabel, Track } from "../ui";
+import { Card, ScreenHeader, SectionLabel, Track } from "../ui";
 import { Chart, Area, Axis, Bars, TableView, useChart, useVizTheme } from "../viz";
 import { DAYS } from "../sim";
 
@@ -135,17 +135,13 @@ export function HistoryScreen() {
 
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
-      <header className="flex items-start justify-between gap-5">
-        <div>
-          <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">History</h1>
-          <p className="m-0 mt-[9px] max-w-[460px] text-[13.5px] font-medium leading-[1.5] text-mute">How your twin and field tests have moved over the current 7-week build block.</p>
-        </div>
+      <ScreenHeader title="History" subtitle="How your twin and assessments have moved over the current 7-week build block.">
         <div className="flex gap-[7px] rounded-[9px] border border-white/[0.08] p-[3px]">
           {["4w", "12w", "All"].map((t) => (
             <span key={t} className={`cursor-pointer rounded-[7px] px-[11px] py-[7px] text-[11px] font-semibold leading-none ${t === "12w" ? "bg-ink text-[#0a0c10]" : "text-faint"}`}>{t}</span>
           ))}
         </div>
-      </header>
+      </ScreenHeader>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
         <Card className="px-[22px] py-5">
@@ -174,11 +170,11 @@ export function HistoryScreen() {
           </Chart>
         </Card>
         <div className="flex flex-col gap-4">
-          <div className="rounded-[18px] border border-mint/[0.18] p-[18px]" style={{ background: "linear-gradient(120deg,#0f1f1c,#111419 60%)" }}>
+          <Card className="border-mint/[0.18] p-[18px]" style={{ background: "linear-gradient(120deg,#0f1f1c,#111419 60%)" }}>
             <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#9ad6c8]">VO₂max progression</div>
             <div className="mt-3 flex items-end gap-2"><span className="font-mono text-[28px] font-semibold leading-none text-ink">58.4</span><span className="mb-1 text-[11px] font-medium leading-none text-good">+4.3 since Apr</span></div>
             <div className="mt-3 font-mono text-[11px] leading-none text-mute">54.1 → 55.2 → 56.9 → 58.4</div>
-          </div>
+          </Card>
           <Card className="p-[18px]">
             <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">Aerobic capacity</div>
             <div className="mt-3 flex items-end gap-2"><span className="font-mono text-[28px] font-semibold leading-none text-ink">320</span><span className="mb-1 text-[11px] font-medium leading-none text-good">+40 vs base</span></div>
