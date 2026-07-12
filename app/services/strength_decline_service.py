@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic import observation_authority as oa
@@ -441,6 +441,80 @@ def _first_observation_outcome(
         intercepted=True, hold_axis=True,
         applied_capacity_effect=APPLIED_NONE,
         decline_transition_status=TS_SAFETY_ROUTED if severe else TS_DECLINE_CANDIDATE,
+    )
+
+
+@dataclass(frozen=True)
+class DeclineObservability:
+    """Observability rollup for the decline state machine (INT-02, ADR-0066)."""
+
+    candidates_total: int
+    active: int
+    confirmed: int
+    dismissed: int
+    expired: int
+    safety_routed: int
+    temporary_prescription_caps: int  # active candidates each impose a ceiling
+    confirmed_decline_magnitude: float  # mean raw residual of confirmed declines
+    durable_strength_regressions_from_one_observation: int  # THE invariant — must be 0
+
+
+async def decline_observability(
+    db: AsyncSession, user_id: int | None = None
+) -> DeclineObservability:
+    """Aggregate the decline ledger for monitoring.
+
+    The critical invariant ``durable_strength_regressions_from_one_observation`` counts
+    confirmed declines that lack a *distinct* corroborating observation — durable
+    regression from a single observation. It is 0 by construction (confirmation
+    requires a distinct observation from a different occasion) and is asserted in tests.
+    """
+
+    def _scope(stmt: Any) -> Any:
+        return stmt if user_id is None else stmt.where(
+            StrengthDeclineCandidate.user_id == user_id
+        )
+
+    rows = (await db.execute(
+        _scope(
+            select(StrengthDeclineCandidate.status, func.count()).group_by(
+                StrengthDeclineCandidate.status
+            )
+        )
+    )).all()
+    counts = {status: int(n) for status, n in rows}
+
+    magnitude = (await db.execute(
+        _scope(
+            select(func.avg(StrengthDeclineCandidate.normalized_residual)).where(
+                StrengthDeclineCandidate.status == STATUS_CONFIRMED
+            )
+        )
+    )).scalar_one_or_none()
+
+    durable_one_obs = int((await db.execute(
+        _scope(
+            select(func.count()).select_from(StrengthDeclineCandidate).where(
+                StrengthDeclineCandidate.status == STATUS_CONFIRMED,
+                or_(
+                    StrengthDeclineCandidate.confirmation_observation_id.is_(None),
+                    StrengthDeclineCandidate.confirmation_observation_id
+                    == StrengthDeclineCandidate.trigger_observation_id,
+                ),
+            )
+        )
+    )).scalar_one())
+
+    return DeclineObservability(
+        candidates_total=sum(counts.values()),
+        active=counts.get(STATUS_ACTIVE, 0),
+        confirmed=counts.get(STATUS_CONFIRMED, 0),
+        dismissed=counts.get(STATUS_DISMISSED, 0),
+        expired=counts.get(STATUS_EXPIRED, 0),
+        safety_routed=counts.get(STATUS_SAFETY_ROUTED, 0),
+        temporary_prescription_caps=counts.get(STATUS_ACTIVE, 0),
+        confirmed_decline_magnitude=float(magnitude) if magnitude is not None else 0.0,
+        durable_strength_regressions_from_one_observation=durable_one_obs,
     )
 
 
