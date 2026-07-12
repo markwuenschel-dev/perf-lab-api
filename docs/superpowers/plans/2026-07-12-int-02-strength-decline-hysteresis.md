@@ -1,6 +1,6 @@
 # Execution Contract: INT-02 — Single low benchmark must not durably regress max_strength
 
-**Status:** approved for delivery _(numerical-correctness decision locked by the user; forks A/B/C resolved as A1/B1/C1 with the amendments recorded in §8. Delivery: connected-impact sweep, single owner over the contract chain.)_
+**Status:** DELIVERED 2026-07-12 _(all 11 tasks shipped on branch `feat/int-02-strength-decline-hysteresis`; forks A1/B1/C1 with the §8 amendments. Verified vs Postgres: 944 tests pass, ruff + pyright strict clean repo-wide, OpenAPI unchanged, migrations a032/a033 reversible. ADR-0066 written. State-correctness + prescription-shadow closure states complete; prescription-promotion gated OFF pending validation. PR open, not merged.)_
 
 **Source:** candidate `INT-02` from the 2026-07-12 Repo Audit Swarm ledger (Algorithm/Numerical; priority +8; was `needs-human-decision`). Locked decision supplied by the user: *asymmetric downward confirmation hysteresis + temporary prescription protection + confirmed state regression via a bounded variance-aware estimator update — not an EWMA watermark, not a floor on current capacity.*
 
