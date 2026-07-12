@@ -8,6 +8,7 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.engine import feature_flags
 from app.logic import strength_calibration as sc
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.planning import periodization_envelope
@@ -22,12 +23,12 @@ from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.prescription import WorkoutPrescription
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.schemas.wellness import ReadinessScore
-from app.services import dashboard_service, readiness_service
+from app.services import dashboard_service, readiness_service, strength_decline_service
 from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
 from app.services.planning_service import count_block_skips
-from app.services.state_service import load_or_init_current_state
+from app.services.state_service import load_current_state, load_or_init_current_state
 
 
 class BlockContext(TypedDict, total=False):
@@ -170,6 +171,19 @@ async def _current_e1rm_values(
     return latest
 
 
+async def _standardization_rules_for_codes(
+    db: AsyncSession, codes: set[str]
+) -> dict[str, dict[str, Any]]:
+    if not codes:
+        return {}
+    res = await db.execute(
+        select(BenchmarkDefinition.code, BenchmarkDefinition.standardization_rules).where(
+            BenchmarkDefinition.code.in_(codes)
+        )
+    )
+    return {code: (rules or {}) for code, rules in res.all()}
+
+
 async def _enrich_exercises_with_load(
     db: AsyncSession,
     user_id: int,
@@ -180,6 +194,12 @@ async def _enrich_exercises_with_load(
 
     Mutates ``rx.exercises`` in place. Lifts without a mapped e1RM benchmark or without
     a logged e1RM keep RPE-only autoregulation (the existing ``load_note``).
+
+    INT-02 (ADR-0066): the e1RM basis is the candidate-aware basis when
+    ``DECLINE_CANDIDATE_PRESCRIPTION_BASIS`` is ``on`` (canonical current capacity
+    capped by an active decline-candidate ceiling — the latest raw observation is no
+    longer authority); ``shadow`` records both bases but still prescribes off legacy;
+    ``off`` is byte-identical to the pre-INT-02 latest-raw behaviour.
     """
     if not rx.exercises:
         return
@@ -190,19 +210,37 @@ async def _enrich_exercises_with_load(
     if not e1rm_by_code:
         return
 
+    mode = getattr(
+        feature_flags, "DECLINE_CANDIDATE_PRESCRIPTION_BASIS",
+        strength_decline_service.BASIS_MODE_OFF,
+    )
+    current_axis: float | None = None
+    rules_by_code: dict[str, dict[str, Any]] = {}
+    if mode != strength_decline_service.BASIS_MODE_OFF:
+        state = await load_current_state(db, user_id)
+        current_axis = float(state.capacity_x.max_strength) if state is not None else None
+        rules_by_code = await _standardization_rules_for_codes(db, set(code_by_name.values()))
+
     rpe_cap = _envelope_rpe_cap(block_context)
     for ex in rx.exercises:
         code = code_by_name.get(ex.name)
         e1rm = e1rm_by_code.get(code) if code else None
         if e1rm is None:
             continue
+        basis = e1rm
+        if mode != strength_decline_service.BASIS_MODE_OFF and code:
+            decision = await strength_decline_service.resolve_prescription_basis(
+                db, user_id, code=code, latest_raw=e1rm, current_axis=current_axis,
+                rules=rules_by_code.get(code), mode=mode,
+            )
+            basis = decision.selected_basis  # legacy in shadow; candidate-aware in on
         reps = _first_int(ex.reps) or 5
         pct = sc.percent_1rm_for_prescription(reps, rpe_cap).value
-        load = sc.suggested_load_kg(e1rm, reps, rpe_cap)
+        load = sc.suggested_load_kg(basis, reps, rpe_cap)
         ex.percent_e1rm = round(pct, 3)
         ex.prescribed_load_kg = load
         ex.rpe_cap = rpe_cap
-        ex.e1rm_basis_kg = round(e1rm, 1)
+        ex.e1rm_basis_kg = round(basis, 1)
         ex.load_note = f"~{load:g} kg · {round(pct * 100)}% e1RM · cap RPE {rpe_cap:g}"
 
 

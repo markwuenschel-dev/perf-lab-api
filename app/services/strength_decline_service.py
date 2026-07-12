@@ -75,6 +75,11 @@ TS_CONFIRMED_DECLINE = "confirmed_decline"
 TS_CANDIDATE_DISMISSED = "candidate_dismissed"
 TS_SAFETY_ROUTED = "safety_routed"
 
+# Prescription-basis flag states (fork C staged rollout).
+BASIS_MODE_OFF = "off"
+BASIS_MODE_SHADOW = "shadow"
+BASIS_MODE_ON = "on"
+
 
 # --------------------------------------------------------------------------- #
 # Pure decision core
@@ -434,6 +439,99 @@ def _first_observation_outcome(
         intercepted=True, hold_axis=True,
         applied_capacity_effect=APPLIED_NONE,
         decline_transition_status=TS_SAFETY_ROUTED if severe else TS_DECLINE_CANDIDATE,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Candidate-aware prescription basis (T7, fork C staged rollout)
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class BasisDecision:
+    legacy_basis: float
+    normal_basis: float
+    candidate_aware_basis: float
+    selected_basis: float
+    ceiling: float | None
+    candidate_id: int | None
+    mode: str
+
+
+def axis_to_raw(axis_value: float, rules: dict[str, Any] | None) -> float | None:
+    """Project a normalized capacity-axis value back to raw e1RM for a definition's
+    scale: ``floor + (axis/ceiling)·(cap − floor)``. Reflects confirmed declines (the
+    axis drops); unlike the latest raw observation it is not one-test-reactive."""
+    if not rules:
+        return None
+    floor = rules.get("floor")
+    cap = rules.get("cap")
+    if floor is None or cap is None:
+        return None
+    return float(floor) + (axis_value / AXIS_CEILING) * (float(cap) - float(floor))
+
+
+def _measurement_error_from_rules(
+    rules: dict[str, Any] | None,
+) -> policy.MeasurementError | None:
+    if not rules:
+        return None
+    mdc = rules.get("mdc")
+    sem = rules.get("sem")
+    if mdc is None and sem is None:
+        return None
+    return policy.MeasurementError(
+        mdc=float(mdc) if mdc is not None else None,
+        sem=float(sem) if sem is not None else None,
+    )
+
+
+def select_basis(*, mode: str, legacy: float, candidate_aware: float) -> float:
+    """The flag governs the whole selection: ``on`` uses the candidate-aware basis
+    (latest-raw is no longer authority); otherwise legacy latest-raw is selected."""
+    return candidate_aware if mode == BASIS_MODE_ON else legacy
+
+
+async def resolve_prescription_basis(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    code: str,
+    latest_raw: float,
+    current_axis: float | None,
+    rules: dict[str, Any] | None,
+    mode: str,
+) -> BasisDecision:
+    """Compute the legacy and candidate-aware e1RM bases for a lift and select per mode.
+
+    ``normal_basis`` = canonical current capacity projected to raw e1RM (reflects
+    confirmed declines); an active decline candidate for this same lift caps it at a
+    conservative ceiling (``observed + measurement_error``). In ``on`` mode the
+    selected basis is ``min(normal, ceiling)`` and the latest raw observation is no
+    longer authority; ``shadow`` records both but still selects legacy.
+    """
+    legacy = float(latest_raw)
+    normal = axis_to_raw(current_axis, rules) if current_axis is not None else None
+    if normal is None:
+        normal = legacy
+    active = await _active_candidate(db, user_id)
+    ceiling: float | None = None
+    candidate_id: int | None = None
+    if active is not None and active.benchmark_code == code:
+        me = policy.resolve_measurement_error(
+            _measurement_error_from_rules(rules), active.observed_value
+        ).value
+        ceiling = policy.temporary_ceiling(active.observed_value, me)
+        candidate_id = active.id
+    candidate_aware = min(normal, ceiling) if ceiling is not None else normal
+    selected = select_basis(mode=mode, legacy=legacy, candidate_aware=candidate_aware)
+    logger.info(
+        "decline prescription basis user=%s code=%s mode=%s legacy=%.2f normal=%.2f "
+        "candidate_aware=%.2f selected=%.2f ceiling=%s candidate=%s",
+        user_id, code, mode, legacy, normal, candidate_aware, selected, ceiling, candidate_id,
+    )
+    return BasisDecision(
+        legacy_basis=legacy, normal_basis=normal, candidate_aware_basis=candidate_aware,
+        selected_basis=selected, ceiling=ceiling, candidate_id=candidate_id, mode=mode,
     )
 
 
