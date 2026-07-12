@@ -370,17 +370,23 @@ async def create_observation(
                 new_state = None
         elif effect == oa.CE_BIDIRECTIONAL_UPDATE:
             # INT-02 (ADR-0066): a single low bidirectional benchmark must not durably
-            # regress max_strength. Hold the axis at its prior on first evidence; a
-            # material drop opens a decline candidate that awaits independent
-            # corroboration (bounded regression is applied only on confirmation, T6).
-            outcome = await strength_decline_service.evaluate_first_observation(
+            # regress max_strength. The decline machine holds the axis on first
+            # evidence + opens a candidate; applies a bounded decline only once an
+            # independent observation confirms it; dismisses on re-demonstration.
+            outcome = await strength_decline_service.resolve_bidirectional_observation(
                 db, user_id, current=current, observation=obs, definition=definition,
                 mappings=mappings, observed_raw=body.raw_value,
             )
-            if outcome is not None:
-                strength_decline_service.hold_axis_at_prior(current, new_state)
-                obs.applied_capacity_effect = outcome.applied_capacity_effect
-                obs.decline_transition_status = outcome.decline_transition_status
+            if outcome.intercepted:
+                if outcome.apply_posterior is not None:
+                    # Confirmed decline: a bounded, auditable downward axis move.
+                    obs_state = new_state.capacity_x
+                    obs_state.max_strength = outcome.apply_posterior
+                elif outcome.hold_axis:
+                    strength_decline_service.hold_axis_at_prior(current, new_state)
+                if outcome.decline_transition_status is not None:
+                    obs.applied_capacity_effect = outcome.applied_capacity_effect
+                    obs.decline_transition_status = outcome.decline_transition_status
                 if not _capacity_changed(current, new_state):
                     new_state = None
             else:

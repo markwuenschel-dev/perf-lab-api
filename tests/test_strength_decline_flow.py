@@ -10,7 +10,12 @@ from app.logic import strength_decline_policy as policy
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.exercise import Exercise
 from app.models.observation_mapping import ObservationMapping
-from app.models.strength_decline_candidate import STATUS_ACTIVE, StrengthDeclineCandidate
+from app.models.strength_decline_candidate import (
+    STATUS_ACTIVE,
+    STATUS_CONFIRMED,
+    STATUS_DISMISSED,
+    StrengthDeclineCandidate,
+)
 from app.models.user import User
 from app.schemas.benchmarks import BenchmarkObservationCreate
 from app.services import benchmark_service, strength_decline_service
@@ -163,3 +168,60 @@ async def test_immaterial_low_retest_holds_but_opens_no_candidate(async_db):
     # current latent belief — but it must never be pulled DOWN) and no candidate.
     assert await _max_strength(async_db, user.id) >= strength_after_150 - 0.01
     assert await _candidates(async_db, user.id) == []
+
+
+@pytest.mark.asyncio
+async def test_independent_corroboration_confirms_bounded_decline(async_db):
+    user = await _user(async_db, "d4@test.com")
+    await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    base = _timeline()
+    await _benchmark(async_db, user.id, 150.0, base)                       # watermark
+    strength_after_150 = await _max_strength(async_db, user.id)
+    await _benchmark(async_db, user.id, 138.0, base + timedelta(days=10))  # trigger candidate
+    await _benchmark(async_db, user.id, 140.0, base + timedelta(days=20))  # confirm (>=7d, new day)
+
+    cands = await _candidates(async_db, user.id)
+    assert len(cands) == 1
+    assert cands[0].status == STATUS_CONFIRMED
+    assert cands[0].applied_posterior_mean is not None
+    assert cands[0].confirmation_observation_id is not None
+
+    strength_after = await _max_strength(async_db, user.id)
+    observed_axis = (140.0 - 40.0) / 210.0 * 100.0  # ≈ 47.6
+    # Bounded reduction: below the prior, but NOT overwritten to the low observation.
+    assert strength_after < strength_after_150
+    assert strength_after > observed_axis
+
+
+@pytest.mark.asyncio
+async def test_re_demonstration_dismisses_candidate(async_db):
+    user = await _user(async_db, "d5@test.com")
+    await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    base = _timeline()
+    await _benchmark(async_db, user.id, 150.0, base)
+    await _benchmark(async_db, user.id, 138.0, base + timedelta(days=10))  # candidate
+    await _benchmark(async_db, user.id, 151.0, base + timedelta(days=20))  # re-demonstration
+
+    cands = await _candidates(async_db, user.id)
+    assert len(cands) == 1
+    assert cands[0].status == STATUS_DISMISSED
+
+
+@pytest.mark.asyncio
+async def test_second_low_too_soon_does_not_confirm(async_db):
+    user = await _user(async_db, "d6@test.com")
+    await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    base = _timeline()
+    await _benchmark(async_db, user.id, 150.0, base)
+    await _benchmark(async_db, user.id, 138.0, base + timedelta(days=10))  # candidate
+    strength_before = await _max_strength(async_db, user.id)
+    await _benchmark(async_db, user.id, 139.0, base + timedelta(days=12))  # only 2 days later
+
+    cands = await _candidates(async_db, user.id)
+    assert len(cands) == 1
+    assert cands[0].status == STATUS_ACTIVE  # not confirmed — insufficient separation
+    # Held: no durable regression from the un-corroborated second low.
+    assert await _max_strength(async_db, user.id) >= strength_before - 0.01

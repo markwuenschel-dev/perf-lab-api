@@ -3,21 +3,24 @@
 Sits on the benchmark ingestion path. A protocol-valid ``bidirectional_update``
 observation whose ``max_strength`` residual is *materially* downward does NOT rewrite
 canonical capacity on first evidence: the axis is held at its prior and a decline
-candidate is opened (:func:`evaluate_first_observation`). Durable regression happens
-only after independent corroboration, via a bounded estimator (see T6).
+candidate is opened. Durable regression happens only after **independent
+corroboration** — a second qualifying observation from a different assessment
+occurrence, separated by the definition's minimum retest interval — and is applied as
+a **bounded** estimator move, never an overwrite. A re-demonstration at/above the
+watermark dismisses the candidate; the confirmation window expiring retires it.
 
-Design split: :func:`assess_decline` is **pure** (no DB, unit-tested directly) and
-owns the provisional v1 variance model layered on the calibrated
+State machine: ``active → confirmed | dismissed | expired | safety_routed``.
+
+Design split: :func:`assess_decline` is **pure** (unit-tested directly) and owns the
+provisional v1 variance model over the calibrated
 :mod:`app.logic.strength_decline_policy` threshold math; the ``async`` functions are a
-thin persistence layer.
+thin persistence + orchestration layer.
 
 Provisional v1 (``strength_decline_policy_v1``, ``synthetic_and_expert_prior`` — NOT
-calibrated; shadow before retuning):
-- decision space is raw e1RM units; the prior is the best *currently valid*
-  demonstrated e1RM (the watermark), not the latent axis;
-- the observation is treated as noisier under fatigue (``obs_std`` scales with mean
-  fatigue), so a fatigued low test needs a larger drop to count as material — directly
-  answering "a single low result can reflect fatigue" (Grgic et al., 2020).
+calibrated; shadow before retuning): the materiality decision is in raw e1RM units
+against the best currently valid demonstrated watermark; a fatigued observation is
+treated as noisier (so a fatigued low test needs a larger drop to count); the
+confirmed bounded move is applied in capacity-axis space and can only lower the axis.
 """
 
 from __future__ import annotations
@@ -33,10 +36,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic import observation_authority as oa
 from app.logic import strength_decline_policy as policy
+from app.logic.state_update_v0 import normalize_score01
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.strength_decline_candidate import (
     STATUS_ACTIVE,
+    STATUS_CONFIRMED,
+    STATUS_DISMISSED,
+    STATUS_EXPIRED,
     STATUS_SAFETY_ROUTED,
     StrengthDeclineCandidate,
 )
@@ -46,16 +53,26 @@ from app.schemas.state import UnifiedStateVector
 logger = logging.getLogger(__name__)
 
 DECLINE_AXIS = "max_strength"
+# Capacity-axis ceiling for max_strength (0-100 scale; aerobic is the only 650 axis).
+AXIS_CEILING = 100.0
 # Provisional (not calibrated): mean fatigue of 1.0 doubles observation noise.
 FATIGUE_NOISE_SCALE = 1.0
 # Provisional window in which independent corroboration must arrive.
 CONFIRMATION_WINDOW_DAYS = 90
+# Provisional minimum separation between trigger and confirming observation when the
+# definition states none. Null must NOT mean same-day confirmation is allowed.
+FALLBACK_RETEST_INTERVAL_DAYS = 7
+# Provisional bounded-update gain applied to the axis on corroborated confirmation.
+CONFIRMED_GAIN = 0.5
 
 # Applied-effect / transition-status stamps recorded on the observation.
 APPLIED_NONE = oa.CE_NONE
 APPLIED_BIDIRECTIONAL = oa.CE_BIDIRECTIONAL_UPDATE
 TS_NO_MATERIAL_DECLINE = "no_material_decline"
 TS_DECLINE_CANDIDATE = "decline_candidate"
+TS_DECLINE_PENDING = "decline_pending"
+TS_CONFIRMED_DECLINE = "confirmed_decline"
+TS_CANDIDATE_DISMISSED = "candidate_dismissed"
 TS_SAFETY_ROUTED = "safety_routed"
 
 
@@ -126,14 +143,40 @@ def assess_decline(
     )
 
 
-@dataclass
-class DeclineOutcome:
-    """What the ingestion caller should do with a bidirectional downward observation."""
+def confirmed_axis_posterior(
+    *, prior_axis: float, observed_axis: float, gain: float = CONFIRMED_GAIN
+) -> float:
+    """Bounded axis-space posterior for a confirmed decline.
 
-    hold_axis: bool
-    applied_capacity_effect: str
-    decline_transition_status: str
-    candidate: StrengthDeclineCandidate | None
+    ``prior + K·(observed − prior)`` clamped so a *confirmed decline* can only lower
+    the axis (never raise it, even in the rare lagging-estimate case) and stays within
+    ``[0, prior]``.
+    """
+    post = policy.bounded_posterior(prior_axis, observed_axis, gain)
+    return max(0.0, min(prior_axis, post))
+
+
+# --------------------------------------------------------------------------- #
+# Outcome + pure helpers
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class BidirectionalOutcome:
+    """What the ingestion caller should do with a bidirectional observation.
+
+    ``intercepted=False`` → apply the normal bidirectional update. Otherwise: set
+    ``apply_posterior`` on the axis if not None (a confirmed bounded decline), else
+    ``hold_axis`` at prior if True (no first-observation regression).
+    """
+
+    intercepted: bool
+    hold_axis: bool = False
+    apply_posterior: float | None = None
+    applied_capacity_effect: str = APPLIED_BIDIRECTIONAL
+    decline_transition_status: str | None = None
+
+
+_PASSTHROUGH = BidirectionalOutcome(intercepted=False)
 
 
 def hold_axis_at_prior(
@@ -176,6 +219,15 @@ def _targets_axis(mappings: list[Any], axis: str = DECLINE_AXIS) -> bool:
     )
 
 
+def _occurrence(user_id: int, code: str, observed_at: datetime | None) -> str:
+    day = observed_at.date().isoformat() if observed_at else "unknown"
+    return f"{user_id}:{code}:{day}"
+
+
+# --------------------------------------------------------------------------- #
+# DB layer
+# --------------------------------------------------------------------------- #
+
 async def _prior_watermark(
     db: AsyncSession, user_id: int, code: str, exclude_observation_id: int
 ) -> float | None:
@@ -197,7 +249,47 @@ async def _prior_watermark(
     return res.scalar_one_or_none()
 
 
-async def evaluate_first_observation(
+async def _active_candidate(
+    db: AsyncSession, user_id: int, axis: str = DECLINE_AXIS
+) -> StrengthDeclineCandidate | None:
+    res = await db.execute(
+        select(StrengthDeclineCandidate)
+        .where(
+            StrengthDeclineCandidate.user_id == user_id,
+            StrengthDeclineCandidate.capacity_axis == axis,
+            StrengthDeclineCandidate.status == STATUS_ACTIVE,
+        )
+        .order_by(StrengthDeclineCandidate.created_at.desc())
+        .limit(1)
+    )
+    return res.scalars().first()
+
+
+def _qualifies_as_confirmation(
+    candidate: StrengthDeclineCandidate,
+    *,
+    observation: BenchmarkObservation,
+    observed_raw: float,
+    definition: BenchmarkDefinition,
+    occurrence: str,
+    assessment: DeclineAssessment,
+) -> bool:
+    """All independent-corroboration conditions must hold (never confirm from replay)."""
+    if observation.id == candidate.trigger_observation_id:
+        return False  # a candidate can never be confirmed by its own trigger
+    if occurrence == candidate.trigger_assessment_occurrence_id:
+        return False  # same assessment occasion
+    if observed_raw >= candidate.prior_mean:
+        return False  # not directionally consistent (a re-demonstration)
+    if not assessment.is_material:
+        return False  # inside the measurement-error band
+    interval = definition.minimum_retest_interval_days or FALLBACK_RETEST_INTERVAL_DAYS
+    if (observation.observed_at - candidate.created_at).days < interval:
+        return False  # too soon — insufficient recovery separation
+    return True
+
+
+async def resolve_bidirectional_observation(
     db: AsyncSession,
     user_id: int,
     *,
@@ -206,47 +298,130 @@ async def evaluate_first_observation(
     definition: BenchmarkDefinition,
     mappings: list[Any],
     observed_raw: float,
-) -> DeclineOutcome | None:
-    """Gate a bidirectional ``max_strength`` observation through the decline policy.
+) -> BidirectionalOutcome:
+    """Route a bidirectional ``max_strength`` observation through the decline machine.
 
-    Returns ``None`` when the observation is not an interception case (not targeting
-    ``max_strength``, no established prior watermark, or an upward move) — the caller
-    then applies the normal bidirectional update. Otherwise the axis must be held at
-    its prior (no first-observation regression); a *material* drop additionally opens
-    a decline candidate. Persistence is deferred to the caller's commit; a candidate
-    row is added best-effort (a shadow-capture failure never breaks the write).
+    Passthrough (normal bidirectional apply) when not targeting ``max_strength`` or no
+    prior watermark exists. A re-demonstration at/above the watermark dismisses any
+    active candidate. A downward observation confirms an active candidate when the
+    corroboration conditions hold (→ bounded axis decline), else holds the axis; with
+    no active candidate a material drop opens one.
     """
     if not _targets_axis(mappings):
-        return None
+        return _PASSTHROUGH
     prior = await _prior_watermark(db, user_id, definition.code, observation.id)
-    if prior is None or observed_raw >= prior:
-        return None  # first measurement, or not a downward move → normal path
+    if prior is None:
+        return _PASSTHROUGH  # first measurement — nothing to decline from
 
+    if observed_raw >= prior:
+        # Re-demonstration at/above the watermark: dismiss an active candidate and
+        # apply the (upward) observation normally.
+        active = await _active_candidate(db, user_id)
+        if active is not None:
+            active.status = STATUS_DISMISSED
+            active.resolved_at = datetime.utcnow()
+            active.confirmation_observation_id = observation.id
+            active.resolution_reason = "re_demonstrated_at_or_above_watermark"
+            return BidirectionalOutcome(
+                intercepted=True,
+                applied_capacity_effect=APPLIED_BIDIRECTIONAL,
+                decline_transition_status=TS_CANDIDATE_DISMISSED,
+            )
+        return _PASSTHROUGH
+
+    # Downward vs the watermark.
     error = _measurement_error_from_definition(definition)
-    assessment = assess_decline(
-        prior_mean=prior,
-        observed_value=observed_raw,
-        error=error,
-        mean_fatigue=_mean_fatigue(current),
+    mean_fatigue = _mean_fatigue(current)
+    active = await _active_candidate(db, user_id)
+
+    if active is not None:
+        # Expire a stale candidate, then treat this observation as a fresh first one.
+        if (
+            active.confirmation_deadline is not None
+            and observation.observed_at > active.confirmation_deadline
+        ):
+            active.status = STATUS_EXPIRED
+            active.resolved_at = datetime.utcnow()
+            active.resolution_reason = "confirmation_window_expired"
+            active = None
+        else:
+            occurrence = _occurrence(user_id, definition.code, observation.observed_at)
+            assessment = assess_decline(
+                prior_mean=active.prior_mean, observed_value=observed_raw,
+                error=error, mean_fatigue=mean_fatigue,
+            )
+            if _qualifies_as_confirmation(
+                active, observation=observation, observed_raw=observed_raw,
+                definition=definition, occurrence=occurrence, assessment=assessment,
+            ):
+                prior_axis = float(getattr(current.capacity_x, DECLINE_AXIS))
+                observed_axis = _observed_axis(definition, observed_raw)
+                posterior = (
+                    confirmed_axis_posterior(prior_axis=prior_axis, observed_axis=observed_axis)
+                    if observed_axis is not None
+                    else prior_axis
+                )
+                active.status = STATUS_CONFIRMED
+                active.resolved_at = datetime.utcnow()
+                active.confirmation_observation_id = observation.id
+                active.applied_posterior_mean = posterior
+                active.resolution_reason = "confirmed_downward_evidence"
+                return BidirectionalOutcome(
+                    intercepted=True,
+                    apply_posterior=posterior,
+                    applied_capacity_effect=APPLIED_BIDIRECTIONAL,
+                    decline_transition_status=TS_CONFIRMED_DECLINE,
+                )
+            # Downward but not (yet) a valid confirmation → hold, no new candidate.
+            return BidirectionalOutcome(
+                intercepted=True, hold_axis=True,
+                applied_capacity_effect=APPLIED_NONE,
+                decline_transition_status=TS_DECLINE_PENDING,
+            )
+
+    # No active candidate → first-observation assessment.
+    return _first_observation_outcome(
+        user_id=user_id, observation=observation, definition=definition,
+        prior=prior, observed_raw=observed_raw, error=error, mean_fatigue=mean_fatigue,
+        db=db,
     )
 
+
+def _observed_axis(definition: BenchmarkDefinition, observed_raw: float) -> float | None:
+    score01 = normalize_score01(
+        definition.better_direction, observed_raw, definition.standardization_rules
+    )
+    if score01 is None:
+        return None
+    return score01 * AXIS_CEILING
+
+
+def _first_observation_outcome(
+    *,
+    db: AsyncSession,
+    user_id: int,
+    observation: BenchmarkObservation,
+    definition: BenchmarkDefinition,
+    prior: float,
+    observed_raw: float,
+    error: policy.MeasurementError | None,
+    mean_fatigue: float,
+) -> BidirectionalOutcome:
+    assessment = assess_decline(
+        prior_mean=prior, observed_value=observed_raw,
+        error=error, mean_fatigue=mean_fatigue,
+    )
     if not assessment.is_material:
-        # Inside the measurement-error band: hold the axis (no regression), but no
-        # durable transition and no candidate. It remains stored as history.
-        return DeclineOutcome(
-            hold_axis=True,
+        # Inside the error band: hold (no regression), no candidate.
+        return BidirectionalOutcome(
+            intercepted=True, hold_axis=True,
             applied_capacity_effect=APPLIED_NONE,
             decline_transition_status=TS_NO_MATERIAL_DECLINE,
-            candidate=None,
         )
-
     severe = assessment.classification == policy.SEVERE_DECLINE
     candidate = _build_candidate(
-        user_id=user_id,
-        observation=observation,
-        definition=definition,
-        assessment=assessment,
-        severe=severe,
+        user_id=user_id, observation=observation, definition=definition,
+        assessment=assessment, severe=severe,
     )
     try:
         db.add(candidate)
@@ -255,14 +430,10 @@ async def evaluate_first_observation(
             "strength decline candidate capture failed for user %s (obs %s)",
             user_id, getattr(observation, "id", None), exc_info=True,
         )
-        candidate = None
-
-    status = TS_SAFETY_ROUTED if severe else TS_DECLINE_CANDIDATE
-    return DeclineOutcome(
-        hold_axis=True,
+    return BidirectionalOutcome(
+        intercepted=True, hold_axis=True,
         applied_capacity_effect=APPLIED_NONE,
-        decline_transition_status=status,
-        candidate=candidate,
+        decline_transition_status=TS_SAFETY_ROUTED if severe else TS_DECLINE_CANDIDATE,
     )
 
 
@@ -274,8 +445,8 @@ def _build_candidate(
     assessment: DeclineAssessment,
     severe: bool,
 ) -> StrengthDeclineCandidate:
-    created = observation.observed_at or datetime.utcnow()
-    occurrence = f"{user_id}:{definition.code}:{created.date().isoformat()}"
+    trigger_time = observation.observed_at
+    occurrence = _occurrence(user_id, definition.code, trigger_time)
     return StrengthDeclineCandidate(
         user_id=user_id,
         capacity_axis=DECLINE_AXIS,
@@ -292,8 +463,8 @@ def _build_candidate(
         threshold_source=assessment.threshold.measurement_error_source,
         fatigue_readiness_context={"mean_fatigue": assessment.mean_fatigue},
         status=STATUS_SAFETY_ROUTED if severe else STATUS_ACTIVE,
-        created_at=datetime.utcnow(),
-        confirmation_deadline=datetime.utcnow() + timedelta(days=CONFIRMATION_WINDOW_DAYS),
+        created_at=trigger_time,
+        confirmation_deadline=trigger_time + timedelta(days=CONFIRMATION_WINDOW_DAYS),
         authority_policy_version=observation.authority_policy_version or oa.POLICY_VERSION,
         decline_policy_version=policy.POLICY_VERSION,
         resolution_reason=(
