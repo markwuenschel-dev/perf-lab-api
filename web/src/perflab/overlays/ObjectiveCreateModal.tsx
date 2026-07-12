@@ -10,15 +10,14 @@ import { useAuth } from "@/auth/useAuth";
 import { createObjective } from "@/api/perfLabClient";
 import type { ApiError, ObjectiveCreate } from "@/types";
 import { usePerfLab } from "../store";
+import { DOMAIN_OPTIONS } from "../domains";
 import { CloseBtn } from "./LogWorkoutModal";
 
+// Canonical domains only (+ an explicit "no domain" → free-text objective). Sourcing
+// from the shared list avoids the old `hyrox`/custom values the backend rejects with 400.
 const DOMAINS: { value: string; label: string }[] = [
-  { value: "general", label: "General" },
-  { value: "strength", label: "Strength" },
-  { value: "powerlifting", label: "Powerlifting" },
-  { value: "running", label: "Running" },
-  { value: "hyrox", label: "Hyrox" },
-  { value: "other", label: "Other (custom)" },
+  { value: "none", label: "No specific domain" },
+  ...DOMAIN_OPTIONS,
 ];
 
 const clamp = (n: number, min: number, max: number): number => (Number.isNaN(n) ? min : Math.min(max, Math.max(min, n)));
@@ -26,7 +25,6 @@ const clamp = (n: number, min: number, max: number): number => (Number.isNaN(n) 
 interface ObjectiveForm {
   label: string;
   domain: string;
-  domainCustom: string;
   // Numeric/date fields are held as raw input text so they tolerate a
   // transient blank while retyping; parsed at submit time.
   targetValue: string;
@@ -40,7 +38,6 @@ function initialForm(): ObjectiveForm {
   return {
     label: "",
     domain: "general",
-    domainCustom: "",
     targetValue: "",
     targetUnit: "",
     targetDate: "",
@@ -52,7 +49,7 @@ function initialForm(): ObjectiveForm {
 /** Build the backend ObjectiveCreate from the form. Unset optionals go as
  *  `null`, never `0`/`""`. */
 function buildObjectiveCreateRequest(f: ObjectiveForm): ObjectiveCreate {
-  const domain = f.domain === "other" ? (f.domainCustom.trim() || null) : f.domain;
+  const domain = f.domain === "none" ? null : f.domain;
   const targetValue = f.targetValue.trim();
   const targetUnit = f.targetUnit.trim();
   const benchmarkCode = f.benchmarkCode.trim();
@@ -148,13 +145,6 @@ export function ObjectiveCreateModal() {
               <input type="number" min={1} max={5} value={form.priority} onChange={(e) => set("priority", e.target.value)} className={inputCls} />
             </label>
           </div>
-
-          {form.domain === "other" && (
-            <label className="block">
-              <span className="text-[12px] font-medium leading-none text-mute">Custom domain</span>
-              <input type="text" placeholder="e.g. crossfit" value={form.domainCustom} onChange={(e) => set("domainCustom", e.target.value)} className={inputCls} />
-            </label>
-          )}
 
           <div className="grid grid-cols-2 gap-[14px]">
             <label className="block">

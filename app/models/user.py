@@ -1,10 +1,11 @@
 # app/models/user.py
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     ARRAY,
     Boolean,
+    Date,
     DateTime,
     Float,  # ← was missing
     ForeignKey,
@@ -106,6 +107,9 @@ class AthleteProfile(Base):
     run_1p5mi_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     bodyweight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Age is a safety input (PDR-0010); a plausible DOB is a required basic, and being a
+    # minor is a flagged limitation, never a hard lock.
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # === Onboarding state machine (PDR-0010) ===
     # The app never blocks on a performance measurement; onboarding persists as

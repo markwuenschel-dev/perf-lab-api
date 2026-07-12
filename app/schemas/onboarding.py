@@ -1,5 +1,15 @@
+from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.logic.onboarding_state import validate_dob
+
+
+def _validate_optional_dob(v: date | None) -> date | None:
+    """Shared field validator: a present DOB must not be future / implausible (PDR-0010)."""
+    if v is not None:
+        validate_dob(v, date.today())
+    return v
 
 
 class OnboardRequest(BaseModel):
@@ -11,12 +21,15 @@ class OnboardRequest(BaseModel):
     equipment: list[str] = Field(default_factory=list)
     self_reported_weak_points: list[str] = Field(default_factory=list)
     goal: str = "Strength"
+    date_of_birth: date | None = None
     # Baseline lift / biometric context (all optional)
     squat_1rm_kg: float | None = Field(None, gt=0)
     deadlift_1rm_kg: float | None = Field(None, gt=0)
     bench_1rm_kg: float | None = Field(None, gt=0)
     bodyweight_kg: float | None = Field(None, gt=0)
     run_5k_seconds: float | None = Field(None, gt=0)
+
+    _dob = field_validator("date_of_birth")(_validate_optional_dob)
 
 class OnboardResponse(BaseModel):
     user_id: int
@@ -37,6 +50,7 @@ class OnboardingStateResponse(BaseModel):
     completed_reason: str | None
     can_prescribe: bool  # the ONLY hard gate — safety/feasibility basics present
     missing_basics: list[str]
+    is_minor: bool = False  # a flagged limitation (PDR-0010), never a hard lock
     twin: OnboardingTwinSummary
     # Progressive measurement-debt prompts: benchmark codes to assess next (never a gate).
     measurement_debt: list[str]
