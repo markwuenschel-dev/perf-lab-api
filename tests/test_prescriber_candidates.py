@@ -109,7 +109,9 @@ def test_safety_override_wins_over_goal():
 
 
 def test_high_structural_damage_triggers_recovery():
-    s = _state(f_struct_damage=75.0)
+    # INT-05: the structural-safety Recovery reads the authoritative structural
+    # component, not the lossy f_struct_damage blend (which now has no authority).
+    s = _state(structural=85.0)
     rx = recommend_next_session(s, goal="Strength")
     assert rx.type == "Recovery"
 
