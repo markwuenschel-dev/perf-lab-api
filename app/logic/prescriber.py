@@ -21,6 +21,8 @@ The constraint_engine package also provides template-driven validation
 
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass
 from typing import Any
 
 from app.logic.candidate_library import get_templates, score_template
@@ -77,6 +79,116 @@ OBJECTIVE_TAPER_FACTOR = 0.7
 OBJECTIVE_DOMAIN_BOOST = 0.15
 
 
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Structural / tendon fatigue safety policy (INT-05)
+# ---------------------------------------------------------------------------
+# Explicit component bands + a conjunctive joint rule. Structural and tendon are
+# NOT added — their additive commensurability is unestablished; one component cannot
+# arithmetically compensate for the other. Thresholds are provisional expert-prior
+# PLANNING thresholds, not validated injury-risk cutoffs (Soligard 2016; Thorpe 2017).
+# Held in a versioned object so logs/tests/retunes identify the exact policy.
+
+
+@dataclass(frozen=True)
+class StructuralFatigueSafetyPolicy:
+    structural_critical: float
+    tendon_critical: float
+    joint_structural_high: float
+    joint_tendon_high: float
+    version: str
+
+
+STRUCTURAL_FATIGUE_SAFETY_POLICY_V1 = StructuralFatigueSafetyPolicy(
+    structural_critical=80.0,
+    tendon_critical=70.0,
+    joint_structural_high=70.0,
+    joint_tendon_high=60.0,
+    version="structural_fatigue_safety_policy_v1",
+)
+
+
+def _structural_recovery_trigger(
+    structural: float,
+    tendon: float,
+    policy: StructuralFatigueSafetyPolicy = STRUCTURAL_FATIGUE_SAFETY_POLICY_V1,
+) -> str | None:
+    """Return the hard-stop Recovery trigger reason, or None.
+
+    Reads ONLY the structural and tendon fatigue components — grip, tissue averages,
+    and the legacy ``f_struct_damage`` blend have no authority. Inclusive (``>=``)
+    bands; the individual-critical checks precede the conjunctive joint rule, and no
+    component is converted into another by addition.
+    """
+    if structural >= policy.structural_critical:
+        return "structural_critical"
+    if tendon >= policy.tendon_critical:
+        return "tendon_critical"
+    if structural >= policy.joint_structural_high and tendon >= policy.joint_tendon_high:
+        return "jointly_high"
+    return None
+
+
+def _structural_recovery_rationale(reason: str, structural: float, tendon: float) -> str:
+    """Trigger-specific rationale naming the component/combination that fired. These
+    are precautionary planning signals — no injury-prediction claim."""
+    if reason == "structural_critical":
+        return (
+            f"Structural fatigue critical ({structural:.1f}%). "
+            "Prioritize recovery before further structural loading."
+        )
+    if reason == "tendon_critical":
+        return (
+            f"Tendon fatigue critical ({tendon:.1f}%). "
+            "Prioritize recovery before further tendon loading."
+        )
+    return (
+        f"Structural and tendon fatigue jointly elevated "
+        f"(structural {structural:.1f}%, tendon {tendon:.1f}%). "
+        "Prioritize recovery before further loading."
+    )
+
+
+def _classify_counterfactual(legacy_trigger: bool, component_trigger: bool) -> str:
+    """Agreement class between the legacy blend and the component decision."""
+    if legacy_trigger and component_trigger:
+        return "both"
+    if legacy_trigger:
+        return "legacy_only"
+    if component_trigger:
+        return "component_only"
+    return "neither"
+
+
+def _log_structural_safety_counterfactual(
+    state: UnifiedStateVector, component_reason: str | None
+) -> None:
+    """Counterfactual telemetry (INT-05): the legacy ``f_struct_damage > 70`` blend
+    outcome vs the component decision. The legacy result is telemetry ONLY — it has
+    no veto. Structured-logging seam only (no schema); INFO on disagreement, else DEBUG.
+    """
+    tissue_vals = state.tissue_t.model_dump().values()
+    tissue_avg = sum(tissue_vals) / max(1, len(tissue_vals))
+    legacy_blend = (
+        state.fatigue_f.structural + state.fatigue_f.tendon
+        + 0.15 * state.fatigue_f.grip + 0.1 * tissue_avg
+    )
+    legacy_trigger = legacy_blend > 70.0
+    component_trigger = component_reason is not None
+    classification = _classify_counterfactual(legacy_trigger, component_trigger)
+    emit = logger.info if legacy_trigger != component_trigger else logger.debug
+    emit(
+        "structural-safety counterfactual: class=%s legacy_blend=%.1f legacy_trigger=%s "
+        "component_trigger=%s reason=%s structural=%.1f tendon=%.1f grip=%.1f "
+        "tissue_avg=%.1f policy=%s",
+        classification, legacy_blend, legacy_trigger, component_trigger, component_reason,
+        state.fatigue_f.structural, state.fatigue_f.tendon, state.fatigue_f.grip,
+        tissue_avg, STRUCTURAL_FATIGUE_SAFETY_POLICY_V1.version,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Safety override candidates (always placed first; skip scoring)
 # ---------------------------------------------------------------------------
@@ -98,7 +210,27 @@ def _safety_candidates(state: UnifiedStateVector) -> list[SessionCandidate]:
             is_safety_override=True,
         ))
 
-    if state.fatigue_f.tendon > 55.0 or state.fatigue_f.structural > 65.0:
+    # INT-05: the structural/tendon safety decision reads the authoritative fatigue
+    # COMPONENTS, not the lossy f_struct_damage blend. The critical Recovery branch is
+    # evaluated first and SUPPRESSES the milder Tissue Deload — at most one
+    # structural/tendon safety candidate is emitted (never both, leaving downstream
+    # ranking to guess which safety instruction wins).
+    struct_reason = _structural_recovery_trigger(
+        state.fatigue_f.structural, state.fatigue_f.tendon
+    )
+    _log_structural_safety_counterfactual(state, struct_reason)
+    if struct_reason is not None:
+        overrides.append(SessionCandidate(
+            type="Recovery",
+            focus="Mobility / Light Movement",
+            rationale=_structural_recovery_rationale(
+                struct_reason, state.fatigue_f.structural, state.fatigue_f.tendon
+            ),
+            duration_min=20,
+            branch_id="safety_structural_damage",
+            is_safety_override=True,
+        ))
+    elif state.fatigue_f.tendon > 55.0 or state.fatigue_f.structural > 65.0:
         overrides.append(SessionCandidate(
             type="Tissue Deload",
             focus="Isometrics + Blood-Flow Circuits",
@@ -108,19 +240,6 @@ def _safety_candidates(state: UnifiedStateVector) -> list[SessionCandidate]:
             ),
             duration_min=35,
             branch_id="safety_tendon_structural",
-            is_safety_override=True,
-        ))
-
-    if state.f_struct_damage > 70.0:
-        overrides.append(SessionCandidate(
-            type="Recovery",
-            focus="Mobility / Light Movement",
-            rationale=(
-                f"Structural fatigue critical ({state.f_struct_damage:.1f}%). "
-                "Training now would increase injury risk."
-            ),
-            duration_min=20,
-            branch_id="safety_structural_damage",
             is_safety_override=True,
         ))
 
