@@ -41,6 +41,11 @@ class CapacityState(BaseModel):
 
     aerobic: float = Field(default=300.0, ge=0.0, description="Aerobic / CS–VO2 proxy")
     glycolytic: float = Field(default=50.0, ge=0.0, description="Glycolytic / W′-style reserve")
+    # `max_strength` is the CURRENT LATENT strength estimate (may rise or fall as
+    # evidence accumulates), NOT a historical maximum. The best *currently valid*
+    # demonstrated performance is a separate concept — the derived e1RM watermark
+    # (`state_service.best_currently_validated_e1rm`), which is monotone on valid
+    # adds but may fall on correction/quarantine. Do not conflate the two (ADR-0066).
     max_strength: float = Field(default=100.0, ge=0.0)
     hypertrophy: float = Field(default=50.0, ge=0.0)
     power: float = Field(default=50.0, ge=0.0)
