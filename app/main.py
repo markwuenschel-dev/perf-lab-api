@@ -36,10 +36,36 @@ from app.api.v1 import (
 from app.api.v1.history import router as history_router
 from app.api.v1.onboard import router as onboard_router
 from app.api.v1.profile import router as profile_router
-from app.core.config import settings
+from app.core.config import DEFAULT_SECRET_KEY, Settings, settings
 from app.core.db import engine
 
 logger = logging.getLogger("perflab")
+
+# A 256-bit floor for the HS256 signing key (32 chars). Below this — or the default /
+# empty value — a key is too weak to sign auth tokens.
+MIN_SECRET_KEY_LENGTH = 32
+
+
+def _check_production_secrets(cfg: Settings) -> None:
+    """Refuse to boot in production with a default, empty, or too-short SECRET_KEY (INT-01).
+
+    ``SECRET_KEY`` signs every JWT (HS256); a default or trivially short key lets anyone
+    forge tokens and impersonate any user. Mirror the ``_on_schema_mismatch`` contract:
+    fail fast (raise) in production, log a warning elsewhere so local/dev boots aren't
+    blocked. Generate a strong key with ``openssl rand -hex 32``.
+    """
+    key = cfg.SECRET_KEY.strip()
+    weak = (not key) or key == DEFAULT_SECRET_KEY or len(key) < MIN_SECRET_KEY_LENGTH
+    if not weak:
+        return
+    message = (
+        "SECRET_KEY is unset, the public default, or too short (needs a random value of "
+        f"at least {MIN_SECRET_KEY_LENGTH} chars — e.g. `openssl rand -hex 32`). It signs "
+        "every auth token; a weak key allows token forgery."
+    )
+    if cfg.is_production:
+        raise RuntimeError(message)
+    logger.warning("%s (allowed outside production)", message)
 
 
 def _on_schema_mismatch(message: str) -> None:
@@ -118,6 +144,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("✅ Database connectivity verified")
     except Exception as exc:
         logger.warning("Database connectivity check failed (this may be expected in some test setups): %s", exc)
+
+    # Critical safety check: production must not boot with a forgeable signing key
+    _check_production_secrets(settings)
 
     # Critical safety check: ensure we're not running against a stale schema
     await _check_alembic_head()
