@@ -59,6 +59,19 @@ class CapacityState(BaseModel):
     )
 
 
+# Per-axis capacity ceiling — the normalization scale for a capacity axis. Only
+# `aerobic` lives on the engine's 0–650 scale; every other capacity axis is 0–100.
+# Single source of truth (INT-12): the EKF packing, MPC objective, and state-update
+# paths all import `capacity_ceiling` instead of re-declaring the literal.
+AEROBIC_CEILING: float = 650.0
+DEFAULT_CAPACITY_CEILING: float = 100.0
+
+
+def capacity_ceiling(key: str) -> float:
+    """Normalization ceiling for a capacity axis (0–650 for ``aerobic``, else 0–100)."""
+    return AEROBIC_CEILING if key == "aerobic" else DEFAULT_CAPACITY_CEILING
+
+
 # Weak-prior seed: high uncertainty about an un-measured capacity axis. A benchmark
 # shrinks this; time grows it. Relative scale — see ADR-0036.
 SEED_CAPACITY_VARIANCE = 1.0

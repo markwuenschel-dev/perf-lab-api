@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.domain.vectors import capacity_ceiling
 from app.logic.constraint_engine.candidate import max_tissue_load, mean_fatigue
 from app.logic.deload_need import compute_deload_need
 from app.logic.domain_vocab import canonical_domain
@@ -64,10 +65,6 @@ def goal_axis_weights(goal: str) -> dict[str, float]:
     return _GOAL_AXIS_WEIGHTS.get(canonical_domain(goal), _DEFAULT_GOAL_AXES)
 
 
-def _capacity_ceiling(key: str) -> float:
-    return 650.0 if key == "aerobic" else 100.0
-
-
 def goal_progress(traj: Sequence[UnifiedStateVector], goal: str) -> float:
     """Goal-weighted, ceiling-normalized capacity gain from first to last state."""
     if len(traj) < 2:
@@ -78,7 +75,7 @@ def goal_progress(traj: Sequence[UnifiedStateVector], goal: str) -> float:
     gain = 0.0
     for axis, w in weights.items():
         delta = float(getattr(end, axis)) - float(getattr(start, axis))
-        gain += w * (delta / _capacity_ceiling(axis))
+        gain += w * (delta / capacity_ceiling(axis))
     return gain / wsum
 
 

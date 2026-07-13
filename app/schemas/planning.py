@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.mesocycle import BlockGoal, BlockStatus, SessionStatus
 
@@ -60,8 +60,7 @@ class BlockRead(BaseModel):
     accessory_focus: list[str] | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlannedSessionRead(BaseModel):
@@ -82,8 +81,7 @@ class PlannedSessionRead(BaseModel):
     workout_log_id: int | None = None
     completed_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PlannedSessionUpdateRequest(BaseModel):

@@ -77,10 +77,13 @@ async def get_current_user(
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except JWTError:
+        # `sub` is attacker-influenced; a non-numeric value must be a 401, not a
+        # 500 from an unguarded int() (INT-10).
+        user_pk = int(user_id)
+    except (JWTError, ValueError):
         raise credentials_exception from None
 
-    result = await db.execute(select(User).where(User.id == int(user_id)))
+    result = await db.execute(select(User).where(User.id == user_pk))
     user = result.scalars().first()
 
     if user is None or not user.is_active:
