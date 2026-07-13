@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from app.domain.vectors import CapacityState, FatigueState, TissueState
+from app.domain.vectors import (
+    CapacityState,
+    FatigueState,
+    TissueState,
+    capacity_ceiling,
+)
 from app.schemas.state import UnifiedStateVector
 
 # Vector attribute on UnifiedStateVector for each domain.
@@ -33,13 +38,9 @@ DOMAIN_OF_INDEX: tuple[str, ...] = tuple(d for d, _ in STATE_KEYS)
 INDEX_OF_KEY: dict[tuple[str, str], int] = {dk: i for i, dk in enumerate(STATE_KEYS)}
 
 
-def _capacity_ceiling(key: str) -> float:
-    return 650.0 if key == "aerobic" else 100.0
-
-
 def axis_scale(domain: str, key: str) -> float:
     """Normalization scale for one axis: capacity -> ceiling, fatigue/tissue -> 100."""
-    return _capacity_ceiling(key) if domain == "capacity" else 100.0
+    return capacity_ceiling(key) if domain == "capacity" else 100.0
 
 
 # Per-axis scale vector (length 22), aligned with STATE_KEYS.

@@ -29,14 +29,45 @@ _STEPS = [
 ]
 
 
+async def _benchmark_definition_count() -> int | None:
+    """Rows in ``benchmark_definitions``, or None if the count itself fails."""
+    from sqlalchemy import func, select
+
+    from app.core.db import AsyncSessionLocal
+    from app.models.benchmark_definition import BenchmarkDefinition
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(func.count()).select_from(BenchmarkDefinition))
+            return int(result.scalar_one())
+    except Exception:
+        logger.error("catalog seed: could not verify benchmark_definitions count", exc_info=True)
+        return None
+
+
 async def seed_catalog() -> None:
-    """Run the catalog seeders idempotently; never raise (fault-tolerant for boot)."""
+    """Run the catalog seeders idempotently; never raise (fault-tolerant for boot).
+
+    A per-step failure is logged at ERROR (not swallowed silently — INT-04) and boot
+    continues. After seeding, we verify the assessment surface's catalog is actually
+    populated; an empty ``benchmark_definitions`` means the Assess screen will be empty,
+    so it is logged loudly rather than discovered by a confused user.
+    """
     for label, module in _STEPS:
         try:
             await module.seed()
             logger.info("catalog seed step %r ok", label)
         except Exception:
-            logger.warning("catalog seed step %r failed (continuing)", label, exc_info=True)
+            logger.error("catalog seed step %r FAILED (continuing boot)", label, exc_info=True)
+
+    count = await _benchmark_definition_count()
+    if count == 0:
+        logger.error(
+            "catalog seed: benchmark_definitions is EMPTY after seeding — the "
+            "assessment surface will show nothing. Investigate the seed steps above."
+        )
+    elif count is not None:
+        logger.info("catalog seed: benchmark_definitions populated (%d rows)", count)
 
 
 if __name__ == "__main__":

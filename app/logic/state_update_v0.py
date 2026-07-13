@@ -15,11 +15,13 @@ This is the preferred module for state updates. See also:
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.domain.vectors import capacity_ceiling
 from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
@@ -30,11 +32,9 @@ from app.schemas.engine_vectors import CapacityConfidence, FatigueState, TissueS
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
 
+logger = logging.getLogger(__name__)
+
 _VECTOR_ATTR = {"capacity": "capacity_x", "fatigue": "fatigue_f", "tissue": "tissue_t"}
-
-
-def _capacity_ceiling(key: str) -> float:
-    return 650.0 if key == "aerobic" else 100.0
 
 
 def _read_axis(state: UnifiedStateVector, vector: str, key: str) -> float:
@@ -44,7 +44,7 @@ def _read_axis(state: UnifiedStateVector, vector: str, key: str) -> float:
 
 def _write_axis(state: UnifiedStateVector, vector: str, key: str, value: float) -> None:
     sub = getattr(state, _VECTOR_ATTR[vector])
-    cap = _capacity_ceiling(key) if vector == "capacity" else 100.0
+    cap = capacity_ceiling(key) if vector == "capacity" else 100.0
     setattr(sub, key, max(0.0, min(cap, value)))
 
 
@@ -169,8 +169,17 @@ def _apply_capacity_residual(
     try:
         cur = _read_axis(s, "capacity", key)
     except AttributeError:
+        # An unknown target_key silently dropped the whole capacity correction
+        # (INT-26). Keep it non-fatal, but make the dropped assimilation visible
+        # instead of a silent no-op.
+        logger.warning(
+            "capacity residual skipped: unknown target_key %r (mapping id=%s) — "
+            "not a CapacityState axis; check benchmark mapping config",
+            key,
+            getattr(mapping, "id", "?"),
+        )
         return
-    ceiling = _capacity_ceiling(key)
+    ceiling = capacity_ceiling(key)
     expected01 = cur / ceiling if ceiling > 0 else 0.0
     residual01 = score01 - expected01
     prior_var = float(getattr(s.capacity_confidence, key, 1.0))
@@ -429,7 +438,7 @@ def _apply_adaptation_gains(
             gain *= directional_interference_multiplier(key, s, p)
 
         cur = getattr(s.capacity_x, key)
-        ceiling = _capacity_ceiling(key)
+        ceiling = capacity_ceiling(key)
         setattr(s.capacity_x, key, min(ceiling, cur + gain))
 
     # Cross-talk: aerobic improvement nudges work_capacity

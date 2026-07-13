@@ -27,9 +27,14 @@ class EncryptionKeyMissingError(RuntimeError):
     """Raised when an encrypt/decrypt is attempted without APP_ENCRYPTION_KEY set."""
 
 
-@lru_cache(maxsize=1)
-def _fernet() -> Fernet:
-    key = settings.APP_ENCRYPTION_KEY.strip()
+@lru_cache(maxsize=4)
+def _fernet_for(key: str) -> Fernet:
+    """Build (and cache) a Fernet for a specific key value.
+
+    Cached on the key *value*, not unconditionally: a rotated APP_ENCRYPTION_KEY
+    yields a fresh Fernet instead of pinning the first key for the process lifetime
+    (INT-31). The small maxsize bounds memory during a rotation.
+    """
     if not key:
         raise EncryptionKeyMissingError(
             "APP_ENCRYPTION_KEY is not set. Generate one with "
@@ -44,6 +49,11 @@ def _fernet() -> Fernet:
             "APP_ENCRYPTION_KEY is not a valid Fernet key (expected urlsafe-base64 "
             "32 bytes)."
         ) from exc
+
+
+def _fernet() -> Fernet:
+    """Fernet for the currently-configured APP_ENCRYPTION_KEY."""
+    return _fernet_for(settings.APP_ENCRYPTION_KEY.strip())
 
 
 def encrypt(plaintext: str) -> str:

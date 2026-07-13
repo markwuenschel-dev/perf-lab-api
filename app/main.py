@@ -107,7 +107,14 @@ async def _check_alembic_head() -> None:
         script = ScriptDirectory.from_config(alembic_cfg)
         head_rev = script.get_current_head()
     except Exception as exc:
-        # Table might not exist yet on fresh DBs / connectivity not ready.
+        # Outside production this is a non-fatal warning (fresh DB, connectivity not
+        # ready, test setups). In production, an *inability to verify* the schema must
+        # fail closed (INT-13) — the check exists precisely so we never serve traffic
+        # against a possibly-stale schema, and swallowing the error defeats it.
+        if settings.is_production:
+            raise RuntimeError(
+                f"Could not verify the database is at the Alembic head in production: {exc}"
+            ) from exc
         logger.warning("Could not verify Alembic head (may be first run): %s", exc)
         return
 

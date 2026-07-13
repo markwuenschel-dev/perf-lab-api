@@ -10,9 +10,9 @@ from app.core.config import settings
 def enc_key(monkeypatch):
     key = Fernet.generate_key().decode()
     monkeypatch.setattr(settings, "APP_ENCRYPTION_KEY", key)
-    crypto._fernet.cache_clear()
+    crypto._fernet_for.cache_clear()
     yield key
-    crypto._fernet.cache_clear()
+    crypto._fernet_for.cache_clear()
 
 
 def test_encrypt_decrypt_round_trip(enc_key):
@@ -29,19 +29,19 @@ def test_ciphertext_is_nondeterministic(enc_key):
 
 def test_missing_key_raises(monkeypatch):
     monkeypatch.setattr(settings, "APP_ENCRYPTION_KEY", "")
-    crypto._fernet.cache_clear()
+    crypto._fernet_for.cache_clear()
     try:
         with pytest.raises(crypto.EncryptionKeyMissingError):
             crypto.encrypt("secret")
     finally:
-        crypto._fernet.cache_clear()
+        crypto._fernet_for.cache_clear()
 
 
 def test_malformed_key_raises(monkeypatch):
     monkeypatch.setattr(settings, "APP_ENCRYPTION_KEY", "not-a-valid-fernet-key")
-    crypto._fernet.cache_clear()
+    crypto._fernet_for.cache_clear()
     try:
         with pytest.raises(crypto.EncryptionKeyMissingError):
             crypto.encrypt("secret")
     finally:
-        crypto._fernet.cache_clear()
+        crypto._fernet_for.cache_clear()

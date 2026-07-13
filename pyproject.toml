@@ -143,3 +143,26 @@ asyncio_mode = "auto"
 markers = [
     "requires_db: marks tests as requiring a live PostgreSQL instance",
 ]
+
+# Coverage (INT-14). Coverage is measured over the runtime request path only —
+# the offline ML/training pipeline, CLI scripts, and ad-hoc analysis are excluded
+# to match the pyright strict gate (see [tool.pyright] exclude). The enforced floor
+# lives in CI (`--cov-fail-under`) as a one-way ratchet: raise it as coverage grows,
+# never lower it.
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "app/ml/*",
+    "app/scripts/*",
+    "app/analysis/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+]

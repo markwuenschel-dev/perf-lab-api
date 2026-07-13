@@ -39,7 +39,7 @@ class _FakeOura:
 def _enc_and_fake_adapter(monkeypatch):
     key = Fernet.generate_key().decode()
     monkeypatch.setattr(settings, "APP_ENCRYPTION_KEY", key)
-    crypto._fernet.cache_clear()
+    crypto._fernet_for.cache_clear()
     readings = [
         NormalizedWellness(
             day=date(2026, 7, 1),
@@ -54,7 +54,7 @@ def _enc_and_fake_adapter(monkeypatch):
         wearable_service, "_adapter", lambda provider="oura": _FakeOura(readings)
     )
     yield
-    crypto._fernet.cache_clear()
+    crypto._fernet_for.cache_clear()
 
 
 async def _register_and_get_token(client, email: str, password: str) -> str:

@@ -91,7 +91,16 @@ async def async_db() -> AsyncSession:
             await conn.run_sync(_run_upgrade)
     except _DB_UNAVAILABLE as exc:
         await engine.dispose()
-        pytest.skip(f"Test database unavailable ({TEST_DATABASE_URL}): {exc}")
+        # In an environment that *requires* the DB (CI sets REQUIRE_DB=1), a missing
+        # database must be a hard failure, never a silent skip that lets the whole
+        # integration suite go green without running (INT-23). Locally it still skips.
+        message = f"Test database unavailable ({TEST_DATABASE_URL}): {exc}"
+        if os.environ.get("REQUIRE_DB"):
+            pytest.fail(
+                message + " — REQUIRE_DB is set; the DB-backed suite must not skip.",
+                pytrace=False,
+            )
+        pytest.skip(message)
 
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
     async with factory() as session:
