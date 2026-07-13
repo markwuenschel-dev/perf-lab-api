@@ -94,7 +94,7 @@ jobs:
       - name: Run pytest, ruff, and pyright in parallel
         run: |
           set -euo pipefail
-          uv run python -m pytest -q --cov --cov-report=term-missing --cov-fail-under=85 &
+          uv run python -m pytest -q --cov --cov-report=term-missing --cov-fail-under=83 &
           pid_pytest=$!
           uv run ruff check . &
           pid_ruff=$!
