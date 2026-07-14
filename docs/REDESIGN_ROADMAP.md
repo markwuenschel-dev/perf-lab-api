@@ -354,8 +354,9 @@ land first, or Railway boot-crashes identically to Render.
    `DATABASE_URL` as `postgresql://…`, which `app/core/config.py` auto-rewrites to
    `postgresql+asyncpg://`).
 2. Deploy the API service from the **production Dockerfile** (Railway auto-detects it).
-3. Set env vars: `SECRET_KEY` (strong), `ALLOWED_ORIGINS` (the Netlify prod domain —
-   the default `*.netlify.app` regex already covers deploy previews), `DEBUG=false`.
+3. Set env vars: `SECRET_KEY` (strong), `ALLOWED_ORIGINS` (the explicit prod frontend
+   origin, e.g. `https://perflab.44-198-76-44.nip.io` — required; boot fails without it,
+   INT-09), `DEBUG=false`.
 4. **Migrations run automatically** on deploy via the Dockerfile's `alembic upgrade head`.
 5. **Seed once** after first deploy: `python -m app.scripts.seed_benchmarks` (and
    `seed_exercises`).

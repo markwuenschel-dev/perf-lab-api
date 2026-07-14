@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -184,7 +184,7 @@ async def recompute_derived_metrics(db: AsyncSession, user_id: int) -> tuple[int
         snap = DerivedMetricSnapshot(
             user_id=user_id,
             derived_metric_definition_id=d.id,
-            computed_at=datetime.utcnow(),
+            computed_at=datetime.now(UTC).replace(tzinfo=None),
             value=val,
             confidence=1.0 if not err else 0.7,
             contributing_observation_ids=oids or None,
@@ -234,7 +234,7 @@ async def dashboard_kpis_bundle(
                 "unit": d.unit,
                 "value": kpi_vals[d.code],
                 "confidence": float(snap.confidence) if snap and snap.confidence is not None else None,
-                "computed_at": snap.computed_at if snap else datetime.utcnow(),
+                "computed_at": snap.computed_at if snap else datetime.now(UTC).replace(tzinfo=None),
                 "is_dashboard_kpi": d.is_dashboard_kpi,
                 "can_affect_prescriber_rules": d.can_affect_prescriber_rules,
             }

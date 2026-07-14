@@ -36,7 +36,7 @@ from app.api.v1 import (
 from app.api.v1.history import router as history_router
 from app.api.v1.onboard import router as onboard_router
 from app.api.v1.profile import router as profile_router
-from app.core.config import DEFAULT_SECRET_KEY, Settings, settings
+from app.core.config import DEFAULT_SECRET_KEY, DEV_DEFAULT_ORIGINS, Settings, settings
 from app.core.db import engine
 
 logger = logging.getLogger("perflab")
@@ -62,6 +62,35 @@ def _check_production_secrets(cfg: Settings) -> None:
         "SECRET_KEY is unset, the public default, or too short (needs a random value of "
         f"at least {MIN_SECRET_KEY_LENGTH} chars — e.g. `openssl rand -hex 32`). It signs "
         "every auth token; a weak key allows token forgery."
+    )
+    if cfg.is_production:
+        raise RuntimeError(message)
+    logger.warning("%s (allowed outside production)", message)
+
+
+def _check_production_cors(cfg: Settings) -> None:
+    """Refuse to boot in production without an explicit prod CORS origin pinned (INT-09).
+
+    Production must pin at least one explicit allowed origin (e.g.
+    ``https://perflab.44-198-76-44.nip.io``) rather than relying on the old catch-all
+    ``*.railway.app`` regex default. Mirror ``_check_production_secrets``: fail fast
+    (raise) in production, log a warning elsewhere so local/dev boots aren't blocked.
+
+    A configured ``ALLOWED_ORIGIN_REGEX`` alone is NOT sufficient — the decision is to
+    pin an explicit origin, so we require at least one origin in ``allowed_origins_list``
+    that is not one of the local-dev defaults.
+    """
+    dev_defaults = {o.strip().lower() for o in DEV_DEFAULT_ORIGINS}
+    has_explicit = any(
+        o.strip().lower() not in dev_defaults for o in cfg.allowed_origins_list
+    )
+    if has_explicit:
+        return
+    message = (
+        "No explicit production CORS origin is configured; only local-dev origins are "
+        "allowed. Pin the prod origin, e.g. "
+        "set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io. "
+        "A regex alone is not accepted — an explicit origin must be pinned."
     )
     if cfg.is_production:
         raise RuntimeError(message)
@@ -155,6 +184,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Critical safety check: production must not boot with a forgeable signing key
     _check_production_secrets(settings)
 
+    # Critical safety check: production must pin an explicit CORS origin (no railway default)
+    _check_production_cors(settings)
+
     # Critical safety check: ensure we're not running against a stale schema
     await _check_alembic_head()
 
@@ -184,7 +216,7 @@ app.include_router(history_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
-    allow_origin_regex=settings.allowed_origin_regex,  # Netlify prod + previews
+    allow_origin_regex=settings.allowed_origin_regex,  # disabled by default; pin explicit origins
     allow_credentials=True,           # Required for JWT Bearer tokens
     allow_methods=["*"],
     allow_headers=["*"],

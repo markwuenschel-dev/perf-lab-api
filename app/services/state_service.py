@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func
@@ -162,7 +162,7 @@ def _build_baseline_vector(
     t = TissueState()
 
     u = build_unified_state_vector(
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC).replace(tzinfo=None),
         x=x,
         f=f,
         t=t,
@@ -246,7 +246,7 @@ async def _persist_seed_snapshot(
 
     try:
         plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
-        seeded_at = datetime.utcnow()
+        seeded_at = datetime.now(UTC).replace(tzinfo=None)
         snapshot = seed_snapshot.build_seed_snapshot(plan, seeded_at=seeded_at)
         result = await db.execute(
             select(AthleteProfile).where(AthleteProfile.user_id == user_id)
@@ -943,7 +943,7 @@ async def process_new_workout(
     if planned_session is not None:
         planned_session.workout_log_id = workout_row.id
         planned_session.status = SessionStatus.COMPLETED
-        planned_session.completed_at = datetime.utcnow()
+        planned_session.completed_at = datetime.now(UTC).replace(tzinfo=None)
         workout_row.planned_session_id = planned_session.id
 
     # Physical decay interval since the current state, clamped non-negative so an

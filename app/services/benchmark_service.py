@@ -284,7 +284,7 @@ async def create_observation(
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
-        observed_at=body.observed_at or datetime.utcnow(),
+        observed_at=body.observed_at or datetime.now(UTC).replace(tzinfo=None),
         raw_value=body.raw_value,
         secondary_value=body.secondary_value,
         normalized_value=normalized_value,
@@ -313,7 +313,7 @@ async def create_observation(
     await db.flush()
 
     mappings = list(definition.observation_mappings or [])
-    observation_time = body.observed_at or datetime.utcnow()
+    observation_time = body.observed_at or datetime.now(UTC).replace(tzinfo=None)
     # Policy-derived capacity authority (ADR-0058): the resolved capacity_effect is
     # the state-transition operator. Re-derive it from provenance fail-closed and
     # take the stricter of stored-vs-law — a mismarked row can never earn authority

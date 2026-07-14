@@ -4,7 +4,7 @@ app/core/auth.py
 JWT + bcrypt utilities. Production-ready and host-agnostic (Railway, any container host).
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
@@ -51,7 +51,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     """Create JWT access token."""
-    expire = datetime.utcnow() + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload = {"sub": str(subject), "exp": expire}
