@@ -97,10 +97,16 @@ jobs:
       - name: OpenAPI is committed and current
         run: uv run python -m app.scripts.export_openapi --check
 
+      # pytest runs under xdist (-n auto). The DB-backed tests used to replay all 35
+      # migrations per test — ~5,900 runs per suite — which dominated the clock at
+      # ~9 min. The schema is now built once per session (see tests/conftest.py) and
+      # each xdist worker gets its own database, so the suite parallelises cleanly.
+      # Measured locally: 280.8s -> 58.5s. Nothing is skipped; REQUIRE_DB still makes
+      # an unreachable database a hard failure (INT-23).
       - name: Run pytest, ruff, and pyright in parallel
         run: |
           set -euo pipefail
-          uv run python -m pytest -q --cov --cov-report=term-missing --cov-fail-under=83 &
+          uv run python -m pytest -q -n auto --cov --cov-report=term-missing --cov-fail-under=83 &
           pid_pytest=$!
           uv run ruff check . &
           pid_ruff=$!

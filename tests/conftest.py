@@ -36,7 +36,7 @@ import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 from alembic.config import Config
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -47,10 +47,30 @@ import app.models  # noqa: F401
 from alembic import command
 from app.core.db import get_db
 
-TEST_DATABASE_URL = os.environ.get(
+_BASE_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab_test",
 )
+
+
+def _worker_database_url() -> str:
+    """Give each xdist worker its own database.
+
+    Per-test isolation is a TRUNCATE of every table, which is process-global — under
+    ``-n auto`` one worker would wipe another's rows mid-test. Sharding by
+    ``PYTEST_XDIST_WORKER`` (``gw0``, ``gw1``, …) keeps the workers from colliding.
+    Serial runs keep the plain database name, so nothing changes without xdist.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if not worker:
+        return _BASE_DATABASE_URL
+    url = make_url(_BASE_DATABASE_URL)
+    # render_as_string(hide_password=False), not str(): str(URL) masks the password
+    # as a literal "***", which produces a URL that looks right and cannot connect.
+    return url.set(database=f"{url.database}_{worker}").render_as_string(hide_password=False)
+
+
+TEST_DATABASE_URL = _worker_database_url()
 
 # Connection-level failures that legitimately mean "no database available" — the
 # only conditions under which an integration test is allowed to skip. Anything
@@ -106,8 +126,36 @@ END $$;
 """
 
 
+async def _ensure_database_exists() -> None:
+    """Create this worker's database if it does not exist yet.
+
+    Only xdist workers need this — CI's Postgres service creates the base
+    ``perflab_test`` but knows nothing about ``perflab_test_gw0`` etc. CREATE
+    DATABASE cannot run inside a transaction, hence AUTOCOMMIT.
+    """
+    url = make_url(TEST_DATABASE_URL)
+    if url.database == make_url(_BASE_DATABASE_URL).database:
+        return  # serial run: the base database is provisioned externally
+    admin = create_async_engine(
+        url.set(database="postgres").render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+    )
+    try:
+        async with admin.connect() as conn:
+            exists = await conn.scalar(
+                sa.text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": url.database},
+            )
+            if not exists:
+                await conn.execute(sa.text(f'CREATE DATABASE "{url.database}"'))
+    finally:
+        await admin.dispose()
+
+
 async def _build_schema() -> None:
     """Drop+recreate ``public`` and migrate it to head. Runs once per session."""
+    await _ensure_database_exists()
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
