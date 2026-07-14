@@ -187,7 +187,10 @@ The root `main.py` entrypoint is deprecated and should no longer be used.
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-CORS is currently permissive (`*`); tighten `allow_origins` for production.
+CORS allows local dev origins by default. In production you **must** pin an explicit
+prod origin via `ALLOWED_ORIGINS` (e.g. `https://perflab.44-198-76-44.nip.io`) — the app
+refuses to boot otherwise (INT-09). `ALLOWED_ORIGIN_REGEX` is disabled by default and a
+regex alone does not satisfy the requirement.
 
 ---
 

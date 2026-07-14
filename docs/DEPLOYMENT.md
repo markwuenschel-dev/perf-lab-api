@@ -10,8 +10,8 @@ How to run database migrations and deploy `perf-lab-api`. Schema is managed
 | `DATABASE_URL` | local placeholder | `postgresql://…` is auto-rewritten to `postgresql+asyncpg://…`. Alembic reads the same value. |
 | `ENVIRONMENT` | `development` | Set to `production` in real deployments. Controls fail-fast behavior (see below). |
 | `SECRET_KEY` | `change-me-in-production` | **Must** be overridden in production. |
-| `ALLOWED_ORIGINS` | local dev origins | Comma-separated CORS allowlist. |
-| `ALLOWED_ORIGIN_REGEX` | `https://.*\.netlify\.app` | Extra CORS origins by regex; set to `""` to disable. |
+| `ALLOWED_ORIGINS` | local dev origins | Comma-separated CORS allowlist. **Production must pin an explicit prod origin** (e.g. `https://perflab.44-198-76-44.nip.io`) — boot fails otherwise (INT-09). |
+| `ALLOWED_ORIGIN_REGEX` | `""` (disabled) | Extra CORS origins by regex. Empty by default; a regex alone does **not** satisfy the production explicit-origin requirement. Set only if you need pattern matching. |
 
 ## Migration workflow
 
@@ -58,6 +58,17 @@ On boot, the app's lifespan runs `_check_alembic_head()` (`app/main.py`):
   - otherwise → logs an error and continues (so local/test boots aren't blocked).
 - **Cannot verify** (connectivity not ready, `alembic_version` table absent on a
   fresh DB) → logs a warning and continues, in every environment.
+
+## Production boot guards
+
+In `production` the lifespan also fails closed on insecure config before serving:
+
+- `_check_production_secrets()` — refuses to boot on a default/empty/too-short `SECRET_KEY` (INT-01).
+- `_check_production_cors()` — refuses to boot unless `ALLOWED_ORIGINS` pins at least one
+  explicit (non-local-dev) origin, e.g. `https://perflab.44-198-76-44.nip.io` (INT-09). A
+  configured `ALLOWED_ORIGIN_REGEX` alone does **not** satisfy this — pin the origin.
+
+Outside production these log a warning instead of raising.
 
 ## Container deploy
 

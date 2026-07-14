@@ -12,6 +12,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # JWTs. Kept as a named constant so the field default and the boot guard cannot drift.
 DEFAULT_SECRET_KEY = "change-me-in-production"
 
+# The local-dev CORS origins. A production boot that only allows these (i.e. no explicit
+# prod origin pinned) is refused by `app.main._check_production_cors` (INT-09). Kept as a
+# named constant so the field default and the boot guard cannot drift.
+DEV_DEFAULT_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+
 
 def _asyncpg_database_url(url: str) -> str:
     """Convert postgresql:// → postgresql+asyncpg:// for SQLAlchemy async engine."""
@@ -39,14 +44,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # CORS — comma-separated list of allowed origins.
-    # Defaults to local dev origins only. Override via ALLOWED_ORIGINS env var
-    # (e.g. add a custom production domain here).
-    ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Defaults to local dev origins only. In production you MUST pin an explicit prod
+    # origin here via ALLOWED_ORIGINS (e.g. https://perflab.44-198-76-44.nip.io) —
+    # boot fails otherwise (see app.main._check_production_cors, INT-09).
+    ALLOWED_ORIGINS: str = ",".join(DEV_DEFAULT_ORIGINS)
 
-    # Regex of additional allowed origins, matched by CORSMiddleware. Defaults to
-    # any Railway app URL (production + preview services). Override via
-    # ALLOWED_ORIGIN_REGEX; set to "" to disable.
-    ALLOWED_ORIGIN_REGEX: str = r"https://.*\.railway\.app"
+    # Regex of additional allowed origins, matched by CORSMiddleware. Disabled by
+    # default (empty = no regex) — pin explicit origins via ALLOWED_ORIGINS instead.
+    # Set ALLOWED_ORIGIN_REGEX explicitly only if you genuinely need pattern matching.
+    ALLOWED_ORIGIN_REGEX: str = ""
 
     @property
     def allowed_origins_list(self) -> list[str]:
