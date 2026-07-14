@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import numpy as np
+from psd_helpers import assert_covariance_psd
 
 from app.engine.parameters import default_parameters
 from app.engine.state_bridge import sync_legacy_from_vectors
@@ -114,7 +115,7 @@ def test_covariance_stays_psd_over_many_updates():
         score = 0.5 + 0.4 * ((n % 5) / 5.0)
         obs = build_observation(_specs("max_strength", "hypertrophy"), profile, _state(), score)
         belief = update(belief, obs, p).belief
-    assert np.min(np.linalg.eigvalsh(belief.cov)) >= -1e-8
+    assert_covariance_psd(belief.cov)
 
 
 def test_build_observation_returns_none_without_score():

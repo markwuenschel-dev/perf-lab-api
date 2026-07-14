@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import numpy as np
+from psd_helpers import assert_covariance_psd
 
 from app.engine.parameters import default_parameters
 from app.engine.state_bridge import sync_legacy_from_vectors
@@ -29,8 +30,7 @@ def test_seed_is_symmetric_psd_and_block_diagonal():
     b = EkfBelief.seed_from_unified(_state(), p)
     assert b.mean.shape == (22,)
     assert b.cov.shape == (22, 22)
-    assert np.allclose(b.cov, b.cov.T)
-    assert np.min(np.linalg.eigvalsh(b.cov)) >= -1e-9
+    assert_covariance_psd(b.cov)
     # off-diagonal is zero at seed
     off = b.cov - np.diag(np.diag(b.cov))
     assert np.allclose(off, 0.0)
