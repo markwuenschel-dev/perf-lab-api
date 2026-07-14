@@ -4,6 +4,7 @@ import math
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
+from psd_helpers import assert_covariance_psd
 
 from app.engine.parameters import default_parameters
 from app.engine.state_bridge import sync_legacy_from_vectors
@@ -81,8 +82,7 @@ def test_predict_covariance_is_symmetric_psd():
     s = _state()
     belief = EkfBelief.seed_from_unified(s, p)
     out = predict(belief, _ctx(s, _strength_dose(), timedelta(days=3)), p)
-    assert np.allclose(out.cov, out.cov.T, atol=1e-10)
-    assert np.min(np.linalg.eigvalsh(out.cov)) >= -1e-8
+    assert_covariance_psd(out.cov)
 
 
 def test_predict_adds_process_noise_over_pure_propagation():

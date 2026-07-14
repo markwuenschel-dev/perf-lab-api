@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
+from psd_helpers import assert_covariance_psd
 from sqlalchemy import func, select
 
 from app.analysis.feature_builders.ekf_calibration_features import summarize_ekf_shadow
@@ -69,7 +70,9 @@ async def test_workout_writes_predict_row(async_db):
     assert len(row.mean_json) == 22
     cov = np.array(row.covariance_json)
     assert cov.shape == (22, 22)
-    assert np.min(np.linalg.eigvalsh(cov)) >= -1e-7  # PSD
+    # Shadow-only may log rather than abort on violation, but gets the same
+    # numerical classification as the rest of the EKF — no looser tolerance.
+    assert_covariance_psd(cov)
 
 
 async def test_predict_chain_advances_over_multiple_workouts(async_db):
