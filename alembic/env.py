@@ -22,7 +22,14 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False is load-bearing, not cosmetic. fileConfig defaults
+    # to True, which permanently disables every logger that already exists — including
+    # all of app.* , since the test process imports the app before running a migration.
+    # The tests then run migrations, so from the first DB-backed test onward no app
+    # logger can emit anything for the rest of the session, and any test asserting on a
+    # log silently cannot fail. That is a fail-open hole in the suite itself: a writer
+    # that logs nothing at all would still pass its "it logs on failure" test.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
