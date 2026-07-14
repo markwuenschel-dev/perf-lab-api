@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -324,7 +324,7 @@ async def resolve_bidirectional_observation(
         active = await _active_candidate(db, user_id)
         if active is not None:
             active.status = STATUS_DISMISSED
-            active.resolved_at = datetime.utcnow()
+            active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
             active.confirmation_observation_id = observation.id
             active.resolution_reason = "re_demonstrated_at_or_above_watermark"
             return BidirectionalOutcome(
@@ -346,7 +346,7 @@ async def resolve_bidirectional_observation(
             and observation.observed_at > active.confirmation_deadline
         ):
             active.status = STATUS_EXPIRED
-            active.resolved_at = datetime.utcnow()
+            active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
             active.resolution_reason = "confirmation_window_expired"
             active = None
         else:
@@ -367,7 +367,7 @@ async def resolve_bidirectional_observation(
                     else prior_axis
                 )
                 active.status = STATUS_CONFIRMED
-                active.resolved_at = datetime.utcnow()
+                active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
                 active.confirmation_observation_id = observation.id
                 active.applied_posterior_mean = posterior
                 active.resolution_reason = "confirmed_downward_evidence"

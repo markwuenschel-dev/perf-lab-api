@@ -63,7 +63,9 @@ async def recent_workout_summaries(
     limit: int = 40,
 ) -> list[dict[str, Any]]:
     """Most recent sessions first — used by prescribe + constraint context."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    # Naive UTC to match WorkoutLog.session_timestamp (a naive DateTime column);
+    # an aware value would make asyncpg reject the comparison bind (INT-19).
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
     result = await db.execute(
         select(WorkoutLog)
         .where(WorkoutLog.user_id == user_id)
