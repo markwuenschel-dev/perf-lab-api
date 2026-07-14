@@ -32,8 +32,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.db import AsyncSessionLocal
 from app.logic import observation_authority as oa
 from app.logic import strength_decline_policy as policy
 from app.logic.state_update_v0 import normalize_score01
@@ -47,6 +49,7 @@ from app.models.strength_decline_candidate import (
     STATUS_SAFETY_ROUTED,
     StrengthDeclineCandidate,
 )
+from app.models.strength_decline_shadow import StrengthDeclineShadow
 from app.schemas.engine_vectors import FatigueState
 from app.schemas.state import UnifiedStateVector
 
@@ -542,6 +545,49 @@ def _route_severe_to_safety(
 # Candidate-aware prescription basis (T7, fork C staged rollout)
 # --------------------------------------------------------------------------- #
 
+# The formula behind the temporary prescription ceiling (``policy.temporary_ceiling``):
+# the observed low value plus the resolved measurement error. Recorded on every shadow
+# row so a later reader can tell which ceiling definition produced it.
+CEILING_SEMANTICS = "observed_value_plus_measurement_error"
+
+
+@dataclass(frozen=True)
+class StrengthDeclineShadowPayload:
+    """An immutable, fully-resolved shadow observation — primitives and ids only.
+
+    Deliberately carries no ORM instance and no session reference. The basis
+    resolution runs *inside* the prescription's transaction, but the shadow row must
+    be written *after* that transaction commits (see
+    ``persist_strength_decline_shadow_best_effort``). Handing an attached ORM object
+    across that boundary is what couples telemetry to the request's session state;
+    a frozen value object cannot.
+    """
+
+    candidate_id: int
+    user_id: int
+    trigger_observation_id: int
+    capacity_axis: str
+    benchmark_code: str
+    mode: str
+    candidate_outcome: str
+    prior_mean: float
+    prior_variance: float
+    observed_value: float
+    observation_variance: float
+    threshold_source: str
+    threshold_value: float
+    legacy_basis: float
+    normal_basis: float
+    candidate_aware_basis: float
+    selected_basis: float
+    ceiling: float
+    absolute_delta: float
+    relative_delta: float | None
+    ceiling_semantics: str
+    decline_policy_version: str
+    authority_policy_version: str
+
+
 @dataclass(frozen=True)
 class BasisDecision:
     legacy_basis: float
@@ -551,6 +597,10 @@ class BasisDecision:
     ceiling: float | None
     candidate_id: int | None
     mode: str
+    # Present only when an active candidate governed this code — otherwise there is no
+    # counterfactual to record. The caller persists it AFTER the production commit;
+    # resolving a basis never writes it.
+    shadow_payload: StrengthDeclineShadowPayload | None = None
 
 
 def axis_to_raw(axis_value: float, rules: dict[str, Any] | None) -> float | None:
@@ -625,10 +675,129 @@ async def resolve_prescription_basis(
         "candidate_aware=%.2f selected=%.2f ceiling=%s candidate=%s",
         user_id, code, mode, legacy, normal, candidate_aware, selected, ceiling, candidate_id,
     )
+    payload: StrengthDeclineShadowPayload | None = None
+    if active is not None and ceiling is not None:
+        payload = _build_shadow_payload(
+            active=active, mode=mode, legacy=legacy, normal=normal,
+            candidate_aware=candidate_aware, selected=selected, ceiling=ceiling,
+        )
     return BasisDecision(
         legacy_basis=legacy, normal_basis=normal, candidate_aware_basis=candidate_aware,
         selected_basis=selected, ceiling=ceiling, candidate_id=candidate_id, mode=mode,
+        shadow_payload=payload,
     )
+
+
+def _build_shadow_payload(
+    *,
+    active: StrengthDeclineCandidate,
+    mode: str,
+    legacy: float,
+    normal: float,
+    candidate_aware: float,
+    selected: float,
+    ceiling: float,
+) -> StrengthDeclineShadowPayload:
+    """Pure projection of an evaluated candidate into an immutable shadow row.
+
+    No I/O of any kind — every attribute is read off the already-loaded candidate.
+    ``resolve_prescription_basis`` must stay side-effect free with respect to shadow
+    telemetry; see ``test_resolver_purity``.
+    """
+    absolute_delta = candidate_aware - legacy
+    return StrengthDeclineShadowPayload(
+        candidate_id=active.id,
+        user_id=active.user_id,
+        trigger_observation_id=active.trigger_observation_id,
+        capacity_axis=active.capacity_axis,
+        benchmark_code=active.benchmark_code,
+        mode=mode,
+        candidate_outcome=active.status,
+        prior_mean=active.prior_mean,
+        prior_variance=active.prior_variance,
+        observed_value=active.observed_value,
+        observation_variance=active.observation_variance,
+        threshold_source=active.threshold_source,
+        threshold_value=active.measurement_error_threshold,
+        legacy_basis=legacy,
+        normal_basis=normal,
+        candidate_aware_basis=candidate_aware,
+        selected_basis=selected,
+        ceiling=ceiling,
+        absolute_delta=absolute_delta,
+        relative_delta=(absolute_delta / legacy) if legacy else None,
+        ceiling_semantics=CEILING_SEMANTICS,
+        decline_policy_version=active.decline_policy_version,
+        authority_policy_version=active.authority_policy_version,
+    )
+
+
+async def persist_strength_decline_shadow_best_effort(
+    payload: StrengthDeclineShadowPayload | None,
+    *,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+) -> None:
+    """Write one shadow row AFTER the production prescription has committed.
+
+    Three properties this function exists to guarantee, each of which the first
+    attempt at this writer got wrong:
+
+    1. **Its own transaction.** A fresh session from ``session_factory``, never the
+       request's. A failed telemetry transaction cannot poison the request session,
+       cannot roll back the committed prescription, and rolls back cleanly by itself.
+    2. **Real isolation.** The guard wraps the actual I/O (execute + commit), not
+       ``db.add()`` — ``db.add()`` stages in memory and does no I/O, so a guard around
+       it catches nothing and the true failure surfaces later, at commit, uncaught.
+    3. **Atomic idempotency.** ``INSERT ... ON CONFLICT DO NOTHING`` lets the unique
+       constraint arbitrate. A SELECT-before-INSERT check is a TOCTOU race that
+       manufactures the very unique-violation it means to avoid: two concurrent
+       prescriptions both see no row, both insert, one 500s.
+    """
+    if payload is None:
+        return
+    # Resolved at call time, not as a default argument: a default binds AsyncSessionLocal
+    # at import and cannot be monkeypatched, which would silently send test writes to the
+    # app's configured DATABASE_URL instead of the test database — a test that passes
+    # while proving nothing.
+    factory = session_factory or AsyncSessionLocal
+    try:
+        async with factory() as telemetry_db:
+            async with telemetry_db.begin():
+                stmt = pg_insert(StrengthDeclineShadow).values(
+                    user_id=payload.user_id,
+                    trigger_observation_id=payload.trigger_observation_id,
+                    candidate_id=payload.candidate_id,
+                    capacity_axis=payload.capacity_axis,
+                    benchmark_code=payload.benchmark_code,
+                    mode=payload.mode,
+                    candidate_outcome=payload.candidate_outcome,
+                    prior_mean=payload.prior_mean,
+                    prior_variance=payload.prior_variance,
+                    observed_value=payload.observed_value,
+                    observation_variance=payload.observation_variance,
+                    threshold_source=payload.threshold_source,
+                    threshold_value=payload.threshold_value,
+                    legacy_basis=payload.legacy_basis,
+                    normal_basis=payload.normal_basis,
+                    candidate_aware_basis=payload.candidate_aware_basis,
+                    selected_basis=payload.selected_basis,
+                    ceiling=payload.ceiling,
+                    absolute_delta=payload.absolute_delta,
+                    relative_delta=payload.relative_delta,
+                    ceiling_semantics=payload.ceiling_semantics,
+                    decline_policy_version=payload.decline_policy_version,
+                    authority_policy_version=payload.authority_policy_version,
+                    computed_at=datetime.now(UTC).replace(tzinfo=None),
+                    decision_impact="none_shadow_only",
+                ).on_conflict_do_nothing(
+                    constraint="uq_strength_decline_shadow_trigger_axis_policy"
+                )
+                await telemetry_db.execute(stmt)
+    except Exception:
+        logger.exception(
+            "strength_decline_shadow_write_failed candidate=%s observation=%s",
+            payload.candidate_id, payload.trigger_observation_id,
+        )
 
 
 def _build_candidate(

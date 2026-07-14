@@ -189,7 +189,7 @@ async def _enrich_exercises_with_load(
     user_id: int,
     rx: WorkoutPrescription,
     block_context: BlockContext,
-) -> None:
+) -> list[strength_decline_service.StrengthDeclineShadowPayload]:
     """ADR-0045: resolve %e1RM → suggested kg for prescribed lifts with a current e1RM.
 
     Mutates ``rx.exercises`` in place. Lifts without a mapped e1RM benchmark or without
@@ -200,15 +200,21 @@ async def _enrich_exercises_with_load(
     capped by an active decline-candidate ceiling — the latest raw observation is no
     longer authority); ``shadow`` records both bases but still prescribes off legacy;
     ``off`` is byte-identical to the pre-INT-02 latest-raw behaviour.
+
+    Returns the shadow payloads the caller must persist **after** the prescription
+    commits. This function performs no shadow I/O itself: it runs inside the
+    prescription's transaction, and a telemetry write staged there would be committed
+    — or fail — together with the prescription.
     """
+    shadow_payloads: list[strength_decline_service.StrengthDeclineShadowPayload] = []
     if not rx.exercises:
-        return
+        return shadow_payloads
     code_by_name = await _e1rm_codes_for_names(db, [ex.name for ex in rx.exercises])
     if not code_by_name:
-        return
+        return shadow_payloads
     e1rm_by_code = await _current_e1rm_values(db, user_id, set(code_by_name.values()))
     if not e1rm_by_code:
-        return
+        return shadow_payloads
 
     mode = getattr(
         feature_flags, "DECLINE_CANDIDATE_PRESCRIPTION_BASIS",
@@ -234,6 +240,8 @@ async def _enrich_exercises_with_load(
                 rules=rules_by_code.get(code), mode=mode,
             )
             basis = decision.selected_basis  # legacy in shadow; candidate-aware in on
+            if decision.shadow_payload is not None:
+                shadow_payloads.append(decision.shadow_payload)
         reps = _first_int(ex.reps) or 5
         pct = sc.percent_1rm_for_prescription(reps, rpe_cap).value
         load = sc.suggested_load_kg(basis, reps, rpe_cap)
@@ -242,6 +250,7 @@ async def _enrich_exercises_with_load(
         ex.rpe_cap = rpe_cap
         ex.e1rm_basis_kg = round(basis, 1)
         ex.load_note = f"~{load:g} kg · {round(pct * 100)}% e1RM · cap RPE {rpe_cap:g}"
+    return shadow_payloads
 
 
 async def prescribe_for_athlete(
@@ -372,12 +381,22 @@ async def prescribe_for_athlete(
     )
     # ADR-0045: strength prescriptions speak in load — resolve %e1RM → suggested kg
     # (+ RPE cap) for lifts the athlete has a current e1RM for, before persisting.
-    await _enrich_exercises_with_load(db, user_id, rx, block_context)
+    shadow_payloads = await _enrich_exercises_with_load(db, user_id, rx, block_context)
 
     # Persist prescription back to the planned session slot
     if target_session is not None:
         target_session.prescribed_content = rx.to_prescribed_content()
         await db.commit()
+
+    # INT-02 decline-shadow rows — written here, after the production commit, for the
+    # same reason the decision telemetry below is: a telemetry failure must never alter
+    # or block `rx`. Each writer is independently isolated, so one failing does not stop
+    # the other being attempted: `persist_prescription_decision` swallows its own errors
+    # via `best_effort_write`, and the shadow writer runs in its own transaction on a
+    # fresh session and swallows its own. The payloads were resolved during enrichment;
+    # resolving never writes.
+    for payload in shadow_payloads:
+        await strength_decline_service.persist_strength_decline_shadow_best_effort(payload)
 
     # Best-effort decision telemetry — written after the prescription is
     # finalized/committed so a telemetry failure can never alter or block `rx`.
