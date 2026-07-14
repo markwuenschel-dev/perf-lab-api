@@ -7,13 +7,28 @@ failure (migration error, event-loop misuse, schema drift) fails loudly rather
 than masquerading as a skip.
 
 Strategy:
-- Schema is dropped and recreated for clean isolation per test.
 - Tables are created via Alembic migrations (not Base.metadata.create_all),
   so tests exercise the same schema production uses and catch migration drift.
+- Migrations run **once per session** against a freshly-created ``public`` schema;
+  per-test isolation is a TRUNCATE of every table instead of a schema rebuild.
 - Migrations run on the *test* connection via ``config.attributes["connection"]``
-  (see ``alembic/env.py``), so there is no nested ``asyncio.run()`` and no
-  dependency on the app's configured DATABASE_URL.
+  (see ``alembic/env.py``), so there is no dependency on the app's configured
+  DATABASE_URL.
+
+Why once-per-session rather than once-per-test: the schema rebuild used to be
+function-scoped, so all 35 migrations replayed from a000 for *every* DB-backed
+test. At 169 such tests that is ~5,900 migration runs per suite, and it dominated
+the wall clock — 169 DB tests took 248s (1.47s each) against 38s for the other 848.
+The migrations still run, against a genuinely fresh schema, so drift is still
+caught; they just run once. TRUNCATE ... RESTART IDENTITY CASCADE gives the same
+empty-database guarantee per test at a fraction of the cost.
+
+Isolation caveat: TRUNCATE clears *data*, not DDL. A test that alters the schema
+mid-run would leak into its neighbours, where the old drop-and-recreate would have
+absorbed it. No test does this today; if one ever needs to, it should own its own
+schema explicitly rather than relying on the fixture to rebuild.
 """
+import asyncio
 import os
 
 import httpx
@@ -73,14 +88,26 @@ def _run_upgrade(connection: Connection) -> None:
     command.upgrade(cfg, "head")
 
 
-@pytest_asyncio.fixture(loop_scope="function")
-async def async_db() -> AsyncSession:
-    """Async DB session against a freshly-migrated, isolated schema.
+# Empties every table the migrations created, in one round trip, without touching
+# DDL. alembic_version is deliberately preserved — truncating it would strand the
+# schema at an unknown revision for the rest of the session.
+_TRUNCATE_ALL = """
+DO $$
+DECLARE tables text;
+BEGIN
+    SELECT string_agg(format('%I.%I', schemaname, tablename), ', ')
+      INTO tables
+      FROM pg_tables
+     WHERE schemaname = 'public' AND tablename <> 'alembic_version';
+    IF tables IS NOT NULL THEN
+        EXECUTE 'TRUNCATE TABLE ' || tables || ' RESTART IDENTITY CASCADE';
+    END IF;
+END $$;
+"""
 
-    Drops+recreates ``public`` for a clean slate, then runs real Alembic
-    migrations on the test connection. Skips only if the database server is
-    unreachable; migration/loop errors propagate.
-    """
+
+async def _build_schema() -> None:
+    """Drop+recreate ``public`` and migrate it to head. Runs once per session."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
@@ -89,8 +116,23 @@ async def async_db() -> AsyncSession:
             await conn.execute(sa.text("GRANT ALL ON SCHEMA public TO PUBLIC"))
         async with engine.connect() as conn:
             await conn.run_sync(_run_upgrade)
-    except _DB_UNAVAILABLE as exc:
+    finally:
         await engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def _migrated_schema() -> None:
+    """Build the schema once for the whole session.
+
+    Synchronous + ``asyncio.run`` on purpose: this owns its own short-lived loop and
+    disposes its engine before returning, so nothing is shared across the
+    function-scoped loops the tests themselves use (asyncpg connections are
+    loop-bound, and a session-scoped engine handed to per-function loops is exactly
+    how that breaks).
+    """
+    try:
+        asyncio.run(_build_schema())
+    except _DB_UNAVAILABLE as exc:
         # In an environment that *requires* the DB (CI sets REQUIRE_DB=1), a missing
         # database must be a hard failure, never a silent skip that lets the whole
         # integration suite go green without running (INT-23). Locally it still skips.
@@ -101,6 +143,18 @@ async def async_db() -> AsyncSession:
                 pytrace=False,
             )
         pytest.skip(message)
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def async_db(_migrated_schema: None) -> AsyncSession:
+    """Async DB session against the migrated schema, emptied for this test.
+
+    The schema is built once per session (see ``_migrated_schema``); this fixture
+    only guarantees the *data* is empty. Migration/loop errors propagate.
+    """
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
+    async with engine.begin() as conn:
+        await conn.execute(sa.text(_TRUNCATE_ALL))
 
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
     async with factory() as session:
