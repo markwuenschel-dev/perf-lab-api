@@ -1,4 +1,4 @@
-"""GATE 1 — read-only prevalence audit of engine_state health (INT-15 W1-A).
+"""GATE 1 - read-only prevalence audit of engine_state health (INT-15 W1-A).
 
 Answers the only question that gates strict deployment: **how many athletes have state
 the strict codec refuses, and did any of them train recently?**
@@ -6,17 +6,26 @@ the strict codec refuses, and did any of them train recently?**
     python -m app.scripts.audit_engine_state              # summary
     python -m app.scripts.audit_engine_state --verbose    # + per-row identifiers
 
+Against PRODUCTION from a local machine, `.env`'s DATABASE_URL will not work: it holds a
+Render INTERNAL hostname (``dpg-xxxx-a``, no domain suffix) that resolves only inside
+Render's private network. Use the external URL for the one command:
+
+    PowerShell:  $env:DATABASE_URL='postgresql://...'; python -m app.scripts.audit_engine_state
+    bash:        DATABASE_URL='postgresql://...' python -m app.scripts.audit_engine_state
+
+...or run it from a shell on the Render service. The script says so itself if you forget.
+
 STRICTLY READ-ONLY. Opens no transaction, writes nothing, repairs nothing.
 
 Classification uses the **committed strict codec** (`decode_engine_state`) rather than
 hand-written SQL. Two implementations of "valid" diverge, and the SQL copy is the one that
-would be wrong — this audit must agree with the loader it is clearing the way for, by
+would be wrong - this audit must agree with the loader it is clearing the way for, by
 construction rather than by review.
 
 Raw ``engine_state`` is athlete data and is NEVER printed. Rows are identified by id and
 ``payload_hash()``, which is also what the repair tool compares-and-swaps on.
 
-Only the LATEST state row per athlete drives the verdict — that is the row every decision
+Only the LATEST state row per athlete drives the verdict - that is the row every decision
 surface actually reads. Older damaged rows are reported separately: they matter to history
 display, not to whether strict loading blocks a live athlete.
 """
@@ -32,8 +41,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.db import AsyncSessionLocal
 from app.engine.engine_state_codec import (
     MalformedCurrentEngineState,
@@ -54,7 +66,7 @@ BLOCKING = {"empty_vectors", "partial_vectors", "malformed_current", "nonfinite_
 # Not corruption. A legacy-migration population needing attested backfill before strict.
 MIGRATION = {"null_engine_state_legacy_row"}
 
-# Not damaged data — a reader too old for it. Never repaired; stop the writer rollout.
+# Not damaged data - a reader too old for it. Never repaired; stop the writer rollout.
 DEPLOYMENT = {"unsupported_future_version"}
 
 _LEGACY_SCALARS = (
@@ -207,7 +219,7 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
     activity = await _activity(db, {v.user_id for v in affected})
 
     print("\n" + "=" * 78)
-    print("GATE 1 — engine_state prevalence (READ-ONLY). Latest row per athlete.")
+    print("GATE 1 - engine_state prevalence (READ-ONLY). Latest row per athlete.")
     print("=" * 78)
     print(f"athletes with state : {len(latest)}")
     print(f"total state rows    : {len(all_rows)}")
@@ -217,7 +229,7 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
 
     blocked: list[RowVerdict] = []
     print("\n" + "-" * 78)
-    print("Affected athletes — recent activity (last_activity = most recent workout)")
+    print("Affected athletes - recent activity (last_activity = most recent workout)")
     print("-" * 78)
     if not affected:
         print("  none")
@@ -242,7 +254,7 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
     hist_counts = Counter(v.classification for v in historical)
     hist_bad = {k: n for k, n in hist_counts.items() if k != "valid_current"}
     print("\n" + "-" * 78)
-    print("Historical (non-latest) rows — affect display only, not decision authority")
+    print("Historical (non-latest) rows - affect display only, not decision authority")
     print("-" * 78)
     print(f"  {hist_bad or 'all valid'}")
 
@@ -258,7 +270,7 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
         print("    strict codec -> compare-and-swap. Only then deploy 2B.")
     if migration:
         print(f"  BACKFILL REQUIRED: {len(migration)} athlete(s) on NULL engine_state.")
-        print("    A legacy-migration population, not corruption — they bootstrap from legacy")
+        print("    A legacy-migration population, not corruption - they bootstrap from legacy")
         print("    scalars today and will be refused under strict. Backfill through the exact")
         print("    versioned reconstruction, marked compatibility-derived in provenance. Do NOT")
         print("    record it as an originally observed vector; the scalar projection is lossy.")
@@ -274,12 +286,54 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
     return 1 if (blocked or migration or future) else 0
 
 
+def _explain_connect_failure(exc: Exception) -> str:
+    """Turn a 60-line asyncpg traceback into the one fact that matters.
+
+    The default failure mode here is a DNS error buried under ~15 frames of SQLAlchemy
+    pool internals, which says nothing about the actual cause: a Render INTERNAL hostname
+    (``dpg-xxxx-a``, no domain suffix) resolves only inside Render's private network and
+    never from a laptop. An audit whose failure mode is unreadable does not get run.
+    """
+    host = ""
+    try:
+        host = make_url(settings.DATABASE_URL).host or ""
+    except Exception:  # noqa: BLE001 - diagnostics must never mask the original error
+        pass
+
+    lines = ["", "Could not connect to the database.", f"  host: {host or '<unparseable>'}"]
+    if host.startswith("dpg-") and "." not in host:
+        lines += [
+            "",
+            "  This is a Render INTERNAL hostname. It resolves only from inside Render's",
+            "  private network - never from a local machine. Either:",
+            "",
+            "    1. Use the EXTERNAL URL from the Render dashboard (same host, suffixed",
+            "       .<region>-postgres.render.com), for one command only:",
+            "",
+            "         PowerShell:  $env:DATABASE_URL='postgresql://...'; "
+            "python -m app.scripts.audit_engine_state",
+            "         bash:        DATABASE_URL='postgresql://...' "
+            "python -m app.scripts.audit_engine_state",
+            "",
+            "    2. Or run this from a shell on the Render service, where the internal",
+            "       hostname resolves.",
+        ]
+    else:
+        lines += ["", f"  Underlying error: {type(exc).__name__}: {exc}"]
+    lines += ["", "This audit is READ-ONLY - it is safe to point at production.", ""]
+    return "\n".join(lines)
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser(description="Read-only engine_state prevalence audit.")
     ap.add_argument("--verbose", action="store_true", help="per-row hash and codec detail")
     args = ap.parse_args()
-    async with AsyncSessionLocal() as db:
-        return await audit_with_db(db, args.verbose)
+    try:
+        async with AsyncSessionLocal() as db:
+            return await audit_with_db(db, args.verbose)
+    except (OSError, InterfaceError, OperationalError) as exc:
+        print(_explain_connect_failure(exc))
+        return 2
 
 
 if __name__ == "__main__":
