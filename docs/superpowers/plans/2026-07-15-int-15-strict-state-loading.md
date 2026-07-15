@@ -272,7 +272,8 @@ athlete data.
 - **Future versions** — never repair or reconstruct. They indicate incompatible deployment
   ordering: the older node must refuse, the payload must remain untouched, and the writer
   rollout must stop until all readers support the version.
-- **Zero affected active athletes** — proceed with 2B once GATE 2 is closed.
+- **Zero affected active athletes** — proceed with 2B. GATE 2 is already closed, so the
+  sweep is the only remaining gate.
 
 ## GATE 2 — e1RM transaction ownership — **CLOSED 2026-07-15. FALSE ALARM.**
 
