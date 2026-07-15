@@ -46,9 +46,14 @@ async def user_id(async_db):
 
 @pytest.fixture(autouse=True)
 def _fixed_modeled_state(monkeypatch):
+    """Pin the modeled state so these tests isolate the wellness signal, not state loading.
+
+    Tracks the strict loader as of INT-15 2B2 — readiness gates prescription, so it no
+    longer reaches the permissive one.
+    """
     async def _load(_db, _uid):
         return _fixed_state()
-    monkeypatch.setattr(readiness_service, "load_current_state", _load)
+    monkeypatch.setattr(readiness_service, "load_current_state_strict", _load)
 
 
 async def _add_sample(async_db, user_id, on_date, **metrics):

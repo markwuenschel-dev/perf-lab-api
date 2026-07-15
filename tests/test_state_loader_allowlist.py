@@ -37,7 +37,9 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # 2B1 REMOVED `services/prescription_service.py` — both load-sizing sites are strict
         # as of that slice, and a decode failure is translated to CanonicalStateInvalid at
         # the service, then mapped to 409 by the global handler.
-        "services/readiness_service.py",  # 2B2: strict — gates prescription
+        # 2B2 REMOVED `services/readiness_service.py` — strict as of that slice. Readiness
+        # is not display: it gates prescription, so it refuses rather than scoring an
+        # athlete from a legacy reconstruction.
         "services/recovery_shadow_service.py",  # S3: skip adapter
         # S4 REMOVED `scripts/repair_capacity_corruption.py` — it is strict as of this
         # slice. It was never the INT-15 forensic repair utility (that path,

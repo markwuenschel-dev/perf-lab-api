@@ -19,6 +19,8 @@ from datetime import date as date_cls
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import CanonicalStateInvalid, normalize_decode_error
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.logic.constraint_engine import overall_readiness
 from app.logic.wellness_registry import (
     WELLNESS_SIGNAL_REGISTRY,
@@ -43,7 +45,7 @@ from app.schemas.wellness import (
     WellnessSampleIn,
     WellnessSampleOut,
 )
-from app.services.state_service import load_current_state
+from app.services.state_service import load_current_state_strict
 
 # --- Confidence tuning (P8; ADR-0052; provisional, calibrate) --------------------
 
@@ -375,7 +377,16 @@ async def compute_readiness(
     and is surfaced in ``signal_summary.stale`` instead.
     """
     today = today or datetime.now(UTC).date()
-    state = await load_current_state(db, user_id)
+    # 2B2: readiness is not display — it gates prescription, so it must refuse rather than
+    # score an athlete from a legacy reconstruction. Classified by what it can do, not by
+    # the fact that a number ends up on a screen.
+    try:
+        state = await load_current_state_strict(db, user_id)
+    except EngineStateDecodeError as exc:
+        raise CanonicalStateInvalid(
+            capability="readiness",
+            normalized_reason=normalize_decode_error(exc),
+        ) from exc
     latest = await _latest_wellness(db, user_id)
     latest_out = WellnessSampleOut.model_validate(latest) if latest else None
 
