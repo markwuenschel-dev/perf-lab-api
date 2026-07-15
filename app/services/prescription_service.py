@@ -8,7 +8,9 @@ from typing import Any, TypedDict, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.errors import CanonicalStateInvalid, normalize_decode_error
 from app.engine import feature_flags
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.logic import strength_calibration as sc
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.planning import periodization_envelope
@@ -28,7 +30,10 @@ from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
 from app.services.planning_service import count_block_skips
-from app.services.state_service import load_current_state, load_or_init_current_state
+from app.services.state_service import (
+    load_current_state_strict,
+    load_or_init_current_state_strict,
+)
 
 
 class BlockContext(TypedDict, total=False):
@@ -223,7 +228,15 @@ async def _enrich_exercises_with_load(
     current_axis: float | None = None
     rules_by_code: dict[str, dict[str, Any]] = {}
     if mode != strength_decline_service.BASIS_MODE_OFF:
-        state = await load_current_state(db, user_id)
+        # 2B1: this axis selects the e1RM basis that sizes load. A reconstruction here
+        # would size training from the lossy legacy mirror, silently.
+        try:
+            state = await load_current_state_strict(db, user_id)
+        except EngineStateDecodeError as exc:
+            raise CanonicalStateInvalid(
+                capability="prescription",
+                normalized_reason=normalize_decode_error(exc),
+            ) from exc
         current_axis = float(state.capacity_x.max_strength) if state is not None else None
         rules_by_code = await _standardization_rules_for_codes(db, set(code_by_name.values()))
 
@@ -271,8 +284,16 @@ async def prescribe_for_athlete(
     session is always the persisted one. Otherwise the target is today's pending
     session in the latest active block.
     """
-    # Auto-create baseline AthleteState if none exists yet
-    state = await load_or_init_current_state(db, user_id)
+    # Baseline AthleteState is created only for an athlete who has none. An existing
+    # athlete whose state is damaged is refused here — before any sizing, revision, or
+    # commitment — rather than prescribed from a legacy reconstruction (INT-15 2B1).
+    try:
+        state = await load_or_init_current_state_strict(db, user_id)
+    except EngineStateDecodeError as exc:
+        raise CanonicalStateInvalid(
+            capability="prescription",
+            normalized_reason=normalize_decode_error(exc),
+        ) from exc
 
     # Fetch active (unresolved) weak-point tags for context injection
     wp_result = await db.execute(
