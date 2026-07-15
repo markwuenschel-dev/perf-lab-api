@@ -189,8 +189,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 CORS allows local dev origins by default. In production you **must** pin an explicit
 prod origin via `ALLOWED_ORIGINS` (e.g. `https://perflab.44-198-76-44.nip.io`) — the app
-refuses to boot otherwise (INT-09). `ALLOWED_ORIGIN_REGEX` is disabled by default and a
-regex alone does not satisfy the requirement.
+refuses to boot otherwise (INT-09). `ALLOWED_ORIGIN_REGEX` is disabled by default and is
+refused outright in production (INT-A1) — pin explicit origins instead.
 
 ---
 

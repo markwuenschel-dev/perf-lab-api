@@ -11,7 +11,7 @@ How to run database migrations and deploy `perf-lab-api`. Schema is managed
 | `ENVIRONMENT` | `development` | Set to `production` in real deployments. Controls fail-fast behavior (see below). |
 | `SECRET_KEY` | `change-me-in-production` | **Must** be overridden in production. |
 | `ALLOWED_ORIGINS` | local dev origins | Comma-separated CORS allowlist. **Production must pin an explicit prod origin** (e.g. `https://perflab.44-198-76-44.nip.io`) — boot fails otherwise (INT-09). |
-| `ALLOWED_ORIGIN_REGEX` | `""` (disabled) | Extra CORS origins by regex. Empty by default; a regex alone does **not** satisfy the production explicit-origin requirement. Set only if you need pattern matching. |
+| `ALLOWED_ORIGIN_REGEX` | `""` (disabled) | Extra CORS origins by regex. **Refused in production** (INT-A1) — setting it fails the boot. Local dev only, where it warns. Pin explicit origins via `ALLOWED_ORIGINS`. |
 
 ## Migration workflow
 
@@ -65,8 +65,11 @@ In `production` the lifespan also fails closed on insecure config before serving
 
 - `_check_production_secrets()` — refuses to boot on a default/empty/too-short `SECRET_KEY` (INT-01).
 - `_check_production_cors()` — refuses to boot unless `ALLOWED_ORIGINS` pins at least one
-  explicit (non-local-dev) origin, e.g. `https://perflab.44-198-76-44.nip.io` (INT-09). A
-  configured `ALLOWED_ORIGIN_REGEX` alone does **not** satisfy this — pin the origin.
+  explicit (non-local-dev) origin, e.g. `https://perflab.44-198-76-44.nip.io` (INT-09).
+  It also refuses a *permissive* config, not just an absent one (INT-A1): the CORS spec's
+  non-origin values are rejected, and `ALLOWED_ORIGIN_REGEX` is rejected outright — a
+  pattern's safety cannot be established from the pattern, so production requires an
+  enumerated origin instead of grading regexes.
 
 Outside production these log a warning instead of raising.
 
