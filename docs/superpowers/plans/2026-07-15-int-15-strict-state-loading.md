@@ -88,32 +88,79 @@ async def load_current_state_for_display(...) -> ReadOnlyStateView: ...  # expli
 
 `ReadOnlyStateView` must not expose prescription or mutation operations.
 
-## Execution — four verified commits on one branch
+## Execution — expand-contract, one authority class per commit
 
-**2A — make the shared loader strict.** `load_current_state` + `unified_from_athlete_row`
-raise typed errors on malformed/incomplete/future. No permissive fallback remains in
-either. Tests: empty vectors → fail; partial vectors → fail; malformed current → fail;
-future version → *distinct* failure; valid complete v2 → unchanged.
-Some display tests may fail at this commit. Do not merge it alone; prove the strict
-foundation independently.
+**Superseded 2026-07-15:** the original sequence flipped the shared loader strict FIRST.
+That creates a temporarily broken integration state — a commit where
+`unified_from_athlete_row` refuses rows its unclassified consumers still expect to
+receive. "Do not merge it alone" is not a substitute for not creating it. Strict and
+display loaders are now introduced **additively** before any shared loader changes
+behaviour, so every intermediate commit is independently verified and reviewable.
 
-**2B — wire strict decision and mutation callers.** Prescription, readiness, benchmark,
-existing-state onboarding, assessment authority. Invalid canonical state ⇒ no
+```
+2A1  strict loader, additive          ← no production sweep required
+2A2  display loader, additive         ← no production sweep required
+2B1  prescription                     ← GATED: sweep
+2B2  readiness                        ← GATED: sweep
+2B3  benchmark                        ← GATED: sweep + e1RM transaction proof
+2B4  onboarding / assessment          ← GATED: sweep
+2C   dashboard / history
+S3   shadows (separate slice)
+2D   retire the temporary generic compatibility loader
+2E   connected-flow proof
+```
+
+**No commit touches more than one authority class.**
+
+**2A1/2A2 — additive, unblocked.** Add `load_current_state_strict(...)` and
+`load_current_state_for_display(...) -> ReadOnlyStateView` side by side. Leave the
+existing `load_current_state(...)` **unchanged temporarily**.
+
+> **Structural rule: no new caller may use the temporary compatibility loader.**
+> Add an import allowlist test pinning its existing importers. **The allowlist may only
+> shrink** — it is the contract that makes the temporary state temporary.
+
+Strict-loader tests: empty vectors → fail; partial vectors → fail; malformed current →
+fail; future version → *distinct* failure; valid complete v2 → unchanged result.
+
+**2B — wire strict decision and mutation callers, in order.** Invalid canonical state ⇒ no
 prescription, no commitment, no canonical mutation, no benchmark application, and an
 explicit domain-level unavailable result. Map typed failures at every public boundary —
 an expected invalid-state condition must never surface as an accidental 500.
 
-**2C — add the read-only compatibility loader.** Wire ONLY `dashboard_service` and
-`history.py`. Add another surface only after proving it cannot affect prescription,
-readiness, eligibility, benchmark selection, state mutation, or objective progress.
-Tests: malformed + complete legacy → degraded view, `source=legacy_recovery`, no
-writeback; malformed + incomplete legacy → unavailable; future version → no recovery,
-unavailable; empty vectors → display may degrade while prescription still refuses.
+- **2B1 prescription** (`:226,275`) first — the two direct load-sizing callers. Test:
+  empty vectors + populated legacy scalars ⇒ strict failure, `_enrich_exercises_with_load`
+  NOT called, no prescription revision, no commitment, explicit `canonical_state_invalid`.
+- **2B2 readiness** (`:378`) — not display-only; influences prescription, must refuse.
+- **2B3 benchmark** (`:349,352`) — **only after e1RM transaction ownership is proven.**
+  Invariant: malformed current state ⇒ canonical state is NOT mutated from degraded
+  reconstruction. Whether the observation itself commits when state application fails is
+  an explicit product transaction decision. Recommended default: structured benchmark
+  submission + state application is atomic; invalid pre-existing canonical state rejects
+  the command *before* writing new benchmark evidence. A future recovery workflow may
+  ingest evidence without applying state — as a separately named mode, never an accidental
+  partial success.
+- **2B4 onboarding / assessment** — split by capability, not service name. New-athlete
+  explicit initialization → initialization factory. Existing malformed state → strict
+  refusal. Display-only assessment history → recovery allowed. Benchmark recommendation,
+  eligibility, or progress authority → strict.
 
-**2D — connected flow verification.** One malformed athlete row: dashboard/history →
+**2C — switch dashboard/history to explicit display recovery.** Wire ONLY
+`dashboard_service` and `history.py`. Add another surface only after proving it cannot
+affect prescription, readiness, eligibility, benchmark selection, state mutation, or
+objective progress. Tests: malformed + complete legacy → degraded view,
+`source=legacy_recovery`, no writeback; malformed + incomplete legacy → unavailable;
+future version → no recovery, unavailable; empty vectors → display may degrade while
+prescription still refuses.
+
+**2D — contract.** Once every caller is classified, either rename the strict loader to
+`load_current_state` or delete the old generic loader entirely. Prove no unclassified
+caller remains (the allowlist is empty). This is where A′'s final architecture lands.
+
+**2E — connected flow verification.** One malformed athlete row: dashboard/history →
 degraded response; prescription path → `canonical_state_invalid`; benchmark observation →
-no state mutation; DB `engine_state` → unchanged. This is the load-bearing proof that
-permissive state cannot cross into decision authority.
+no state mutation; DB `engine_state` → unchanged. The load-bearing proof that permissive
+state cannot cross into decision authority.
 
 ## Slice 3 stays separate — shadows are not display
 
@@ -186,21 +233,100 @@ display_legacy_recovery_total{service, reason}
 Invariants: decision loads recovered from legacy = 0; prescriptions from degraded state = 0;
 canonical mutations from degraded state = 0; future-version recoveries = 0.
 
-## Rollout safety — PRECONDITION, not a post-check
+## GATE 1 — production state sweep (PRECONDITION for 2B, not a post-check)
 
-Run the read-only production sweep BEFORE merging 2B: empty x/f/t objects, partial vectors,
-missing version, unsupported version, null `engine_state`, non-finite values. Then estimate
-affected athlete rows, recent prescription activity among them, and recent benchmark/state
-mutation activity.
+Requires real DB access. **Not runnable from an agent session — the user runs this.**
 
-This distinguishes "zero affected active athletes" from "strict deployment will block N
-active athletes." Deployment behaviour is correct either way, but the second requires repair
-readiness to land first.
+Build a **read-only** audit command that uses the **committed strict codec as the
+classifier** rather than reproducing its required-field logic in hand-written SQL (two
+implementations of "valid" will diverge, and the SQL copy is the one that will be wrong).
+It must: select row identity, athlete identity, `engine_state`, and legacy-field presence;
+run the strict codec **without writing**; classify typed outcomes; join only aggregate
+recent-activity indicators; print counts and row identifiers, **never raw payloads**.
 
-**Known population at risk:** genuinely old rows with NULL `engine_state` bootstrap from
-legacy scalars today and are legitimate. Under strict they refuse at every decision surface.
-Fresh rows are safe — `athlete_state_kwargs_from_unified` writes `engine_state`
-(`state_bridge.py:253`). Requires real DB access; not runnable from an agent session.
+Classifications: `valid_current`, `null_engine_state_legacy_row`, `empty_vectors`,
+`partial_vectors`, `malformed_current`, `nonfinite_value`, `missing_or_invalid_version`,
+`unsupported_future_version`.
+
+Output: row count · distinct athlete count · active in last 30/90 days · recent prescription
+count · recent workout count · recent benchmark count · most recent activity.
+
+Emit only: `athlete_state_id`, `athlete_id`, payload hash (`payload_hash()`), declared
+version, normalized codec error, activity summary. **Never log raw `engine_state`** — it is
+athlete data.
+
+### Deployment gates by class
+
+- **`engine_state IS NULL`** — a legacy-migration population, not necessarily corruption.
+  These rows legitimately bootstrap from legacy scalars today; under strict they refuse at
+  every decision surface. Fresh rows are safe (`state_bridge.py:253` writes `engine_state`).
+  If nonzero: **backfill through the exact versioned legacy reconstruction before strict
+  deployment**, and mark the result compatibility-derived in an audit record or provenance
+  field. Do not pretend the lossy scalar projection recreated an originally observed vector.
+- **Empty or partial vectors** — any *active* athlete in this class **blocks 2B**. Required
+  sequence: inspect → repair through the forensic path → validate through the strict codec →
+  compare-and-swap → then deploy strict decision loading.
+- **Future versions** — never repair or reconstruct. They indicate incompatible deployment
+  ordering: the older node must refuse, the payload must remain untouched, and the writer
+  rollout must stop until all readers support the version.
+- **Zero affected active athletes** — proceed with 2B once GATE 2 is closed.
+
+## GATE 2 — e1RM transaction ownership (separate blocker, not a W1-A subtask)
+
+Independent transaction-correctness issue. Evidence: `create_observation`
+(`benchmark_service.py:312-313`) does `db.add` → `flush` with **no identified commit
+owner** — traced through `state_service.py:989-1000`, `ingest.py:29-31`, `db.py:43-46`.
+
+`flush()` sends pending changes within the current transaction; it does **not** make them
+durable. An uncommitted transaction normally rolls back when its session/connection closes.
+That makes the finding credible but **NOT DETERMINED** until tested through the real
+request/session lifecycle.
+
+### Load-bearing persistence test — do NOT use the creating session
+
+The false-green pattern: flush → test queries with the *same* session → row appears → test
+passes → session closes → transaction rolls back.
+
+1. Create a unique observation through the real API / top-level command path.
+2. Let the request dependency and its `AsyncSession` exit **completely**.
+3. Open a **new independent** session/connection.
+4. Query by the unique observation identity.
+5. Verify the observation, provenance columns, and applied-effect audit are durable.
+6. Restart/recycle the application session and query again.
+
+Also add the inverse: observation flush succeeds, later state transition fails → determine
+whether the command contract requires both to roll back.
+
+### Do NOT fix by committing inside `create_observation`
+
+A deep helper must not seize transaction ownership. A `commit()` there could leave the
+observation durable while the state update failed and the authority audit is incomplete —
+and would make the helper unsafe inside any larger command. The boundary belongs at the
+top-level command:
+
+```python
+async with db.begin():
+    observation = await create_observation(...)
+    await apply_observation_effect(...)
+```
+
+One atomic unit: observation exists ⇔ its canonical state/audit consequences are consistent.
+Post-commit telemetry stays outside that transaction, per the convention proven in W1-C2
+(`ab858f6`).
+
+### Outcomes
+
+- **Survives a new session** → ownership exists outside the traced functions. Document the
+  exact owner and add a regression test so it cannot vanish in a refactor.
+- **Disappears** → numerical/data-integrity blocker. Establish top-level ownership, add the
+  fresh-session durability test, add the atomic rollback test, and audit recent observation
+  volume against expected workout ingestion. Determine whether only e1RM observations
+  disappear, or all observations through the service; whether an outer route commits some
+  paths but not others; and whether **existing tests have been validating flushed,
+  uncommitted rows**.
+
+Close this **before** 2B3 — otherwise strict-state changes and transaction repair mask each
+other's failure signatures.
 
 ## Interaction with INT-05
 
