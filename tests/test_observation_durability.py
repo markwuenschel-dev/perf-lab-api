@@ -1,26 +1,37 @@
-"""GATE 2 — do benchmark observations actually survive the request?
+"""Transaction ownership of `benchmark_service.create_observation`.
 
-`benchmark_service.create_observation` does `db.add(obs)` + `await db.flush()` and no
-commit (`benchmark_service.py:312-313`). It is called from `process_new_workout`
-(`state_service.py:981`) AFTER that function's own `await db.commit()`
-(`state_service.py:963`) — so the observation is added to a transaction nothing commits
-afterwards. `get_db` (`app/core/db.py:43-46`) is `async with AsyncSessionLocal() as
-session: yield session` — no commit on exit. `flush()` sends changes within the current
-transaction; it does not make them durable, and an uncommitted transaction is discarded
-when the session closes.
+**GATE 2 outcome: observations are durable. The data-loss hypothesis was FALSE.**
 
-Why no existing test catches this
----------------------------------
-The `http_client` fixture overrides `get_db` with `yield async_db` (`conftest.py:222-223`)
-— ONE session, held open by the fixture for the whole test. Production opens and closes a
-session per request. So every DB test in this suite observes flushed-but-uncommitted rows
-through the same session that created them, where they are visible right up until they
-are not. The suite is structurally incapable of catching an uncommitted write.
+It was raised on this reading: `create_observation` does `db.add(obs)` + `await db.flush()`
+(`benchmark_service.py:312-313`) and is called from `process_new_workout`
+(`state_service.py:981`) AFTER that function's own commit (`state_service.py:963`), while
+`get_db` (`app/core/db.py:43-46`) closes its session without committing. Since `flush()` is
+not durability, the observation looked like it was being discarded on session close.
 
-That is exactly the false-green this file exists to break: these tests read through a
-SEPARATE session opened after the writing one has closed.
+It is not. `create_observation` **commits at `benchmark_service.py:428`** — after resolving
+capacity authority and applying weak-point feedback. The flush at :313 is mid-function, to
+get `obs.id` for the downstream authority work; the commit lands ~115 lines later. The
+original trace stopped reading at the flush and assumed the rest.
 
-requires_db — verified in CI (real Postgres). Not runnable in a DB-less env.
+What is actually true, and worth pinning
+----------------------------------------
+`create_observation` **owns its own transaction**. It is not a leaky helper mid-flush; it is
+a complete command that commits. The consequence is the real finding, and it is a design
+property rather than a bug:
+
+  A caller CANNOT compose it into a larger atomic unit. By the time it returns, the
+  observation is committed. A later failure in the caller cannot roll it back.
+
+So `process_new_workout` commits the workout at :963, then `create_observation` commits the
+observation separately at :428. Two transactions, not one. That matches the post-commit
+best-effort convention proven in W1-C2 (`ab858f6`) — but it means "observation exists <=>
+its state consequences are consistent" is NOT guaranteed by the database, and any future
+work wanting that atomicity has to move the boundary, not add a commit.
+
+These tests read through a session that did NOT write the rows, so they measure durability
+rather than session-local visibility.
+
+requires_db - verified against real Postgres.
 """
 
 from __future__ import annotations
@@ -49,9 +60,10 @@ pytestmark = pytest.mark.asyncio
 async def session_factory(_migrated_schema: None):
     """A session FACTORY, not a session.
 
-    The distinction is the entire point. `async_db` hands out one long-lived session, which
-    is what makes the suite blind here. Callers below open and close sessions explicitly so
-    the production lifecycle is reproduced rather than simulated.
+    The distinction is the point. The `async_db` fixture hands out one long-lived session,
+    and `http_client` injects that same single session as `get_db` (`conftest.py:222-223`),
+    so the suite normally observes writes through the session that made them. Opening and
+    closing sessions explicitly here reproduces the production lifecycle instead.
     """
     engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
     async with engine.begin() as conn:
@@ -60,23 +72,24 @@ async def session_factory(_migrated_schema: None):
     await engine.dispose()
 
 
-async def _seed(factory) -> tuple[int, int]:
+async def _seed(factory) -> int:
     async with factory() as db:
         user = User(email="durability@test.com", hashed_password="x", is_active=True)
         db.add(user)
-        definition = BenchmarkDefinition(
-            code="pl_e1rm_squat",
-            name="Squat e1RM",
-            domain="powerlifting",
-            metric_type="load",
-            unit="kg",
-            better_direction="higher",
-            observation_weight=1.0,
-            standardization_rules={"floor": 40.0, "cap": 250.0},
+        db.add(
+            BenchmarkDefinition(
+                code="pl_e1rm_squat",
+                name="Squat e1RM",
+                domain="powerlifting",
+                metric_type="load",
+                unit="kg",
+                better_direction="higher",
+                observation_weight=1.0,
+                standardization_rules={"floor": 40.0, "cap": 250.0},
+            )
         )
-        db.add(definition)
         await db.commit()
-        return user.id, definition.id
+        return user.id
 
 
 async def _count_in_fresh_session(factory) -> int:
@@ -94,65 +107,80 @@ def _body() -> BenchmarkObservationCreate:
     )
 
 
-async def test_flushed_observation_does_not_survive_session_close(session_factory) -> None:
-    """THE GATE. Reproduces the production path exactly: create_observation's add+flush,
-    then the session closes with no commit, exactly as `get_db` closes it.
+async def test_observation_survives_the_request_session_closing(session_factory) -> None:
+    """Regression guard on the commit at `benchmark_service.py:428`.
 
-    If this test FAILS (count == 1), transaction ownership exists somewhere outside the
-    traced functions — find it, document it, and keep this test as the regression guard.
+    The caller never commits — exactly as `get_db` never commits and as
+    `state_service.py:981` calls this after its own :963 commit. The row must still be there
+    when a different session looks.
 
-    If this test PASSES (count == 0), every e1RM observation extracted from a workout has
-    been silently discarded, and the fix belongs at the top-level command boundary — NOT a
-    commit() inside create_observation, which would seize transaction ownership and could
-    leave the observation durable while the state update failed.
+    If this ever fails, that commit has been removed or moved behind a branch, and every
+    workout-extracted e1RM observation is being silently discarded.
     """
-    user_id, _ = await _seed(session_factory)
+    user_id = await _seed(session_factory)
 
     async with session_factory() as request_db:
         await benchmark_service.create_observation(request_db, user_id, _body())
-        # No commit — precisely what state_service.py:981 does after its :963 commit.
-        assert await request_db.scalar(select(func.count()).select_from(BenchmarkObservation)) == 1
-
-    assert await _count_in_fresh_session(session_factory) == 0, (
-        "Observation SURVIVED without a commit — transaction ownership exists outside the "
-        "traced path. Document the owner and keep this test as its regression guard."
-    )
-
-
-async def test_committed_observation_does_survive(session_factory) -> None:
-    """Control. Proves the test above measures the commit, not a broken fixture.
-
-    Without this, a green 'does not survive' could equally mean the fixture never wrote
-    anything at all.
-    """
-    user_id, _ = await _seed(session_factory)
-
-    async with session_factory() as request_db:
-        await benchmark_service.create_observation(request_db, user_id, _body())
-        await request_db.commit()
+        # No commit here. create_observation already did its own, internally.
 
     assert await _count_in_fresh_session(session_factory) == 1
 
 
-async def test_the_shared_session_fixture_cannot_detect_this(session_factory) -> None:
-    """Documents the false-green mechanism itself, so it cannot quietly return.
+async def test_caller_cannot_roll_back_a_created_observation(session_factory) -> None:
+    """`create_observation` owns its transaction — this pins the consequence.
 
-    Same session: the row is visible. Different session: it is gone. Every DB test in this
-    suite is on the first branch — which is why this has stayed invisible.
+    An explicit rollback by the caller, immediately after the call, does not undo the row.
+    That is what "the helper seized transaction ownership" means concretely: the observation
+    is already durable before control returns, so it cannot participate in a larger atomic
+    unit.
+
+    This is not currently a defect — it matches the post-commit best-effort convention. It is
+    pinned because any future work that needs "observation exists <=> state consequences are
+    consistent" must move the transaction boundary, and this test is what will tell them the
+    boundary is not where they assume.
     """
-    user_id, _ = await _seed(session_factory)
+    user_id = await _seed(session_factory)
 
     async with session_factory() as request_db:
         await benchmark_service.create_observation(request_db, user_id, _body())
-        same_session_count = await request_db.scalar(
-            select(func.count()).select_from(BenchmarkObservation)
+        await request_db.rollback()
+
+    assert await _count_in_fresh_session(session_factory) == 1, (
+        "A caller rollback undid the observation — create_observation no longer owns its "
+        "transaction, and callers may now be composing it atomically. Re-verify :428."
+    )
+
+
+async def test_flush_alone_is_not_durability(session_factory) -> None:
+    """The mechanism the false alarm was built on, isolated so it stays understood.
+
+    `flush()` really is not durability: a row added and flushed WITHOUT a commit vanishes
+    when its session closes. That premise was sound. What was wrong was the claim that
+    create_observation never commits — it does, at :428.
+
+    Uses the ORM directly, deliberately bypassing create_observation, to test SQLAlchemy's
+    behaviour under this app's actual session config rather than the service's.
+    """
+    user_id = await _seed(session_factory)
+    definition_id = None
+    async with session_factory() as db:
+        definition_id = await db.scalar(select(BenchmarkDefinition.id))
+
+    async with session_factory() as db:
+        db.add(
+            BenchmarkObservation(
+                user_id=user_id,
+                benchmark_definition_id=definition_id,
+                raw_value=150.0,
+                observed_at=datetime.now(UTC).replace(tzinfo=None),
+                validity_status="valid",
+                source="flush_only_probe",
+            )
         )
+        await db.flush()
+        assert await db.scalar(select(func.count()).select_from(BenchmarkObservation)) == 1
 
-    fresh_count = await _count_in_fresh_session(session_factory)
-
-    assert same_session_count == 1, "flush is visible to its own session"
-    assert fresh_count == 0, "and to nobody else"
-    assert same_session_count != fresh_count, (
-        "This inequality IS the bug class: a test asserting through the writing session "
-        "passes while the row never lands."
+    assert await _count_in_fresh_session(session_factory) == 0, (
+        "A flushed-but-uncommitted row survived its session closing — the session config "
+        "changed and uncommitted work is landing."
     )

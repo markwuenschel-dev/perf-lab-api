@@ -98,11 +98,11 @@ display loaders are now introduced **additively** before any shared loader chang
 behaviour, so every intermediate commit is independently verified and reviewable.
 
 ```
-2A1  strict loader, additive          ← no production sweep required
-2A2  display loader, additive         ← no production sweep required
+2A1  strict loader, additive          ← DONE (c4af4e0), ungated
+2A2  display loader, additive         ← DONE (c4af4e0), ungated
 2B1  prescription                     ← GATED: sweep
 2B2  readiness                        ← GATED: sweep
-2B3  benchmark                        ← GATED: sweep + e1RM transaction proof
+2B3  benchmark                        ← GATED: sweep only (e1RM gate CLOSED, false alarm)
 2B4  onboarding / assessment          ← GATED: sweep
 2C   dashboard / history
 S3   shadows (separate slice)
@@ -132,7 +132,10 @@ an expected invalid-state condition must never surface as an accidental 500.
   empty vectors + populated legacy scalars ⇒ strict failure, `_enrich_exercises_with_load`
   NOT called, no prescription revision, no commitment, explicit `canonical_state_invalid`.
 - **2B2 readiness** (`:378`) — not display-only; influences prescription, must refuse.
-- **2B3 benchmark** (`:349,352`) — **only after e1RM transaction ownership is proven.**
+- **2B3 benchmark** (`:349,352`) — e1RM transaction ownership is PROVEN (GATE 2 closed;
+  `create_observation` commits at `benchmark_service.py:428`). Gated on the sweep only.
+  Note when wiring: `create_observation` commits internally, so a strict refusal must happen
+  BEFORE the call — once it returns, the observation cannot be rolled back.
   Invariant: malformed current state ⇒ canonical state is NOT mutated from degraded
   reconstruction. Whether the observation itself commits when state application fails is
   an explicit product transaction decision. Recommended default: structured benchmark
@@ -271,16 +274,48 @@ athlete data.
   rollout must stop until all readers support the version.
 - **Zero affected active athletes** — proceed with 2B once GATE 2 is closed.
 
-## GATE 2 — e1RM transaction ownership (separate blocker, not a W1-A subtask)
+## GATE 2 — e1RM transaction ownership — **CLOSED 2026-07-15. FALSE ALARM.**
 
-Independent transaction-correctness issue. Evidence: `create_observation`
-(`benchmark_service.py:312-313`) does `db.add` → `flush` with **no identified commit
-owner** — traced through `state_service.py:989-1000`, `ingest.py:29-31`, `db.py:43-46`.
+**Observations are durable. There is no data loss. 2B3 is not blocked by this.**
 
-`flush()` sends pending changes within the current transaction; it does **not** make them
-durable. An uncommitted transaction normally rolls back when its session/connection closes.
-That makes the finding credible but **NOT DETERMINED** until tested through the real
-request/session lifecycle.
+Executed against real Postgres: `tests/test_observation_durability.py`, 3 passed.
+
+`create_observation` **commits at `benchmark_service.py:428`**, after resolving capacity
+authority and applying weak-point feedback. The `db.add` + `flush` at :312-313 is
+mid-function — it exists to get `obs.id` for the downstream authority work — and the commit
+lands ~115 lines later.
+
+**How the false alarm happened, so it doesn't recur:** the original trace read to the flush
+at :313 and stopped, concluding "no commit" from a partial read of a ~170-line function.
+That conclusion was then repeated downstream without re-checking, and hardened into a merge
+gate. The premise it rested on (`flush()` is not durability; uncommitted transactions roll
+back on close) was correct, and is pinned by `test_flush_alone_is_not_durability`. The
+premise was never the problem — the unread 115 lines were. *Grep for the commit in the whole
+function before claiming a function does not commit.*
+
+### What IS true, and is pinned
+
+`create_observation` **owns its own transaction**. It is a complete command that commits, not
+a leaky helper mid-flush. The consequence is a design property, not a defect:
+
+> A caller CANNOT compose it into a larger atomic unit. By the time it returns, the
+> observation is committed; a later failure in the caller cannot roll it back.
+
+`process_new_workout` commits the workout at `state_service.py:963`, then
+`create_observation` commits the observation separately at :428. **Two transactions, not
+one.** This matches the post-commit best-effort convention proven in W1-C2 (`ab858f6`), but
+it means "observation exists ⇔ its state consequences are consistent" is NOT guaranteed by
+the database. Any future work needing that atomicity must MOVE the boundary — adding a
+commit is not the lever. `test_caller_cannot_roll_back_a_created_observation` pins this so
+the next person to assume otherwise is told.
+
+### Unrelated observation about the suite (downgraded, not a bug)
+
+`http_client` overrides `get_db` with `yield async_db` (`conftest.py:222-223`) — one session,
+held open by the fixture for the whole test, where production opens and closes one per
+request. So DB tests generally observe writes through the session that made them. This is
+factually true and worth knowing, but it caused no defect here: the path commits, so the
+distinction never bit. Do not treat it as evidence of a bug on its own.
 
 ### Load-bearing persistence test — do NOT use the creating session
 
@@ -325,8 +360,8 @@ Post-commit telemetry stays outside that transaction, per the convention proven 
   paths but not others; and whether **existing tests have been validating flushed,
   uncommitted rows**.
 
-Close this **before** 2B3 — otherwise strict-state changes and transaction repair mask each
-other's failure signatures.
+**Closed 2026-07-15.** No repair is needed, so there is nothing for strict-state changes to
+mask. 2B3 waits on GATE 1 alone.
 
 ## Interaction with INT-05
 
