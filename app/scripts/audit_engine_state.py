@@ -6,14 +6,18 @@ the strict codec refuses, and did any of them train recently?**
     python -m app.scripts.audit_engine_state              # summary
     python -m app.scripts.audit_engine_state --verbose    # + per-row identifiers
 
-Against PRODUCTION from a local machine, `.env`'s DATABASE_URL will not work: it holds a
-Render INTERNAL hostname (``dpg-xxxx-a``, no domain suffix) that resolves only inside
-Render's private network. Use the external URL for the one command:
+Production Postgres is not published externally: no host port mapping, and it sits on an
+isolated Docker network reachable only from containers attached to it. There is therefore
+no external URL and no tunnel, and this CANNOT be run against production from a laptop by
+design. Run it on the host, in a container on that network:
 
-    PowerShell:  $env:DATABASE_URL='postgresql://...'; python -m app.scripts.audit_engine_state
-    bash:        DATABASE_URL='postgresql://...' python -m app.scripts.audit_engine_state
+    cd ~/infra
+    git -C ../perf-lab-api fetch origin && git -C ../perf-lab-api checkout <branch>
+    docker compose run --rm --build perf-lab-api python -m app.scripts.audit_engine_state
 
-...or run it from a shell on the Render service. The script says so itself if you forget.
+compose injects DATABASE_URL and attaches the container to `data`. The script prints this
+if it cannot connect. Ignore `.env`'s DATABASE_URL - it is stale and points at a provider
+this project does not use.
 
 STRICTLY READ-ONLY. Opens no transaction, writes nothing, repairs nothing.
 
@@ -101,8 +105,15 @@ def _nonfinite_scalars(row: AthleteState) -> list[str]:
 
 
 def _nonfinite_in_payload(payload: Any) -> bool:
-    """A NaN inside a vector validates as a float and then poisons every comparison
-    downstream (`nan > x` is False). The codec accepts it; this audit still reports it."""
+    """Is there a non-finite anywhere in the payload?
+
+    The codec DOES reject these - pydantic's ge/le constraints fail against NaN - so this is
+    not a net for something the codec misses. It exists to name the cause: the codec can only
+    report a generic `vector_validation_failed`, and "there is a NaN in x" is what a repair
+    operator can act on. It also still catches a field that has no range constraint, where
+    NaN would otherwise validate and then poison every comparison downstream (`nan > x` is
+    False).
+    """
     if isinstance(payload, dict):
         return any(_nonfinite_in_payload(v) for v in payload.values())
     if isinstance(payload, list):
@@ -131,9 +142,18 @@ def classify(row: AthleteState) -> RowVerdict:
             return verdict("nonfinite_value", f"legacy row, unusable scalars: {','.join(bad_scalars)}")
         return verdict("null_engine_state_legacy_row", "no payload; bootstraps from scalars today")
     except UnsupportedFutureEngineStateVersion as exc:
+        # Checked BEFORE any structural inspection below, deliberately: a future payload
+        # must never be sniffed. We cannot know what its fields mean, so "is there a NaN in
+        # it" is not a question we are entitled to ask.
         return verdict("unsupported_future_version", f"declares v{exc.declared_version}")
     except MalformedCurrentEngineState as exc:
         code = exc.error_code
+        # A non-finite inside a vector surfaces from the codec as a generic
+        # `vector_validation_failed` (pydantic's ge/le constraints reject NaN before any
+        # of our own checks see it). Report the specific cause: "malformed" tells a repair
+        # operator nothing, "there is a NaN in x" tells them exactly what to fix.
+        if _nonfinite_in_payload(payload):
+            return verdict("nonfinite_value", f"non-finite inside vectors ({code})")
         cls = {
             "vector_empty": "empty_vectors",
             "missing_vectors": "partial_vectors",
@@ -279,8 +299,8 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
         print("    Do NOT repair or reconstruct. A newer writer is already live against older")
         print("    readers. Stop the writer rollout; deploy readers first.")
     if not (blocked or migration or future):
-        print("  CLEAR: no active athlete is affected. 2B may proceed once GATE 2 (e1RM")
-        print("  transaction ownership) is closed.")
+        print("  CLEAR: no active athlete is affected. 2B may proceed - GATE 2 (e1RM")
+        print("  transaction ownership) is already closed, so this was the last gate.")
     print()
 
     return 1 if (blocked or migration or future) else 0
@@ -289,10 +309,10 @@ async def audit_with_db(db: AsyncSession, verbose: bool) -> int:
 def _explain_connect_failure(exc: Exception) -> str:
     """Turn a 60-line asyncpg traceback into the one fact that matters.
 
-    The default failure mode here is a DNS error buried under ~15 frames of SQLAlchemy
-    pool internals, which says nothing about the actual cause: a Render INTERNAL hostname
-    (``dpg-xxxx-a``, no domain suffix) resolves only inside Render's private network and
-    never from a laptop. An audit whose failure mode is unreadable does not get run.
+    Production Postgres has no published port and sits on an isolated Docker network,
+    reachable only by containers attached to it. The consequence for this script: there is
+    no external URL and no tunnel. It cannot be run against production from a laptop, by
+    design. It runs on the host.
     """
     host = ""
     try:
@@ -301,25 +321,33 @@ def _explain_connect_failure(exc: Exception) -> str:
         pass
 
     lines = ["", "Could not connect to the database.", f"  host: {host or '<unparseable>'}"]
-    if host.startswith("dpg-") and "." not in host:
+    lines += [
+        f"  error: {type(exc).__name__}: {exc}",
+        "",
+        "  Production Postgres has no published port and lives on an isolated Docker",
+        "  network. There is no external URL to point at - by design. Run this on the",
+        "  host, in a container attached to that network:",
+        "",
+        "    cd ~/infra",
+        "    git -C ../perf-lab-api fetch origin",
+        "    git -C ../perf-lab-api checkout <branch>",
+        "    docker compose run --rm --build perf-lab-api \\",
+        "        python -m app.scripts.audit_engine_state",
+        "",
+        "  compose injects DATABASE_URL and attaches the container to `data`.",
+        "",
+        "  For a LOCAL run instead (this repo's docker-compose.yml):",
+        "    docker compose up -d postgres",
+        "    DATABASE_URL='postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab'"
+        " python -m app.scripts.audit_engine_state",
+    ]
+    if host.startswith("dpg-"):
         lines += [
             "",
-            "  This is a Render INTERNAL hostname. It resolves only from inside Render's",
-            "  private network - never from a local machine. Either:",
-            "",
-            "    1. Use the EXTERNAL URL from the Render dashboard (same host, suffixed",
-            "       .<region>-postgres.render.com), for one command only:",
-            "",
-            "         PowerShell:  $env:DATABASE_URL='postgresql://...'; "
-            "python -m app.scripts.audit_engine_state",
-            "         bash:        DATABASE_URL='postgresql://...' "
-            "python -m app.scripts.audit_engine_state",
-            "",
-            "    2. Or run this from a shell on the Render service, where the internal",
-            "       hostname resolves.",
+            "  NOTE: that hostname belongs to a provider this project does not use.",
+            "  Your .env DATABASE_URL is stale. Production config is injected by the",
+            "  deployment's compose file, not read from .env.",
         ]
-    else:
-        lines += ["", f"  Underlying error: {type(exc).__name__}: {exc}"]
     lines += ["", "This audit is READ-ONLY - it is safe to point at production.", ""]
     return "\n".join(lines)
 
