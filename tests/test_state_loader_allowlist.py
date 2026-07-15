@@ -37,12 +37,13 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         "services/prescription_service.py",  # 2B1: strict — sizes and issues training
         "services/readiness_service.py",  # 2B2: strict — gates prescription
         "services/recovery_shadow_service.py",  # S3: skip adapter
-        # S4: the repair tool currently reads through the permissive loader — i.e. it
-        # reconstructs from the same lossy projection it exists to repair FROM, so it
-        # cannot see the damaged payload it is meant to inspect. Slice 4 gives it the
-        # forensic raw reader. Found by this AST scan; the regex version and the scouting
-        # grep both missed it.
-        "scripts/repair_capacity_corruption.py",
+        # S4 REMOVED `scripts/repair_capacity_corruption.py` — it is strict as of this
+        # slice. It was never the INT-15 forensic repair utility (that path,
+        # `read_raw_state_for_repair`, is still unimplemented); it is the ADR-0055 capacity
+        # job, and it MUTATES canonical state, so it is strict for the same reason
+        # benchmark_service is. Its earlier entry here described the forensic tool by
+        # mistake — an AST scan matched the word "repair" and the note inherited the design
+        # doc's `repair utility | Raw forensic access` row.
     }
 )
 

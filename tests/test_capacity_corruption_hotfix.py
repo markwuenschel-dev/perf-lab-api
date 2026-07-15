@@ -231,8 +231,9 @@ async def test_repair_restores_regressed_max_strength(async_db):
     await async_db.commit()
     assert await _max_strength(async_db, user.id) < high  # corrupted
 
-    n = await repair_with_db(async_db, apply=True)
-    assert n == 1
+    report = await repair_with_db(async_db, apply=True)
+    assert report.corrected == 1
+    assert report.refused == []  # canonical series throughout — nothing to refuse
     assert await _max_strength(async_db, user.id) == pytest.approx(high, abs=0.6)  # restored
 
 

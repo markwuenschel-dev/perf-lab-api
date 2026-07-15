@@ -54,7 +54,17 @@ Burden of proof: **strict unless the caller is demonstrably display-only.**
 | `history.py:41` | Read-only recovery allowed | Historical display |
 | `ekf_shadow_service.py` (×3) | Skip | Shadow absence must not block production |
 | `recovery_shadow_service.py:39` | Skip | Same |
-| repair utility | Raw forensic access | Must inspect the exact persisted payload |
+| `repair_capacity_corruption.py` | **Strict** | ADR-0055 capacity job — appends canonical state |
+| engine_state repair utility (**unbuilt**) | Raw forensic access | Must inspect the exact persisted payload |
+
+> **These are two different tools; do not conflate them.** `repair_capacity_corruption.py`
+> is the ADR-0055 capacity job. It is a canonical *mutation* path — it appends the
+> athlete's newest state row — so it is strict (done in S4), and it needs no raw access.
+> The forensic `read_raw_state_for_repair` utility named in `engine_state_codec.py` is
+> **specified but unimplemented**; it is only needed if GATE 1 finds damaged rows. The
+> allowlist once described the forensic tool on the capacity job's entry, because an AST
+> scan matched the word "repair" — which is how a tool that launders reconstruction into
+> canonical state got filed as one that reads raw payloads.
 
 ## The bridge stops choosing policy
 
@@ -106,9 +116,15 @@ behaviour, so every intermediate commit is independently verified and reviewable
 2B4  onboarding / assessment          ← GATED: sweep
 2C   dashboard / history
 S3   shadows (separate slice)
+S4   repair_capacity_corruption -> strict   ← DONE, ungated (canonical mutation path)
 2D   retire the temporary generic compatibility loader
 2E   connected-flow proof
 ```
+
+**S4 is not a GATE 1 hedge.** It closes a laundering path in the ADR-0055 capacity job
+(reconstruction copied, restamped v2, committed as canonical) and shrinks the allowlist by
+one. It does nothing for a BLOCKED sweep: the forensic engine_state repair path is
+unbuilt, and only the sweep can say whether it is needed.
 
 **No commit touches more than one authority class.**
 
