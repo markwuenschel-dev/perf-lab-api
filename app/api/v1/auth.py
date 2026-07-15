@@ -2,6 +2,8 @@
 app/api/v1/auth.py
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
@@ -12,6 +14,8 @@ from app.core.auth import create_access_token, get_current_user, hash_password, 
 from app.core.db import get_db
 from app.models.user import AthleteProfile, User
 from app.repositories.user_repository import UserRepository
+
+logger = logging.getLogger("perflab")
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -74,10 +78,18 @@ async def register(
 
     except Exception as exc:
         await db.rollback()
-        # This now shows the exact error in the frontend
+        # /auth/register is unauthenticated, so this branch is reachable by anyone.
+        # The exception text carries driver, SQL, table and constraint detail, which is
+        # reconnaissance — it stays in the server log (with the traceback), and the
+        # caller gets the same generic message the global handler in app/main.py
+        # promises. There is nothing here a legitimate client can act on: the useful
+        # signal (duplicate email) is the 409 above (INT-A8).
+        logger.exception(
+            "Registration failed for a new account: %s", type(exc).__name__, exc_info=exc
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Registration failed: {type(exc).__name__}: {str(exc)}"
+            detail="Internal server error. Please try again later.",
         ) from exc
 
 
