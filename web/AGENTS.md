@@ -56,4 +56,8 @@ blocked, stop and ask rather than forcing it.
 - `src/types.ts` manually mirrors the FastAPI backend (`perf-lab-api`) schemas — keep
   them in sync (see `docs/SYNC_WITH_BACKEND.md`).
 - All HTTP goes through `src/api/perfLabClient.ts`.
-- Merging to `main` **auto-deploys production via Railway** (the web service tracks the `main` branch) — treat merges accordingly.
+- Merging to `main` does **not** auto-deploy (Railway auto-deploy is retired). Production
+  is a manual deploy of a self-hosted **EC2** docker-compose stack — this frontend is
+  built into the `backend-with-frontend` Docker image (embeds the SPA at `/static`,
+  same-origin) and shipped via `./scripts/deploy.ps1` / `.sh`. See
+  [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for the full runbook.

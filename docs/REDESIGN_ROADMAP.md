@@ -180,7 +180,11 @@ Token paths, behind an adapter interface so Whoop/Polar are additive.
   connection); `app/core/crypto.py` (Fernet at-rest); `app/services/wearable_service.py`
   (state token, token refresh, sync reusing `readiness_service.upsert_wellness_sample`).
 - Scheduler: a **Railway Cron Job** runs `python -m app.scripts.sync_wearables` and exits
-  ([ADR-0027](adr/0027-background-job-scheduler.md) accepted; no celery/redis).
+  ([ADR-0027](adr/0027-background-job-scheduler.md) accepted; no celery/redis). **Hosting
+  update:** the app moved off Railway/Render to a self-hosted EC2 docker-compose stack on
+  2026-07-10 ([ADR-0028](adr/0028-hosting-platform.md), superseded; see
+  [`docs/DEPLOY.md`](DEPLOY.md)). TODO: confirm how this nightly job is now scheduled on
+  the EC2 stack, since Railway's managed Cron Job no longer exists — not yet documented.
 - Config: `OURA_CLIENT_ID/SECRET`, `OURA_REDIRECT_URI`, `WEB_APP_URL`, `APP_ENCRYPTION_KEY`.
 - Web: Settings → "Connect Oura" (OAuth) + PAT fallback + sync status + disconnect.
 - **Verify:** connect via PAT (fastest) or OAuth; `POST /v1/integrations/oura/sync` or the
@@ -344,33 +348,20 @@ rather than stuffing it into `services/`.
 - **DEV-only `user_id` override / auto-baseline** in `next-session` — confirm it's
   guarded for production.
 
-## Hosting (Railway)
+## Hosting — EC2 (moved 2026-07-10)
 
-The app is **host-agnostic** — already Dockerized via the production Dockerfile, so
-moving off Render is **config, not code**. **Prerequisite:** the P0 app-boot bug must
-land first, or Railway boot-crashes identically to Render.
+This section originally sketched a Railway migration. That migration never happened —
+the app instead moved to a self-hosted **AWS EC2 docker-compose stack** on 2026-07-10.
+[ADR-0028](adr/0028-hosting-platform.md) (Railway vs Render) is now superseded; the live
+topology, deploy commands, and rollback procedure are documented in
+[`docs/DEPLOY.md`](DEPLOY.md) — that is the single source of truth for hosting.
 
-1. New Railway project + add the managed **PostgreSQL** plugin (it provides
-   `DATABASE_URL` as `postgresql://…`, which `app/core/config.py` auto-rewrites to
-   `postgresql+asyncpg://`).
-2. Deploy the API service from the **production Dockerfile** (Railway auto-detects it).
-3. Set env vars: `SECRET_KEY` (strong), `ALLOWED_ORIGINS` (the explicit prod frontend
-   origin, e.g. `https://perflab.44-198-76-44.nip.io` — required; boot fails without it,
-   INT-09), `DEBUG=false`.
-4. **Migrations run automatically** on deploy via the Dockerfile's `alembic upgrade head`.
-5. **Seed once** after first deploy: `python -m app.scripts.seed_benchmarks` (and
-   `seed_exercises`).
-6. **Repoint the frontend:** set Netlify `VITE_API_BASE_URL` to the Railway URL —
-   with **no** `/v1` suffix (the web client appends it) — and redeploy Netlify.
-7. **Data:** `pg_dump` the old DB → restore into Railway Postgres **only** if there's
-   real data worth keeping; otherwise schema (alembic) + reseed is enough.
-8. **P6 nightly wearable pull** maps onto a Railway **Cron Job** (a service on a cron
-   schedule that runs a command and exits) — no celery/redis required. Concretely: add a
-   second service from the same repo/image (`buildTarget = "backend"`), override its start
-   command to `python -m app.scripts.sync_wearables`, and set a cron schedule (e.g.
-   `0 8 * * *`). Give it the same `DATABASE_URL` plus `APP_ENCRYPTION_KEY` and `OURA_*`
-   vars. Do **not** run `alembic upgrade head` there — the API service already migrates on
-   deploy.
+The app remains **host-agnostic** (Dockerized) per the ADR-0028 guardrail; the EC2 move
+was config/ops, not a code change.
+
+TODO: the P6 nightly wearable-pull scheduler (above) was built against a Railway Cron
+Job; how it now runs on the EC2 stack is not yet documented — confirm and record the
+answer in `docs/DEPLOY.md` rather than inventing the mechanism here.
 
 ## Decision records & tracked cleanups
 
@@ -383,7 +374,8 @@ two long-open calls:
 - **Proposed (revisit in-phase):** readiness combine rule
   [ADR-0026](adr/0026-readiness-combine-rule.md) (P5) · scheduler
   [ADR-0027](adr/0027-background-job-scheduler.md) (P6) · hosting
-  [ADR-0028](adr/0028-hosting-platform.md) (lean Railway, P6) · first wearable provider
+  [ADR-0028](adr/0028-hosting-platform.md) (superseded — moved to EC2, see
+  `docs/DEPLOY.md`) · first wearable provider
   [PDR-0007](pdr/0007-first-wearable-provider.md) (P6).
 
 **Tracked cleanups (tasks, not ADRs — they don't clear the "real trade-off" bar):**
@@ -402,8 +394,9 @@ two long-open calls:
 - **P4:** exact prescriber consumption of objective priority (stress allocation vs
   taper-only).
 - **P5:** how acute wellness combines with modeled fatigue (additive modifier vs cap/override).
-- **P6:** scheduler — celery+redis (`[tasks]`) vs Render Cron Job; first provider
-  (Oura vs Whoop) by actual user device mix.
+- **P6:** scheduler — celery+redis (`[tasks]`) vs a platform Cron Job (resolved: shipped
+  as a Railway Cron Job, see P6 above; Railway itself has since been retired — see
+  Hosting); first provider (Oura vs Whoop) by actual user device mix.
 - **Prescriber quality (cross-phase):** DB-driven exercise selection from the
   `Exercise` table (currently equipment-mapped fallback) — roadmap §5 of `ROADMAP.md`.
 - **Wave 2 (P11–P13):** objective proximity/gap curve shapes + smoothing ρ (per-objective-type

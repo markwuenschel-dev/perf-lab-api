@@ -1,8 +1,15 @@
 ---
-status: proposed
+status: superseded
 date: 2026-06-20
+superseded_date: 2026-07-10
 ---
 # Hosting platform (Railway vs Render)
+
+> **Superseded 2026-07-10.** The Railway-vs-Render question below never resolved — the
+> app instead moved to a self-hosted **AWS EC2 docker-compose stack**. That was an
+> ops/infra decision made outside the Railway-vs-Render frame this ADR was scoped to, so
+> no successor ADR number was minted; the live topology and deploy runbook are
+> [`docs/DEPLOY.md`](../DEPLOY.md). Original reasoning preserved below for context.
 
 The app runs on **Render** today (live). `REDESIGN_ROADMAP.md` sketches a move to
 **Railway** — managed Postgres (`config.py` already rewrites `DATABASE_URL` to

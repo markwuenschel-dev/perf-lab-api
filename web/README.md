@@ -56,7 +56,8 @@ Open http://localhost:5173 (or the port Vite reports).
 4. Build for production
 Bashnpm run build
 npm run preview
-The output lands in dist/. Deploy anywhere that serves static SPAs (Vercel, Netlify, Cloudflare Pages, etc.).
+The output lands in dist/. Production does not deploy this build standalone — see
+Deployment below.
 
 Authentication (Primary API only)
 
@@ -137,9 +138,14 @@ See the backend QUICKSTART_FLOW.md, ROADMAP.md, and PRESCRIBER_LOGIC.md for deep
 
 Deployment
 
-Set VITE_API_BASE_URL to your deployed API (must expose both legacy and v1 routes, or adjust the UI accordingly).
-npm run build
-Serve the dist/ folder as a static site.
+Production is a self-hosted **EC2** docker-compose stack — this frontend is built into
+the backend's `backend-with-frontend` Docker image (embeds the SPA at /static,
+same-origin), not deployed standalone. See `../docs/DEPLOY.md` for the full runbook.
+(Netlify and Railway are no longer used by this project.)
+
+For a standalone/local static build: set VITE_API_BASE_URL to your deployed API (must
+expose both legacy and v1 routes, or adjust the UI accordingly), run npm run build, and
+serve the dist/ folder as a static site.
 
 
 License

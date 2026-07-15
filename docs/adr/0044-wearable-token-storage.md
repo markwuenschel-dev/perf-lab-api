@@ -13,7 +13,9 @@ Tokens. Three decisions were needed.
 
 `WearableConnection.access_token_enc` / `refresh_token_enc` store **Fernet ciphertext**,
 never plaintext. A DB dump must not leak live wearable credentials. The key lives in
-`APP_ENCRYPTION_KEY` (env/Railway variable); `app.core.crypto` is the only module that
+`APP_ENCRYPTION_KEY` (an env variable — e.g. `/opt/stack/infra/env/perf-lab-api.env` on
+the EC2 stack, see `docs/DEPLOY.md`; previously a Railway variable before hosting moved
+to EC2 2026-07-10); `app.core.crypto` is the only module that
 encrypts/decrypts, and `app.services.wearable_service` the only caller. Encryption is
 lazy/opt-in — the key is required only when a connection is stored or synced, so the rest
 of the app boots without it. `cryptography` is already present transitively via

@@ -75,7 +75,7 @@ def _check_production_cors(cfg: Settings) -> None:
 
     Production must pin at least one explicit allowed origin (e.g.
     ``https://perflab.44-198-76-44.nip.io``) rather than relying on the old catch-all
-    ``*.railway.app`` regex default. Mirror ``_check_production_secrets``: fail fast
+    wildcard-subdomain regex default. Mirror ``_check_production_secrets``: fail fast
     (raise) in production, log a warning elsewhere so local/dev boots aren't blocked.
 
     A configured ``ALLOWED_ORIGIN_REGEX`` alone is NOT sufficient — the decision is to
@@ -186,7 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Critical safety check: production must not boot with a forgeable signing key
     _check_production_secrets(settings)
 
-    # Critical safety check: production must pin an explicit CORS origin (no railway default)
+    # Critical safety check: production must pin an explicit CORS origin (no wildcard-subdomain default)
     _check_production_cors(settings)
 
     # Critical safety check: ensure we're not running against a stale schema

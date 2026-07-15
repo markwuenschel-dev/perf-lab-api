@@ -2,10 +2,11 @@
 offline-only ML dependency) is NOT installed.
 
 A runtime module that eagerly imports the ``app.ml`` / ``app.analysis`` stack drags
-pandas into ``app.main``'s import graph; on Railway that made uvicorn fail to load the
-app → the container stopped → the ``/ping`` healthcheck failed → every deploy died
-(2026-07-07 onward). This test blocks pandas and imports the app in a subprocess so it
-fails in CI the moment any request-path module re-introduces an eager heavy import.
+pandas into ``app.main``'s import graph; in the lean production image that made uvicorn
+fail to load the app → the container stopped → the ``/ping`` healthcheck failed → every
+deploy died (2026-07-07 onward). This test blocks pandas and imports the app in a
+subprocess so it fails in CI the moment any request-path module re-introduces an eager
+heavy import.
 """
 import subprocess
 import sys
