@@ -77,6 +77,23 @@ CORS_REGEX_UNSUPPORTED_IN_PRODUCTION = (
     "instead, e.g. set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io."
 )
 
+# INT-A3: production does not accept debug logging.
+#
+# DEBUG feeds SQLAlchemy's `echo` (app/core/db.py), which logs every statement AND its
+# bound parameters. That is not "verbose logs" — it is the `hashed_password` of every
+# registered user and the Fernet ciphertext of every wearable OAuth token, written to the
+# application log in plaintext, where log shipping, backups and support access all reach
+# them. The credential store's whole value is that it is not the log file.
+#
+# There is no "debug production" the way there is a debug dev box: the value of echo is
+# reading queries while you write them, and nobody writes queries against production.
+DEBUG_UNSUPPORTED_IN_PRODUCTION = (
+    "DEBUG is enabled, and production does not accept debug logging. It sets SQLAlchemy "
+    "echo, which writes every statement and its bound parameters to the log — including "
+    "hashed_password on user INSERTs and wearable OAuth token ciphertext. Set DEBUG=False "
+    "(or unset it — False is the default)."
+)
+
 
 def _asyncpg_database_url(url: str) -> str:
     """Convert postgresql:// → postgresql+asyncpg:// for SQLAlchemy async engine."""
@@ -91,7 +108,16 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/v1"
 
     DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost/dbname"
-    DEBUG: bool = True
+
+    # Drives SQLAlchemy `echo` (app/core/db.py) — statements AND bound parameters.
+    # Refused in production by `app.main._check_production_debug` (INT-A3).
+    #
+    # INT-A3 flipped this default from True to False. The guard only fires when
+    # ENVIRONMENT=production is also set correctly, so a default of True meant the
+    # credential-logging outcome was what you got by configuring nothing at all. Opting IN
+    # to logging every bound parameter is a decision someone should make on purpose; `.env`
+    # sets DEBUG=True for local dev, and the seed scripts already document turning it off.
+    DEBUG: bool = False
 
     # Deployment environment. Set ENVIRONMENT=production in real deployments so
     # safety checks (e.g. the Alembic-head check) fail fast instead of only
