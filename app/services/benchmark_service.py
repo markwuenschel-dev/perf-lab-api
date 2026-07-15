@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +23,8 @@ from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
+from app.models.workout_log import WorkoutLog
+from app.models.workout_set_log import WorkoutSetLog
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
 from app.services import (
     capacity_floor_shadow_service,
@@ -256,6 +259,47 @@ def _resolve_authority(
     }
 
 
+async def _verify_log_fk_ownership(
+    db: AsyncSession, user_id: int, body: BenchmarkObservationCreate
+) -> None:
+    """Verify the caller owns any log rows this observation references (INT-A7).
+
+    ``workout_log_id`` / ``set_log_id`` are caller-supplied. Unverified, an athlete
+    can attach observations to another athlete's log rows (IDOR — cross-tenant FK
+    pollution). Mirrors ``session_feedback_service.create_feedback``: 404, because
+    the resource does not exist *for this user*.
+
+    MUST be called before the first write — ``create_observation`` commits its own
+    transaction, so a row added before this check could not be rolled back.
+    """
+    if body.workout_log_id is not None:
+        workout_log = (
+            await db.execute(
+                select(WorkoutLog.id).where(
+                    WorkoutLog.id == body.workout_log_id,
+                    WorkoutLog.user_id == user_id,
+                )
+            )
+        ).scalars().first()
+        if workout_log is None:
+            raise HTTPException(status_code=404, detail="Workout log not found")
+
+    # WorkoutSetLog has no user_id — ownership is transitive via its parent log.
+    if body.set_log_id is not None:
+        set_log = (
+            await db.execute(
+                select(WorkoutSetLog.id)
+                .join(WorkoutLog, WorkoutSetLog.workout_log_id == WorkoutLog.id)
+                .where(
+                    WorkoutSetLog.id == body.set_log_id,
+                    WorkoutLog.user_id == user_id,
+                )
+            )
+        ).scalars().first()
+        if set_log is None:
+            raise HTTPException(status_code=404, detail="Set log not found")
+
+
 async def create_observation(
     db: AsyncSession,
     user_id: int,
@@ -271,6 +315,10 @@ async def create_observation(
         raise ValueError(f"Unknown benchmark code: {body.benchmark_code}")
     if definition.is_derived_only:
         raise ValueError("Observations cannot target derived-only benchmark definitions")
+
+    # Ownership gate (INT-A7) — before the db.add/flush below, and well before the
+    # commit at the end of this function, which nothing downstream can roll back.
+    await _verify_log_fk_ownership(db, user_id, body)
 
     # Backend-owned normalization (ADR-0034): derive a [0,1] score from the
     # definition's standardization_rules; expose it as a 0-100 normalized_value when
