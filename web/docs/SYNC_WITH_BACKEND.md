@@ -44,13 +44,14 @@ npm run check:types      # tsc --noEmit — every break in consumers surfaces he
 ```
 
 Fix whatever `tsc` flags, then commit `src/types.gen.ts` together with any
-consumer fixes. `npm run build` (Netlify's command) runs `tsc -b` too, so a stale
-or broken type can't ship.
+consumer fixes. `npm run build` runs `tsc -b` too, so a stale or broken type
+can't ship.
 
 > Want to regenerate from the live API instead of the sibling file? Point
 > openapi-typescript at the URL:
-> `npx openapi-typescript https://perf-lab-api.onrender.com/openapi.json -o src/types.gen.ts`
-> (use the committed `openapi.json` for deterministic, offline builds).
+> `npx openapi-typescript https://perflab.44-198-76-44.nip.io/openapi.json -o src/types.gen.ts`
+> (use the committed `openapi.json` for deterministic, offline builds; the old
+> `onrender.com` URL is dead — Render is retired, see `docs/DEPLOY.md`).
 
 ## Naming notes (generated name ≠ friendly name)
 
