@@ -59,6 +59,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
 from app.engine.engine_state_codec import (
+    INCOMPLETE_ERROR_CODES,
     EngineStateDecodeError,
     MalformedCurrentEngineState,
     MissingEngineState,
@@ -71,11 +72,6 @@ from app.models.athlete_state import AthleteState
 from app.models.benchmark_observation import BenchmarkObservation
 
 _EPS = 0.5  # kg — ignore trivial floating drift
-
-# The codec's "should be readable, is not" codes that mean data is *absent* rather than
-# corrupt. Split out because the operator response differs: an incomplete row may be
-# backfillable under an attested backfill, a malformed one needs inspection first.
-_INCOMPLETE_CODES = frozenset({"vector_empty", "missing_vectors"})
 
 
 @dataclass(frozen=True)
@@ -114,7 +110,7 @@ def _latest_refusal_reason(exc: EngineStateDecodeError) -> str:
         return "latest_state_null"
     if isinstance(exc, UnsupportedFutureEngineStateVersion):
         return "latest_state_future_version"
-    if isinstance(exc, MalformedCurrentEngineState) and exc.error_code in _INCOMPLETE_CODES:
+    if isinstance(exc, MalformedCurrentEngineState) and exc.error_code in INCOMPLETE_ERROR_CODES:
         return "latest_state_incomplete"
     return "latest_state_malformed"
 

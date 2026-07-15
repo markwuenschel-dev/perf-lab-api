@@ -56,6 +56,13 @@ _ASSUMED_UNVERSIONED = 1
 
 _VECTOR_KEYS = ("x", "f", "t")
 
+# The `MalformedCurrentEngineState.error_code` values that mean the payload is *absent*
+# rather than corrupt. Exported because more than one consumer must agree on the
+# distinction and the operator response differs — an incomplete row may be backfillable,
+# a malformed one needs inspection first. Naming which of its own codes mean what is a
+# description of this module's output, not a policy about who may proceed.
+INCOMPLETE_ERROR_CODES = frozenset({"vector_empty", "missing_vectors"})
+
 
 class EngineStateDecodeError(Exception):
     """Base for every decode failure. Callers should catch the specific subclass —

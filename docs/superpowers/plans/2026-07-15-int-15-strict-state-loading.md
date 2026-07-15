@@ -110,10 +110,11 @@ behaviour, so every intermediate commit is independently verified and reviewable
 ```
 2A1  strict loader, additive          ← DONE (c4af4e0), ungated
 2A2  display loader, additive         ← DONE (c4af4e0), ungated
-2B1  prescription                     ← GATED: sweep
-2B2  readiness                        ← GATED: sweep
-2B3  benchmark                        ← GATED: sweep only (e1RM gate CLOSED, false alarm)
-2B4  onboarding / assessment          ← GATED: sweep
+GATE 1  production sweep              ← CLEAR 2026-07-15 (1 athlete, 1 row, valid_current)
+2B1  prescription                     ← DONE — first behaviour change on this branch
+2B2  readiness                        ← unblocked
+2B3  benchmark                        ← unblocked (e1RM gate CLOSED, false alarm)
+2B4  onboarding / assessment          ← unblocked
 2C   dashboard / history
 S3   shadows (separate slice)
 S4   repair_capacity_corruption -> strict   ← DONE, ungated (canonical mutation path)
@@ -207,19 +208,48 @@ Recommended benchmark / assessment progress / prescription eligibility / objecti
 update → strict. **If one function does both, split it.** Do not assign a permissive policy
 to a mixed-capability service because part of its output is visible in the UI.
 
-## Failure mapping
+## Failure mapping — **settled 2026-07-15, implemented in 2B1**
+
+Three layers. Collapsing any two of them is the defect:
+
+```
+engine_state_codec      "this payload does not decode"      persistence
+        │
+        ▼   translated by the SERVICE that knows its own authority
+CanonicalStateInvalid   "prescription must be refused"      product policy
+        │
+        ▼
+global HTTP handler     409 + capability-specific body      transport
+```
+
+The raw `EngineStateDecodeError` is **never** a public contract. The codec knows only that
+decoding failed — it cannot know whether the caller is prescription, readiness, benchmark
+mutation, display recovery, a shadow, or an offline job, and those must not share an
+outcome. Mapping it straight to 409 would make *forgotten translations look successful*,
+concealing an accidental strict call from the wrong surface, a missing display adapter, or
+a defect in a new route. An untranslated escape stays an **opaque 500** and logs
+`untranslated_engine_state_decode_error` at ERROR — a defect alarm, not a contract
+(`app/main.py`). Translation is written once per capability, in the service, not repeated
+per route where one omission is the accidental 500 this decision forbids.
 
 Internal (preserve precision for observability + repair): `canonical_state_missing`,
 `canonical_state_incomplete`, `canonical_state_malformed`,
-`canonical_state_version_unsupported`.
+`canonical_state_version_unsupported`. See `normalize_decode_error` in `app/core/errors.py`.
 
-External (may collapse):
+External — **409 Conflict**. The request is well formed; resending it changes nothing. It
+conflicts with the athlete's persisted state, which only an operator or repair workflow can
+fix. (Not 503: nothing to retry. Not 422: FastAPI already uses it for request validation,
+so clients would conflate a bad request with damaged stored state.)
 
 ```json
-{ "code": "canonical_state_invalid",
+{ "error": "canonical_state_invalid",
   "prescription_available": false,
   "resolution_available_in_product": false }
 ```
+
+Only the code and the status are shared across capabilities. The availability field is
+per-capability (`readiness_available`, `benchmark_update_applied`, …) — forcing
+`prescription_available` onto a readiness endpoint would be a lie dressed as consistency.
 
 Future-version stays distinguishable internally: it signals deployment incompatibility,
 not damaged data. Operational response is "deploy readers," not "repair the row."
@@ -290,6 +320,21 @@ athlete data.
   rollout must stop until all readers support the version.
 - **Zero affected active athletes** — proceed with 2B. GATE 2 is already closed, so the
   sweep is the only remaining gate.
+
+### Result — **CLEAR, run 2026-07-15**
+
+```
+athletes with state : 1        valid_current  1
+total state rows    : 1        historical rows: all valid
+affected athletes   : none     VERDICT: CLEAR — 2B may proceed
+```
+
+**What this does and does not prove.** It clears 2B: the blast radius of strict refusal is
+zero, and there are no `engine_state IS NULL` rows, so the attested-backfill requirement
+above is moot. It is *not* evidence the codec is exercised against real-world payload
+variety — it came back clear because production is essentially empty, with one athlete and
+one row. The gate's question was "will strict loading refuse live athletes?", and the answer
+is no. That is the only claim it supports.
 
 ## GATE 2 — e1RM transaction ownership — **CLOSED 2026-07-15. FALSE ALARM.**
 

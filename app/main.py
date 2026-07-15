@@ -38,6 +38,8 @@ from app.api.v1.onboard import router as onboard_router
 from app.api.v1.profile import router as profile_router
 from app.core.config import DEFAULT_SECRET_KEY, DEV_DEFAULT_ORIGINS, Settings, settings
 from app.core.db import engine
+from app.core.errors import CanonicalStateInvalid
+from app.engine.engine_state_codec import EngineStateDecodeError
 
 logger = logging.getLogger("perflab")
 
@@ -278,6 +280,57 @@ async def ping() -> dict[str, str]:
 # ----------------------------------------------------------------------
 # Global exception handler (optional but recommended)
 # ----------------------------------------------------------------------
+
+@app.exception_handler(CanonicalStateInvalid)
+async def canonical_state_invalid_handler(
+    request: Request, exc: CanonicalStateInvalid
+) -> JSONResponse:
+    """An intentional refusal: the athlete's canonical state cannot be trusted (INT-15 2B).
+
+    409 rather than 4xx-as-client-error or 503: the request is well formed and resending it
+    changes nothing — it conflicts with the persisted state of the athlete resource. The
+    client cannot repair that; an operator or repair workflow must.
+
+    Logged at WARNING with the internal reason: expected, but never routine. Zero of these
+    is the target — each one is an athlete who cannot train today.
+    """
+    logger.warning(
+        "canonical_state_invalid: capability=%s reason=%s path=%s",
+        exc.capability,
+        exc.normalized_reason,
+        request.url.path,
+    )
+    return JSONResponse(status_code=409, content=exc.to_response_body())
+
+
+@app.exception_handler(EngineStateDecodeError)
+async def untranslated_engine_state_decode_error_handler(
+    request: Request, exc: EngineStateDecodeError
+) -> JSONResponse:
+    """A raw codec failure reached the transport. That is a DEFECT, not a refusal.
+
+    Deliberately an opaque 500, never a 409. A codec error escaping to HTTP means the
+    authority-boundary translation was missed — an accidental strict call from the wrong
+    surface, a missing display adapter, or a new route that forgot to translate. Turning it
+    into a tidy 409 here would make every forgotten translation look like a working
+    refusal, and hide the defect behind a plausible response.
+
+    The codec knows the payload failed to decode. It does not know which capability is
+    involved, so it cannot decide what the product owes the athlete. That decision belongs
+    to the service that knows its own authority — see `app/core/errors.py`.
+    """
+    logger.error(
+        "untranslated_engine_state_decode_error on %s %s: %s",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        exc_info=exc,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please try again later."},
+    )
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:

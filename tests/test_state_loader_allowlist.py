@@ -34,7 +34,9 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         "services/dashboard_service.py",  # 2C: display recovery
         "services/ekf_shadow_service.py",  # S3: skip adapter
         "services/onboarding_service.py",  # 2B4: strict, or explicit initialization
-        "services/prescription_service.py",  # 2B1: strict — sizes and issues training
+        # 2B1 REMOVED `services/prescription_service.py` — both load-sizing sites are strict
+        # as of that slice, and a decode failure is translated to CanonicalStateInvalid at
+        # the service, then mapped to 409 by the global handler.
         "services/readiness_service.py",  # 2B2: strict — gates prescription
         "services/recovery_shadow_service.py",  # S3: skip adapter
         # S4 REMOVED `scripts/repair_capacity_corruption.py` — it is strict as of this

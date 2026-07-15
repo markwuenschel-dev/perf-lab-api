@@ -320,6 +320,36 @@ async def load_current_state_strict(
     return unified_from_athlete_row_strict(row) if row is not None else None
 
 
+async def load_or_init_current_state_strict(
+    db: AsyncSession, user_id: int
+) -> UnifiedStateVector:
+    """Canonical state, seeding a baseline only for an athlete who has none — or raise.
+
+    The strict counterpart of ``load_or_init_current_state``, for callers that size
+    training or mutate canonical state.
+
+    The distinction this function exists to hold: **"no state" and "damaged state" are not
+    the same event.**
+
+        no row at all      -> a new athlete; initialize intentionally
+        row + bad payload  -> an EXISTING athlete whose state is damaged; refuse
+
+    Initialization keys off the absence of a *row*, never off a decode failure. A legacy
+    row with a NULL ``engine_state`` is a row — it raises ``MissingEngineState`` and must
+    not be silently re-seeded as a fresh beginner baseline. `except MissingEngineState:
+    default()` would overwrite a real athlete's history with a default constructor and
+    call it onboarding.
+
+    Raises:
+        MissingEngineState / MalformedCurrentEngineState /
+        UnsupportedFutureEngineStateVersion: state exists and cannot be trusted.
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    if row is None:
+        return await initialize_athlete_state(db, user_id)
+    return unified_from_athlete_row_strict(row)
+
+
 async def load_current_state_for_display(
     db: AsyncSession, user_id: int
 ) -> ReadOnlyStateView | None:
