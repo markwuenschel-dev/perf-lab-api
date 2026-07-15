@@ -36,7 +36,14 @@ from app.api.v1 import (
 from app.api.v1.history import router as history_router
 from app.api.v1.onboard import router as onboard_router
 from app.api.v1.profile import router as profile_router
-from app.core.config import DEFAULT_SECRET_KEY, DEV_DEFAULT_ORIGINS, Settings, settings
+from app.core.config import (
+    CORS_NON_ORIGINS,
+    CORS_REGEX_UNSUPPORTED_IN_PRODUCTION,
+    DEV_DEFAULT_ORIGINS,
+    PUBLIC_EXAMPLE_SECRET_KEYS,
+    Settings,
+    settings,
+)
 from app.core.db import engine
 from app.core.errors import CanonicalStateInvalid
 from app.engine.engine_state_codec import EngineStateDecodeError
@@ -49,54 +56,107 @@ MIN_SECRET_KEY_LENGTH = 32
 
 
 def _check_production_secrets(cfg: Settings) -> None:
-    """Refuse to boot in production with a default, empty, or too-short SECRET_KEY (INT-01).
+    """Refuse to boot in production with a public, empty, or too-short SECRET_KEY (INT-01).
 
-    ``SECRET_KEY`` signs every JWT (HS256); a default or trivially short key lets anyone
+    ``SECRET_KEY`` signs every JWT (HS256); a published or trivially short key lets anyone
     forge tokens and impersonate any user. Mirror the ``_on_schema_mismatch`` contract:
     fail fast (raise) in production, log a warning elsewhere so local/dev boots aren't
     blocked. Generate a strong key with ``openssl rand -hex 32``.
+
+    INT-A1: this refuses every key the repo publishes, not just ``DEFAULT_SECRET_KEY``.
+    Enumerating one bad key meant the `.env.example` key — a *different* public string,
+    57 chars and so past the length floor — booted production clean via the documented
+    ``cp .env.example .env`` path. The rule is now "no published key may sign production
+    tokens", and ``PUBLIC_EXAMPLE_SECRET_KEYS`` is pinned to `.env.example` by
+    ``tests/test_production_boot_guards.py`` so it cannot fall behind that file.
+
+    Deliberately NOT an entropy test: an operator's own weak key (``password123...``)
+    still passes, and catching that needs judgement this guard should not make. It is a
+    separate ledger candidate, not a silent extension of this one.
     """
     key = cfg.SECRET_KEY.strip()
-    weak = (not key) or key == DEFAULT_SECRET_KEY or len(key) < MIN_SECRET_KEY_LENGTH
+    weak = (
+        (not key)
+        or key in PUBLIC_EXAMPLE_SECRET_KEYS
+        or len(key) < MIN_SECRET_KEY_LENGTH
+    )
     if not weak:
         return
     message = (
-        "SECRET_KEY is unset, the public default, or too short (needs a random value of "
-        f"at least {MIN_SECRET_KEY_LENGTH} chars — e.g. `openssl rand -hex 32`). It signs "
-        "every auth token; a weak key allows token forgery."
+        "SECRET_KEY is unset, too short, or a value published in this repository "
+        f"(needs a private random value of at least {MIN_SECRET_KEY_LENGTH} chars — e.g. "
+        "`openssl rand -hex 32`). It signs every auth token; a published or weak key "
+        "allows token forgery. Note .env.example's key is public: copying it is not enough."
     )
     if cfg.is_production:
         raise RuntimeError(message)
     logger.warning("%s (allowed outside production)", message)
 
 
+def _cors_problem(cfg: Settings) -> str | None:
+    """Why this CORS config must not serve production, or None if it is safe.
+
+    Order matters: a permissive origin is reported before a missing one, because
+    ``ALLOWED_ORIGINS=*`` satisfies "an explicit origin is pinned" while being strictly
+    worse than pinning nothing.
+    """
+    origins = cfg.allowed_origins_list
+
+    # INT-A1: neither `*` nor `null` is a dev default, so the old "is anything non-dev
+    # pinned?" test accepted both — the two most permissive values possible passing a
+    # guard that exists to require a restrictive one. A pinned origin sitting beside
+    # either does not neutralise it. See CORS_NON_ORIGINS for why the set is closed.
+    non_origins = sorted(CORS_NON_ORIGINS & {o.strip().lower() for o in origins})
+    if non_origins:
+        listed = ", ".join(f"`{o}`" for o in non_origins)
+        return (
+            f"ALLOWED_ORIGINS contains {listed}, which is not a real origin and allows "
+            "callers you have not pinned. Combined with credentialed requests this hands "
+            "them authenticated access. Pin explicit origins, e.g. "
+            "set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io."
+        )
+
+    # INT-A1: a regex is refused outright rather than inspected. Judging a pattern's
+    # narrowness — by syntax or by probing it — only ever clears the shapes the author
+    # thought of, which is the accept-unless-recognised idiom this guard exists to remove.
+    # See CORS_REGEX_UNSUPPORTED_IN_PRODUCTION.
+    if cfg.allowed_origin_regex is not None:
+        return CORS_REGEX_UNSUPPORTED_IN_PRODUCTION
+
+    dev_defaults = {o.strip().lower() for o in DEV_DEFAULT_ORIGINS}
+    if not any(o.strip().lower() not in dev_defaults for o in origins):
+        return (
+            "No explicit production CORS origin is configured; only local-dev origins are "
+            "allowed. Pin the prod origin, e.g. "
+            "set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io. "
+            "A regex alone is not accepted — an explicit origin must be pinned."
+        )
+
+    return None
+
+
 def _check_production_cors(cfg: Settings) -> None:
-    """Refuse to boot in production without an explicit prod CORS origin pinned (INT-09).
+    """Refuse to boot in production on a permissive or unpinned CORS config (INT-09).
 
     Production must pin at least one explicit allowed origin (e.g.
     ``https://perflab.44-198-76-44.nip.io``) rather than relying on the old catch-all
     wildcard-subdomain regex default. Mirror ``_check_production_secrets``: fail fast
     (raise) in production, log a warning elsewhere so local/dev boots aren't blocked.
 
-    A configured ``ALLOWED_ORIGIN_REGEX`` alone is NOT sufficient — the decision is to
-    pin an explicit origin, so we require at least one origin in ``allowed_origins_list``
-    that is not one of the local-dev defaults.
+    INT-A1 sharpens this in two ways. It refuses a config that is *permissive*, not merely
+    absent — asking only "is a non-dev origin pinned?" admitted the CORS spec's non-origin
+    values, which are worse than the dev-defaults-only config this guard already refused.
+    And ``ALLOWED_ORIGIN_REGEX`` is now refused outright in production rather than
+    inspected: INT-09 already held that a regex alone never satisfies the explicit-origin
+    requirement, so production enforces that instead of trying to judge the pattern. See
+    ``_cors_problem``.
     """
-    dev_defaults = {o.strip().lower() for o in DEV_DEFAULT_ORIGINS}
-    has_explicit = any(
-        o.strip().lower() not in dev_defaults for o in cfg.allowed_origins_list
-    )
-    if has_explicit:
+    problem = _cors_problem(cfg)
+    if problem is None:
         return
-    message = (
-        "No explicit production CORS origin is configured; only local-dev origins are "
-        "allowed. Pin the prod origin, e.g. "
-        "set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io. "
-        "A regex alone is not accepted — an explicit origin must be pinned."
-    )
     if cfg.is_production:
-        raise RuntimeError(message)
-    logger.warning("%s (allowed outside production)", message)
+        raise RuntimeError(problem)
+    logger.warning("%s (allowed outside production)", problem)
 
 
 def _on_schema_mismatch(message: str) -> None:
