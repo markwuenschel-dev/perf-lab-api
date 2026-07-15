@@ -1,7 +1,7 @@
 # web/Dockerfile
 # Multi-stage build: Node compiles the Vite/React bundle, nginx serves it.
-# VITE_API_BASE_URL is a build-time ARG — set it in Railway's service Variables tab
-# (under "Build Variables") so it gets baked into the JS bundle at image build time.
+# VITE_API_BASE_URL is a build-time ARG — pass it via `--build-arg` at image
+# build time so it gets baked into the JS bundle.
 
 # ── Stage 1: build ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS build
