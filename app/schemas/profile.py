@@ -11,6 +11,7 @@ from datetime import date
 from pydantic import BaseModel, Field, field_validator
 
 from app.logic.onboarding_state import validate_dob
+from app.logic.wellness_registry import coverage_signals
 
 
 class ProfileRead(BaseModel):
@@ -69,3 +70,26 @@ class ProfileUpdate(BaseModel):
         if v is not None:
             validate_dob(v, date.today())
         return v
+
+    @field_validator("untracked_wellness_signals")
+    @classmethod
+    def _check_untracked_wellness_signals(cls, v: list[str] | None) -> list[str] | None:
+        """Reject signal names the coverage engine does not recognize.
+
+        Without this the write boundary accepts anything: readiness intersects
+        unknown names away against ``coverage_signals()`` while this API echoes the
+        stored raw list back, so the client is told about an opt-out the engine
+        never honours. Refuse the write rather than report state that isn't real.
+        Duplicates are collapsed and order is preserved; ``None`` passes through so
+        PATCH semantics (omitted = untouched) are unaffected.
+        """
+        if v is None:
+            return None
+        known = set(coverage_signals())
+        unknown = [s for s in v if s not in known]
+        if unknown:
+            raise ValueError(
+                f"unknown wellness signal(s) {sorted(set(unknown))}; "
+                f"known signals are {sorted(known)}"
+            )
+        return list(dict.fromkeys(v))
