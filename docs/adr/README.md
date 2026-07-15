@@ -76,7 +76,7 @@ and die with their PR.
 | [0025](0025-generate-ts-types-from-openapi.md) | Generate web TypeScript types from the OpenAPI schema | accepted |
 | [0026](0026-readiness-combine-rule.md) | How acute wellness combines with modeled fatigue | proposed |
 | [0027](0027-background-job-scheduler.md) | Background-job scheduler for the nightly wearable pull | proposed |
-| [0028](0028-hosting-platform.md) | Hosting platform (Railway vs Render) | proposed |
+| [0028](0028-hosting-platform.md) | Hosting platform (Railway vs Render) | superseded (moved to EC2, see `docs/DEPLOY.md`) |
 | [0029](0029-periodization-intent-envelope.md) | Periodization lives as an intent envelope on the block | accepted |
 | [0030](0030-block-derived-intent-modality-mix.md) | Training intent is block-derived; modality_mix drives concurrency | accepted |
 | [0031](0031-prescription-seeds-the-log.md) | Prescription seeds the workout log | accepted |

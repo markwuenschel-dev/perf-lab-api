@@ -270,6 +270,8 @@ This uses the decomposed `fatigue_f` and `tissue_t` vectors, not the legacy
 
 ## Deployment
 
-The project includes a `netlify.toml` for Netlify deployment. Set
-`VITE_API_BASE_URL` as a Netlify environment variable pointing to the
-production backend.
+Production is a self-hosted **EC2** docker-compose stack — this frontend is built into
+the backend's `backend-with-frontend` Docker image (embeds the SPA at `/static`,
+same-origin), not deployed as a standalone static site. See
+[`../../docs/DEPLOY.md`](../../docs/DEPLOY.md) for the full runbook. (Netlify and
+Railway are no longer used by this project.)

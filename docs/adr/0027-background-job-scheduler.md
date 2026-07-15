@@ -15,7 +15,9 @@ The script opens its own `AsyncSessionLocal`, syncs every stored `WearableConnec
 and terminates; no long-running worker, no Redis, no internal HTTP hop. This is the
 lightest thing that works for a single nightly task and reuses the same Docker image as
 the API service (see the deploy checklist in `docs/REDESIGN_ROADMAP.md`). Tied to
-[ADR-0028](0028-hosting-platform.md) (Railway provides the cron primitive).
+[ADR-0028](0028-hosting-platform.md) — since superseded: the app moved to a self-hosted
+EC2 stack 2026-07-10 (see `docs/DEPLOY.md`). TODO: confirm how this cron job is now
+scheduled on EC2, since Railway's managed Cron Job no longer exists.
 
 **Guardrail (still in force):** do not add Celery/Redis to the default runtime; the
 `[tasks]` dependencies stay optional. Revisit only if fan-out (many providers, retries,
