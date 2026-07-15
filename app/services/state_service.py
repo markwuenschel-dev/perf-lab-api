@@ -14,6 +14,11 @@ from app.engine.state_bridge import (
     capacity_from_legacy,
     unified_from_athlete_row,
 )
+from app.engine.state_loading import (
+    ReadOnlyStateView,
+    reconstruct_legacy_state_for_display,
+    unified_from_athlete_row_strict,
+)
 from app.logic import seed_snapshot
 from app.logic import seed_variance as sv
 from app.logic import strength_calibration as sc
@@ -291,6 +296,49 @@ async def load_or_init_current_state(
     if row is None:
         return await initialize_athlete_state(db, user_id)
     return unified_from_athlete_row(row)
+
+
+async def load_current_state_strict(
+    db: AsyncSession, user_id: int
+) -> UnifiedStateVector | None:
+    """The athlete's canonical state, None if they have none yet, or raise if damaged.
+
+    For every caller that sizes training, gates safety, or mutates canonical state. Never
+    reconstructs from legacy scalars — a damaged row fails closed rather than presenting a
+    lossy reconstruction as though it were observed.
+
+    None and raise mean different things and must not be collapsed: None is "this athlete
+    has no state yet" (a new athlete — initialize one intentionally). A raise is "state
+    exists and cannot be trusted" (repair it; do not default it).
+
+    Raises:
+        MissingEngineState: the row exists but carries no payload (a legacy row).
+        MalformedCurrentEngineState: a payload this reader should understand, but cannot.
+        UnsupportedFutureEngineStateVersion: newer writer; deploy readers first.
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    return unified_from_athlete_row_strict(row) if row is not None else None
+
+
+async def load_current_state_for_display(
+    db: AsyncSession, user_id: int
+) -> ReadOnlyStateView | None:
+    """A provenance-marked view for display-only surfaces. None if no state exists yet.
+
+    ONLY for surfaces proven unable to affect prescription, readiness, eligibility,
+    benchmark selection, state mutation, or objective progress. If a surface does both,
+    split it — do not classify a mixed-capability service as display because part of its
+    output is visible in the UI.
+
+    Callers must not unwrap ``.state`` and pass it on as though it were canonical: check
+    ``.degraded`` and show the caveat.
+
+    Raises:
+        DisplayStateUnavailable: nothing showable (future-version payload, or legacy
+            scalars too damaged to reconstruct from).
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    return reconstruct_legacy_state_for_display(row) if row is not None else None
 
 
 async def _resolve_exercise_phis(
