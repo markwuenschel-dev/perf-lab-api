@@ -86,6 +86,6 @@ def test_development_with_dev_defaults_does_not_raise():
 
 def test_config_default_regex_removed_and_property_none():
     cfg = _settings()
-    # The railway.app default is gone: empty string, property collapses to None.
+    # The old wildcard-subdomain regex default is gone: empty string, property collapses to None.
     assert cfg.ALLOWED_ORIGIN_REGEX == ""
     assert cfg.allowed_origin_regex is None

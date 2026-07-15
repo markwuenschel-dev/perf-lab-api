@@ -1,7 +1,7 @@
 """
 app/core/auth.py
 
-JWT + bcrypt utilities. Production-ready and host-agnostic (Railway, any container host).
+JWT + bcrypt utilities. Production-ready and host-agnostic.
 """
 
 from datetime import UTC, datetime, timedelta

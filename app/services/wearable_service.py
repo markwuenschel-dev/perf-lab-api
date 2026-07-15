@@ -10,7 +10,7 @@ the wellness sink together:
 - Sync: ``sync_connection`` refreshes the OAuth token as needed, pulls new days, and
   upserts them via the canonical ``readiness_service.upsert_wellness_sample`` sink
   (source="oura"), advancing ``last_sync_at``. ``sync_all`` drives every connection
-  (used by the Railway cron).
+  (used by the nightly cron job).
 
 Tokens are Fernet-encrypted at rest (``app.core.crypto``); this module is the only
 place that decrypts them.

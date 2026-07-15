@@ -1,8 +1,8 @@
-"""Nightly wearable pull — the Railway Cron Job entrypoint (Phase 2).
+"""Nightly wearable pull — the scheduled cron entrypoint (Phase 2).
 
 Pulls each stored wearable connection's recent daily data and upserts it into
 ``WellnessSample`` via the canonical readiness sink. A one-shot command that exits,
-so it maps cleanly onto a Railway Cron Job (ADR-0027 — no celery/redis). Does NOT
+so it maps cleanly onto a scheduled cron job (ADR-0027 — no celery/redis). Does NOT
 run migrations; the API service already does that on deploy.
 
 Idempotent: the wellness sink upserts on (user_id, date, source), so re-runs never
@@ -13,7 +13,7 @@ Run (against a local DB):
     $env:APP_ENCRYPTION_KEY = "<fernet-key>"
     python -m app.scripts.sync_wearables --days 7
 
-Railway Cron Job command:
+Cron job command:
     python -m app.scripts.sync_wearables
 """
 
