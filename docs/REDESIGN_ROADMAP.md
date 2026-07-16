@@ -77,39 +77,39 @@ ingestion, wearable sync.
 **Still local-only mock (`sim.ts`):** Simulator projection, Goal/Race prediction,
 History trends, Session Player, morning Check-in.
 
-### 🔴 Blocking bugs on `main` (P0 — fix first)
+### ✅ Blocking bugs on `main` — fixed 2026-06-19 (`bc6bcae`)
 
-1. **App can't boot.** `app/logic/prescription_finalize.py` imports
-   `encode_session_candidate` from the `app.logic.constraint_engine` package, but
-   `__init__.py` only re-exports from `candidate.py` (singular) while the function
-   lives in `candidates.py` (plural, line 70). Import chain
-   `prescription_finalize → prescriber → planning → app.main` fails →
-   **`main` is un-deployable** (Render is serving an older healthy `0.2.0` build;
-   live `/ping` confirmed working) and **7 test files fail to collect**.
-2. **`/openapi.json` 500.** `app/api/v1/prescribe.py:25` —
-   `Query(TRAINING_GOAL_DEFAULT, description=...)`. The `...` is a literal Ellipsis
-   that can't be serialized into OpenAPI →
-   `PydanticSerializationError: Unable to serialize unknown type: <class 'ellipsis'>`.
-   This blocks the OpenAPI→TS type-generation strategy.
+This section previously described two P0 bugs as live. **Both were fixed in `bc6bcae`
+("fix: restore app boot and OpenAPI schema generation"); `main` boots and serves a clean
+`/openapi.json`.** Kept as history because the phased plan below was written against them:
 
-Both have been latent since ~2026-05-29 (per `agent_collab` outbox notes).
+1. ~~**App can't boot.**~~ `app.logic.constraint_engine.__init__` did not re-export
+   `encode_session_candidate`, so the import chain
+   `prescription_finalize → prescriber → planning → app.main` failed. **Fixed:**
+   `app/logic/constraint_engine/__init__.py:24` imports it and `:44` lists it in
+   `__all__`.
+2. ~~**`/openapi.json` 500.**~~ `prescribe.py` passed a literal Ellipsis as
+   `description=...`, which is unserializable. **Fixed:** `app/api/v1/prescribe.py:16`
+   now carries a real description string.
+
+Both were latent from ~2026-05-29 to 2026-06-19. The regression class is now covered by
+CI ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)): every PR runs an app-import
+smoke test, an OpenAPI export check, and pytest.
 
 ---
 
 ## Phased roadmap
 
-### P0 — Unblock the foundation (hours)
+### P0 — Unblock the foundation — ✅ DONE (2026-06-19, `bc6bcae`)
 
-- **Fix Bug 1:** add `from app.logic.constraint_engine.candidates import
-  encode_session_candidate` to `app/logic/constraint_engine/__init__.py` and its
-  `__all__`. (Also note the duplication: `candidate.py` vs `candidates.py` — track
-  a later consolidation, don't do it now.)
-- **Fix Bug 2:** `prescribe.py:25` → replace `description=...` with a real string,
-  e.g. `description="Training goal to prescribe for; defaults to the athlete's primary goal."`.
-- **Verify:** `python -m pytest -q` collects all files; `python -c "from app.main
-  import app; app.openapi()"` succeeds; `uvicorn app.main:app` boots.
-- **Reconcile version drift** while here: `pyproject` 0.3.0 vs `app.main`/`/ping`
-  0.2.0 vs web "v0.3" → pick one (0.3.0) and set `app.main` `version=` + `/ping`.
+- ✅ **Bug 1 fixed:** `encode_session_candidate` re-exported from
+  `app/logic/constraint_engine/__init__.py`.
+- ✅ **Bug 2 fixed:** `prescribe.py` carries a real `description=` string; `app.openapi()`
+  succeeds (24 paths, 47 schemas).
+- ✅ **Version drift reconciled:** `app.main`, `/ping`, and the startup log all report
+  `0.3.0`, matching `pyproject`.
+- ✅ **CI gate added** — see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+  (import smoke test + OpenAPI check + pytest/ruff/pyright on every PR).
 
 ### P1 — OpenAPI-driven type contract
 
@@ -324,22 +324,30 @@ optional — the kitchen-sink impression is only the legacy `requirements.txt`);
 bans the deprecated `dose_engine`. The unified-body `S(t)` + cross-talk design is the
 right fit for the concurrent product — no rework needed.
 
-**Improve:** (a) the two P0 bugs + no CI gate caught a 3-week un-bootable `main` →
-add a CI job that imports the app, generates OpenAPI, and runs pytest on every PR;
-(b) kill manual type drift via P1; (c) `candidate.py`/`candidates.py` duplication →
-consolidate; (d) delete legacy root `main.py` and `requirements.txt` once confirmed
-unused; (e) the new wearable concern justifies a dedicated `app/integrations/` layer
-rather than stuffing it into `services/`.
+**Improve:** (a) ✅ done — the two P0 bugs + no CI gate had let `main` sit un-bootable for
+3 weeks; CI now imports the app, checks OpenAPI, and runs pytest on every PR
+([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)); (b) kill manual type drift
+via P1; (c) `candidate.py`/`candidates.py` are **confusingly named, not duplicated** —
+`candidate.py` owns the `SessionCandidate` model + scoring, `candidates.py` owns
+prescription→constraint-dict encoding (`encode_session_candidate`). They are distinct
+concerns; the fix is a **rename** for legibility (e.g. `candidate.py` → `scoring`-side,
+`candidates.py` → `encoding`-side), **not** a consolidation; (d) delete legacy root
+`main.py` and `requirements.txt` once confirmed unused; (e) the new wearable concern
+justifies a dedicated `app/integrations/` layer rather than stuffing it into `services/`.
 
 ## Blind spots / risks (goal #4)
 
-- **Un-bootable `main` masked by Render's last-good-deploy** — the live site is a
-  stale build; the next deploy fails until P0 lands. No CI caught this.
+- ✅ RESOLVED — **Un-bootable `main` masked by a stale last-good-deploy.** The P0 bugs
+  landed 2026-06-19 (`bc6bcae`) and CI now gates app-boot + OpenAPI + pytest on every PR.
+  (Render, the host referenced by the original entry, was retired 2026-07-10 — see
+  **Hosting — EC2** below and [`docs/DEPLOY.md`](DEPLOY.md).)
 - **Benchmark→state mappings cover only 13 of 36 definitions** — observations for the
   rest won't nudge `S(t)`. Audit `seed_benchmarks.py` mappings as P2/P5 work.
 - **No Hyrox-specific benchmarks** despite Hyrox being a target persona (`mixed_modal`
   is the closest) — add definitions.
-- **No CI / no green-suite gate**; 7 collection errors currently.
+- ✅ RESOLVED — **No CI / no green-suite gate.** [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+  runs app-import, OpenAPI export check, pytest, ruff, and pyright on every PR. The 7
+  collection errors cleared with `bc6bcae`.
 - **Field Test formula vs benchmark formula divergence:** legacy uses 300m+1.5mi;
   the seeded `run_fatigue_factor` uses 400m+1mile (Hinshaw). Reconcile when Field Test
   becomes a benchmark.
@@ -380,12 +388,17 @@ two long-open calls:
 
 **Tracked cleanups (tasks, not ADRs — they don't clear the "real trade-off" bar):**
 
-- [ ] Add a CI gate (import app + generate OpenAPI + run pytest on every PR) — would
-  have caught the ~3-week un-bootable `main`.
-- [ ] Reconcile version drift to **0.3.0** (`pyproject` / `app.main` / `/ping`).
+- [x] Add a CI gate (import app + generate OpenAPI + run pytest on every PR) — would
+  have caught the ~3-week un-bootable `main`. Done: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+- [x] Reconcile version drift to **0.3.0** (`pyproject` / `app.main` / `/ping`) — done in
+  `bc6bcae`.
 - [ ] Delete legacy root `main.py` + `requirements.txt` once the legacy router is
-  confirmed to cover `/compute-metrics`.
-- [ ] Consolidate `constraint_engine/candidate.py` ↔ `candidates.py` duplication.
+  confirmed to cover `/compute-metrics`. (`requirements.txt` is stale in both directions —
+  it omits `kagglehub`/`aiofiles` and pulls in the optional `[tasks]`/`[llm]` groups — so
+  it should not be used to install; see README **Setup**.)
+- [ ] Rename `constraint_engine/candidate.py` ↔ `candidates.py` for legibility. **Not a
+  duplication** — `candidate.py` is the `SessionCandidate` model + scoring, `candidates.py`
+  is prescription→constraint-dict encoding. Rename, do not merge.
 
 ## Open design questions (resolve within their phase)
 
