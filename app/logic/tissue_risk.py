@@ -4,8 +4,13 @@ Uses exponentially-weighted lagged exposure features. Tissue risk is derived
 exclusively from explicit exposure data and current tissue state — never from
 inferred event labels of any kind.
 
-Tissue risk can only soft-penalize candidates once calibrated
-(ENABLE_TISSUE_RISK_CANDIDATE_PENALTY). Until then: log and explain only.
+This model reports ``calibrated=False`` and runs shadow/offline only: its output feeds the MPC
+shadow objective (``app/logic/mpc/objective.py``) and offline training (``app/ml/q3_tissue``),
+never the live prescription-scoring path. An uncalibrated model must not become live candidate
+authority; promoting it to a soft penalty is a future feature mission that must calibrate and
+wire a per-candidate producer first — there is deliberately no runtime flag until that live
+path exists. (The separate ``tissue_t`` arithmetic in ``candidate_library`` is a different,
+pre-existing live mechanism, not this model — see test_tissue_risk_model_not_live_wired.py.)
 """
 from __future__ import annotations
 

@@ -32,8 +32,9 @@ PRODUCTION FEED
   The per-athlete resolver + shadow log lives in
   app.services.personalization_shadow_service: it partial-pools an athlete's β toward the
   Q2 population prior and logs population-vs-personalized clearance multipliers + n_i, w_i,
-  tr(P^θ) to personalization_shadow_log. Never applied to production
-  (ENABLE_PERSONALIZED_RECOVERY=False).
+  tr(P^θ) to personalization_shadow_log. Shadow-only — never applied to production; the
+  engine uses the global/population parameters. Promotion to per-athlete β in the live
+  update path is a separate feature mission (see docs/adr/0043), not a runtime flag today.
 
 REPRODUCE
   python -m app.ml.personalization.evaluate

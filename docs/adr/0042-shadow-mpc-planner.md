@@ -38,9 +38,13 @@ horizon-lookahead and logs what MPC **would** choose versus what the greedy pres
 
 **Rejected / deferred**
 
-- **No production behavior change** — gated behind `ENABLE_MPC_PRESCRIPTION = False`; the
-  planner only logs until offline evidence (agreement patterns joined to outcomes) justifies
-  promotion.
+- **No production behavior change** — the planner only logs until offline evidence (agreement
+  patterns joined to outcomes) justifies promotion. (An `ENABLE_MPC_PRESCRIPTION` flag was
+  originally described here as the promotion gate, but it was never wired — read by no code, it
+  gated nothing — and was removed as a fictional control surface, AUD-C9 / 2026-07-16.
+  Promotion to live is a separate feature mission: it must move the MPC calc before
+  finalization, select the MPC candidate without committing the baseline first, and ship a
+  shadow-vs-live replay harness + canary/rollback before any control flag returns.)
 - **Stochastic/Monte-Carlo MPC** — v1 rolls a single *deterministic* trajectory per candidate;
   sampling `S`/`θ` from the posterior for `E[·]`/chance-constraints is deferred. The EKF belief
   enters only through `λ_U·tr(P)`, not full covariance propagation over the horizon.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from app.engine.feature_flags import ENABLE_WORKOUT_INFORMED_CONFIDENCE_MAINTENANCE
 from app.engine.parameters import default_parameters
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.state_update_v0 import update_athlete_state
@@ -73,8 +72,6 @@ def test_different_axes_have_different_noise_rates():
 
 def test_workout_logs_do_not_reduce_variance():
     """Workout training maintains fitness but not observability — only benchmarks reduce variance."""
-    assert ENABLE_WORKOUT_INFORMED_CONFIDENCE_MAINTENANCE is False, \
-        "Feature flag must remain False — workout-informed maintenance not yet validated"
     s0 = _state(conf=0.50)
     # Even many training sessions should not pull variance down
     s = s0
