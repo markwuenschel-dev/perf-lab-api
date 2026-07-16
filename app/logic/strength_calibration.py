@@ -48,14 +48,28 @@ _CONF_RPE_RIR_CHART = 0.60
 _CONF_EPLEY_FAILURE = 0.40
 _CONF_NEUTRAL = 0.0
 
-# Effort fidelity → confidence multiplier. group_level (cloned quick-entry) and
-# session_level effort is less trustworthy than true per-set effort.
+# Effort fidelity → confidence multiplier (ADR-0045). Strictly monotone in the
+# documented ladder: set_level > group_level > session_level > missing. A rung the
+# contract calls less trustworthy may never score as more trustworthy.
+#
+# `missing` is deliberately NOT 0.0 (unlike the authority-side FIDELITY_MULTIPLIER in
+# strength_evidence): this scales *confidence*, and the top ladder rung — relative load
+# (load / e1RM_pre) — carries genuine signal that does not depend on effort at all.
+# Zeroing it would assert "we know nothing" about a set whose intensity we measured.
 FIDELITY_CONF_MULTIPLIER: dict[str, float] = {
     "set_level": 1.0,
     "group_level": 0.6,
     "session_level": 0.4,
-    "missing": 0.5,
+    "missing": 0.2,
 }
+
+# What an UNRECOGNIZED fidelity string earns: the least trust any known rung earns.
+# Fail-closed — unproven provenance can never inherit set_level authority by default.
+MOST_CONSERVATIVE_CONF_MULTIPLIER: float = min(FIDELITY_CONF_MULTIPLIER.values())
+
+# The conservative sentinel used as the signature default wherever effort fidelity is
+# unstated. Callers that have *proven* per-set effort must say so explicitly.
+FIDELITY_UNSTATED = "missing"
 
 # Load types whose sets carry an external barbell-style load, so a top set can yield
 # an e1RM (and a relative-load intensity). Bodyweight / distance / time never do.
@@ -181,7 +195,16 @@ def _chart_percent(reps: float, rpe: float) -> float:
 
 
 def _fidelity_conf(base: float, effort_fidelity: str) -> float:
-    return round(base * FIDELITY_CONF_MULTIPLIER.get(effort_fidelity, 1.0), 4)
+    """Scale a base rung confidence by effort fidelity, failing CLOSED.
+
+    An unrecognized fidelity resolves to the most conservative multiplier, never the
+    full ``set_level`` one — a writer that drifts to a new fidelity label must not
+    silently gain authority it has not earned.
+    """
+    multiplier = FIDELITY_CONF_MULTIPLIER.get(
+        effort_fidelity, MOST_CONSERVATIVE_CONF_MULTIPLIER
+    )
+    return round(base * multiplier, 4)
 
 
 # ---------------------------------------------------------------------------------
@@ -227,7 +250,7 @@ def external_intensity_for_set(
     rir: float | None,
     e1rm_pre: float | None,
     to_failure: bool,
-    effort_fidelity: str = "set_level",
+    effort_fidelity: str = FIDELITY_UNSTATED,
 ) -> CalibrationResult:
     """External intensity ``I`` for one set — load relative to capacity (ADR-0039).
 
