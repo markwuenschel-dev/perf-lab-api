@@ -5,10 +5,12 @@ update canonical capacity; workout_extraction may raise a lower-bound floor but 
 never enter the bidirectional capacity residual path — even if a row is mismarked.**
 """
 from datetime import UTC, datetime
+from itertools import product
 
 import pytest
 from sqlalchemy import func, select
 
+from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -66,11 +68,18 @@ async def _obs(db, user_id: int) -> list[BenchmarkObservation]:
 
 
 # ── unit: the authority policy is fail-closed ─────────────────────────────────
+#
+# These target `observation_authority.capacity_effect_of` / `resolve_authority` — the
+# path production actually runs (ADR-0058, via benchmark_service). The superseded
+# `strength_evidence.capacity_authoritative` / `may_regress_capacity` helpers are NOT
+# exercised here: asserting the invariant against functions no callers invoke is false
+# assurance. The live guarantee rests on `observation_authority.source_cap`.
 
 def _row(**kw):
     from types import SimpleNamespace
     base = {
         "source": "benchmark_test", "evidence_type": "direct_measurement",
+        "value_semantics": "measured", "protocol_validity": "valid",
         "affects_capacity": True, "can_regress_capacity": True,
     }
     base.update(kw)
@@ -78,19 +87,85 @@ def _row(**kw):
 
 
 async def test_policy_refuses_mismarked_workout_extraction():
-    # Even if the flags say "capacity authoritative", a workout_extraction source is refused.
+    # Even if the stored flags say "capacity authoritative" and the row claims a valid
+    # protocol, a workout_extraction source is capped at a lower-bound floor.
     mismarked = _row(source="workout_extraction")
-    assert se.capacity_authoritative(mismarked) is False
-    assert se.may_regress_capacity(mismarked, residual=-5.0) is False
-    # A real benchmark test may regress.
-    assert se.capacity_authoritative(_row()) is True
-    assert se.may_regress_capacity(_row(), residual=-5.0) is True
+    effect = oa.capacity_effect_of(mismarked)
+    assert effect == oa.CE_UPWARD_LOWER_BOUND
+    assert effect != oa.CE_BIDIRECTIONAL_UPDATE  # can never regress capacity
+    # The ADR-0055 booleans are DERIVED from the resolved effect, never trusted from the row.
+    resolution = oa.resolve_authority(
+        source_type=oa.ST_WORKOUT_EXTRACTION, collection_mode=oa.CM_WORKOUT,
+        evidence_type="direct_measurement", value_semantics="measured",
+        protocol_validity=oa.PV_VALID,
+    )
+    assert resolution.legacy_flags()["can_regress_capacity"] is False
+    # A real, protocol-valid benchmark test may still regress.
+    assert oa.capacity_effect_of(_row()) == oa.CE_BIDIRECTIONAL_UPDATE
+
+
+_ALL_EVIDENCE_TYPES = (
+    se.EV_DIRECT_MEASUREMENT, se.EV_PROTOCOL_GRADE_ESTIMATE,
+    se.EV_ESTIMATED_FROM_TRAINING_SET, se.EV_LOWER_BOUND, se.EV_LEGACY_UNKNOWN, None,
+)
+_ALL_VALUE_SEMANTICS = (
+    se.VS_MEASURED, se.VS_ESTIMATED, se.VS_LOWER_BOUND, se.VS_UNKNOWN, None,
+)
+_ALL_PROTOCOL_VALIDITY = (oa.PV_VALID, oa.PV_INVALID, oa.PV_INCOMPLETE, oa.PV_NOT_EVALUATED)
+
+
+async def test_workout_extraction_can_never_reach_bidirectional():
+    """The durable invariant, on the live resolver: training can demonstrate you are
+    stronger, never weaker.
+
+    Exhaustive over the whole finite provenance space — no combination of the other
+    four dimensions, and no caller request (including an outright over-request for
+    `bidirectional_update`), can lift workout_extraction to a bidirectional update.
+    """
+    combos = product(
+        sorted(oa.BUILT_COLLECTION_MODES), _ALL_EVIDENCE_TYPES, _ALL_VALUE_SEMANTICS,
+        _ALL_PROTOCOL_VALIDITY, (*oa.CAPACITY_EFFECTS, None),
+    )
+    checked = 0
+    for mode, evidence, semantics, validity, requested in combos:
+        resolution = oa.resolve_authority(
+            source_type=oa.ST_WORKOUT_EXTRACTION,
+            collection_mode=mode,
+            evidence_type=evidence,
+            value_semantics=semantics,
+            protocol_validity=validity,
+            requested_capacity_effect=requested,
+        )
+        assert resolution.capacity_effect != oa.CE_BIDIRECTIONAL_UPDATE, (
+            f"workout_extraction reached bidirectional via mode={mode} evidence={evidence} "
+            f"semantics={semantics} validity={validity} requested={requested}"
+        )
+        assert resolution.legacy_flags()["can_regress_capacity"] is False
+        checked += 1
+    assert checked == 5 * 6 * 5 * 4 * 5  # the space was actually enumerated
+
+
+async def test_only_protocol_valid_athlete_entry_reaches_bidirectional():
+    """The converse: bidirectional authority requires ALL four caps to allow it, so the
+    retargeted invariant above is not passing vacuously."""
+    assert oa.resolve_authority(
+        source_type=oa.ST_ATHLETE_ENTRY, collection_mode=oa.CM_RETEST,
+        evidence_type=se.EV_DIRECT_MEASUREMENT, value_semantics=se.VS_MEASURED,
+        protocol_validity=oa.PV_VALID,
+    ).capacity_effect == oa.CE_BIDIRECTIONAL_UPDATE
+    # Drop the server-validated protocol grade → capped back to a floor.
+    assert oa.resolve_authority(
+        source_type=oa.ST_ATHLETE_ENTRY, collection_mode=oa.CM_RETEST,
+        evidence_type=se.EV_DIRECT_MEASUREMENT, value_semantics=se.VS_MEASURED,
+        protocol_validity=oa.PV_NOT_EVALUATED,
+    ).capacity_effect == oa.CE_UPWARD_LOWER_BOUND
 
 
 async def test_extraction_gate_rejects_high_rep_low_effort():
-    assert se.is_e1rm_informative(reps=5, rpe=8.0, rir=None) is True
-    assert se.is_e1rm_informative(reps=12, rpe=9.0, rir=None) is False   # too many reps
-    assert se.is_e1rm_informative(reps=5, rpe=6.0, rir=None) is False    # too easy
+    sl = "set_level"
+    assert se.is_e1rm_informative(reps=5, rpe=8.0, rir=None, effort_fidelity=sl) is True
+    assert se.is_e1rm_informative(reps=12, rpe=9.0, rir=None, effort_fidelity=sl) is False  # too many reps
+    assert se.is_e1rm_informative(reps=5, rpe=6.0, rir=None, effort_fidelity=sl) is False   # too easy
     # group_level (cloned quick-entry) needs a stricter bar
     assert se.is_e1rm_informative(reps=5, rpe=8.0, rir=None, effort_fidelity="group_level") is False
     assert se.is_e1rm_informative(reps=5, rpe=9.0, rir=None, effort_fidelity="group_level") is True
