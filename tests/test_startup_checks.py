@@ -1,6 +1,7 @@
 """Startup Alembic-head fail-fast behavior (§1.1)."""
 
 import pytest
+from conftest import assert_does_not_raise
 
 import app.main as main_module
 from app.core.config import Settings
@@ -22,4 +23,5 @@ def test_schema_mismatch_raises_in_production(monkeypatch):
 def test_schema_mismatch_only_logs_outside_production(monkeypatch):
     monkeypatch.setattr(main_module.settings, "ENVIRONMENT", "development")
     # Must not raise in non-production environments.
-    main_module._on_schema_mismatch("schema is behind head")
+    with assert_does_not_raise():
+        main_module._on_schema_mismatch("schema is behind head")
