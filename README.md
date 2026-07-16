@@ -148,20 +148,29 @@ python -m app.scripts.seed_exercises
 git clone https://github.com/<your-user>/perf-lab-api.git
 cd perf-lab-api
 
-python -m venv .venv
+uv sync --extra dev          # creates .venv and installs runtime + dev deps
+```
+
+Prefix commands with `uv run` (e.g. `uv run pytest -q`), or activate the venv it created:
+
+```bash
 # Windows PowerShell
 . .\.venv\Scripts\Activate.ps1
 # macOS/Linux
 source .venv/bin/activate
-
-pip install -r requirements.txt
 ```
+
+> Do **not** use `pip install -r requirements.txt`. That file is legacy: it both omits real
+> runtime deps (`kagglehub`, `aiofiles`) and pulls in things the default runtime must not
+> have — Celery/Redis/slowapi, which [ADR-0027](docs/adr/0027-background-job-scheduler.md)
+> keeps optional under the `[tasks]` extra, plus the `[llm]` SDKs.
+> [`pyproject.toml`](pyproject.toml) + [`uv.lock`](uv.lock) are the source of truth.
 
 Copy `.env.example` to `.env` and fill in your values (see **Environment variables**). For anything beyond `simulate-dose`, ensure Postgres is running and `DATABASE_URL` points at your database. Then create and seed the schema:
 
 ```bash
-alembic upgrade head
-python -m app.scripts.seed_exercises
+uv run alembic upgrade head
+uv run python -m app.scripts.seed_exercises
 ```
 
 ---
@@ -239,11 +248,19 @@ Defined in [`app/core/config.py`](app/core/config.py) (`.env` supported):
 |----------|---------|
 | `PROJECT_NAME` | API title (default: `Performance Lab API`) |
 | `API_V1_STR` | v1 prefix (default: `/v1`) |
-| `DATABASE_URL` | Async Postgres URL, e.g. `postgresql+asyncpg://postgres:postgres@localhost/perf_lab`. Plain `postgresql://` or `postgres://` (e.g. Render’s auto-injected URL) is rewritten to `postgresql+asyncpg://` at startup so `asyncpg` is used. |
-| `DEBUG` | SQL echo etc. (default: `True`) |
-| `SECRET_KEY` | JWT signing secret — **override in production** (generate e.g. `openssl rand -hex 32`) |
+| `DATABASE_URL` | Async Postgres URL, e.g. `postgresql+asyncpg://postgres:postgres@localhost/perf_lab`. A plain `postgresql://` or `postgres://` URL (as some managed Postgres providers inject) is rewritten to `postgresql+asyncpg://` at startup so `asyncpg` is used. |
+| `ENVIRONMENT` | Deployment environment (default: `development`). Set `ENVIRONMENT=production` in real deployments — the boot guards below **only fail closed when this is set**; anything other than `production`/`prod` is treated as non-production and they merely warn. |
+| `DEBUG` | Drives SQLAlchemy `echo` (default: `False`). **Refused in production** — `echo` logs every statement *and its bound parameters*, which puts `hashed_password` and wearable OAuth token ciphertext in the application log. Leave it off unless you are reading queries on a dev box. |
+| `SECRET_KEY` | JWT signing secret — **required in production** (generate e.g. `openssl rand -hex 32`). Production refuses to boot on any key this repo publishes (including the one in `.env.example` — copying that file is not enough), on an empty key, or on anything shorter than 32 chars. |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins (default: the local-dev Vite origins). **Production must pin at least one explicit prod origin** and refuses to boot on the dev defaults alone, or on the CORS spec's non-origin values (`*`, `null`). |
+| `ALLOWED_ORIGIN_REGEX` | Regex origin matching (default: disabled). **Not accepted in production at all** — pin explicit origins via `ALLOWED_ORIGINS` instead. Warns in local dev. |
 | `ALGORITHM` | JWT algorithm (default: `HS256`) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime (default: 7 days) |
+
+> The `SECRET_KEY`, `ALLOWED_ORIGINS`/`ALLOWED_ORIGIN_REGEX`, and `DEBUG` rules are enforced
+> at startup by `app/main.py` (`_check_production_secrets`, `_check_production_cors`,
+> `_check_production_debug`): a production boot **raises** rather than serving traffic on an
+> unsafe config. Outside production they log a warning instead.
 
 ---
 
