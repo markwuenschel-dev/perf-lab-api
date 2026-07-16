@@ -3,6 +3,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -972,6 +973,16 @@ async def process_new_workout(
     # work gets an exercise-aware dose without re-entry. Match the session up front
     # (also reused below for completion linkage).
     planned_session = await _match_planned_session(db, user_id, log)
+
+    # An explicit planned_session_id is a caller-supplied FK. _match_planned_session
+    # scopes the lookup to this user, so a miss means the id is either unknown or
+    # another athlete's — refuse rather than log a row pointing at it (IDOR / FK
+    # pollution). 404, not 403: the session does not exist *for this caller*,
+    # mirroring session_feedback_service.create_feedback. The implicit same-day
+    # fallback below is unaffected — it only ever yields the caller's own sessions.
+    if log.planned_session_id is not None and planned_session is None:
+        raise HTTPException(status_code=404, detail="Planned session not found")
+
     if not log.exercises and not log.sets and planned_session is not None:
         log = _seed_exercises_from_prescription(log, planned_session)
 
@@ -997,7 +1008,8 @@ async def process_new_workout(
     # Persist raw workout event for replay/audit and planning linkage.
     workout_row = WorkoutLogORM(
         user_id=user_id,
-        planned_session_id=log.planned_session_id,
+        # Never the raw request field: only the ownership-verified match above.
+        planned_session_id=planned_session.id if planned_session is not None else None,
         session_timestamp=log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp,
         modality=log.modality,
         duration_minutes=log.duration_minutes,

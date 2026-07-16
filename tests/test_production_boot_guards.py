@@ -25,9 +25,14 @@ reopen the hole. The same instinct drives the regex decision — production refu
 whole class rather than grading patterns, because a check that grades them can only ever
 clear the shapes its author imagined.
 
-Scope note (INT-A1): this covers SECRET_KEY and CORS only. `DEBUG` defaulting to True
-(INT-A3) and the root `main.py` second app (INT-A22) are separate ledger candidates and
-are deliberately NOT touched here.
+INT-A3 extends the same rule to `DEBUG`, which drove SQLAlchemy `echo` and so decided
+whether every INSERT — `hashed_password`, wearable OAuth ciphertext — was written to the
+application log. It defaulted to True, so a production boot that merely *omitted* the
+variable logged all of it. Same shape as the two above: the unsafe value was the one you
+got by not deciding.
+
+Scope note: the root `main.py` second app (INT-A22) is a separate ledger candidate and is
+deliberately NOT touched here.
 
 DB-free. Follows the `_settings(..., _env_file=None)` pattern from test_cors_prod_origin.
 """
@@ -90,6 +95,7 @@ def _settings(**overrides: object) -> Settings:
         "SECRET_KEY": STRONG_KEY,
         "ALLOWED_ORIGINS": ",".join(DEV_DEFAULT_ORIGINS),
         "ALLOWED_ORIGIN_REGEX": "",
+        "DEBUG": False,
         "_env_file": None,
     }
     base.update(overrides)
@@ -113,6 +119,7 @@ def test_env_example_is_readable_and_ships_the_guarded_keys() -> None:
     values = _env_example_values()
     assert "SECRET_KEY" in values, f"{ENV_EXAMPLE} no longer ships SECRET_KEY"
     assert "ALLOWED_ORIGINS" in values, f"{ENV_EXAMPLE} no longer ships ALLOWED_ORIGINS"
+    assert "DEBUG" in values, f"{ENV_EXAMPLE} no longer ships DEBUG"
 
 
 def test_public_example_secret_keys_is_pinned_to_the_env_example_file() -> None:
@@ -321,3 +328,84 @@ def test_a_pinned_prod_origin_still_boots() -> None:
         ALLOWED_ORIGINS=",".join((*DEV_DEFAULT_ORIGINS, PROD_ORIGIN)),
     )
     main._check_production_cors(cfg)
+
+
+# --- INT-A3: the DEBUG guard --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "debug",
+    [
+        pytest.param(True, id="bool"),
+        pytest.param("True", id="the-env-files-spelling"),
+        pytest.param("true", id="lowercase"),
+        pytest.param("1", id="numeric"),
+        pytest.param("yes", id="yes"),
+        pytest.param("on", id="on"),
+    ],
+)
+def test_debug_never_boots_production(debug: object) -> None:
+    """THE BUG. DEBUG fed SQLAlchemy `echo`, so production logged every statement and its
+    bound parameters — the `hashed_password` of every registered user and the wearable
+    OAuth ciphertext of every connected athlete, in plaintext, to the application log.
+
+    Parametrised over the spellings pydantic coerces to True rather than over the bool
+    alone: the value arrives from the environment as a string, and a guard that only
+    refused `True` would admit `DEBUG=yes` — a fresh instance of the exact
+    accept-unless-recognised defect this module exists to remove.
+    """
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="production", DEBUG=debug)
+    assert cfg.DEBUG is True, "fixture must actually produce a debug-on config"
+    with pytest.raises(RuntimeError, match="DEBUG"):
+        main._check_production_debug(cfg)
+
+
+def test_no_debug_value_this_repo_ships_as_an_example_may_boot_production() -> None:
+    """`.env.example` ships DEBUG=True, and the documented setup step is
+    `cp .env.example .env`. Pinned to the FILE, like the SECRET_KEY test above, so an edit
+    there cannot quietly reopen this.
+    """
+    from app import main
+
+    example_debug = _env_example_values()["DEBUG"]
+    cfg = _settings(ENVIRONMENT="production", DEBUG=example_debug)
+    with pytest.raises(RuntimeError, match="DEBUG"):
+        main._check_production_debug(cfg)
+
+
+def test_debug_off_still_boots_production() -> None:
+    """The positive fixture. A guard that refuses everything is not a guard."""
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="production", DEBUG=False)
+    main._check_production_debug(cfg)
+
+
+def test_debug_warns_but_never_blocks_outside_production() -> None:
+    """Fail fast in prod, warn elsewhere. Local dev keeps SQL echo if it asks for it."""
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="development", DEBUG=True)
+    with caplog_at("perflab", logging.WARNING) as records:
+        main._check_production_debug(cfg)
+    assert any("DEBUG" in r.getMessage() for r in records), (
+        "dev boot must warn that debug logging exposes credentials, not stay silent"
+    )
+
+
+def test_the_shipped_debug_default_is_safe() -> None:
+    """The default must be the safe value, and this test is the reason why.
+
+    Every other test here presupposes `ENVIRONMENT=production` is set correctly — the
+    guard cannot fire otherwise. But ENVIRONMENT is itself an env var that defaults to
+    `development`, so a real deployment that omits *both* variables gets no refusal and no
+    guard: just a warning, into a log now filling with password hashes. Two independent
+    misconfigurations, one of which is doing nothing at all.
+
+    Making False the default removes the second variable from the blast radius: omitting
+    DEBUG is now safe on its own terms, whatever ENVIRONMENT says. The guard stops the
+    operator who sets DEBUG=True in production; this stops the one who never set it.
+    """
+    assert Settings(_env_file=None).DEBUG is False  # type: ignore[arg-type]

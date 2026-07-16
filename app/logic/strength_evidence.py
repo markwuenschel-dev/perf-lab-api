@@ -54,13 +54,24 @@ VALIDITY_TRACKING_ONLY = "tracking_only"
 VALIDITY_QUARANTINED = "quarantined"
 VALIDITY_INVALID = "invalid"
 
-# Effort fidelity (ADR-0045) → evidence-authority multiplier.
+# Effort fidelity (ADR-0045) → evidence-authority multiplier. Strictly monotone in the
+# documented ladder: set_level > group_level > session_level > missing. Unlike the
+# confidence-side table in strength_calibration, `missing` is 0.0 here: absent effort
+# confers no *authority* at all.
 FIDELITY_MULTIPLIER: dict[str, float] = {
     "set_level": 1.0,
     "group_level": 0.5,
     "session_level": 0.25,
     "missing": 0.0,
 }
+
+# The one fidelity rung that is independent, proven, per-set evidence. Everything else
+# (cloned quick-entry, a session-wide RPE, absent effort, or an unrecognized label) is
+# held to the stricter extraction bar — see `is_e1rm_informative`.
+FIDELITY_SET_LEVEL = "set_level"
+
+# Signature default wherever effort fidelity is unstated: assume the weakest provenance.
+FIDELITY_UNSTATED = "missing"
 
 
 # `obs` is any object exposing `source`, `evidence_type`, `affects_capacity`,
@@ -109,16 +120,22 @@ def is_e1rm_informative(
     reps: float | None,
     rpe: float | None,
     rir: float | None,
-    effort_fidelity: str = "set_level",
+    effort_fidelity: str = FIDELITY_UNSTATED,
 ) -> bool:
     """Extraction gate: only low-rep, high-effort sets yield capacity-relevant e1RM.
 
     Epley extrapolation is only trustworthy at low reps, and an e1RM is only
-    informative near failure. ``group_level`` (cloned quick-entry) effort must clear
-    a stricter bar (ADR-0045) because it is not independent per-set evidence.
+    informative near failure.
+
+    Fail-closed on provenance: only *proven* ``set_level`` effort clears the standard
+    bar. Every rung below it on the ADR-0045 ladder — ``group_level`` (cloned
+    quick-entry), ``session_level``, ``missing`` — plus any unrecognized label must
+    clear a stricter bar, because none of them are independent per-set evidence and a
+    less-trusted rung may never gate more permissively than a more-trusted one. The
+    default is deliberately the weakest rung: a caller with true per-set effort says so.
     """
     if reps is None or reps < 1 or reps > 5:
         return False
-    if effort_fidelity == "group_level":
+    if effort_fidelity != FIDELITY_SET_LEVEL:
         return (rpe is not None and rpe >= 9.0) or (rir is not None and rir <= 1.0)
     return (rpe is not None and rpe >= 8.0) or (rir is not None and rir <= 2.0)

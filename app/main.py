@@ -39,6 +39,7 @@ from app.api.v1.profile import router as profile_router
 from app.core.config import (
     CORS_NON_ORIGINS,
     CORS_REGEX_UNSUPPORTED_IN_PRODUCTION,
+    DEBUG_UNSUPPORTED_IN_PRODUCTION,
     DEV_DEFAULT_ORIGINS,
     PUBLIC_EXAMPLE_SECRET_KEYS,
     Settings,
@@ -91,6 +92,32 @@ def _check_production_secrets(cfg: Settings) -> None:
     if cfg.is_production:
         raise RuntimeError(message)
     logger.warning("%s (allowed outside production)", message)
+
+
+def _check_production_debug(cfg: Settings) -> None:
+    """Refuse to boot in production with debug logging enabled (INT-A3).
+
+    ``DEBUG`` drives SQLAlchemy ``echo`` (``app/core/db.py``), which logs every statement
+    and its bound parameters — so a production boot with it on writes ``hashed_password``
+    on every user INSERT and wearable OAuth token ciphertext to the application log. Mirror
+    ``_check_production_secrets``: fail fast (raise) in production, warn elsewhere so
+    local/dev boots keep echo if they want it.
+
+    ``DEBUG`` is a bool, so unlike SECRET_KEY there is nothing to grade — the safe set is
+    exactly ``{False}`` and this refuses its complement. The type is what makes the
+    enumeration closed, the same argument ``CORS_NON_ORIGINS`` makes from the spec. Note
+    pydantic accepts ``yes``/``on``/``1`` as True from the environment, so checking the
+    coerced field rather than the raw string is load-bearing.
+
+    The companion half of this fix is the field default (now False). This guard cannot fire
+    unless ``ENVIRONMENT=production`` is *also* set correctly; a fail-closed default is
+    what covers the operator who sets neither. See ``app/core/config.py``.
+    """
+    if not cfg.DEBUG:
+        return
+    if cfg.is_production:
+        raise RuntimeError(DEBUG_UNSUPPORTED_IN_PRODUCTION)
+    logger.warning("%s (allowed outside production)", DEBUG_UNSUPPORTED_IN_PRODUCTION)
 
 
 def _cors_problem(cfg: Settings) -> str | None:
@@ -248,6 +275,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Critical safety check: production must pin an explicit CORS origin (no wildcard-subdomain default)
     _check_production_cors(settings)
+
+    # Critical safety check: production must not log every SQL statement's bound parameters
+    _check_production_debug(settings)
 
     # Critical safety check: ensure we're not running against a stale schema
     await _check_alembic_head()

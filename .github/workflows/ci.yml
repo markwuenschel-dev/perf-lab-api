@@ -31,11 +31,19 @@ jobs:
               - 'uv.lock'
               - 'openapi.json'
               - 'alembic/**'
+              # The gate must gate itself. ci.yml defines both suites, so a PR that
+              # edits ONLY the workflow used to run zero jobs and was re-validated
+              # for the first time on `push`, after merge (INT-A10). Both filters
+              # claim '.github/**' on purpose: a CI-only change should prove itself
+              # against everything it gates.
+              - '.github/**'
             web:
               - 'web/**'
               # The frontend types are generated from the contract — regenerate +
               # check them whenever the committed OpenAPI changes (INT-08).
               - 'openapi.json'
+              # See the python filter — a CI-only PR must run this suite too (INT-A10).
+              - '.github/**'
 
   # Contract gate + tests + lint in one job: single uv install, parallel checks.
   python:
@@ -161,6 +169,16 @@ jobs:
           pnpm run gen:types
           git diff --exit-code src/types.gen.ts \
             || (echo "::error::src/types.gen.ts is stale — run 'pnpm run gen:types' and commit." && exit 1)
+
+      # Same discipline as the types.gen.ts gate above: generated files may not rot.
+      # `build-tokens.mjs --check` regenerates in memory and diffs against disk,
+      # exiting 1 on drift — so it needs no `git diff --exit-code` companion (it
+      # writes nothing, and a git diff here would pass unconditionally). The script
+      # also chains validate-palette.mjs, so the palette gate runs with it (INT-A12).
+      - name: Design tokens are current + palette validates
+        run: |
+          pnpm run tokens:check \
+            || (echo "::error::viz tokens are stale or the palette failed validation — run 'pnpm tokens' in web/ and commit." && exit 1)
 
       - name: Build (tsc + vite)
         run: pnpm run build

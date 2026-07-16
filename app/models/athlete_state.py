@@ -2,7 +2,6 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from pydantic import Field
 from sqlalchemy import DateTime, Float, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -54,4 +53,3 @@ class AthleteState(Base):
         back_populates="athlete_states",
         uselist=False,
     )
-    recent_damage: float = Field(default=0.0, description="Rolling structural damage for signal moderation")
