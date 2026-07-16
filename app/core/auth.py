@@ -25,7 +25,7 @@ def hash_password(plain: str) -> str:
     """Hash password using official bcrypt (no passlib)."""
     if not plain or len(plain.strip()) == 0:
         raise ValueError("Password cannot be empty")
-    if len(plain) > 72:
+    if len(plain.encode("utf-8")) > 72:
         raise ValueError("Password cannot exceed 72 bytes (bcrypt limit)")
 
     salt = bcrypt.gensalt(rounds=12)
