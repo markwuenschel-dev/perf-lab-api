@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codebase Integrity Report — perf-lab-api — 2026-07-16</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;padding:0}
+  body{background:#F4F5F7;color:#141821;font-family:'Public Sans',system-ui,sans-serif;font-size:15px;line-height:1.58;-webkit-font-smoothing:antialiased}
+  a{color:#2540E8;text-decoration:none} a:hover{text-decoration:underline}
+  code{font-family:'IBM Plex Mono',monospace;background:#F2F3F7;padding:1px 5px;border-radius:4px;font-size:.86em;color:#26327A}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}}
+  details>summary{list-style:none;cursor:pointer} details>summary::-webkit-details-marker{display:none}
+  ::-webkit-scrollbar{height:9px;width:9px}::-webkit-scrollbar-thumb{background:#D4D8E2;border-radius:5px}
+  .btn{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;padding:5px 11px;border-radius:7px;border:1px solid #E6E8EE;background:#fff;color:#4B5563;cursor:pointer}
+  .btn.on{background:#2540E8;color:#fff;border-color:#2540E8}
+  th[data-key]{cursor:pointer;user-select:none}
+</style>
+</head>
+<body>
+<div style="max-width:1060px;margin:0 auto;padding:56px 28px 120px;background-image:radial-gradient(120% 55% at 50% -8%, rgba(37,64,232,.05), transparent 60%);animation:rise .5s ease both">
+
+  <!-- MASTHEAD -->
+  <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;justify-content:space-between">
+    <div style="flex:1 1 320px">
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:#8A93A3">Codebase Integrity Audit Loop · Stage 2</div>
+      <h1 style="font-family:'Space Grotesk',sans-serif;font-size:40px;letter-spacing:-.03em;margin:.24em 0 .1em;line-height:1.05">perf-lab-api integrity report</h1>
+      <div style="color:#4B5563;font-size:16px">A single-agent scan across four lenses — wiring, schema/contract, correctness, test-integrity — after two prior audit passes (INT-*, INT-A*). Static gates are green; the drift is deeper.</div>
+    </div>
+    <div style="display:flex;gap:26px">
+      <div><div style="font-family:'Space Grotesk';font-size:34px;font-weight:700;line-height:1">13</div><div style="font-family:'IBM Plex Mono';font-size:10px;color:#8A93A3;text-transform:uppercase;letter-spacing:.06em">candidates</div></div>
+      <div><div style="font-family:'Space Grotesk';font-size:34px;font-weight:700;line-height:1">6</div><div style="font-family:'IBM Plex Mono';font-size:10px;color:#8A93A3;text-transform:uppercase;letter-spacing:.06em">auto-safe</div></div>
+      <div><div style="font-family:'Space Grotesk';font-size:34px;font-weight:700;line-height:1;color:#26327A">B+</div><div style="font-family:'IBM Plex Mono';font-size:10px;color:#8A93A3;text-transform:uppercase;letter-spacing:.06em">repo grade</div></div>
+    </div>
+  </div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#8A93A3;margin-top:18px;padding-top:14px;border-top:1px solid #E6E8EE">
+    <span style="white-space:nowrap">2026-07-16</span> · <span style="white-space:nowrap">branch main</span> · <span style="white-space:nowrap">commit 99d18f4</span> · <span style="white-space:nowrap">mode --auto --max-turns max</span> · <span style="white-space:nowrap">ruff ✓ · pyright ✓ · pytest 1141✓</span>
+  </div>
+
+  <!-- RUN OUTCOME -->
+  <div style="background:#fff;border:1px solid #E6E8EE;border-left:3px solid #15803D;border-radius:12px;padding:16px 20px;margin-top:22px">
+    <div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#15803D;margin-bottom:8px">Auto-run outcome · --max-turns max</div>
+    <div style="font-size:14px;color:#4B5563;line-height:1.6">
+      <b style="color:#141821">Shipped (4):</b> C1 wellness materializes response before shadows (consistency fix, mirrors state_service); C2 model-registration completeness guard (new fitness check); C4 benchmark rolls back a failed KPI recompute before refresh (verified red→green); C5 dead router-comment cleanup + guard. &nbsp;
+      <b style="color:#141821">Rejected (1):</b> C3 — verification disproved the reported "CREATE DATABASE race"; the real <code>-n auto</code> failure is Postgres shared-lock-table exhaustion (<code>max_locks_per_transaction</code>), an environmental limit — CI and <code>-n 4</code> are green, so no code change. &nbsp;
+      <b style="color:#141821">Deferred to human (2):</b> C6 assertion-lint (needs an assertion-taxonomy policy), C13 bcrypt byte-limit (low confidence, auth behavior). &nbsp;
+      <b style="color:#141821">Blocked, unchanged (6):</b> C7–C12 — migrations, deletions, product gates.
+    </div>
+  </div>
+
+  <!-- TRIAGE STRIP -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:26px">
+    <div style="background:#fff;border:1px solid #E6E8EE;border-radius:14px;padding:16px 18px">
+      <div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#8A93A3;margin-bottom:9px">By recommended action</div>
+      <div style="display:flex;height:9px;border-radius:5px;overflow:hidden;margin-bottom:10px">
+        <div style="width:31%;background:#15803D" title="direct/fitness-fix"></div>
+        <div style="width:23%;background:#B45309" title="fitness-check"></div>
+        <div style="width:46%;background:#6D3BD1" title="design/blocked"></div>
+      </div>
+      <div style="font-family:'IBM Plex Mono';font-size:11px;color:#4B5563;display:flex;gap:14px;flex-wrap:wrap">
+        <span><span style="color:#15803D">■</span> fix 4</span><span><span style="color:#B45309">■</span> check 3</span><span><span style="color:#6D3BD1">■</span> design 6</span>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #E6E8EE;border-radius:14px;padding:16px 18px">
+      <div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#8A93A3;margin-bottom:9px">By priority band</div>
+      <div style="display:flex;gap:20px">
+        <div><span style="font-family:'Space Grotesk';font-size:26px;font-weight:700">3</span> <span style="font-family:'IBM Plex Mono';font-size:10px;color:#8A93A3">HIGH ≥12</span></div>
+        <div><span style="font-family:'Space Grotesk';font-size:26px;font-weight:700;color:#4B5563">7</span> <span style="font-family:'IBM Plex Mono';font-size:10px;color:#8A93A3">MID 6–11</span></div>
+        <div><span style="font-family:'Space Grotesk';font-size:26px;font-weight:700;color:#8A93A3">3</span> <span style="font-family:'IBM Plex Mono';font-size:10px;color:#8A93A3">LOW ≤5</span></div>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #E6E8EE;border-left:3px solid #C0342B;border-radius:14px;padding:16px 18px">
+      <div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#8A93A3;margin-bottom:6px">Needs human decision</div>
+      <div><span style="font-family:'Space Grotesk';font-size:30px;font-weight:700;color:#C0342B">7</span> <span style="color:#4B5563;font-size:13px">migrations · deletions · product gates</span></div>
+    </div>
+  </div>
+
+  <!-- CONTENTS -->
+  <div style="background:#fff;border:1px solid #E6E8EE;border-radius:14px;padding:18px 22px;margin-top:26px">
+    <div style="columns:2;column-gap:40px;font-family:'IBM Plex Mono',monospace;font-size:13px;line-height:2">
+      <div><span style="color:#8A93A3">01</span> <a href="#summary">Executive summary</a></div>
+      <div><span style="color:#8A93A3">02</span> <a href="#grade">Overall repo grade</a></div>
+      <div><span style="color:#8A93A3">03</span> <a href="#scorecards">Category scorecards</a></div>
+      <div><span style="color:#8A93A3">04</span> <a href="#matrix">Candidate ledger &amp; score matrix</a></div>
+      <div><span style="color:#8A93A3">05</span> <a href="#blockers">Human-decision blockers</a></div>
+      <div><span style="color:#8A93A3">06</span> <a href="#quickwins">Quick wins</a></div>
+      <div><span style="color:#8A93A3">07</span> <a href="#verif">Verification readiness</a></div>
+      <div><span style="color:#8A93A3">08</span> <a href="#queue">Recommended queue</a></div>
+    </div>
+  </div>
+
+  <!-- 01 EXEC SUMMARY -->
+  <section id="summary" style="margin-top:44px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">01</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Executive summary</h2></div>
+    <p style="max-width:78ch;margin-top:14px">The static integrity gates are green — ruff clean, pyright strict at 0 errors, 1,141 tests passing — and the repo has already absorbed two audit rounds. So the remaining findings are second-order: places where a <em>committed</em> write can still return a 500, where a hand-maintained list has no guard tying it to its filesystem, and where the model↔migration gate deliberately does not look. None of these are caught by the current CI.</p>
+    <div style="background:#fff;border:1px solid #E6E8EE;border-left:3px solid #C0342B;border-radius:12px;padding:16px 20px;margin-top:16px">
+      <div style="font-family:'IBM Plex Mono';font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#C0342B;margin-bottom:6px">Headline risk — C1</div>
+      <b>Wellness ingest can 500 on an already-committed write.</b> After the wellness sample commits, three best-effort shadow writers run; any one failing calls <code>db.rollback()</code>, which expires the committed ORM object, and the endpoint's final <code>model_validate(sample)</code> then triggers a lazy load → <code>MissingGreenlet</code> → 500. The invariant "shadows never affect the response" is violated. The codebase already knows this hazard: <code>state_service.py:1056-1058</code> guards the twin workout path with an explanatory comment; <code>wellness.py:44</code> is missing that guard.
+    </div>
+    <p style="max-width:78ch;margin-top:16px">Six candidates are safe to auto-execute (contained, testable, no contract/migration/policy judgment). Seven require a human decision — chiefly a schema-drift cluster that needs migrations and backfills, plus three "wire-it or delete-it" product calls on flags and orphan modules. Auto mode executes the first group and parks the second.</p>
+  </section>
+
+  <!-- 02 GRADE -->
+  <section id="grade" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">02</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Overall repo grade</h2></div>
+    <div style="display:flex;gap:22px;align-items:center;margin-top:16px;flex-wrap:wrap">
+      <div style="font-family:'Space Grotesk';font-size:64px;font-weight:700;color:#26327A;line-height:1">B+</div>
+      <p style="max-width:66ch;margin:0;color:#4B5563">Justified from the scorecards below: static/type hygiene and contract-vs-code gating are <b>A</b> (byte-exact OpenAPI gate, enum parity across all three layers, strict pyright). Correctness and test-integrity are <b>B</b> (a real but contained 500-class bug; a strong suite with one race). Schema/DB integrity is <b>C+</b> — the drift gate's exclusions leave nullability, cascades, and server-defaults structurally un-enforced. No category is failing.</p>
+    </div>
+  </section>
+
+  <!-- 03 SCORECARDS -->
+  <section id="scorecards" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">03</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Category scorecards</h2></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:16px">
+      <div style="background:#fff;border:1px solid #E6E8EE;border-radius:12px;padding:15px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Static / Types</span><span style="font-family:'Space Grotesk';font-size:22px;font-weight:700;color:#15803D">A</span></div>
+        <div style="font-size:12.5px;color:#4B5563;margin-top:5px">ruff + pyright strict both clean. Nothing to do.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6E8EE;border-radius:12px;padding:15px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Contract / API</span><span style="font-family:'Space Grotesk';font-size:22px;font-weight:700;color:#15803D">A</span></div>
+        <div style="font-size:12.5px;color:#4B5563;margin-top:5px">Byte-exact OpenAPI gate; enum parity across DB/enum/schema. No drift possible.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6E8EE;border-radius:12px;padding:15px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Correctness</span><span style="font-family:'Space Grotesk';font-size:22px;font-weight:700;color:#B45309">B</span></div>
+        <div style="font-size:12.5px;color:#4B5563;margin-top:5px">One contained 500-class bug (C1) + a twin (C4); division/async/mutable-default lenses clean.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6E8EE;border-radius:12px;padding:15px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Test integrity</span><span style="font-family:'Space Grotesk';font-size:22px;font-weight:700;color:#B45309">B</span></div>
+        <div style="font-size:12.5px;color:#4B5563;margin-top:5px">Strong suite; no tautologies/over-mocking. One xdist DB race (C3) that can silently under-run locally.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6E8EE;border-radius:12px;padding:15px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Wiring / Dead paths</span><span style="font-family:'Space Grotesk';font-size:22px;font-weight:700;color:#B45309">B–</span></div>
+        <div style="font-size:12.5px;color:#4B5563;margin-top:5px">Unwired promotion-gate flags (C9), dead config (C10), orphan sim stubs (C11), no registration guard (C2).</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6E8EE;border-radius:12px;padding:15px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:600">Schema / DB</span><span style="font-family:'Space Grotesk';font-size:22px;font-weight:700;color:#C0342B">C+</span></div>
+        <div style="font-size:12.5px;color:#4B5563;margin-top:5px">Model↔DB nullability, cascade, and server-default drift are structurally ungated (C12, C7).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 MATRIX -->
+  <section id="matrix" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">04</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Candidate ledger &amp; score matrix</h2></div>
+    <div id="chips" style="display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 12px"></div>
+    <div style="overflow-x:auto;border:1px solid #E6E8EE;border-radius:12px;background:#fff">
+      <table id="mtx" style="border-collapse:collapse;width:100%;min-width:860px;font-size:13px">
+        <thead id="mhead"></thead><tbody id="mbody"></tbody>
+      </table>
+    </div>
+    <div style="font-family:'IBM Plex Mono';font-size:10.5px;color:#8A93A3;margin-top:8px">sev·conf·lev·loc·test = positive terms · blast·reg·hum = negative · priority = Σpos − Σneg (range −10…+22, higher runs sooner). Click a header to sort.</div>
+    <div id="cards" style="margin-top:22px"></div>
+  </section>
+
+  <!-- 05 BLOCKERS -->
+  <section id="blockers" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">05</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Human-decision blockers</h2></div>
+    <p style="color:#4B5563;max-width:78ch;margin-top:12px">Auto mode will not touch these — each needs a call only you can make. Named against the standard human-decision categories.</p>
+    <div style="overflow-x:auto;border:1px solid #E6E8EE;border-radius:12px;background:#fff;margin-top:8px">
+      <table style="border-collapse:collapse;width:100%;min-width:720px;font-size:13px">
+        <thead><tr style="text-align:left;font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#8A93A3">
+          <th style="padding:10px 14px;border-bottom:1px solid #E6E8EE">ID</th><th style="padding:10px 14px;border-bottom:1px solid #E6E8EE">Decision needed</th><th style="padding:10px 14px;border-bottom:1px solid #E6E8EE">Category</th></tr></thead>
+        <tbody style="vertical-align:top">
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">C12</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">Reconcile model↔DB nullability / cascade / server-default drift — needs migrations + a data backfill audit, or make <code>ProfileRead</code> fields Optional (a contract change).</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">migration / backfill · public contract</td></tr>
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">C9</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">5 of 6 engine feature flags are unwired promotion gates — wire them to their consumers, or delete them?</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">architecture direction</td></tr>
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">C10</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4"><code>USE_STRUCTURED_COACHING_TEMPLATES</code> config is read nowhere — insert the gate, or remove the setting?</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">product / architecture</td></tr>
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">C11</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4"><code>app/simulation/{scenarios,sensitivity,validation}.py</code> are orphan stubs — delete the dead scaffolding, or build it?</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">deletion of code</td></tr>
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">C8</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">Wellness re-ingest assimilates the same reading into the shadow EKF again (variance shrinks) — should re-POST be belief-idempotent?</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">numerical / behavior</td></tr>
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">C7</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">Convert the drift-gate's printed "cosmetic" bucket into a shrink-only ratchet — this freezes today's drift as the accepted baseline. Ratchet, or fix first?</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">policy / baseline</td></tr>
+          <tr><td style="padding:10px 14px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">—</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">Naive <code>datetime.utcnow</code> defaults on ~24 models — already owned by the locked INT-15 strict-state plan (naive→timestamptz migration).</td><td style="padding:10px 14px;border-top:1px solid #EEF0F4">tracked · migration</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 06 QUICK WINS -->
+  <section id="quickwins" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">06</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Quick wins</h2></div>
+    <p style="color:#4B5563;max-width:78ch;margin-top:12px">High priority, high locality, low blast radius. Executed this run: <b>C1</b> (wellness materializes before shadows), <b>C2</b> (model-registration completeness guard), <b>C4</b> (benchmark rollback guard, red→green), <b>C5</b> (dead router-comment cleanup + guard). <b>C3</b> was investigated and rejected (environmental lock-table exhaustion, not a code defect — see the run-outcome banner). <b>C6</b> deferred (assertion-taxonomy judgment).</p>
+  </section>
+
+  <!-- 07 VERIFICATION -->
+  <section id="verif" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">07</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Verification readiness</h2></div>
+    <p style="max-width:78ch;margin-top:12px;color:#4B5563">Every auto-safe candidate has a concrete verification path already available: <code>pytest</code> against the local/CI Postgres for C1/C4 (patch a shadow writer to raise, assert 200), a pure-import test for C2, an AST-walk test for C5/C6, and a real-DB parallel run for C3. No harness needs to be built first — the testability picture is strong. The one caveat: the xdist race (C3) is timing-dependent, so its fix is verified by "the failure no longer reproduces across repeated <code>-n auto</code> runs" plus an advisory-lock unit assertion, not a single deterministic red→green.</p>
+  </section>
+
+  <!-- 08 QUEUE -->
+  <section id="queue" style="margin-top:40px;border-top:1px solid #E6E8EE;padding-top:20px">
+    <div style="display:flex;gap:14px;align-items:baseline"><span style="font-family:'IBM Plex Mono';color:#8A93A3;font-size:15px">08</span><h2 style="font-family:'Space Grotesk';font-size:23px;letter-spacing:-.02em;margin:0">Recommended queue</h2></div>
+    <ol style="max-width:80ch;margin-top:12px;line-height:1.7">
+      <li><b>Auto-execute now (this run):</b> C1 → C2 → C4 → C3 → C5 → C6, stacked as isolated commits on one branch, one PR at the end.</li>
+      <li><b>Decide, then execute:</b> C12 (schema-drift cluster — the highest-severity item, but migration-gated), C7 (drift-gate ratchet), C9/C10 (flag + config wire-vs-delete), C11 (orphan module deletion), C8 (EKF idempotency).</li>
+      <li><b>Tracked elsewhere:</b> naive datetime defaults (INT-15), state_service refactor (INT-27), legacy mirror (INT-05).</li>
+    </ol>
+  </section>
+
+</div>
+
+<script>
+const C = [
+ {id:'C1',title:'Wellness ingest 500s on committed write (shadow rollback expires ORM object)',cat:'Bug',act:'fitness-fix',sev:4,conf:4,lev:4,loc:5,test:5,blast:1,reg:1,hum:1,blocked:false},
+ {id:'C2',title:'models/__init__ registration mirror has no completeness guard',cat:'Wiring',act:'fitness-check',sev:2,conf:4,lev:3,loc:5,test:5,blast:1,reg:1,hum:1,blocked:false},
+ {id:'C4',title:'Benchmark KPI-recompute except lacks rollback → PendingRollbackError',cat:'Bug',act:'fitness-fix',sev:3,conf:3,lev:3,loc:5,test:4,blast:1,reg:2,hum:1,blocked:false},
+ {id:'C3',title:'xdist -n auto exhausts the local Postgres lock table (environmental — NOT a CREATE DATABASE race)',cat:'Build/CI',act:'reject',sev:2,conf:5,lev:2,loc:4,test:3,blast:2,reg:2,hum:1,blocked:false},
+ {id:'C5',title:'Dead commented router-includes + stale "future routers" comment',cat:'Wiring',act:'direct-fix',sev:1,conf:5,lev:2,loc:5,test:3,blast:1,reg:1,hum:1,blocked:false},
+ {id:'C6',title:'No-assert tests pass on "did not raise"; add assertion-presence lint',cat:'Testing',act:'fitness-check',sev:2,conf:4,lev:2,loc:4,test:4,blast:2,reg:1,hum:2,blocked:false},
+ {id:'C13',title:'hash_password enforces bcrypt 72-BYTE limit using char count',cat:'Bug',act:'triage',sev:2,conf:2,lev:2,loc:5,test:4,blast:1,reg:2,hum:3,blocked:false},
+ {id:'C10',title:'USE_STRUCTURED_COACHING_TEMPLATES config field read nowhere',cat:'Wiring',act:'design',sev:2,conf:5,lev:2,loc:5,test:3,blast:1,reg:1,hum:4,blocked:true},
+ {id:'C11',title:'Orphan app/simulation/* stubs with import-time print side effect',cat:'Wiring',act:'design',sev:2,conf:5,lev:2,loc:4,test:3,blast:1,reg:1,hum:4,blocked:true},
+ {id:'C9',title:'5 of 6 engine feature flags are unwired promotion gates',cat:'Wiring',act:'design',sev:3,conf:5,lev:3,loc:3,test:4,blast:3,reg:2,hum:4,blocked:true},
+ {id:'C8',title:'Wellness re-ingest double-assimilates into shadow EKF (variance shrinks)',cat:'Bug',act:'design',sev:3,conf:3,lev:3,loc:3,test:4,blast:2,reg:3,hum:4,blocked:true},
+ {id:'C7',title:'Drift-gate cosmetic-diff bucket is printed, not ratcheted',cat:'Data/Schema',act:'design',sev:3,conf:5,lev:4,loc:4,test:3,blast:2,reg:2,hum:4,blocked:true},
+ {id:'C12',title:'Model↔DB drift cluster: nullability, cascade, server_default ungated',cat:'Data/Schema',act:'design',sev:4,conf:5,lev:4,loc:2,test:3,blast:4,reg:3,hum:5,blocked:true},
+];
+C.forEach(r=>r.pri=(r.sev+r.conf+r.lev+r.loc+r.test)-(r.blast+r.reg+r.hum));
+const ACTBG={'fitness-fix':'#15803D','direct-fix':'#15803D','fitness-check':'#B45309','triage':'#516079','design':'#6D3BD1'};
+function heat(p){const a=Math.max(.10,Math.min(.92,(p+3)/25));return{bg:`rgba(37,64,232,${a.toFixed(2)})`,fg:a>.55?'#fff':'#26327A'}}
+const cols=[['id','ID'],['title','Candidate'],['cat','Cat'],['sev','sev'],['conf','conf'],['lev','lev'],['loc','loc'],['test','test'],['blast','bl'],['reg','rg'],['hum','hm'],['pri','pri']];
+let sortKey='pri',sortDir=-1,filter='All';
+function render(){
+  document.getElementById('mhead').innerHTML='<tr style="font-family:\'IBM Plex Mono\';font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#8A93A3">'+cols.map(c=>`<th data-key="${c[0]}" style="padding:9px 10px;border-bottom:1px solid #E6E8EE;text-align:${['id','title','cat'].includes(c[0])?'left':'center'}">${c[1]}${sortKey===c[0]?(sortDir<0?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
+  let rows=C.filter(r=>filter==='All'?true:filter==='Blocked'?r.blocked:r.act===filter);
+  rows.sort((a,b)=>{const x=a[sortKey],y=b[sortKey];return (typeof x==='number'?x-y:String(x).localeCompare(String(y)))*sortDir});
+  document.getElementById('mbody').innerHTML=rows.map(r=>{const h=heat(r.pri);const sc=v=>`<td style="padding:8px 10px;border-top:1px solid #EEF0F4;text-align:center;font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;color:#4B5563">${v}</td>`;
+    return `<tr><td style="padding:8px 10px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';color:#26327A">${r.id}${r.blocked?' <span style="color:#C0342B;font-size:9px;font-weight:600">BLOCKED</span>':''}</td>`
+    +`<td style="padding:8px 10px;border-top:1px solid #EEF0F4;max-width:360px">${r.title}</td>`
+    +`<td style="padding:8px 10px;border-top:1px solid #EEF0F4;font-family:'IBM Plex Mono';font-size:11px;color:#8A93A3">${r.cat}</td>`
+    +sc(r.sev)+sc(r.conf)+sc(r.lev)+sc(r.loc)+sc(r.test)+sc(r.blast)+sc(r.reg)+sc(r.hum)
+    +`<td style="padding:8px 10px;border-top:1px solid #EEF0F4;text-align:center"><span style="font-family:'IBM Plex Mono';font-variant-numeric:tabular-nums;font-weight:600;background:${h.bg};color:${h.fg};padding:2px 9px;border-radius:6px">${r.pri}</span></td></tr>`}).join('');
+  document.querySelectorAll('#mhead th').forEach(th=>th.onclick=()=>{const k=th.dataset.key;if(k===sortKey)sortDir*=-1;else{sortKey=k;sortDir=-1}render()});
+}
+const filters=['All','fitness-fix','fitness-check','direct-fix','design','Blocked'];
+document.getElementById('chips').innerHTML=filters.map(f=>{const n=f==='All'?C.length:f==='Blocked'?C.filter(r=>r.blocked).length:C.filter(r=>r.act===f).length;return `<button class="btn${f===filter?' on':''}" data-f="${f}">${f} ${n}</button>`}).join('');
+document.querySelectorAll('#chips .btn').forEach(b=>b.onclick=()=>{filter=b.dataset.f;document.querySelectorAll('#chips .btn').forEach(x=>x.classList.toggle('on',x.dataset.f===filter));render()});
+render();
+</script>
+</body>
+</html>

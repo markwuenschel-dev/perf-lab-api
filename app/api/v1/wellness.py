@@ -31,6 +31,11 @@ async def ingest_wellness(
     current_user: User = Depends(get_current_user),
 ) -> WellnessSampleOut:
     sample = await readiness_service.upsert_wellness_sample(db, current_user.id, payload)
+    # Materialize the response BEFORE the shadow writes: each is best-effort and rolls the
+    # shared session back on failure, which expires the just-committed `sample` — reading it
+    # afterwards would trigger an async lazy-load outside a greenlet and 500 a durable write.
+    # (Same guard as the workout path, state_service.py:1056-1058.)
+    result = WellnessSampleOut.model_validate(sample)
     # Shadow-only (Q2 recovery priors): record baseline-vs-learned clearance multipliers.
     # Best-effort — never affects the response or a live decision.
     await recovery_shadow_service.record_recovery_shadow(db, current_user.id, sample)
@@ -41,7 +46,7 @@ async def ingest_wellness(
     await ekf_shadow_service.record_ekf_wellness_observation(
         db, current_user.id, sample, observed_at=datetime.now(UTC)
     )
-    return WellnessSampleOut.model_validate(sample)
+    return result
 
 
 @router.get("/wellness", response_model=list[WellnessSampleOut], tags=["Wellness"])

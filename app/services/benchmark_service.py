@@ -496,6 +496,12 @@ async def create_observation(
     except Exception:
         # Non-critical: a KPI recompute failure must not fail the observation
         # write, but it should be visible (dashboard may be briefly stale).
+        # Roll back first — a recompute that failed mid-statement leaves the
+        # transaction aborted, and the db.refresh(obs) below would then raise
+        # InFailedSQLTransactionError, turning the already-committed write into a
+        # 500. The observation was committed above (:476), so this only discards
+        # the failed recompute's partial work, not the observation.
+        await db.rollback()
         logger.warning(
             "derived-KPI recompute failed for user %s after benchmark write",
             user_id, exc_info=True,

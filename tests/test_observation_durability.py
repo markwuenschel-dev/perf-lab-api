@@ -151,6 +151,39 @@ async def test_caller_cannot_roll_back_a_created_observation(session_factory) ->
     )
 
 
+async def test_observation_survives_a_failing_kpi_recompute(session_factory, monkeypatch) -> None:
+    """A post-commit KPI recompute that poisons the session must not 500 the committed write.
+
+    ``create_observation`` commits the observation (:476), then best-effort recomputes the
+    derived KPIs (:495) inside a try/except whose stated contract is "a KPI recompute failure
+    must not fail the observation write." But the except only logged — it did not roll back —
+    so a recompute that failed *after* poisoning the transaction left the session in a
+    pending-rollback state, and the very next ``db.refresh(obs)`` (:503) raised
+    ``PendingRollbackError``. The committed write then surfaced to the client as a 500.
+
+    This pins the contract: a failed recompute is swallowed cleanly and the durable
+    observation is still returned.
+    """
+    user_id = await _seed(session_factory)
+
+    async def _poison(db: AsyncSession, _user_id: int) -> tuple[int, list[str]]:
+        # Fail an in-flight statement so the transaction is marked for rollback — the generic
+        # shape of a mid-recompute DB error (constraint / serialization / connection blip).
+        await db.execute(sa.text("SELECT 1 / 0"))
+        return (0, [])  # unreachable; the execute above raises
+
+    from app.services import dashboard_service
+
+    monkeypatch.setattr(dashboard_service, "recompute_derived_metrics", _poison)
+
+    async with session_factory() as request_db:
+        result = await benchmark_service.create_observation(request_db, user_id, _body())
+        assert result.raw_value == 150.0
+
+    # The observation committed at :476 and is durable despite the recompute failure.
+    assert await _count_in_fresh_session(session_factory) == 1
+
+
 async def test_flush_alone_is_not_durability(session_factory) -> None:
     """The mechanism the false alarm was built on, isolated so it stays understood.
 
