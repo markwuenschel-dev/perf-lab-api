@@ -39,10 +39,13 @@ population-vs-personalized clearance multipliers + `n_i`, `w_i`, `tr(P^θ)` to
 `update_athlete_state` — exactly as the Q2 recovery-shadow service does.
 
 **Rejected / deferred:** only β is personalized (α/τ/δ, interference Ψ wait for per-athlete
-benchmark density; the estimator generalizes); no production change (gated behind
-`ENABLE_PERSONALIZED_RECOVERY = False`); no full covariate regression or MCMC; the Gram-based
-`P^θ` correction; `apply_parameter_overrides` stays population-only and `update_athlete_state`
-is untouched.
+benchmark density; the estimator generalizes); no production change — the shadow only logs and
+`update_athlete_state` is untouched. (An `ENABLE_PERSONALIZED_RECOVERY` flag was originally
+described as the promotion gate, but it was never wired — read by no code — and was removed as a
+fictional control surface, AUD-C9 / 2026-07-16. Live per-athlete β is a separate feature mission
+requiring an admissibility gate, bounded parameter movement, staleness/fallback rules, and
+longitudinal trajectory replay before a flag returns.) No full covariate regression or MCMC; the
+Gram-based `P^θ` correction; `apply_parameter_overrides` stays population-only.
 
 **Guardrail:** personalization must never write to a prescription or production state, must be
 best-effort, and a sparse athlete must resolve to the population prior (`w_i=0`) — no

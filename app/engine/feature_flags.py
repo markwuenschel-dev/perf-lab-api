@@ -1,18 +1,22 @@
 """Engine feature flags.
 
-All flags default to False. Do not enable in production without validation data.
-"""
+A flag lives here only when it actually selects behavior at a production call site — an OFF
+branch and an ON branch that a test can tell apart. Experimental work that runs shadow-only
+and has no live branch yet is NOT a flag: a boolean read by no production code is a fictional
+promotion gate — it implies a live path exists when it does not. Such work's maturity belongs
+in an ADR and the roadmap, not in runtime config.
 
-ENABLE_WORKOUT_INFORMED_CONFIDENCE_MAINTENANCE: bool = False
-ENABLE_TISSUE_RISK_CANDIDATE_PENALTY: bool = False
-ENABLE_DECREMENT_PREDICTION_HARD_BLOCK: bool = False
-# ADR-0042: let the MPC planner influence prescriptions (promotion gate). While False the
-# planner runs shadow-only — it logs MPC-vs-greedy but never changes what is prescribed.
-ENABLE_MPC_PRESCRIPTION: bool = False
-# ADR-0043: apply per-athlete personalized recovery β in production (promotion gate). While
-# False, personalization runs shadow-only — it logs population-vs-personalized but the engine
-# keeps using the global/population parameters.
-ENABLE_PERSONALIZED_RECOVERY: bool = False
+`test_feature_flags_are_wired.py` enforces this: every constant here must have at least one
+production reader, or CI fails.
+
+History: five ENABLE_* booleans once sat here as "promotion gates" for shadow subsystems
+(MPC prescription, personalized recovery, tissue-risk penalty, decrement hard-block, workout-
+informed confidence). None was ever wired — each gated nothing — so they were removed (AUD-C9,
+2026-07-16). The shadow computations and their telemetry are untouched and keep running;
+promoting any of them to live is a separately-approved feature mission that must build a real
+OFF/ON path with a validation harness before a control flag returns. See docs/adr/0042
+(MPC) and docs/adr/0043 (personalized recovery).
+"""
 
 # INT-02 (ADR-0066): candidate-aware prescription basis. Tri-state — the flag governs the
 # ENTIRE basis selection, not an incidental min():
