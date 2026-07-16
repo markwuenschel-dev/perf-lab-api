@@ -30,6 +30,8 @@ schema explicitly rather than relying on the fixture to rebuild.
 """
 import asyncio
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import httpx
 import pytest
@@ -46,6 +48,23 @@ from sqlalchemy.pool import NullPool
 import app.models  # noqa: F401
 from alembic import command
 from app.core.db import get_db
+
+
+@contextmanager
+def assert_does_not_raise() -> Iterator[None]:
+    """Assert the wrapped block raises nothing — the explicit form of a "must not raise" test.
+
+    A positive-fixture / does-not-fail-closed test (a guard that must *permit* a valid input)
+    otherwise has no assertion: it passes on the mere absence of an exception, which reads as
+    an empty test and is flagged by test_all_tests_assert_something.py. Wrapping the act here
+    states the contract and turns an incidental raise into a clear failure instead of a bare
+    traceback.
+    """
+    try:
+        yield
+    except Exception as exc:  # noqa: BLE001 — the assertion is "no exception of any kind"
+        pytest.fail(f"expected no exception, but {type(exc).__name__} was raised: {exc}")
+
 
 _BASE_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",

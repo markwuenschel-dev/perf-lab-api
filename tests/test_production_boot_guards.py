@@ -44,6 +44,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from conftest import assert_does_not_raise
 
 from app.core.config import (
     CORS_NON_ORIGINS,
@@ -181,7 +182,8 @@ def test_a_strong_key_still_boots_production() -> None:
     from app import main
 
     cfg = _settings(ENVIRONMENT="production", SECRET_KEY=STRONG_KEY)
-    main._check_production_secrets(cfg)
+    with assert_does_not_raise():
+        main._check_production_secrets(cfg)
 
 
 def test_the_example_key_warns_but_never_blocks_outside_production() -> None:
@@ -327,7 +329,8 @@ def test_a_pinned_prod_origin_still_boots() -> None:
         ENVIRONMENT="production",
         ALLOWED_ORIGINS=",".join((*DEV_DEFAULT_ORIGINS, PROD_ORIGIN)),
     )
-    main._check_production_cors(cfg)
+    with assert_does_not_raise():
+        main._check_production_cors(cfg)
 
 
 # --- INT-A3: the DEBUG guard --------------------------------------------------------
@@ -380,7 +383,8 @@ def test_debug_off_still_boots_production() -> None:
     from app import main
 
     cfg = _settings(ENVIRONMENT="production", DEBUG=False)
-    main._check_production_debug(cfg)
+    with assert_does_not_raise():
+        main._check_production_debug(cfg)
 
 
 def test_debug_warns_but_never_blocks_outside_production() -> None:
