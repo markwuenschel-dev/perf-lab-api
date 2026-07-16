@@ -80,6 +80,19 @@ def psd_with_bounds(draw) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return P, lo, hi
 
 
+@st.composite
+def any_matrix_with_bounds(draw) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Unconstrained (typically *indefinite*) inputs — stabilize()'s real contract.
+
+    Deliberately NOT restricted to PSD: the INT-16 defect only fired when the PSD
+    projection had genuine correction work to do, which a PSD-by-construction
+    strategy can never provoke.
+    """
+    M = draw(square_matrices())
+    lo, hi = draw(diagonal_bounds(M.shape[0]))
+    return M, lo, hi
+
+
 # --- symmetrize --------------------------------------------------------------
 
 @given(M=square_matrices())
@@ -183,42 +196,71 @@ def test_stabilize_output_is_symmetric_and_psd(M):
     assert_covariance_psd(stabilize(M, lo, hi))
 
 
-# GENUINE DEFECT found via property testing (INT-16) — NOT weakened away.
+@given(data=any_matrix_with_bounds())
+def test_stabilize_holds_psd_and_diagonal_bounds_simultaneously(data):
+    """INT-16's core claim: stabilize() delivers BOTH invariants at once.
+
+    Asserting them together is the point. Each held on its own before the fix —
+    it was their *conjunction* that failed, because the final PSD projection
+    silently undid the diagonal clamp that ran before it.
+    """
+    M, lo, hi = data
+    out = stabilize(M, lo, hi)
+
+    assert_covariance_psd(out)  # symmetric AND min eigenvalue >= -tol
+    d = np.diag(out)
+    assert np.all(d >= lo - 1e-9), f"diagonal {d} below lo={lo}"
+    assert np.all(d <= hi + 1e-9), f"diagonal {d} above hi={hi}"
+
+
+@given(data=any_matrix_with_bounds())
+def test_stabilize_lands_diagonal_on_the_band_edge_when_clamping_bites(data):
+    """Sharper than "within [lo, hi]": the diagonal is the *exact* clamp of the
+    PSD-projected diagonal, so a clamped axis sits precisely on its band edge
+    rather than merely somewhere inside. This is what pins the ordering — the
+    old order could only satisfy this by accident."""
+    M, lo, hi = data
+    expected = np.clip(np.diag(nearest_psd(symmetrize(M))), lo, hi)
+    assert np.allclose(np.diag(stabilize(M, lo, hi)), expected, rtol=1e-9, atol=1e-12)
+
+
+# REGRESSION FIXTURE for the INT-16 defect, now FIXED — keep this pinned.
 #
-# stabilize()'s docstring implies the diagonal ends in [lo, hi] ("Symmetrize,
-# clamp diagonal into [lo, hi], then project to PSD"). That is false in
-# general: clip_diagonal() DOES land the diagonal in [lo, hi], but the
-# subsequent nearest_psd() eigenvalue-floor projection is a *global* symmetric
-# reconstruction that can push individual diagonal entries back outside the
-# range it was just clamped into, whenever the input has a negative eigenvalue
-# large enough to need correcting. The violation grows with how much
-# correction nearest_psd has to do, so it is not just float-noise-scale.
+# The defect: stabilize() used to run `nearest_psd(clip_diagonal(...))`, projecting
+# to the PSD cone LAST. nearest_psd is a *global* eigen-reconstruction, so it could
+# push individual diagonal entries back outside the band clip_diagonal had just
+# enforced, whenever the input had a negative eigenvalue large enough to need
+# correcting. The violation scaled with the size of that correction — it was never
+# float-noise-scale (a random sweep saw band overshoots up to ~3e20).
 #
-# Minimized deterministic example (no randomness — reproducible on any machine):
+# The fix: swap the order to `clip_diagonal(nearest_psd(...), lo, hi)`. clip_diagonal
+# is a congruence D P D by a non-negative diagonal D, which cannot introduce a
+# negative eigenvalue, so clamping last preserves the PSD projection while landing
+# the diagonal on [lo, hi] exactly. See stabilize()'s docstring for the trade-off.
+#
+# Deterministic minimized example (no randomness — reproducible on any machine):
 #   P = [[1.0, 1.9], [1.9, 1.0]]   (eigenvalues -0.9, 2.9 — one strongly negative)
-#   lo = hi = [1.2, 1.2] band width -> clip_diagonal is a no-op here (diag already
-#   in [0.5, 1.2]... see values below), then nearest_psd's PSD projection raises
-#   both diagonal entries to 1.45, exceeding hi=1.2 by 0.25.
-#
-# This is a real gap in the shipped numerics, reported to the Critic/Orchestrator
-# per the INT-16 handoff rather than silently patched (numerics.py's existing
-# numerical behavior is out of scope for this task).
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "INT-16 genuine defect: stabilize()'s final nearest_psd() projection can "
-        "push a diagonal entry outside the [lo, hi] band that clip_diagonal() just "
-        "enforced, when correcting a sufficiently negative input eigenvalue. "
-        "Reported to Critic/Orchestrator; not fixed here (out of task scope)."
-    ),
-)
-def test_stabilize_diagonal_stays_in_bounds_KNOWN_BUG():
+#   lo, hi = [0.5, 0.5], [1.2, 1.2]
+# Under the old order, nearest_psd raised both diagonal entries to 1.45, exceeding
+# hi = 1.2 by 0.25. Under the fixed order the diagonal lands on hi exactly.
+def test_stabilize_diagonal_stays_in_bounds_regression_int16():
     P = np.array([[1.0, 1.9], [1.9, 1.0]])
     lo = np.array([0.5, 0.5])
     hi = np.array([1.2, 1.2])
+
+    # Precondition: this input is exactly the pathological shape — strongly indefinite,
+    # so the PSD projection has real correction work to do (that is what used to break
+    # the band). If this ever stops holding, the fixture has stopped testing the defect.
+    assert np.min(np.linalg.eigvalsh(P)) < -0.5, "fixture must stay strongly indefinite"
+
     out = stabilize(P, lo, hi)
     d = np.diag(out)
+
+    # The invariant that used to fail: 1.45 > hi = 1.2 under the old ordering.
     assert np.all(d <= hi + 1e-9), f"diagonal {d} exceeds hi={hi} after PSD projection"
+    assert np.all(d >= lo - 1e-9), f"diagonal {d} is below lo={lo} after PSD projection"
+    # ...and the invariant the old ordering bought with it must still hold.
+    assert_covariance_psd(out)
 
 
 # --- finiteness and dimension-order invariance ---------------------------------
