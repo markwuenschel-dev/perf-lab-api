@@ -39,7 +39,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, cast
 
-from app.schemas.engine_vectors import (
+from app.domain.vectors import (
     CapacityConfidence,
     CapacityState,
     FatigueState,

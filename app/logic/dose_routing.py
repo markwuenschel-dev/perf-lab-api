@@ -27,16 +27,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.domain.vectors import (
+    AdaptationContribution,
+    FatigueState,
+    TissueState,
+)
 from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.logic import strength_calibration as sc
 from app.logic.domain_vocab import PHI_ADAPT_TO_CAPACITY
 from app.logic.dose_engine_v0 import exercise_base_bundle, infer_movement_pattern
-from app.schemas.engine_vectors import (
-    AdaptationContribution,
-    FatigueState,
-    TissueState,
-)
 from app.schemas.workouts import ExerciseEntry, ExternalIntensity, WorkoutLog
 
 # ---------------------------------------------------------------------------

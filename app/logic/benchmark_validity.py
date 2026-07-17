@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.schemas.engine_vectors import FatigueState, TissueState
+from app.domain.vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 
 

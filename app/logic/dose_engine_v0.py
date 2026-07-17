@@ -17,11 +17,11 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from app.domain.vectors import AdaptationContribution, StressDoseSix
 from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.logic import strength_calibration as sc
 from app.logic.strength_calibration import CalibrationResult
-from app.schemas.engine_vectors import AdaptationContribution, StressDoseSix
 from app.schemas.workouts import (
     ExerciseEntry,
     ExternalIntensity,
