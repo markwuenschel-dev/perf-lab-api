@@ -127,7 +127,11 @@ include = ["app"]
 # ruff + the functional tests cover it.
 exclude = ["app/ml", "app/scripts", "app/analysis"]
 typeCheckingMode = "strict"
-reportMissingTypeStubs = "warning"
+# Error, not warning: a missing-stub import resolves to Any and defeats the strict
+# reportUnknown* rules at exactly the library seam. The pandas/sklearn-heavy code that
+# actually lacks stubs is already excluded above, so the checked app/ scope is clean at
+# this level today — this keeps it that way (a new unstubbed import fails the gate).
+reportMissingTypeStubs = "error"
 # Re-export barrels and SQLAlchemy column defaults are intentional.
 reportUnusedImport = "none"
 reportDeprecated = "none"
