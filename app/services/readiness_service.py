@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import CanonicalStateInvalid, normalize_decode_error
@@ -292,30 +293,37 @@ async def _baselines(db: AsyncSession, user_id: int, before: date_cls) -> dict[s
 async def upsert_wellness_sample(
     db: AsyncSession, user_id: int, payload: WellnessSampleIn
 ) -> WellnessSample:
-    """Idempotent on (user_id, date, source): update in place, else insert."""
-    existing = (
+    """Idempotent on (user_id, date, source): update in place, else insert.
+
+    A single atomic ``INSERT ... ON CONFLICT DO UPDATE`` rather than a SELECT-then-write:
+    the earlier read-modify-write raced two concurrent writers for the same key (e.g. an
+    on-demand sync overlapping the nightly cron, or a client retry) into a duplicate-key
+    ``IntegrityError`` — an uncaught 500 on the on-demand path. Letting the database
+    resolve the conflict closes that window; the update touches only the signal columns,
+    so ``created_at`` is preserved exactly as the old in-place update did.
+    """
+    fields = payload.model_dump(exclude={"date", "source"})
+    stmt = (
+        pg_insert(WellnessSample)
+        .values(user_id=user_id, date=payload.date, source=payload.source, **fields)
+        .on_conflict_do_update(constraint="uq_wellness_user_date_source", set_=fields)
+    )
+    await db.execute(stmt)
+    await db.commit()
+    # populate_existing: the core INSERT bypasses the ORM unit of work, so an instance
+    # this session already loaded for the key would otherwise read back stale. Force the
+    # row to reflect the just-written state.
+    return (
         await db.execute(
-            select(WellnessSample).where(
+            select(WellnessSample)
+            .where(
                 WellnessSample.user_id == user_id,
                 WellnessSample.date == payload.date,
                 WellnessSample.source == payload.source,
             )
+            .execution_options(populate_existing=True)
         )
-    ).scalars().first()
-
-    fields = payload.model_dump(exclude={"date", "source"})
-    if existing:
-        for k, v in fields.items():
-            setattr(existing, k, v)
-        sample = existing
-    else:
-        sample = WellnessSample(
-            user_id=user_id, date=payload.date, source=payload.source, **fields
-        )
-        db.add(sample)
-    await db.commit()
-    await db.refresh(sample)
-    return sample
+    ).scalars().one()
 
 
 async def list_wellness_samples(
