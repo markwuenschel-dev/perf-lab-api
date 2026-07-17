@@ -200,3 +200,29 @@ jobs:
       - name: Lint (non-blocking)
         run: pnpm run lint
         continue-on-error: true
+
+  # scripts/deploy.sh + deploy.ps1 had zero automated verification — a syntax error
+  # would only surface at actual deploy time. Cheap enough to run unconditionally
+  # rather than gating behind the changes filter.
+  scripts:
+    name: Deploy scripts (syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: deploy.sh syntax + shellcheck
+        run: |
+          bash -n scripts/deploy.sh
+          shellcheck scripts/deploy.sh
+
+      - name: deploy.ps1 parses cleanly
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "scripts/deploy.ps1", [ref]$null, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
