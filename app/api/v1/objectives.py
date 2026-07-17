@@ -40,7 +40,7 @@ async def list_objectives(
     current_user: User = Depends(get_current_user),
 ) -> list[ObjectiveRead]:
     objectives = await objective_service.list_objectives(db, current_user.id, status_filter=status)
-    return [await objective_service.to_read_schema(db, o) for o in objectives]
+    return await objective_service.to_read_schemas(db, objectives)
 
 
 @router.patch("/{objective_id}", response_model=ObjectiveRead)
