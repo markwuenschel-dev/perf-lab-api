@@ -9,7 +9,6 @@ a failure here never breaks workout ingestion.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import asdict
 from datetime import datetime
 
@@ -20,8 +19,7 @@ from app.logic import dose_routing as dr
 from app.models.dose_routing_shadow import DoseRoutingShadowLog
 from app.models.exercise import Exercise
 from app.schemas.workouts import ExternalIntensity, WorkoutLog
-
-logger = logging.getLogger(__name__)
+from app.services.telemetry_common import best_effort_write
 
 
 async def _e1rm_by_exercise_key(
@@ -88,7 +86,7 @@ async def record_dose_routing(
     routed_at: datetime | None = None,
 ) -> None:
     """Compute + persist the Model B shadow routing for one workout (best-effort)."""
-    try:
+    async with best_effort_write(db, f"dose routing shadow for user {user_id}"):
         e1rm_by_key = await _e1rm_by_exercise_key(db, user_id, log)
         r = dr.build_routing(
             log, e1rm_by_key=e1rm_by_key, external_intensity=external_intensity
@@ -126,10 +124,3 @@ async def record_dose_routing(
             decision_impact="none_shadow_only",
         )
         db.add(row)
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        logger.warning(
-            "dose routing shadow failed for user %s (workout %s)",
-            user_id, workout_log_id, exc_info=True,
-        )
