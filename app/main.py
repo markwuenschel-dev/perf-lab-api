@@ -8,6 +8,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -199,6 +200,29 @@ def _on_schema_mismatch(message: str) -> None:
         raise RuntimeError(message)
 
 
+# The migrations config, resolved from THIS file's location rather than the process
+# CWD. Both the ini path and (below) script_location are absolute, so the boot guard
+# finds the migrations regardless of the directory the app was started from — a relative
+# ``Config("alembic.ini")`` silently failed whenever CWD != repo root.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ALEMBIC_INI = _REPO_ROOT / "alembic.ini"
+_ALEMBIC_DIR = _REPO_ROOT / "alembic"
+
+
+def _expected_alembic_head() -> str | None:
+    """The latest migration revision on disk, resolved independent of the process CWD.
+
+    ``script_location = alembic`` in alembic.ini is itself relative, so pointing at an
+    absolute ini is not enough — the script_location is overridden to an absolute path
+    too. Raises if the migrations cannot be located (a packaging/deploy problem)."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(str(_ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(_ALEMBIC_DIR))
+    return ScriptDirectory.from_config(cfg).get_current_head()
+
+
 async def _check_alembic_head() -> None:
     """
     Lightweight check that the database is at the expected Alembic head.
@@ -207,33 +231,42 @@ async def _check_alembic_head() -> None:
     applied) this fails fast in production via ``_on_schema_mismatch``. Errors
     that merely mean we couldn't verify (connectivity, missing table on a fresh
     DB, test setups) stay non-fatal warnings so they don't block first boots.
+
+    The DB read and the on-disk migrations lookup are handled separately so their
+    failures don't get conflated: a connectivity problem and a missing-migrations
+    packaging problem are different operational faults with different fixes.
     """
     from sqlalchemy import text
 
+    # 1. Read the DB's applied revision. A connectivity failure is an inability to verify
+    #    — fail closed in production (INT-13), warn elsewhere (fresh DB / test setups).
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
                 text("SELECT version_num FROM alembic_version LIMIT 1")
             )
             current_rev = result.scalar()
-
-        # Compare against the latest revision in the migrations folder
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-
-        alembic_cfg = Config("alembic.ini")
-        script = ScriptDirectory.from_config(alembic_cfg)
-        head_rev = script.get_current_head()
     except Exception as exc:
-        # Outside production this is a non-fatal warning (fresh DB, connectivity not
-        # ready, test setups). In production, an *inability to verify* the schema must
-        # fail closed (INT-13) — the check exists precisely so we never serve traffic
-        # against a possibly-stale schema, and swallowing the error defeats it.
         if settings.is_production:
             raise RuntimeError(
-                f"Could not verify the database is at the Alembic head in production: {exc}"
+                f"Could not read the database schema version in production: {exc}"
             ) from exc
         logger.warning("Could not verify Alembic head (may be first run): %s", exc)
+        return
+
+    # 2. Resolve the expected head from the migrations on disk (CWD-independent).
+    try:
+        head_rev = _expected_alembic_head()
+    except Exception as exc:
+        # Not a stale schema — the migrations themselves couldn't be located (a deploy /
+        # packaging / working-directory fault). Still fail closed in production (we can't
+        # verify), but name the actual problem so an operator doesn't chase a DB migration.
+        if settings.is_production:
+            raise RuntimeError(
+                f"Could not locate the Alembic migrations on disk "
+                f"(expected at {_ALEMBIC_DIR}): {exc}"
+            ) from exc
+        logger.warning("Could not locate Alembic migrations on disk: %s", exc)
         return
 
     if not current_rev:
