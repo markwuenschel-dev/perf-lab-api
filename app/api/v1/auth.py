@@ -53,8 +53,9 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Create new user + empty AthleteProfile."""
-    # Check for duplicate email
-    if await UserRepository(db).get_by_email(body.email):
+    # Check for duplicate email. get_by_email is an exact-match lookup — the caller
+    # must normalize (lower-case) first, matching the storage/lookup below.
+    if await UserRepository(db).get_by_email(body.email.lower()):
         raise HTTPException(status_code=409, detail="Email already registered")
 
     try:
