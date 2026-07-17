@@ -40,7 +40,7 @@ async def list_macrocycles(
     current_user: User = Depends(get_current_user),
 ) -> list[MacrocycleRead]:
     macrocycles = await macrocycle_service.list_macrocycles(db, current_user.id, status_filter=status)
-    return [await macrocycle_service.to_read_schema(db, m) for m in macrocycles]
+    return await macrocycle_service.to_read_schemas(db, macrocycles)
 
 
 @router.get("/{macrocycle_id}", response_model=MacrocycleRead)

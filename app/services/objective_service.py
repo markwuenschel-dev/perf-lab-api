@@ -77,56 +77,109 @@ def days_to_go(target_date: date | None) -> int | None:
 
 async def compute_progress(db: AsyncSession, objective: Objective) -> ProgressBlock:
     """Progress for one objective. Null progress for free-text objectives
-    (no ``benchmark_code``) or when no observation / definition is found."""
-    if objective.benchmark_code is None:
-        return ProgressBlock(current=None, target=objective.target_value, pct=None, direction=None)
+    (no ``benchmark_code``) or when no observation / definition is found.
 
-    definition_result = await db.execute(
-        select(BenchmarkDefinition).where(BenchmarkDefinition.code == objective.benchmark_code)
-    )
-    definition = definition_result.scalars().first()
-    if definition is None:
-        return ProgressBlock(current=None, target=objective.target_value, pct=None, direction=None)
+    Delegates to :func:`_compute_progress_batch` so single- and list-progress share one
+    code path."""
+    return (await _compute_progress_batch(db, [objective]))[objective.id]
 
-    obs_result = await db.execute(
-        select(BenchmarkObservation)
-        .where(
-            BenchmarkObservation.user_id == objective.user_id,
-            BenchmarkObservation.benchmark_definition_id == definition.id,
+
+async def _compute_progress_batch(
+    db: AsyncSession, objectives: list[Objective]
+) -> dict[int, ProgressBlock]:
+    """Progress for many objectives, keyed by objective id, in a bounded number of
+    queries. Mirrors :func:`compute_progress` exactly — including every null-progress
+    case (no ``benchmark_code``, unknown definition, no observation).
+
+    The per-row path issued up to two queries per objective (linked definition + latest
+    observation), so listing N cost up to 2N round-trips. This resolves all definitions
+    in one ``IN`` query and all candidate observations in one query, then picks the
+    latest per (user, definition) in memory — matching the per-row ``ORDER BY
+    observed_at DESC LIMIT 1``."""
+    progress: dict[int, ProgressBlock] = {}
+    coded = [o for o in objectives if o.benchmark_code is not None]
+    for objective in objectives:
+        if objective.benchmark_code is None:
+            progress[objective.id] = ProgressBlock(
+                current=None, target=objective.target_value, pct=None, direction=None
+            )
+    if not coded:
+        return progress
+
+    codes = {o.benchmark_code for o in coded}
+    definitions = (
+        await db.execute(select(BenchmarkDefinition).where(BenchmarkDefinition.code.in_(codes)))
+    ).scalars().all()
+    definition_by_code = {d.code: d for d in definitions}
+    definition_ids = {d.id for d in definitions}
+
+    latest_obs: dict[tuple[int, int], BenchmarkObservation] = {}
+    if definition_ids:
+        user_ids = {o.user_id for o in coded}
+        observations = (
+            await db.execute(
+                select(BenchmarkObservation)
+                .where(
+                    BenchmarkObservation.user_id.in_(user_ids),
+                    BenchmarkObservation.benchmark_definition_id.in_(definition_ids),
+                )
+                .order_by(BenchmarkObservation.observed_at.desc())
+            )
+        ).scalars().all()
+        for obs in observations:
+            # Rows arrive newest-first, so the first seen per (user, definition) is the
+            # latest — the same row the per-row LIMIT 1 would have returned.
+            latest_obs.setdefault((obs.user_id, obs.benchmark_definition_id), obs)
+
+    for objective in coded:
+        code = objective.benchmark_code
+        definition = definition_by_code.get(code) if code is not None else None
+        if definition is None:
+            progress[objective.id] = ProgressBlock(
+                current=None, target=objective.target_value, pct=None, direction=None
+            )
+            continue
+        latest = latest_obs.get((objective.user_id, definition.id))
+        current = latest.raw_value if latest is not None else None
+        pct = compute_progress_pct(current, objective.target_value, definition.better_direction)
+        progress[objective.id] = ProgressBlock(
+            current=current,
+            target=objective.target_value,
+            pct=pct,
+            direction=definition.better_direction,
         )
-        .order_by(BenchmarkObservation.observed_at.desc())
-        .limit(1)
-    )
-    latest = obs_result.scalars().first()
-    current = latest.raw_value if latest is not None else None
-    pct = compute_progress_pct(current, objective.target_value, definition.better_direction)
-    return ProgressBlock(
-        current=current,
-        target=objective.target_value,
-        pct=pct,
-        direction=definition.better_direction,
-    )
+    return progress
 
 
 async def to_read_schema(db: AsyncSession, objective: Objective) -> ObjectiveRead:
-    """Assemble the full API-facing ``ObjectiveRead``, including the
-    computed ``progress`` block and ``days_to_go`` countdown."""
-    progress = await compute_progress(db, objective)
-    return ObjectiveRead(
-        id=objective.id,
-        user_id=objective.user_id,
-        benchmark_code=objective.benchmark_code,
-        label=objective.label,
-        domain=objective.domain,
-        target_value=objective.target_value,
-        target_unit=objective.target_unit,
-        target_date=objective.target_date,
-        priority=objective.priority,
-        status=objective.status,
-        created_at=objective.created_at,
-        progress=progress,
-        days_to_go=days_to_go(objective.target_date),
-    )
+    """Assemble the full API-facing ``ObjectiveRead`` for one objective.
+
+    Delegates to :func:`to_read_schemas` so single- and list-assembly share one path."""
+    return (await to_read_schemas(db, [objective]))[0]
+
+
+async def to_read_schemas(db: AsyncSession, objectives: list[Objective]) -> list[ObjectiveRead]:
+    """Assemble ``ObjectiveRead`` for many objectives in a bounded number of queries,
+    including the computed ``progress`` block and ``days_to_go`` countdown for each."""
+    progress_by_id = await _compute_progress_batch(db, objectives)
+    return [
+        ObjectiveRead(
+            id=objective.id,
+            user_id=objective.user_id,
+            benchmark_code=objective.benchmark_code,
+            label=objective.label,
+            domain=objective.domain,
+            target_value=objective.target_value,
+            target_unit=objective.target_unit,
+            target_date=objective.target_date,
+            priority=objective.priority,
+            status=objective.status,
+            created_at=objective.created_at,
+            progress=progress_by_id[objective.id],
+            days_to_go=days_to_go(objective.target_date),
+        )
+        for objective in objectives
+    ]
 
 
 # ---------------------------------------------------------------------------

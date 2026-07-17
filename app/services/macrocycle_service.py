@@ -61,36 +61,63 @@ def compute_week_progress(
 # ---------------------------------------------------------------------------
 
 async def to_read_schema(db: AsyncSession, macrocycle: Macrocycle) -> MacrocycleRead:
-    """Assemble the API-facing ``MacrocycleRead`` — the anchor objective's
-    label/target_date (denormalized for display) plus the computed
-    ``week_progress`` and the count of blocks hanging under this macrocycle."""
-    objective = (
-        await db.execute(select(Objective).where(Objective.id == macrocycle.objective_id))
-    ).scalars().first()
-    objective_label = objective.label if objective is not None else ""
-    target_date = objective.target_date if objective is not None else None
+    """Assemble the API-facing ``MacrocycleRead`` for one macrocycle.
 
-    block_count = (
+    Delegates to :func:`to_read_schemas` so single-item and list assembly share one
+    code path (and one output shape)."""
+    return (await to_read_schemas(db, [macrocycle]))[0]
+
+
+async def to_read_schemas(
+    db: AsyncSession, macrocycles: list[Macrocycle]
+) -> list[MacrocycleRead]:
+    """Assemble ``MacrocycleRead`` for many macrocycles in a bounded number of queries.
+
+    The per-row assembly issued two queries per macrocycle (anchor objective +
+    block count), so listing N cost 2N round-trips. This resolves every anchor
+    objective in one ``IN`` query and every block count in one grouped query — two
+    queries total, independent of N. The assembled shape is identical to the per-row
+    version, including the empty-label / null-target fallback for a dangling anchor."""
+    if not macrocycles:
+        return []
+
+    objective_ids = {m.objective_id for m in macrocycles}
+    objectives = (
+        await db.execute(select(Objective).where(Objective.id.in_(objective_ids)))
+    ).scalars().all()
+    objective_by_id = {o.id: o for o in objectives}
+
+    macrocycle_ids = [m.id for m in macrocycles]
+    count_rows = (
         await db.execute(
-            select(func.count())
-            .select_from(MesocycleBlock)
-            .where(MesocycleBlock.macrocycle_id == macrocycle.id)
+            select(MesocycleBlock.macrocycle_id, func.count())
+            .where(MesocycleBlock.macrocycle_id.in_(macrocycle_ids))
+            .group_by(MesocycleBlock.macrocycle_id)
         )
-    ).scalar_one()
+    ).all()
+    block_count_by_macrocycle: dict[int, int] = {row[0]: row[1] for row in count_rows}
 
-    return MacrocycleRead(
-        id=macrocycle.id,
-        user_id=macrocycle.user_id,
-        objective_id=macrocycle.objective_id,
-        start_date=macrocycle.start_date,
-        status=macrocycle.status,
-        created_at=macrocycle.created_at,
-        updated_at=macrocycle.updated_at,
-        objective_label=objective_label,
-        target_date=target_date,
-        block_count=block_count,
-        week_progress=compute_week_progress(macrocycle.start_date, target_date),
-    )
+    reads: list[MacrocycleRead] = []
+    for macrocycle in macrocycles:
+        objective = objective_by_id.get(macrocycle.objective_id)
+        objective_label = objective.label if objective is not None else ""
+        target_date = objective.target_date if objective is not None else None
+        reads.append(
+            MacrocycleRead(
+                id=macrocycle.id,
+                user_id=macrocycle.user_id,
+                objective_id=macrocycle.objective_id,
+                start_date=macrocycle.start_date,
+                status=macrocycle.status,
+                created_at=macrocycle.created_at,
+                updated_at=macrocycle.updated_at,
+                objective_label=objective_label,
+                target_date=target_date,
+                block_count=block_count_by_macrocycle.get(macrocycle.id, 0),
+                week_progress=compute_week_progress(macrocycle.start_date, target_date),
+            )
+        )
+    return reads
 
 
 # ---------------------------------------------------------------------------
