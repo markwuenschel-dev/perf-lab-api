@@ -126,6 +126,17 @@ jobs:
           wait "$pid_pyright" || status=1
           exit "$status"
 
+      # Non-blocking: README documents `black .` / `isort .` as part of the local
+      # workflow and both are pinned dev deps, but nothing enforced them. The repo
+      # is NOT currently compliant with either (hundreds of files would reformat) —
+      # making this blocking today would break CI on unrelated files. Report drift
+      # for now; flipping to blocking needs a separate one-time mass-reformat PR.
+      - name: Formatting drift (black + isort, non-blocking)
+        run: |
+          uv run black --check .
+          uv run isort --check-only .
+        continue-on-error: true
+
   # Frontend gate: the production build (tsc -b + vite build) must be green.
   # Lint is non-blocking — 3 pre-existing react-refresh warnings in generated
   # shadcn UI files are known / out of scope (keep regressions visible, don't block).
