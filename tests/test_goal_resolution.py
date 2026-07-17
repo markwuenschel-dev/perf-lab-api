@@ -1,9 +1,10 @@
 """Unit tests for the goal-resolution ordering (no DB required).
 
-The DB-backed persisted-goal tests (tests/test_persisted_goal.py) SKIP locally
-and in CI (no Postgres service), so this test proves the precedence logic --
+This unit covers the precedence logic --
 active block goal > explicit query goal > profile.primary_goal > default --
-independent of any database.
+independent of any database, complementing the DB-backed persisted-goal tests
+(tests/test_persisted_goal.py), which run against the session-scoped test schema
+whenever a database is available.
 """
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
 from app.services.prescription_service import resolve_effective_goal

@@ -70,8 +70,8 @@ async def test_load_or_init_absent_initializes_once(monkeypatch):
 
 
 # --- call-site wiring (DB-free) --------------------------------------------------
-# The route/service DB-integration tests skip locally (async_db event-loop bug), so
-# this exercises the swapped call site's no-state branch directly, without Postgres.
+# This exercises the swapped call site's no-state branch directly, without Postgres —
+# a DB-free complement to the route/service integration tests (which need a database).
 
 
 async def test_dashboard_readiness_payload_no_state_branch(monkeypatch):
