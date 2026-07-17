@@ -150,7 +150,10 @@ async def test_alembic_head_check_fails_closed_in_production(monkeypatch):
 
     monkeypatch.setattr(main, "engine", _BoomEngine())
     monkeypatch.setattr(main.settings, "ENVIRONMENT", "production")
-    with pytest.raises(RuntimeError, match="Alembic head in production"):
+    # A DB-read failure is an inability to verify the schema — fail closed in production.
+    # (PA-14 split the taxonomy: the DB-read path and the migrations-lookup path now carry
+    # distinct messages; _BoomEngine.connect() exercises the DB-read path.)
+    with pytest.raises(RuntimeError, match="Could not read the database schema version in production"):
         await main._check_alembic_head()
 
 
