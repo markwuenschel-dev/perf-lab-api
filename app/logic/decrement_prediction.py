@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.schemas.engine_vectors import FatigueState
+from app.domain.vectors import FatigueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose
 

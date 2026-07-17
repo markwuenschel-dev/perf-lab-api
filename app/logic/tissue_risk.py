@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.schemas.engine_vectors import TissueState
+from app.domain.vectors import TissueState
 from app.schemas.state import UnifiedStateVector
 
 _AMBER_THRESHOLD = 0.30

@@ -21,14 +21,13 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.domain.vectors import capacity_ceiling
+from app.domain.vectors import CapacityConfidence, FatigueState, TissueState, capacity_ceiling
 from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic import cross_talk
 from app.logic.benchmark_validity import BenchmarkValidityProfile, effective_variance
 from app.logic.interference import directional_interference_multiplier
-from app.schemas.engine_vectors import CapacityConfidence, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
 

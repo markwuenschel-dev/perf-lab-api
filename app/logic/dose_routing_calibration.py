@@ -20,6 +20,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.domain.vectors import FatigueState, TissueState
 from app.engine import simulate
 from app.logic import dose_routing as dr
 from app.logic.dose_engine_v0 import calculate_stress_dose
@@ -27,7 +28,6 @@ from app.logic.state_update_v0 import (
     fatigue_impulse_from_dose,
     tissue_impulse_from_dose,
 )
-from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.workouts import ExerciseEntry, WorkoutLog
 
 _WHEN = datetime(2026, 1, 1, 12, 0, 0)
