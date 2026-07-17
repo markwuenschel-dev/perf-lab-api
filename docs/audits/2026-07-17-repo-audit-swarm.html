@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>perf-lab-api — Repo Audit Swarm Report — 2026-07-17</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  @keyframes rise { from { opacity:0; transform:translateY(10px); } }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; background:#F4F5F7; }
+  body { font-family:'Public Sans',ui-sans-serif,system-ui,sans-serif; color:#141821; -webkit-font-smoothing:antialiased; }
+  a { color:#2540E8; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  code { font-family:'IBM Plex Mono',ui-monospace,monospace; background:#F2F3F7; color:#26327A; padding:1px 5px; border-radius:4px; font-size:.92em; }
+  ::-webkit-scrollbar { height:10px; width:10px; }
+  ::-webkit-scrollbar-track { background:#F4F5F7; }
+  ::-webkit-scrollbar-thumb { background:#D6DAE3; border-radius:6px; }
+  table { border-collapse:collapse; width:100%; min-width:760px; }
+  th,td { text-align:left; padding:10px 14px; vertical-align:top; }
+  tbody tr { border-top:1px solid #EEF0F4; }
+  .mono { font-family:'IBM Plex Mono',ui-monospace,monospace; }
+  .tab { font-variant-numeric:tabular-nums; }
+  details > summary { cursor:pointer; list-style:none; }
+  details > summary::-webkit-details-marker { display:none; }
+  dl.body-dl { display:grid; grid-template-columns:150px 1fr; gap:9px 14px; margin:0; }
+  dl.body-dl dt { font-family:'IBM Plex Mono',ui-monospace,monospace; text-transform:uppercase; font-size:10.5px; letter-spacing:.06em; color:#8A93A3; padding-top:2px; }
+  dl.body-dl dd { margin:0; font-size:14.5px; line-height:1.55; color:#4B5563; }
+  .chip { display:inline-block; border-radius:6px; padding:2px 9px; font-size:11.5px; font-weight:600; font-family:'Public Sans',sans-serif; }
+  .pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 13px; font-size:12px; font-weight:600; font-family:'IBM Plex Mono',monospace; border:1px solid #E6E8EE; background:#fff; color:#4B5563; white-space:nowrap; }
+  .card { background:#FFFFFF; border:1px solid #E6E8EE; border-radius:14px; box-shadow:0 1px 2px rgba(20,24,33,.03); }
+  .sechead { border-top:1px solid #E6E8EE; padding-top:34px; margin-top:46px; display:flex; align-items:baseline; gap:14px; }
+  .sechead .idx { font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8A93A3; letter-spacing:.05em; }
+  .sechead h2 { font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:23px; letter-spacing:-.01em; margin:0; }
+  .kicker { font-family:'IBM Plex Mono',monospace; text-transform:uppercase; font-size:11px; letter-spacing:.08em; color:#8A93A3; }
+  .filter-chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:6px 14px; font-size:12px; font-weight:600; font-family:'IBM Plex Mono',monospace; border:1px solid #E6E8EE; background:#fff; color:#4B5563; cursor:pointer; }
+  .filter-chip.active { background:#2540E8; color:#fff; border-color:#2540E8; }
+  th[data-key] { cursor:pointer; user-select:none; }
+</style>
+</head>
+<body>
+<div style="max-width:1060px;margin:0 auto;padding:56px 28px 120px;background-image:radial-gradient(120% 55% at 50% -8%, rgba(37,64,232,.05), transparent 60%);animation:rise .5s ease both;">
+
+  <!-- Masthead -->
+  <div style="display:flex;flex-wrap:wrap;gap:24px;justify-content:space-between;align-items:flex-start;">
+    <div style="flex:1 1 320px;">
+      <div class="kicker">Codebase Integrity Audit &middot; Repo Audit Swarm &middot; Read-only</div>
+      <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;letter-spacing:-.03em;margin:6px 0 8px;">perf-lab-api</h1>
+      <div style="font-size:16px;color:#4B5563;line-height:1.5;max-width:56ch;">Four independent read-only lanes — deepening seams, graded integrity, blast radius, verification readiness — merged into one scored candidate ledger.</div>
+    </div>
+    <div style="display:flex;gap:28px;flex:0 0 auto;">
+      <div>
+        <div class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#141821;">20</div>
+        <div class="kicker">candidates</div>
+      </div>
+      <div>
+        <div class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#141821;">4</div>
+        <div class="kicker">lanes</div>
+      </div>
+      <div>
+        <div class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#B45309;">B-</div>
+        <div class="kicker">overall grade</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mono" style="margin-top:22px;font-size:12px;color:#8A93A3;display:flex;gap:18px;flex-wrap:wrap;">
+    <span style="white-space:nowrap;">2026-07-17</span>
+    <span style="white-space:nowrap;">branch: main</span>
+    <span style="white-space:nowrap;">commit: 2c29993</span>
+    <span style="white-space:nowrap;">mode: --parallel-report (Stage 2, stops at candidate gate)</span>
+  </div>
+
+  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+    <span class="pill">deepening_seams &middot; 6/10</span>
+    <span class="pill">graded_integrity &middot; 6/10</span>
+    <span class="pill">blast_radius &middot; 7/10</span>
+    <span class="pill">verification_readiness &middot; 7/10</span>
+    <span class="pill" style="background:#FBEAE8;border-color:#F3D3CF;color:#C0342B;">1 blocked-needs-human-decision</span>
+    <span class="pill" style="background:#EAEDFD;border-color:#D7DDFB;color:#26327A;">1 duplicate group merged</span>
+  </div>
+
+  <!-- Contents nav -->
+  <div class="card" style="margin-top:32px;padding:20px 26px;">
+    <div style="columns:2;column-gap:32px;">
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#exec-summary"><span style="color:#8A93A3;">01</span>&nbsp; Executive summary</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#overall-grade"><span style="color:#8A93A3;">02</span>&nbsp; Overall repo grade</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#lane-scorecards"><span style="color:#8A93A3;">03</span>&nbsp; Lane scorecards</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#top-candidates"><span style="color:#8A93A3;">04</span>&nbsp; Top merged candidates</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#ledger"><span style="color:#8A93A3;">05</span>&nbsp; Candidate ledger</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#lane-findings"><span style="color:#8A93A3;">06</span>&nbsp; Lane findings</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#dup-groups"><span style="color:#8A93A3;">07</span>&nbsp; Cross-lane duplicate groups</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#blockers"><span style="color:#8A93A3;">08</span>&nbsp; Human-decision blockers</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#quick-wins"><span style="color:#8A93A3;">09</span>&nbsp; Quick wins</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#deep-work"><span style="color:#8A93A3;">10</span>&nbsp; High-leverage deep work</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#unsafe"><span style="color:#8A93A3;">11</span>&nbsp; Unsafe-to-auto-execute</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#verification"><span style="color:#8A93A3;">12</span>&nbsp; Verification readiness</a></div>
+      <div style="break-inside:avoid;margin-bottom:9px;"><a class="mono" href="#queue"><span style="color:#8A93A3;">13</span>&nbsp; Recommended queue</a></div>
+    </div>
+  </div>
+
+  <!-- Triage summary strip -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px;">
+    <div class="card" style="padding:18px 20px;">
+      <div class="kicker" style="margin-bottom:10px;">By recommended action</div>
+      <div id="action-bar" style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:#EEF0F4;margin-bottom:10px;"></div>
+      <div id="action-legend" style="display:flex;flex-wrap:wrap;gap:8px;font-size:11.5px;color:#4B5563;"></div>
+    </div>
+    <div class="card" style="padding:18px 20px;">
+      <div class="kicker" style="margin-bottom:10px;">By priority band</div>
+      <div style="display:flex;gap:18px;">
+        <div><div id="band-high" class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;"></div><div class="kicker">high &ge;12</div></div>
+        <div><div id="band-mid" class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;color:#4B5563;"></div><div class="kicker">mid 6&ndash;11</div></div>
+        <div><div id="band-low" class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;color:#8A93A3;"></div><div class="kicker">low &le;5</div></div>
+      </div>
+    </div>
+    <div class="card" style="padding:18px 20px;border-left:3px solid #C0342B;">
+      <div class="kicker" style="margin-bottom:10px;">Needs decision</div>
+      <div id="needs-decision" class="mono tab" style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;color:#C0342B;"></div>
+      <div style="font-size:12px;color:#4B5563;margin-top:4px;">blocked on a human sequencing/architecture call</div>
+    </div>
+  </div>
+
+  <!-- 01 Executive summary -->
+  <div class="sechead" id="exec-summary"><span class="idx">01</span><h2>Executive summary</h2></div>
+  <p style="font-size:15.5px;line-height:1.6;color:#1F2430;max-width:74ch;">Four read-only lanes covered the repository from complementary angles (seam/architecture drift, integrity/guardrail gaps, blast-radius/choke-point sizing, and test-verification readiness) and converged cleanly: one genuine overlap (the unwired Vitest CI step) merged from two lanes, and otherwise 19 distinct findings survived with no other duplication. The most load-bearing find is the merged CI gap &mdash; a real test suite exists but nothing runs it, a one-line fix with a known blocker (workflow-scope token) already tracked. The most serious data-integrity find is <code>athlete_states</code>' NOT NULL/nullable drift with two demonstrated crash paths, a direct re-scope of the already-tracked AUD-C12 item. One candidate &mdash; the <code>state_bridge.py</code> choke point where INT-05 and INT-15 converge &mdash; carries human_decision_risk 4 and is held as blocked-needs-human-decision pending a sequencing call. The rest is a mix of quick documentation/dependency fixes, a couple of coordinated multi-file sweeps, and lower-urgency architecture-fitness observations.</p>
+  <p style="font-size:13.5px;line-height:1.6;color:#8A93A3;max-width:74ch;">This repo has an active, well-documented integrity workstream (INT-NN / AUD series) with prior audit rounds through 2026-07-16. Lanes were briefed on that history and instructed to verify current status rather than re-litigate known items; four candidates here are explicitly re-scoped known-open items (marked <span class="chip" style="background:#FAEFE0;color:#B45309;">KNOWN, RE-SCOPED</span> below), not fresh discoveries.</p>
+
+  <!-- 02 Overall repo grade -->
+  <div class="sechead" id="overall-grade"><span class="idx">02</span><h2>Overall repo grade</h2></div>
+  <div class="card" style="padding:24px 26px;display:flex;gap:26px;align-items:flex-start;">
+    <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:56px;color:#B45309;line-height:1;">B-</div>
+    <p style="font-size:14.5px;line-height:1.6;color:#4B5563;margin:0;max-width:64ch;">The four lane health scores (6, 6, 7, 7 of 10) average to 6.5 &mdash; solid, above-median engineering discipline, not exemplary. Corroborated by severity distribution: of 20 candidates only one hits severity 4, none hit 5, median severity is 2. The backend has unusually mature verification infrastructure (real-DB test harness, migration round-trip gate, drift gate, boot guards) that keeps most findings contained and quickly fixable (13 of 20 are direct-fix with locality&ge;4). What holds this back from a B/B+: one candidate requiring an explicit architecture-sequencing decision (<code>state_bridge.py</code>), a genuine security-adjacent bug in production auth code (email normalization), and a frontend test seam that is real in name only (1 of 77 files covered, and its one CI-enforceable gate has sat unwired since the day it was created).</p>
+  </div>
+
+  <!-- 03 Lane scorecards -->
+  <div class="sechead" id="lane-scorecards"><span class="idx">03</span><h2>Lane scorecards</h2></div>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:16px;">
+    <div class="card" style="padding:18px 22px;border-left:3px solid #15803D;">
+      <div style="display:flex;justify-content:space-between;"><span class="kicker">deepening_seams</span><span class="mono tab" style="font-weight:700;">6/10</span></div>
+      <div style="font-weight:600;margin:6px 0 4px;">fair, seam-erosion-prone</div>
+      <div style="font-size:13.5px;color:#4B5563;line-height:1.55;">The repository-seam pattern is honored where repos exist but its footprint is smaller than CONTEXT.md implies, with concrete drift: a violated caller contract (real bug), a duplicated repo method across 4 services, a bypassed shared swallow-behavior helper, a phantom documented dependency, and a stale AGENTS.md instruction contradicting the type-generation migration.</div>
+    </div>
+    <div class="card" style="padding:18px 22px;border-left:3px solid #15803D;">
+      <div style="display:flex;justify-content:space-between;"><span class="kicker">graded_integrity</span><span class="mono tab" style="font-weight:700;">6/10</span></div>
+      <div style="font-weight:600;margin:6px 0 4px;">Fair &mdash; strong guardrail discipline, gaps still slip past it</div>
+      <div style="font-size:13.5px;color:#4B5563;line-height:1.55;">Mature integrity culture (boot guards, drift gate, feature-flag enforcement tests) with a documented backlog of what the drift gate deliberately doesn't catch &mdash; exactly where the top finding (athlete_states NOT NULL drift) lives. All previously-known open items re-verified unchanged, not re-discovered.</div>
+    </div>
+    <div class="card" style="padding:18px 22px;border-left:3px solid #15803D;">
+      <div style="display:flex;justify-content:space-between;"><span class="kicker">blast_radius</span><span class="mono tab" style="font-weight:700;">7/10</span></div>
+      <div style="font-weight:600;margin:6px 0 4px;">Contained, with two active choke points</div>
+      <div style="font-size:13.5px;color:#4B5563;line-height:1.55;">Contract chain (OpenAPI/types/alembic) is verified clean and linear right now. Sprawl concentrates in state_bridge.py (two migrations converging) and the FK-cascade gap (AUD-C12, now sized); new finds include an untyped web fetch client and 9 orphaned backend routes.</div>
+    </div>
+    <div class="card" style="padding:18px 22px;border-left:3px solid #15803D;">
+      <div style="display:flex;justify-content:space-between;"><span class="kicker">verification_readiness</span><span class="mono tab" style="font-weight:700;">7/10</span></div>
+      <div style="font-weight:600;margin:6px 0 4px;">Solid backend harness, thin frontend seam</div>
+      <div style="font-size:13.5px;color:#4B5563;line-height:1.55;">Python side is genuinely well-instrumented (real-DB fixtures, migration round-trip gate, meta-test on the suite itself, coverage floor). Frontend is the opposite: a Vitest runner exists but isn't CI-wired, and only 1 of 77 source files has any test coverage.</div>
+    </div>
+  </div>
+
+  <!-- 04 Top merged candidates -->
+  <div class="sechead" id="top-candidates"><span class="idx">04</span><h2>Top merged candidates</h2></div>
+  <div class="card" style="margin-top:16px;overflow-x:auto;">
+    <table id="top-table"><thead><tr>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">ID</th>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">Title</th>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">Action</th>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">Pri</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <!-- 05 Candidate ledger (interactive index) -->
+  <div class="sechead" id="ledger"><span class="idx">05</span><h2>Candidate ledger</h2></div>
+  <div style="margin:16px 0;display:flex;gap:8px;flex-wrap:wrap;" id="filter-row"></div>
+  <div class="card" style="overflow-x:auto;">
+    <table id="matrix"><thead><tr id="matrix-head"></tr></thead><tbody id="matrix-body"></tbody></table>
+  </div>
+  <div style="margin-top:22px;display:flex;flex-direction:column;gap:12px;" id="cards"></div>
+
+  <!-- 06 Lane findings -->
+  <div class="sechead" id="lane-findings"><span class="idx">06</span><h2>Lane findings</h2></div>
+  <p style="font-size:14px;color:#4B5563;max-width:74ch;">Per-lane detail is preserved under each merged candidate's <code>Lane sources</code> field in the ledger above (section 05). Notable per-lane items that did not surface as standalone candidates:</p>
+  <ul style="font-size:14px;color:#4B5563;line-height:1.7;max-width:74ch;">
+    <li><strong>deepening_seams</strong> dropped for space: duplicated <code>WeakPoint</code> queries in <code>benchmark_service.py</code>; a parallel-not-shared history query in <code>personalization_shadow_service.py</code>; partial repository coverage of CONTEXT.md's full "athlete context" record set (expected under the documented incremental-migration policy).</li>
+    <li><strong>graded_integrity</strong> re-verified unchanged, not re-listed: AUD-C10 (dead <code>USE_STRUCTURED_COACHING_TEMPLATES</code> flag), AUD-C11 (orphan <code>app/simulation/*</code> stubs), AUD-C7 (unenforced coverage-ratchet direction), INT-05 half 2, INT-27. Also checked clean: boot guards, auth router prefix wiring, no skip/xfail markers, docker-compose credentials (local-dev only).</li>
+    <li><strong>blast_radius</strong> confirmed clean: OpenAPI&harr;types.gen.ts drift gate passes (45 paths/91 schemas); alembic chain is single-headed and linear (36 revisions).</li>
+    <li><strong>verification_readiness</strong> dropped for space: a generic "no pytest-timeout / no CI job timeout-minutes hang guard" finding &mdash; real but low-severity and not repo-specific.</li>
+  </ul>
+
+  <!-- 07 Duplicate groups -->
+  <div class="sechead" id="dup-groups"><span class="idx">07</span><h2>Cross-lane duplicate groups</h2></div>
+  <div class="card" style="padding:20px 24px;margin-top:16px;border-left:3px solid #2540E8;">
+    <div class="mono" style="font-size:12px;color:#26327A;font-weight:600;margin-bottom:6px;">web-ci-vitest-gap</div>
+    <div style="font-size:14px;color:#4B5563;line-height:1.6;">graded_integrity's <span class="mono">GI-2</span> and verification_readiness's <span class="mono">VR-1</span> independently found the identical gap: PA-22's Vitest suite (merged the same day as this audit) was never wired into <code>ci.yml</code>'s web job or <code>netlify.toml</code>'s build. VR-1 additionally sourced the merging commit's own follow-up note citing a missing workflow-scope token, which graded_integrity did not check. Scored fresh from the union of both lanes' evidence &rarr; merged into <span class="mono">web-ci-missing-vitest-step</span>.</div>
+  </div>
+
+  <!-- 08 Human-decision blockers -->
+  <div class="sechead" id="blockers"><span class="idx">08</span><h2>Human-decision blockers</h2></div>
+  <div class="card" style="padding:20px 24px;margin-top:16px;border-left:3px solid #C0342B;">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+      <span class="chip" style="background:#FBEAE8;color:#C0342B;">BLOCKED</span>
+      <span class="mono" style="font-size:12px;color:#26327A;">state-bridge-choke-point</span>
+      <span class="chip" style="background:#EDF0F5;color:#516079;">architecture decision</span>
+    </div>
+    <div style="font-size:14px;color:#4B5563;line-height:1.6;"><code>app/engine/state_bridge.py</code> is the simultaneous target of two in-flight migrations (INT-05 retiring the legacy-scalar mirror, INT-15 replacing the engine_state version-migration path). Both must write through the same 273-line file with 8 production importers and 51 dependent test files. A human sequencing decision is needed on which migration completes first (or how they interleave) before either can safely proceed &mdash; this is a project-sequencing call, not a code-level fix.</div>
+  </div>
+
+  <!-- 09 Quick wins -->
+  <div class="sechead" id="quick-wins"><span class="idx">09</span><h2>Quick wins</h2></div>
+  <p style="font-size:13.5px;color:#8A93A3;margin-top:8px;">High priority_score, high locality, low blast_radius.</p>
+  <ul id="quick-wins-list" style="font-size:14.5px;line-height:1.8;"></ul>
+
+  <!-- 10 High-leverage deep work -->
+  <div class="sechead" id="deep-work"><span class="idx">10</span><h2>High-leverage deep work</h2></div>
+  <p style="font-size:13.5px;color:#8A93A3;margin-top:8px;">High leverage with larger blast radius &mdash; worth a design pass.</p>
+  <ul id="deep-work-list" style="font-size:14.5px;line-height:1.8;"></ul>
+
+  <!-- 11 Unsafe to auto-execute -->
+  <div class="sechead" id="unsafe"><span class="idx">11</span><h2>Unsafe-to-auto-execute work</h2></div>
+  <p style="font-size:13.5px;color:#8A93A3;margin-top:8px;">High human_decision_risk or regression_risk &mdash; do not run these through an unattended/auto loop.</p>
+  <ul id="unsafe-list" style="font-size:14.5px;line-height:1.8;"></ul>
+
+  <!-- 12 Verification readiness -->
+  <div class="sechead" id="verification"><span class="idx">12</span><h2>Verification readiness</h2></div>
+  <p style="font-size:14.5px;line-height:1.6;color:#1F2430;max-width:74ch;">The Python side can prove almost any backend fix quickly and honestly: real per-worker Postgres fixtures built from actual Alembic migrations, a migration up/down/up round-trip gate, a meta-test that catches assertion-less tests, and parallel ruff+pyright+coverage gates in CI with no skip/xfail abuse. Testability scores of 4&ndash;5 for backend-scoped candidates (<code>user-repo-email-normalization-bug</code>, <code>athlete-states-notnull-drift</code>, <code>web-ci-missing-vitest-step</code>, <code>readme-stale-test-count</code>) are well-founded. Two categories carry an asterisk: anything scoped to <code>web/</code> can only currently be proven by a human running <code>pnpm test</code> locally, since CI enforces nothing there yet; and anything touching <code>app/ml</code>, <code>app/scripts</code>, or <code>app/analysis</code> rests on ad hoc functional tests with no enforced floor, since both are explicitly excluded from the pyright and coverage gates. Any queue execution landing a frontend fix should treat "tests exist and pass locally" as necessary but not sufficient until <code>web-ci-missing-vitest-step</code> itself is resolved.</p>
+
+  <!-- 13 Recommended queue -->
+  <div class="sechead" id="queue"><span class="idx">13</span><h2>Recommended queue</h2></div>
+  <div class="card" style="margin-top:16px;overflow-x:auto;">
+    <table><thead><tr>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">Rank</th>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">Candidate</th>
+      <th class="mono" style="font-size:10.5px;text-transform:uppercase;color:#8A93A3;">Note</th>
+    </tr></thead><tbody id="queue-body"></tbody></table>
+  </div>
+
+  <p style="margin-top:60px;font-size:12px;color:#8A93A3;">Unknowns not resolvable by any lane: whether cascade-delete gaps or athlete_states nullability will ever be exercised depends on an unplanned future account-deletion/GDPR feature; whether any production rows already collide under case-insensitive email matching was not checked; why web/AGENTS.md was never updated post-migration was not archaeologically investigated; whether the 9 unused OpenAPI routes are intentional future surface or dead code is a product-intent question no lane could answer; whether app/ml's de facto test coverage is adequate or merely incidental was not quantified.</p>
+
+</div>
+
+<script>
+const CANDIDATES = [
+  {id:"web-ci-missing-vitest-step",title:"Web CI never runs the Vitest suite added by PA-22",category:"Testing / Fixture / Golden",action:"direct-fix",mode:"sequential",status:"open",pri:20,known:true,knownRef:"PA-22 (commit 4259c54) already flagged CI wiring as its own follow-up, blocked on a workflow-scope token — confirmed still unresolved by two independent lanes.",scores:{severity:4,confidence:5,leverage:5,locality:5,testability:5,blast_radius:2,regression_risk:1,human_decision_risk:1},lanes:["graded_integrity","verification_readiness"],dup:"web-ci-vitest-gap",mergedFrom:["GI-2","VR-1"],lenses:["review-reliability","review-testing"],check:"Add a blocking `pnpm test` (or `vitest run`) step to ci.yml's web job (requires a workflow-scope gh token to push) and confirm netlify.toml's build runs it too, or run tests in a separate blocking CI job.",summary:"web/package.json defines a real `test: vitest run` script and web/src/lib/units.test.ts is a real passing test, but neither ci.yml's web job nor netlify.toml's build command ever invokes it.",root:"PR #153 / commit 4259c54 added the Vitest runner and first test file but explicitly deferred the ci.yml change in its own commit message, noting the push needs a workflow-scope token; the follow-up was never completed.",evidence:[
+    {file:".github/workflows/ci.yml",line:"132-188",obs:"web job steps: checkout/setup/cache/install/'types.gen.ts is current'/'Design tokens are current'/'Build (tsc + vite)'/'Lint (non-blocking)' — no test/vitest step anywhere."},
+    {file:"web/package.json",line:"8-13",obs:"\"test\": \"vitest run\" is defined but never referenced by any CI step."},
+    {file:"web/src/lib/units.test.ts",line:"1",obs:"The only test file in the frontend; currently exercised by zero pipelines."},
+    {file:"web/netlify.toml",line:"1-3",obs:"[build] command = \"pnpm run build\" — the deploy build also never runs tests."},
+    {file:"commit 4259c54",line:"commit message",obs:"Author's own note: wiring a blocking pnpm run test step is an acknowledged, still-open follow-up, blocked on a workflow-scope token."}
+  ]},
+  {id:"user-repo-email-normalization-bug",title:"UserRepository.get_by_email's normalization contract is violated by the registration precheck",category:"Bug",action:"direct-fix",mode:"sequential",status:"open",pri:18,known:false,scores:{severity:3,confidence:5,leverage:4,locality:5,testability:5,blast_radius:2,regression_risk:1,human_decision_risk:1},lanes:["deepening_seams"],lenses:["deepening_seams","review-security"],check:"Add a test: register 'Foo@x.com', then attempt 'FOO@x.com' and assert a clean 409 from the precheck path, not the generic IntegrityError catch.",summary:"get_by_email documents that callers must lower-case before calling. login() does; register()'s duplicate-email precheck doesn't, while the insert three lines later always lowercases — registering 'Foo@x.com' then 'FOO@x.com' passes the friendly precheck and only gets caught by the DB's case-sensitive unique index.",root:"The repository pushes a normalization invariant onto callers instead of owning it, and one of exactly two call sites forgot it; the request only returns the correct 409 today by accident of a second safety net, not by design.",evidence:[
+    {file:"app/repositories/user_repository.py",line:"26-29",obs:"docstring: 'The caller is responsible for any normalization (e.g. lower-casing) before calling.'"},
+    {file:"app/api/v1/auth.py",line:"57",obs:"register(): `get_by_email(body.email)` uses the raw, unlowercased email."},
+    {file:"app/api/v1/auth.py",line:"62",obs:"register(): `email=body.email.lower()` — the stored value is always lowercased, three lines later."},
+    {file:"app/api/v1/auth.py",line:"101",obs:"login(): `get_by_email(form.username.lower())` — the other caller honors the contract."},
+    {file:"app/models/user.py",line:"37",obs:"plain String, unique=True column — case-sensitive at the DB level."}
+  ]},
+  {id:"athlete-states-notnull-drift",title:"athlete_states: model declares NOT NULL, migration allows NULL, two call sites will crash on it",category:"Data / Schema / Contract",action:"direct-fix",mode:"sequential",status:"open",pri:15,known:true,knownRef:"AUD-C12, re-scoped: a035 fixed users/athlete_profiles; athlete_states — the actual state-vector table, with a demonstrated crash path — was left uncovered.",scores:{severity:4,confidence:5,leverage:4,locality:4,testability:5,blast_radius:3,regression_risk:2,human_decision_risk:2},lanes:["graded_integrity"],lenses:["review-data"],check:"Extend an a035-style nullability migration to athlete_states' 8 columns after a data audit for existing NULLs, or add a None-guard at the two crash sites plus a targeted drift check for this table.",summary:"8 columns on AthleteState are declared non-Optional in the ORM but created nullable=True in the founding migration. a035 (AUD-C12) fixed this identical drift shape for users/athlete_profiles but never touched athlete_states, and the repo's own drift gate explicitly waves off NOT NULL mismatches as 'cosmetic'.",root:"a000_init_foundational_tables.py created the columns nullable=True while athlete_state.py's Mapped types assert NOT NULL Python-side only; a035's audit was scoped to users/athlete_profiles and never re-swept athlete_states.",evidence:[
+    {file:"app/models/athlete_state.py",line:"26-47",obs:"timestamp, four fatigue floats, s_struct_signal, habit_strength, skill_state are all non-Optional Mapped types."},
+    {file:"alembic/versions/a000_init_foundational_tables.py",line:"239, 244-249",obs:"same columns created nullable=True (or nullable=True, default=0.0) — no DB-level NOT NULL."},
+    {file:"app/logic/candidate_library.py",line:"182",obs:"`s.skill_state.get(\"squat\", 0.0)` with no None-guard — AttributeError if NULL."},
+    {file:"app/logic/constraint_engine/context_builder.py",line:"51",obs:"`dict(state.skill_state)` — TypeError if NULL."},
+    {file:"tests/test_migration_model_drift.py",line:"9-16",obs:"explicitly scopes NOT NULL differences out of the structural drift gate as 'cosmetic'."},
+    {file:"alembic/versions/a035_tighten_profile_user_nullability.py",line:"1-13",obs:"a035's own docstring names this exact failure mode but its _COLUMNS list only covers users/athlete_profiles."}
+  ]},
+  {id:"web-agents-md-hand-mirror-contradiction",title:"web/AGENTS.md tells every coding agent to hand-mirror API types — contradicts types.ts and the sync doc",category:"Static",action:"direct-fix",mode:"sequential",status:"open",pri:14,known:false,scores:{severity:3,confidence:5,leverage:4,locality:5,testability:2,blast_radius:2,regression_risk:1,human_decision_risk:2},lanes:["deepening_seams"],lenses:["deepening_seams"],summary:"web/AGENTS.md — the guide every agent working in web/ is told to read — says types.ts 'manually mirrors' the backend schema and should be kept in sync by hand. types.ts's own header and docs/SYNC_WITH_BACKEND.md both say the opposite: types are generated and hand-editing is explicitly forbidden.",root:"AGENTS.md predates (or was never updated after) the OpenAPI type-generation migration, leaving a stale instruction inside the exact file agents are told to follow verbatim.",evidence:[
+    {file:"web/AGENTS.md",line:"56",obs:"'src/types.ts manually mirrors the FastAPI backend... keep them in sync.'"},
+    {file:"web/src/types.ts",line:"1-11",obs:"'API contract types are GENERATED... Do NOT hand-edit API field shapes here.'"},
+    {file:"docs/SYNC_WITH_BACKEND.md",line:"1-6",obs:"'the frontend types are generated... they are no longer hand-mirrored. The manual type-mapping ritual... is retired.'"}
+  ]},
+  {id:"athlete-profile-repo-duplicated-queries",title:"AthleteProfileRepository.get_for_user exists but four services hand-roll the identical query instead",category:"Architecture Fitness",action:"direct-fix",mode:"connected-impact-sweep",status:"open",pri:13,known:false,scores:{severity:2,confidence:5,leverage:3,locality:4,testability:3,blast_radius:2,regression_risk:1,human_decision_risk:1},lanes:["deepening_seams"],lenses:["deepening_seams"],check:"Replace all 4 duplicate query sites with AthleteProfileRepository(db).get_for_user(user_id); each is a mechanical, same-shape swap.",summary:"A repository method implementing exactly `select(AthleteProfile).where(user_id==...)` already exists, yet state_service.py, personalization_shadow_service.py, onboarding_service.py, and dashboard_service.py all reimplement the identical query verbatim.",root:"The incremental-migration policy prevents net-new gaps in the repository seam but has no check flagging an existing method with unrouted duplicate callers.",evidence:[
+    {file:"app/repositories/athlete_profile_repository.py",line:"25-31",obs:"get_for_user(user_id) implements exactly the query duplicated elsewhere."},
+    {file:"app/services/state_service.py",line:"257-260",obs:"reimplements the identical select/where, unrouted through the repo."},
+    {file:"app/services/onboarding_service.py",line:"30-34",obs:"private `_profile()` helper reimplements the same query."},
+    {file:"app/services/dashboard_service.py",line:"170",obs:"another independent instance of the same select/where."},
+    {file:"app/services/personalization_shadow_service.py",line:"118",obs:"same query pattern again."}
+  ]},
+  {id:"requirements-txt-dependency-drift",title:"requirements.txt (LEGACY) has drifted from pyproject.toml/uv.lock",category:"Build / CI",action:"direct-fix",mode:"sequential",status:"open",pri:13,known:false,scores:{severity:2,confidence:5,leverage:3,locality:5,testability:3,blast_radius:2,regression_risk:1,human_decision_risk:2},lanes:["graded_integrity"],check:"Simplest fix: delete requirements.txt per the already-planned TODO, since it's flagged do-not-use anyway; alternative is a CI drift check against pyproject.toml.",summary:"requirements.txt is marked LEGACY with a 'do not use' warning but still lacks pytest-xdist, hypothesis, pandas, and scikit-learn (needed to run the suite), while unconditionally listing celery/redis/anthropic/openai/etc. that pyproject.toml correctly scopes into optional groups.",root:"requirements.txt is hand-maintained in parallel to pyproject.toml + uv.lock with no drift check between them.",evidence:[
+    {file:"requirements.txt",line:"1-13",obs:"header calls the file LEGACY, tells readers to prefer pyproject.toml."},
+    {file:"requirements.txt",line:"69-74",obs:"dev/test section omits pytest-xdist, hypothesis, pandas, scikit-learn present in pyproject's dev extra."},
+    {file:"requirements.txt",line:"44-58",obs:"lists LLM/task/observability deps unconditionally that pyproject.toml scopes into optional groups."},
+    {file:"README.md",line:"163",obs:"'Do not use pip install -r requirements.txt' with a TODO to delete it."}
+  ]},
+  {id:"dose-routing-shadow-bypasses-best-effort-write",title:"dose_routing_shadow_service bypasses the shared best_effort_write helper with a hand-rolled copy",category:"Maintainability",action:"direct-fix",mode:"sequential",status:"open",pri:12,known:false,scores:{severity:2,confidence:4,leverage:3,locality:4,testability:3,blast_radius:2,regression_risk:1,human_decision_risk:1},lanes:["deepening_seams"],lenses:["deepening_seams","review-maintainability"],summary:"best_effort_write's docstring states its purpose is that swallow behavior is defined in exactly one place; ekf/mpc/personalization/recovery shadow services all use it, but dose_routing_shadow_service.py reimplements the identical try/commit/rollback/log pattern by hand.",root:"A shared abstraction was introduced after some shadow services existed (or adopted inconsistently), and this sibling was never migrated onto it.",evidence:[
+    {file:"app/services/telemetry_common.py",line:"1-7",obs:"docstring: 'the swallow behavior is defined in exactly one place.'"},
+    {file:"app/services/dose_routing_shadow_service.py",line:"91-134",obs:"hand-inlines try/db.add/commit/except/rollback/log-warning — not using best_effort_write."},
+    {file:"app/services/ekf_shadow_service.py",line:"63-71",obs:"uses `async with best_effort_write(db, ...)`."},
+    {file:"app/services/mpc_shadow_service.py",line:"49-65",obs:"likewise uses best_effort_write."},
+    {file:"app/services/recovery_shadow_service.py",line:"27-29",obs:"likewise uses best_effort_write."}
+  ]},
+  {id:"frontend-test-coverage-thin",title:"Frontend has almost no test seam: 1/77 files, no DOM environment, charting library untested",category:"Testing / Fixture / Golden",action:"direct-fix",mode:"connected-impact-sweep",status:"open",pri:12,known:false,scores:{severity:3,confidence:4,leverage:4,locality:3,testability:4,blast_radius:3,regression_risk:2,human_decision_risk:1},lanes:["verification_readiness"],summary:"Only units.test.ts exists; there's no jsdom/testing-library setup, and the hand-rolled charting primitives in web/src/perflab/viz/ (21 files, 1448 lines) have zero tests despite being the most naturally testable pure-logic code in the frontend.",root:"PA-22 deliberately scoped itself to pure-logic units only, and no follow-up has extended coverage to the other pure-logic modules yet.",evidence:[
+    {file:"web/src/perflab/viz/scales.ts",line:"29-162",obs:"exports linearScale, bandScale, radial, linePath, areaPath, niceTicks, compact — all pure functions, no test file references them."},
+    {file:"web/src/perflab/viz",line:"21 files, 1448 lines",obs:"entire hand-rolled charting library has no *.test.* counterpart."},
+    {file:"web/src",line:"n/a",obs:"77 .ts/.tsx files found excluding tests; only 1 has a paired test file."}
+  ]},
+  {id:"no-formatting-ci-gate",title:"No CI gate enforces code formatting despite black/isort being documented as the workflow",category:"Build / CI",action:"direct-fix",mode:"sequential",status:"open",pri:12,known:false,scores:{severity:1,confidence:4,leverage:2,locality:4,testability:4,blast_radius:1,regression_risk:1,human_decision_risk:1},lanes:["verification_readiness"],summary:"README's 'Code quality' section lists black/isort alongside ruff/pyright as the expected workflow, and both are pinned dev deps with a [tool.black] config, but CI only runs `ruff check .` — never a formatter-check step.",root:"ruff's import-order rules cover isort's job, but nothing runs a formatter-check step, and the README was never updated to reflect that black/isort exist but aren't gated.",evidence:[
+    {file:"README.md",line:"291-298",obs:"'Code quality' section lists ruff check, black ., isort ., pyright as the workflow."},
+    {file:"pyproject.toml",line:"53-54, 117-119",obs:"black, isort are dev deps; [tool.black] configured."},
+    {file:".github/workflows/ci.yml",line:"114-124",obs:"only `uv run ruff check .` runs; no black/isort/ruff-format invocation anywhere."}
+  ]},
+  {id:"context-md-phantom-get-athlete-repo-dependency",title:"CONTEXT.md documents a get_athlete_repo FastAPI dependency that was never implemented",category:"Data / Schema / Contract",action:"triage",mode:"sequential",status:"open",pri:11,known:false,scores:{severity:2,confidence:4,leverage:2,locality:5,testability:2,blast_radius:1,regression_risk:1,human_decision_risk:2},lanes:["deepening_seams"],lenses:["deepening_seams"],summary:"CONTEXT.md's repository-contract section states routes may use a get_athlete_repo FastAPI dependency; no such function exists anywhere in the tree, and no route ever constructs AthleteContextRepository directly.",root:"The canonical domain-vocabulary doc describes a planned interface element that was never built, and nothing enforces that CONTEXT.md's repository-contract section stays truthful.",evidence:[
+    {file:"CONTEXT.md",line:"21",obs:"'routes may use a get_athlete_repo FastAPI dependency' — the only place this name appears anywhere in the repo."},
+    {file:"app/services/state_service.py",line:"283, 296, 320, 348, 371, 945, 1075",obs:"every real construction of AthleteContextRepository(db) is inside state_service.py; no route builds it directly."}
+  ]},
+  {id:"cryptography-undeclared-dependency",title:"cryptography (used directly for at-rest encryption) is not a declared dependency",category:"Static",action:"direct-fix",mode:"sequential",status:"open",pri:11,known:false,scores:{severity:2,confidence:4,leverage:2,locality:5,testability:2,blast_radius:2,regression_risk:1,human_decision_risk:1},lanes:["graded_integrity"],summary:"app/core/crypto.py imports cryptography.fernet directly to encrypt wearable OAuth tokens at rest, but pyproject.toml never lists cryptography as a project dependency — only present because python-jose[cryptography] pulls it in as an extra.",root:"The dependency was added for its transitive availability rather than declared explicitly against its actual, security-relevant import site.",evidence:[
+    {file:"app/core/crypto.py",line:"21",obs:"`from cryptography.fernet import Fernet, InvalidToken` — direct, security-critical import."},
+    {file:"pyproject.toml",line:"16-42",obs:"no direct cryptography entry; only reference is `python-jose[cryptography]>=3.3.0`."}
+  ]},
+  {id:"deploy-sh-no-verification",title:"scripts/deploy.sh has zero automated verification of any kind",category:"Build / CI",action:"direct-fix",mode:"sequential",status:"open",pri:11,known:false,scores:{severity:2,confidence:4,leverage:3,locality:5,testability:4,blast_radius:3,regression_risk:2,human_decision_risk:2},lanes:["verification_readiness"],summary:"The top-level deploy script is not referenced by any test, CI job, or even a bash -n/shellcheck syntax check — a syntax error or logic bug would only surface at actual deploy time.",root:"Deploy scripts sit outside both the Python test suite and the web CI job's scope; no gate was ever added for shell scripts.",evidence:[
+    {file:"scripts/deploy.sh",line:"1-64",obs:"64-line bash script; grep across tests/ and ci.yml for 'deploy.sh' returns zero matches."},
+    {file:".github/workflows/ci.yml",line:"full file",obs:"no shellcheck or bash -n step exists for any .sh file."}
+  ]},
+  {id:"unused-openapi-routes",title:"9 committed OpenAPI routes have zero frontend callers today",category:"Wiring / Integration",action:"triage",mode:"sequential",status:"open",pri:10,known:false,scores:{severity:2,confidence:4,leverage:2,locality:4,testability:3,blast_radius:2,regression_risk:1,human_decision_risk:2},lanes:["blast_radius"],summary:"perfLabClient.ts is the sole fetch call site in web/src; cross-referencing against openapi.json shows 9 routes with no caller anywhere: weak-points CRUD, /v1/feedback, /v1/shadow/summary, 2 benchmark endpoints, 3 dashboard endpoints.",root:"Backend endpoints were built ahead of frontend wiring (or the UI was descoped) and nothing flags an OpenAPI route with no known consumer.",evidence:[
+    {file:"openapi.json",line:"n/a",obs:"45 total paths, including the 9 named routes with no caller."},
+    {file:"web/src/api/perfLabClient.ts",line:"n/a",obs:"grep for those path strings returns 0 matches; they only appear in generated types.gen.ts."},
+    {file:"web/src",line:"n/a",obs:"repo-wide grep for `fetch(` outside perfLabClient.ts returns 0 files."}
+  ]},
+  {id:"sync-with-backend-docs-diverged",title:"Two copies of SYNC_WITH_BACKEND.md have diverged, both point at npm instead of pnpm",category:"Other",action:"direct-fix",mode:"sequential",status:"open",pri:9,known:false,scores:{severity:1,confidence:4,leverage:2,locality:5,testability:2,blast_radius:2,regression_risk:1,human_decision_risk:2},lanes:["blast_radius"],summary:"docs/SYNC_WITH_BACKEND.md and web/docs/SYNC_WITH_BACKEND.md have materially diverged content and both instruct npm commands, while actual CI uses pnpm against a committed pnpm-lock.yaml.",root:"The sync doc was likely duplicated across a repo-layout change and each copy has since been edited independently without reconciling the other.",evidence:[
+    {file:"docs/SYNC_WITH_BACKEND.md",line:"15",obs:"'perf-lab-web: npm run gen:types' — references a sibling-repo layout."},
+    {file:"web/docs/SYNC_WITH_BACKEND.md",line:"42",obs:"'npm run gen:types' — monorepo framing, still npm."},
+    {file:".github/workflows/ci.yml",line:"169",obs:"actual CI command is `pnpm run gen:types`."},
+    {file:"web/AGENTS.md",line:"n/a",obs:"build/verify section specifies pnpm throughout, contradicting both sync docs' npm examples."}
+  ]},
+  {id:"int-15-rescoped-call-sites",title:"INT-15 status is further along than briefed; remaining surface is 7 call sites, 1 dead function, a stale plan doc",category:"Architecture Fitness",action:"fitness-check",mode:"connected-impact-sweep",status:"open",pri:9,known:true,knownRef:"INT-15 slices 2A-2D — re-scoped: status has moved since the 2026-07-16 briefing; current open surface is smaller and enumerable, not a from-scratch item.",scores:{severity:2,confidence:5,leverage:3,locality:3,testability:4,blast_radius:3,regression_risk:2,human_decision_risk:3},lanes:["blast_radius"],lenses:["review-architecture"],summary:"2A1/2A2 and 2B1/2B2 (prescription, readiness) are already shipped, contrary to the briefed 'decision locked, 2A not started.' Remaining migration surface is exactly enumerable: 7 permissive load_current_state call sites across 6 services, one already-built strict loader with zero callers, and a plan doc whose status table wasn't updated after 2B2 shipped.",root:"Migration executed incrementally across several merged PRs since the plan doc was authored; the plan's slice-status lines were never updated after 2B2 landed.",evidence:[
+    {file:"app/services/state_service.py",line:"273",obs:"load_current_state (permissive) still the default path."},
+    {file:"app/services/state_service.py",line:"354",obs:"load_current_state_for_display — built, zero callers anywhere."},
+    {file:"app/services/benchmark_service.py",line:"397",obs:"still calls permissive loader — 2B3 not actually done, contra plan doc."},
+    {file:"app/services/dashboard_service.py",line:"291",obs:"permissive load_current_state (2C not started)."},
+    {file:"app/services/ekf_shadow_service.py",line:"73, 117, 146",obs:"3 permissive call sites, separate S3 slice not started."},
+    {file:"docs/superpowers/plans/2026-07-15-int-15-strict-state-loading.md",line:"111-119",obs:"status table still marks 2B2 'unblocked' though it already shipped (commit ad1044d, PR #133)."}
+  ]},
+  {id:"app-ml-excluded-from-gates",title:"app/ml, app/scripts, app/analysis (86 files) are excluded from both the pyright strict gate and the coverage floor",category:"Testing / Fixture / Golden",action:"triage",mode:"sequential",status:"open",pri:7,known:false,scores:{severity:2,confidence:4,leverage:2,locality:2,testability:3,blast_radius:2,regression_risk:2,human_decision_risk:2},lanes:["verification_readiness"],summary:"A documented tradeoff excludes these directories from pyright strict checking and the coverage floor on the rationale that ruff + functional tests cover it — but that claim isn't itself enforced anywhere.",root:"A deliberate documented tradeoff (pandas typing friction, offline-vs-runtime distinction) rather than an oversight, but with no enforced minimum of its own.",evidence:[
+    {file:"pyproject.toml",line:"121-134",obs:"[tool.pyright] excludes app/ml, app/scripts, app/analysis."},
+    {file:"pyproject.toml",line:"158-165",obs:"[tool.coverage.run] omits the same three dirs from --cov-fail-under=83."},
+    {file:"app/ml",line:"58 files",obs:"36 test files reference app.ml (reasonable de facto coverage) but nothing enforces a floor if it erodes."}
+  ]},
+  {id:"perflabclient-untyped-routes",title:"perfLabClient.ts routes are untyped strings — backend route renames pass CI clean, fail only at runtime",category:"Wiring / Integration",action:"triage",mode:"sequential",status:"open",pri:6,known:false,scores:{severity:3,confidence:4,leverage:3,locality:2,testability:3,blast_radius:4,regression_risk:3,human_decision_risk:2},lanes:["blast_radius"],lenses:["review-architecture","review-testing"],summary:"The generated OpenAPI contract only protects request/response body shapes; the 736-line hand-rolled fetch client builds every URL as a template string and never references openapi-typescript's generated `paths` type, and has zero test coverage.",root:"The frontend adopted openapi-typescript for schema types but never adopted a typed-paths client (e.g. openapi-fetch), so the path-safety half of the generated contract goes unused.",evidence:[
+    {file:"web/src/api/perfLabClient.ts",line:"228",obs:"`fetch(`${API_V1_BASE}/log-workout`, ...)` — literal string, no paths[...] typing."},
+    {file:"web/src/api/perfLabClient.ts",line:"1-3",obs:"imports only value/type helpers and ../types, never `paths` from types.gen.ts."},
+    {file:"web/src/types.gen.ts",line:"1",obs:"openapi-typescript emits both components and paths; only components is consumed anywhere in web/src."}
+  ]},
+  {id:"aud-c12-fk-cascade-drift",title:"FK ON DELETE / cascade drift sized: 51 FKs, only 9 with ondelete, ~15 tables missing User-side relationships",category:"Data / Schema / Contract",action:"design",mode:"connected-impact-sweep",status:"open",pri:5,known:true,knownRef:"AUD-C12 cascade (model<->DB drift: FK ON DELETE / server_default strands) — confirmed still open, now sized with concrete counts.",scores:{severity:3,confidence:4,leverage:3,locality:2,testability:3,blast_radius:4,regression_risk:3,human_decision_risk:3},lanes:["blast_radius"],lenses:["review-data"],summary:"Of 51 ForeignKey() declarations, only 9 carry ondelete. MesocycleBlock and WeakPoint relationships lack cascade despite non-nullable user_id (would raise, not silently orphan, on user delete); ~15 other user_id-FK'd tables have no relationship declared on User at all. Currently latent since no user-deletion code path exists.",root:"FK ondelete behavior and ORM cascade relationships were added ad hoc per-feature as child tables were introduced, with no central convention enforcing a documented delete-behavior choice.",evidence:[
+    {file:"app/models/user.py",line:"43-76",obs:"only 6 relationships declare cascade='all, delete-orphan'; blocks(59) and weak_points(62) don't."},
+    {file:"app/models/mesocycle.py",line:"74",obs:"user_id nullable=False, no ondelete, no cascading relationship — delete would hit an FK violation, not cascade cleanly."},
+    {file:"app/models/weak_point.py",line:"87",obs:"same gap as mesocycle.py."},
+    {file:"app/models/telemetry.py",line:"23",obs:"athlete_id FK to users.id, no relationship on User, no ondelete."},
+    {file:"app/models/ekf_shadow.py",line:"30",obs:"user_id FK, no User-side relationship, no ondelete."}
+  ]},
+  {id:"state-bridge-choke-point",title:"app/engine/state_bridge.py is a converging choke point for two separate in-flight migrations (INT-05, INT-15)",category:"Architecture Fitness",action:"fitness-check",mode:"blocked-needs-human-decision",status:"needs-human-decision",blockedBy:["architecture decision"],pri:5,known:true,knownRef:"INT-05 half 2 / INT-15 sequencing note — state_bridge.py is a documented choke point; this candidate re-confirms and quantifies it.",scores:{severity:3,confidence:5,leverage:4,locality:2,testability:4,blast_radius:5,regression_risk:4,human_decision_risk:4},lanes:["blast_radius"],lenses:["review-architecture","review-data"],summary:"state_bridge.py is directly imported by 8 production modules and touched by 51 test files; INT-05 (retiring sync_legacy_from_vectors) and INT-15 (replacing _migrate_engine_state) both target the same 273-line file as parallel write lanes that must serialize through it.",root:"A single module accreted both the legacy-scalar mirror and the engine_state version-migration responsibility; both are now mid-retirement by separate workstreams competing for the same file, with no sequencing decision made.",evidence:[
+    {file:"app/engine/state_bridge.py",line:"149",obs:"sync_legacy_from_vectors — INT-05's retirement target, called at 3 sites within this file alone."},
+    {file:"app/engine/state_bridge.py",line:"45",obs:"_migrate_engine_state — INT-15's target; engine_state_codec.py documents 3 concrete correctness defects only fixed for routed callers."},
+    {file:"app/api/v1/history.py",line:"16",obs:"imports unified_from_athlete_row directly."},
+    {file:"app/logic/state_update_v0.py",line:"27",obs:"imports sync_legacy_from_vectors, used at lines 272 and 542."},
+    {file:"app/services/state_service.py",line:"12",obs:"imports from state_bridge alongside the newer state_loading strict/display adapters."}
+  ]},
+  {id:"readme-stale-test-count",title:"README's test count (\"143 tests\") is stale against a suite whose own fitness check asserts >500 test functions",category:"Static",action:"direct-fix",mode:"sequential",status:"open",pri:15,known:false,scores:{severity:1,confidence:5,leverage:2,locality:5,testability:5,blast_radius:1,regression_risk:1,human_decision_risk:1},lanes:["verification_readiness"],check:"Either fix the number or replace it with 'see test suite (500+ tests)' and add a CI check that fails if the stated figure drifts from `grep -c` by more than a threshold.",summary:"README.md's Tests section, last synced 2026-05-24, claims 143 tests; the suite's own guard-of-the-guard test asserts the walk finds more than 500 test functions, and the live count is ~1096 across 178 files today.",root:"Doc drift — the README changelog note was never revisited as the suite grew roughly 7x since the last sync date.",evidence:[
+    {file:"README.md",line:"282",obs:"'143 tests across unit, ORM persistence, and end-to-end flows.'"},
+    {file:"README.md",line:"320",obs:"changelog entry dated 2026-05-24 pins the 143 figure."},
+    {file:"tests/test_all_tests_assert_something.py",line:"48-52",obs:"asserts len(funcs) > 500 — the suite's own check contradicts the README figure by >3x; grep -c 'def test_' sums to 1096."}
+  ]}
+];
+
+const ACTION_COLOR = {
+  'direct-fix': {ink:'#15803D',bg:'#E6F3EB'},
+  'design': {ink:'#6D3BD1',bg:'#EFE9FB'},
+  'triage': {ink:'#26327A',bg:'#EAEDFD'},
+  'prototype': {ink:'#516079',bg:'#EDF0F5'},
+  'fitness-check': {ink:'#B45309',bg:'#FAEFE0'},
+  'blocked-needs-human-decision': {ink:'#C0342B',bg:'#FBEAE8'}
+};
+function actionKey(c){ return c.mode === 'blocked-needs-human-decision' ? 'blocked-needs-human-decision' : c.action; }
+function heat(pri){
+  const a = Math.max(0.10, Math.min(0.92, (pri + 3) / 25));
+  return { bg:`rgba(37,64,232,${a.toFixed(2)})`, color: a > 0.55 ? '#ffffff' : '#26327A' };
+}
+function priChip(pri){
+  const h = heat(pri);
+  return `<span class="mono tab" style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:600;font-size:12px;background:${h.bg};color:${h.color};">${pri}</span>`;
+}
+function actionChip(c){
+  const k = actionKey(c);
+  const col = ACTION_COLOR[k] || ACTION_COLOR['triage'];
+  return `<span class="chip" style="background:${col.bg};color:${col.ink};">${k}</span>`;
+}
+
+// Triage strip
+(function(){
+  const counts = {};
+  CANDIDATES.forEach(c => { const k = actionKey(c); counts[k] = (counts[k]||0)+1; });
+  const order = ['direct-fix','design','triage','prototype','fitness-check','blocked-needs-human-decision'];
+  const bar = document.getElementById('action-bar');
+  const legend = document.getElementById('action-legend');
+  order.forEach(k => {
+    if (!counts[k]) return;
+    const pct = (counts[k] / CANDIDATES.length * 100).toFixed(1);
+    const col = ACTION_COLOR[k];
+    const seg = document.createElement('div');
+    seg.style.width = pct + '%';
+    seg.style.background = col.ink;
+    bar.appendChild(seg);
+    const item = document.createElement('span');
+    item.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col.ink};margin-right:5px;vertical-align:middle;"></span>${k} (${counts[k]})`;
+    legend.appendChild(item);
+  });
+  const high = CANDIDATES.filter(c=>c.pri>=12).length;
+  const mid = CANDIDATES.filter(c=>c.pri>=6 && c.pri<12).length;
+  const low = CANDIDATES.filter(c=>c.pri<=5).length;
+  document.getElementById('band-high').textContent = high;
+  document.getElementById('band-mid').textContent = mid;
+  document.getElementById('band-low').textContent = low;
+  document.getElementById('needs-decision').textContent = CANDIDATES.filter(c=>c.status==='needs-human-decision').length;
+})();
+
+// Top merged candidates (top 6 by priority)
+(function(){
+  const top = [...CANDIDATES].sort((a,b)=>b.pri-a.pri).slice(0,6);
+  const tbody = document.querySelector('#top-table tbody');
+  top.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="mono" style="color:#26327A;font-size:13px;">${c.id}</td><td style="font-size:13.5px;">${c.title}</td><td>${actionChip(c)}</td><td>${priChip(c.pri)}</td>`;
+    tbody.appendChild(tr);
+  });
+})();
+
+// Filter chips
+let activeFilter = 'all';
+(function(){
+  const row = document.getElementById('filter-row');
+  const actions = [...new Set(CANDIDATES.map(actionKey))];
+  const defs = [{key:'all',label:'All',count:CANDIDATES.length}]
+    .concat(actions.map(a => ({key:a,label:a,count:CANDIDATES.filter(c=>actionKey(c)===a).length})))
+    .concat([{key:'blocked',label:'Blocked',count:CANDIDATES.filter(c=>c.status==='needs-human-decision').length}])
+    .concat([{key:'known',label:'Known, re-scoped',count:CANDIDATES.filter(c=>c.known).length}]);
+  defs.forEach(d => {
+    const chip = document.createElement('div');
+    chip.className = 'filter-chip' + (d.key==='all' ? ' active' : '');
+    chip.dataset.filter = d.key;
+    chip.textContent = `${d.label} (${d.count})`;
+    chip.addEventListener('click', onFilter);
+    row.appendChild(chip);
+  });
+})();
+function onFilter(e){
+  activeFilter = e.currentTarget.dataset.filter;
+  document.querySelectorAll('.filter-chip').forEach(el => el.classList.toggle('active', el.dataset.filter === activeFilter));
+  renderMatrix();
+}
+
+// Sortable matrix
+const COLS = [
+  {key:'id',label:'ID'},{key:'title',label:'Title'},{key:'category',label:'Category'},
+  {key:'action',label:'Action'},{key:'severity',label:'Sev'},{key:'confidence',label:'Conf'},
+  {key:'leverage',label:'Lev'},{key:'locality',label:'Loc'},{key:'testability',label:'Test'},
+  {key:'blast_radius',label:'Blast'},{key:'regression_risk',label:'Regr'},{key:'human_decision_risk',label:'HD'},
+  {key:'pri',label:'Pri'}
+];
+let sortKey = 'pri', sortDir = 'desc';
+(function(){
+  const head = document.getElementById('matrix-head');
+  COLS.forEach(col => {
+    const th = document.createElement('th');
+    th.className = 'mono';
+    th.style.fontSize = '10.5px'; th.style.textTransform='uppercase'; th.style.color='#8A93A3';
+    th.dataset.key = col.key;
+    th.textContent = col.label;
+    th.addEventListener('click', onSort);
+    head.appendChild(th);
+  });
+})();
+function onSort(e){
+  const key = e.currentTarget.dataset.key;
+  if (sortKey === key) { sortDir = sortDir === 'desc' ? 'asc' : 'desc'; } else { sortKey = key; sortDir = 'desc'; }
+  renderMatrix();
+}
+function visibleCandidates(){
+  return CANDIDATES.filter(c => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'blocked') return c.status === 'needs-human-decision';
+    if (activeFilter === 'known') return !!c.known;
+    return actionKey(c) === activeFilter;
+  });
+}
+function sortValue(c, key){
+  if (key === 'pri') return c.pri;
+  if (key === 'id' || key === 'title' || key === 'category' || key === 'action') return c[key] || actionKey(c);
+  return c.scores[key];
+}
+function renderMatrix(){
+  const rows = visibleCandidates().sort((a,b) => {
+    const va = sortValue(a, sortKey), vb = sortValue(b, sortKey);
+    let cmp;
+    if (typeof va === 'string') cmp = va.localeCompare(vb); else cmp = va - vb;
+    return sortDir === 'desc' ? -cmp : cmp;
+  });
+  const body = document.getElementById('matrix-body');
+  body.innerHTML = '';
+  rows.forEach(c => {
+    const tr = document.createElement('tr');
+    const s = c.scores;
+    tr.innerHTML = `
+      <td class="mono" style="color:#26327A;font-size:12.5px;">${c.id}${c.known ? ' <span class="chip" style="background:#FAEFE0;color:#B45309;font-size:9.5px;">KNOWN</span>':''}${c.status==='needs-human-decision' ? ' <span class="chip" style="background:#FBEAE8;color:#C0342B;font-size:9.5px;">BLOCKED</span>':''}</td>
+      <td style="font-size:13px;max-width:280px;">${c.title}</td>
+      <td style="font-size:12.5px;color:#4B5563;">${c.category}</td>
+      <td>${actionChip(c)}</td>
+      <td class="mono tab">${s.severity}</td><td class="mono tab">${s.confidence}</td><td class="mono tab">${s.leverage}</td>
+      <td class="mono tab">${s.locality}</td><td class="mono tab">${s.testability}</td><td class="mono tab">${s.blast_radius}</td>
+      <td class="mono tab">${s.regression_risk}</td><td class="mono tab">${s.human_decision_risk}</td>
+      <td>${priChip(c.pri)}</td>`;
+    body.appendChild(tr);
+  });
+  renderCards(rows);
+}
+function renderCards(rows){
+  const wrap = document.getElementById('cards');
+  wrap.innerHTML = '';
+  rows.forEach(c => {
+    const col = ACTION_COLOR[actionKey(c)] || ACTION_COLOR['triage'];
+    const borderColor = c.status === 'needs-human-decision' ? '#C0342B' : (c.action === 'design' ? '#6D3BD1' : '#15803D');
+    const det = document.createElement('details');
+    det.className = 'card';
+    det.style.padding = '4px 22px 4px';
+    det.style.borderLeft = `3px solid ${borderColor}`;
+    const evRows = c.evidence.map(e => `<div style="margin-bottom:4px;"><code>${e.file}${e.line ? ':'+e.line : ''}</code> — ${e.obs}</div>`).join('');
+    det.innerHTML = `
+      <summary style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;gap:14px;">
+        <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="mono" style="color:#26327A;font-size:12.5px;">${c.id}</span>
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15.5px;">${c.title}</span>
+          ${c.status==='needs-human-decision' ? '<span class="chip" style="background:#FBEAE8;color:#C0342B;">BLOCKED</span>' : ''}
+          ${c.known ? '<span class="chip" style="background:#FAEFE0;color:#B45309;">KNOWN, RE-SCOPED</span>' : ''}
+        </span>
+        <span class="mono tab" style="font-size:12.5px;color:#4B5563;white-space:nowrap;">pri ${c.pri} &middot; ${actionKey(c)}</span>
+      </summary>
+      <div style="padding:2px 0 20px;">
+        <dl class="body-dl">
+          <dt>Category</dt><dd>${c.category}</dd>
+          <dt>Friction</dt><dd>${c.summary}</dd>
+          <dt>Root cause</dt><dd>${c.root||''}</dd>
+          <dt>Evidence</dt><dd>${evRows}</dd>
+          <dt>Branch / mode</dt><dd>${c.action} &middot; ${c.mode}</dd>
+          ${c.check ? `<dt>Enforceable check</dt><dd>${c.check}</dd>` : ''}
+          ${c.knownRef ? `<dt>Known item</dt><dd>${c.knownRef}</dd>` : ''}
+          ${c.blockedBy ? `<dt>Human-decision</dt><dd>${c.blockedBy.join(', ')}</dd>` : ''}
+          <dt>Lane sources</dt><dd>${c.lanes.join(', ')}</dd>
+          ${c.dup ? `<dt>Dedup</dt><dd>group <code>${c.dup}</code>, merged from ${(c.mergedFrom||[]).join(', ')}</dd>` : ''}
+          ${c.lenses ? `<dt>Lenses</dt><dd>${c.lenses.join(', ')}</dd>` : ''}
+        </dl>
+      </div>`;
+    wrap.appendChild(det);
+  });
+}
+renderMatrix();
+
+// Quick wins / deep work / unsafe lists
+function listOf(ids, elId){
+  const ul = document.getElementById(elId);
+  ids.forEach(id => {
+    const c = CANDIDATES.find(x => x.id === id);
+    if (!c) return;
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="mono" style="color:#26327A;font-size:13px;">${c.id}</span> — ${c.title} ${priChip(c.pri)}`;
+    ul.appendChild(li);
+  });
+}
+listOf(["web-ci-missing-vitest-step","user-repo-email-normalization-bug","readme-stale-test-count","requirements-txt-dependency-drift","no-formatting-ci-gate","context-md-phantom-get-athlete-repo-dependency"], "quick-wins-list");
+listOf(["state-bridge-choke-point","aud-c12-fk-cascade-drift","int-15-rescoped-call-sites","perflabclient-untyped-routes","frontend-test-coverage-thin"], "deep-work-list");
+listOf(["state-bridge-choke-point","aud-c12-fk-cascade-drift","int-15-rescoped-call-sites"], "unsafe-list");
+
+// Recommended queue
+const QUEUE = [
+  {id:"web-ci-missing-vitest-step",rank:1,note:"Highest priority score (20); one-line CI change, blocked only on a workflow-scope token already known about. Do this first so every subsequent frontend fix lands into an enforced gate."},
+  {id:"user-repo-email-normalization-bug",rank:2,note:"Real production auth bug, trivial to fix and test; do second."},
+  {id:"athlete-states-notnull-drift",rank:3,note:"Highest-severity item in the ledger; needs a data audit for existing NULLs before the migration, so start the audit now."},
+  {id:"readme-stale-test-count",rank:4,note:"Trivial doc fix, near-zero risk."},
+  {id:"web-agents-md-hand-mirror-contradiction",rank:5,note:"Fix the instruction before any other agent follows it into reintroducing manual type drift."},
+  {id:"athlete-profile-repo-duplicated-queries",rank:6,note:"Mechanical 4-site sweep, well-evidenced, low risk."},
+  {id:"requirements-txt-dependency-drift",rank:7,note:"Simplest resolution is likely deletion per the existing TODO."},
+  {id:"dose-routing-shadow-bypasses-best-effort-write",rank:8,note:"Single-file swap onto the existing shared helper."},
+  {id:"frontend-test-coverage-thin",rank:9,note:"Sequence after web-ci-missing-vitest-step so new tests actually run in CI; start with viz/scales.ts pure functions."},
+  {id:"no-formatting-ci-gate",rank:10,note:"Add ruff format --check (or black --check) as a CI step."},
+  {id:"context-md-phantom-get-athlete-repo-dependency",rank:11,note:"Either implement the dependency or correct the doc — quick either way."},
+  {id:"cryptography-undeclared-dependency",rank:12,note:"Add an explicit pin; low effort, closes a latent security-adjacent gap."},
+  {id:"deploy-sh-no-verification",rank:13,note:"Add a shellcheck/bash -n CI step."},
+  {id:"unused-openapi-routes",rank:14,note:"Triage with product: intentional future surface vs. dead code, before removing or wiring up."},
+  {id:"sync-with-backend-docs-diverged",rank:15,note:"Consolidate to one doc, correct npm to pnpm."},
+  {id:"int-15-rescoped-call-sites",rank:16,note:"Coordinated sweep of 7 remaining call sites once schedule allows; update the stale plan doc regardless of timing."},
+  {id:"app-ml-excluded-from-gates",rank:17,note:"Triage: decide whether to formalize the current ad hoc coverage as an explicit, lower floor rather than leaving it silently unenforced."},
+  {id:"perflabclient-untyped-routes",rank:18,note:"Design pass to adopt a typed-paths client (e.g. openapi-fetch) rather than a quick patch, given the 736-line surface."},
+  {id:"aud-c12-fk-cascade-drift",rank:19,note:"Decision needed: a full delete-behavior policy per user-owned table should be designed before any FK/relationship changes land."},
+  {id:"state-bridge-choke-point",rank:20,note:"Decision needed: blocked-needs-human-decision. Requires a sequencing call between INT-05 and INT-15 before any further change to state_bridge.py."}
+];
+(function(){
+  const body = document.getElementById('queue-body');
+  QUEUE.forEach(q => {
+    const c = CANDIDATES.find(x => x.id === q.id);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="mono tab">${q.rank}</td><td class="mono" style="color:#26327A;font-size:12.5px;">${q.id}${c && c.status==='needs-human-decision' ? ' <span class="chip" style="background:#FBEAE8;color:#C0342B;font-size:9.5px;">BLOCKED</span>':''}</td><td style="font-size:13px;color:#4B5563;">${q.note}</td>`;
+    body.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>

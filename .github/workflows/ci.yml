@@ -180,6 +180,9 @@ jobs:
           pnpm run tokens:check \
             || (echo "::error::viz tokens are stale or the palette failed validation — run 'pnpm tokens' in web/ and commit." && exit 1)
 
+      - name: Unit tests (vitest)
+        run: pnpm test
+
       - name: Build (tsc + vite)
         run: pnpm run build
 
