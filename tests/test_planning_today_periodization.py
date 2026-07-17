@@ -8,9 +8,9 @@ and the envelope was silently skipped on that path. This test drives the real
 /planning/today route with a block at duration_weeks=8 and a planned session
 at week_number=7 and asserts the envelope annotations show up in `why`.
 
-NOTE: this is an async DB integration test. It SKIPs locally on this box due
-to a known conftest event-loop bug (see perflab-db-tests-skip-locally memory)
-— that is expected. It must still COLLECT without error and is exercised in CI.
+NOTE: this is an async DB integration test. It runs against the session-scoped
+test schema whenever a database is available, and skips only when none is (a hard
+failure under REQUIRE_DB in CI).
 """
 
 from datetime import date

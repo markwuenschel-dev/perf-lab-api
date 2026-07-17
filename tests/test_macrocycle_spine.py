@@ -4,9 +4,9 @@ Task 2 — a new block auto-links to the user's single active macrocycle.
 Task 3 — ``active_objective_signals`` derives from the macrocycle anchor when
 one is active, and falls back to the all-objectives scan otherwise.
 
-DB-gated (skips locally + in CI on the conftest event-loop issue). Proven
-end-to-end by the standalone Postgres harness; kept here for coverage. Mirrors
-the async_db + service-call pattern used elsewhere in the suite.
+DB-gated: runs against the session-scoped test schema whenever a database is
+available, and skips only when none is (a hard failure under REQUIRE_DB in CI).
+Mirrors the async_db + service-call pattern used elsewhere in the suite.
 """
 from datetime import date, timedelta
 

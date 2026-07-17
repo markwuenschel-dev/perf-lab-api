@@ -1,8 +1,7 @@
 """Macrocycle schema shape (Phase 5 — goal-anchored program plan).
 
 Non-DB: asserts on ``Base.metadata`` (the mapped schema) directly, so this runs
-locally and in CI regardless of Postgres availability (DB-integration tests SKIP
-locally due to a conftest event-loop bug). It guards the ADR-0040 decision — a
+regardless of Postgres availability. It guards the ADR-0040 decision — a
 thin ``macrocycles`` container + a nullable ``mesocycle_blocks.macrocycle_id`` FK
 with the right ondelete semantics — without needing a live database.
 """
