@@ -81,25 +81,52 @@ def _parse_engine_state(raw: Any) -> dict[str, Any] | None:
     return None
 
 
+class IncompleteLegacyState(ValueError):
+    """A legacy scalar required to bootstrap F/T from AthleteState is missing (NULL).
+
+    Raised instead of letting ``min(100.0, None)`` fail incidentally with a TypeError.
+    A missing fatigue/tissue scalar is missing *evidence*, not a known-zero value — this
+    decoder must not manufacture "known zero fatigue" out of "we don't know." Callers that
+    want a zero-as-neutral-state fallback must choose that explicitly (the nullability
+    migration backfill, or the provenance-marked ``reconstruct_legacy_state_for_display``
+    recovery path) rather than inheriting it silently from this shared bootstrap function.
+    """
+
+    def __init__(self, field: str) -> None:
+        super().__init__(f"Legacy athlete state is missing required field: {field}")
+        self.field = field
+
+
+def _required_legacy_float(field: str, value: float | None) -> float:
+    if value is None:
+        raise IncompleteLegacyState(field)
+    return float(value)
+
+
 def fatigue_from_legacy(
-    f_met_systemic: float,
-    f_nm_peripheral: float,
-    f_nm_central: float,
-    f_struct_damage: float,
+    f_met_systemic: float | None,
+    f_nm_peripheral: float | None,
+    f_nm_central: float | None,
+    f_struct_damage: float | None,
 ) -> FatigueState:
     """Bootstrap F from legacy scalars when engine_state is absent."""
+    metabolic = _required_legacy_float("f_met_systemic", f_met_systemic)
+    muscular = _required_legacy_float("f_nm_peripheral", f_nm_peripheral)
+    cns = _required_legacy_float("f_nm_central", f_nm_central)
+    structural_damage = _required_legacy_float("f_struct_damage", f_struct_damage)
     return FatigueState(
-        cns=min(100.0, f_nm_central),
-        muscular=min(100.0, f_nm_peripheral),
-        metabolic=min(100.0, f_met_systemic),
-        structural=min(100.0, f_struct_damage * 0.55),
-        tendon=min(100.0, f_struct_damage * 0.35),
-        grip=min(100.0, f_struct_damage * 0.25),
+        cns=min(100.0, cns),
+        muscular=min(100.0, muscular),
+        metabolic=min(100.0, metabolic),
+        structural=min(100.0, structural_damage * 0.55),
+        tendon=min(100.0, structural_damage * 0.35),
+        grip=min(100.0, structural_damage * 0.25),
     )
 
 
-def tissue_from_legacy(f_struct_damage: float) -> TissueState:
+def tissue_from_legacy(f_struct_damage: float | None) -> TissueState:
     """Rough uniform tissue stress from legacy structural fatigue."""
+    f_struct_damage = _required_legacy_float("f_struct_damage", f_struct_damage)
     v = min(100.0, f_struct_damage * 0.35)
     return TissueState(
         shoulder=v,
