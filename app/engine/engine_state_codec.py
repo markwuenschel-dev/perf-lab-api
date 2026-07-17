@@ -7,12 +7,24 @@ whether the caller may continue. Those are execution decisions, and they differ 
 surface — a history screen may show degraded data that a prescription must refuse.
 
 Callers do not choose a policy by passing a flag. They call the adapter named for the
-operation they are performing (``load_state_for_decision``, ``load_state_for_read_only``,
-``try_load_state_for_shadow``, ``read_raw_state_for_repair``). A ``mode=`` parameter here
-would let a call site select a more permissive policy by accident; a function name
-cannot be selected by accident.
+operation they are performing, and the adapter applies the policy that operation needs:
 
-Three defects this replaces (all in ``state_bridge._migrate_engine_state``):
+* decision / mutation — ``state_loading.unified_from_athlete_row_strict`` (and the
+  service-level ``state_service.load_current_state_strict``): decode strictly and raise,
+  so a malformed or future-version row can never size training.
+* read-only / display — ``state_loading.reconstruct_legacy_state_for_display`` (and
+  ``state_service.load_current_state_for_display``): tolerate a degraded row and render
+  what can be shown.
+* repair — a raw-read adapter (``read_raw_state_for_repair``) is specified but not yet
+  built; ``app/scripts/repair_capacity_corruption.py`` reads the payload directly for now.
+
+There is no shadow-specific adapter yet. A ``mode=`` parameter here would let a call site
+select a more permissive policy by accident; choosing a function name cannot.
+
+Three defects in the older ``state_bridge._migrate_engine_state`` that this decoder does
+not have. That permissive path is still live on the read/display callers not yet migrated
+(retired in slice 2D), so these are gone only for callers routed through
+``decode_engine_state``:
 
 1. **The version stamp was decorative.** ``_migrate_engine_state`` never read
    ``eng["version"]``. It sniffed for x/f/t and unconditionally restamped to 2, while its
