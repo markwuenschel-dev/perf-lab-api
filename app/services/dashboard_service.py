@@ -13,8 +13,8 @@ from app.models.benchmark_observation import BenchmarkObservation
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot
 from app.models.mesocycle import PlannedSession, SessionStatus
-from app.models.user import AthleteProfile
 from app.models.workout_log import WorkoutLog
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.dashboard import AdherenceMetrics, OverviewMetrics, TrainingLoadMetrics
 from app.schemas.state import UnifiedStateVector
 from app.services.state_service import load_current_state
@@ -166,10 +166,7 @@ def _compute_derived_value(
 
 async def recompute_derived_metrics(db: AsyncSession, user_id: int) -> tuple[int, list[str]]:
     obs_by_code = await latest_observation_values_by_code(db, user_id)
-    prof = await db.execute(
-        select(AthleteProfile).where(AthleteProfile.user_id == user_id)
-    )
-    profile = prof.scalars().first()
+    profile = await AthleteProfileRepository(db).get_for_user(user_id)
     bw = float(profile.bodyweight_kg) if profile and profile.bodyweight_kg else None
 
     defs_result = await db.execute(select(DerivedMetricDefinition))
