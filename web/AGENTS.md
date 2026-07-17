@@ -57,7 +57,7 @@ blocked, stop and ask rather than forcing it.
   (`perf-lab-api`) OpenAPI schema (`src/types.gen.ts`, produced by `pnpm run gen:types`
   from the backend's committed `openapi.json`) under friendlier names, plus a few
   frontend-only types. Do **not** hand-edit API field shapes there — change the backend
-  Pydantic schema and regenerate instead (see `docs/SYNC_WITH_BACKEND.md`).
+  Pydantic schema and regenerate instead (see `../docs/SYNC_WITH_BACKEND.md`).
 - All HTTP goes through `src/api/perfLabClient.ts`.
 - Merging to `main` does **not** auto-deploy (Railway auto-deploy is retired). Production
   is a manual deploy of a self-hosted **EC2** docker-compose stack — this frontend is
