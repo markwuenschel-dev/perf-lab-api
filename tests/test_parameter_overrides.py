@@ -4,16 +4,22 @@ Non-DB: proves the override hook is non-invasive (copy, not mutate), clip-enforc
 schema-validated, and refuses to apply a shadow_only artifact to a production caller.
 """
 import copy
+import dataclasses
 
 import pytest
 
 from app.engine.parameter_overrides import (
+    _DOSE_MAP_SUBKEYS,
+    _DOSE_NESTED_MAP_FIELDS,
+    _DOSE_SCALAR_FIELDS,
+    _DOSE_SHAPE_AXES,
+    _DOSE_SHAPE_MODALITIES,
     OverrideError,
     apply_parameter_overrides,
     load_namespace_override,
     load_override_artifact,
 )
-from app.engine.parameters import default_parameters
+from app.engine.parameters import EngineParameters, default_parameters
 
 
 def _artifact(**over):
@@ -195,3 +201,62 @@ def test_committed_dose_placeholder_is_zero_change():
     # The committed v0 equals engine defaults: applying it changes nothing.
     assert merged.dose_volume_weights == default_parameters().dose_volume_weights
     assert merged.dose_shape_six_by_modality == default_parameters().dose_shape_six_by_modality
+
+
+# --------------------------------------------------------------------------- #
+# The dose whitelist must stay a real subset of EngineParameters (PA-07)
+# --------------------------------------------------------------------------- #
+#
+# The whitelist names dose fields as string literals that must equal EngineParameters
+# attribute names, and _merge_engine_overrides does setattr(merged, field_name, ...).
+# Rename a field in EngineParameters without updating the whitelist and validation still
+# passes, but setattr creates a DEAD attribute on the copy — the learned override is
+# silently dropped from the real computation, no error. These tests fail the moment a
+# whitelisted name (or map sub-key / shape modality / shape axis) stops matching the
+# dataclass, so the drift is caught in CI instead of vanishing at runtime.
+
+_PARAM_FIELD_NAMES = {f.name for f in dataclasses.fields(EngineParameters)}
+
+
+def test_dose_scalar_whitelist_are_real_scalar_fields():
+    orphaned = _DOSE_SCALAR_FIELDS - _PARAM_FIELD_NAMES
+    assert not orphaned, (
+        f"dose scalar whitelist names not on EngineParameters: {sorted(orphaned)} — "
+        f"a setattr on these silently drops the override instead of raising"
+    )
+    defaults = default_parameters()
+    for name in _DOSE_SCALAR_FIELDS:
+        value: object = getattr(defaults, name)
+        assert isinstance(value, float), f"{name} is not a scalar float field"
+
+
+def test_dose_map_whitelist_are_real_fields_with_matching_subkeys():
+    orphaned = set(_DOSE_MAP_SUBKEYS) - _PARAM_FIELD_NAMES
+    assert not orphaned, f"dose map whitelist names not on EngineParameters: {sorted(orphaned)}"
+    defaults = default_parameters()
+    for name, allowed_subkeys in _DOSE_MAP_SUBKEYS.items():
+        live: dict[str, float] = getattr(defaults, name)
+        assert isinstance(live, dict), f"{name} is not a dict field"
+        stray = allowed_subkeys - set(live)
+        assert not stray, (
+            f"{name} whitelists sub-keys absent from its default dict: {sorted(stray)} — "
+            f"an override on these adds a key the engine never reads"
+        )
+
+
+def test_dose_nested_map_whitelist_matches_default_modalities_and_axes():
+    orphaned = _DOSE_NESTED_MAP_FIELDS - _PARAM_FIELD_NAMES
+    assert not orphaned, f"dose nested-map whitelist names not on EngineParameters: {sorted(orphaned)}"
+    defaults = default_parameters()
+    for name in _DOSE_NESTED_MAP_FIELDS:
+        live: dict[str, dict[str, float]] = getattr(defaults, name)
+        assert isinstance(live, dict), f"{name} is not a nested dict field"
+        stray_modalities = _DOSE_SHAPE_MODALITIES - set(live)
+        assert not stray_modalities, (
+            f"{name} whitelists modalities absent from its default: {sorted(stray_modalities)}"
+        )
+        for modality, axes in live.items():
+            stray_axes = _DOSE_SHAPE_AXES - set(axes)
+            assert not stray_axes, (
+                f"{name}[{modality!r}] is missing whitelisted axes: {sorted(stray_axes)}"
+            )
