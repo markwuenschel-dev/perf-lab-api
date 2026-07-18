@@ -167,9 +167,6 @@ class Settings(BaseSettings):
     # Where the OAuth callback redirects the browser back to after connecting.
     WEB_APP_URL: str = "http://localhost:5173"
 
-    # Future features
-    USE_STRUCTURED_COACHING_TEMPLATES: bool = True
-
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def database_url_use_async_driver(cls, v: object) -> object:
