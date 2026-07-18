@@ -152,6 +152,28 @@ describe("compact (already-correct outputs)", () => {
   });
 });
 
+describe("compact (unit carry: a rounded 1000K promotes to M)", () => {
+  // The transition happens at the ROUNDING boundary, not the raw 1_000_000 value:
+  // once the K-rounded magnitude reaches 1000, the next supported unit exists.
+  it.each([
+    [999_499, "999K"],
+    [999_500, "1M"],
+    [999_999, "1M"],
+    [1_000_000, "1M"],
+    [-999_499, "-999K"],
+    [-999_500, "-1M"],
+    [-999_999, "-1M"],
+  ])("compact(%i) === %s", (n, expected) => {
+    expect(compact(n)).toBe(expected);
+  });
+
+  it("keeps sign symmetry through the carry boundary", () => {
+    for (const n of [999_499, 999_500, 999_999, 9_999_999]) {
+      expect(compact(-n)).toBe("-" + compact(n));
+    }
+  });
+});
+
 describe("niceTicks (ascending domains)", () => {
   it("returns a single tick when the bounds are equal", () => {
     expect(niceTicks(5, 5)).toEqual([5]);

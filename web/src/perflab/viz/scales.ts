@@ -152,11 +152,21 @@ export function niceTicks(lo: number, hi: number, count = 5): number[] {
   return ticks;
 }
 
-/** Compact number formatter for axis ticks / stat values (1,284 / 12.9K / 4.2M). */
+/** Compact number formatter for axis ticks / stat values (1,284 / 13K / 4.2M).
+ *
+ * Unit representation is normalized after rounding: a value that rounds to 1000K is
+ * promoted to "1M" rather than rendered as an out-of-range "1000K" (e.g. 999_500 → "1M").
+ * The carry therefore happens at the rounding boundary, not only at the raw 1_000_000.
+ */
 export function compact(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1e6) return (n / 1e6).toFixed(abs >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
-  if (abs >= 1e4) return (n / 1e3).toFixed(0) + "K";
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e4) {
+    const k = Math.round(abs / 1e3);
+    if (k < 1000) return sign + k + "K";
+    const m = abs / 1e6;
+    return sign + (abs >= 1e7 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, "")) + "M";
+  }
   if (abs >= 1e3) return n.toLocaleString("en-US");
   return String(n);
 }
