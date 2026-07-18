@@ -256,6 +256,47 @@ describe("bandScale (positive integer count, ascending range)", () => {
   });
 });
 
+describe("bandScale (empty / invalid / descending contracts)", () => {
+  it("treats count=0 as valid emptiness: zero geometry, positions at range start", () => {
+    const b = bandScale({ count: 0, range: [10, 110] });
+    expect(b.count).toBe(0);
+    expect(b.step).toBe(0);
+    expect(b.bandWidth).toBe(0);
+    expect(b.center(0)).toBe(10); // range start
+    expect(b.start(0)).toBe(10);
+    expect(Number.isFinite(b.center(0))).toBe(true);
+  });
+
+  it.each([[-1], [3.5], [NaN]])(
+    "rejects invalid cardinality count=%s with RangeError",
+    (count) => {
+      expect(() => bandScale({ count, range: [0, 100] })).toThrow(RangeError);
+    },
+  );
+
+  it("supports descending ranges: nonnegative bandWidth, descending in-range positions", () => {
+    const asc = bandScale({ count: 4, range: [0, 100] });
+    const desc = bandScale({ count: 4, range: [100, 0] });
+
+    // a width is a magnitude — nonnegative and direction-independent
+    expect(desc.bandWidth).toBeGreaterThanOrEqual(0);
+    expect(desc.bandWidth).toBeCloseTo(asc.bandWidth);
+
+    const ascCenters = Array.from({ length: 4 }, (_, i) => asc.center(i));
+    const descCenters = Array.from({ length: 4 }, (_, i) => desc.center(i));
+    // descending positions are the reversed geometric counterpart of ascending
+    expect(descCenters).toEqual([...ascCenters].reverse());
+    for (let i = 1; i < descCenters.length; i++) {
+      expect(descCenters[i]).toBeLessThan(descCenters[i - 1]);
+    }
+    // bands remain within the range extent [0, 100]
+    for (let i = 0; i < 4; i++) {
+      expect(desc.start(i)).toBeGreaterThanOrEqual(-1e-9);
+      expect(desc.start(i) + desc.bandWidth).toBeLessThanOrEqual(100 + 1e-9);
+    }
+  });
+});
+
 describe("radial (count > 0)", () => {
   it("fills missing values with zero for short arrays", () => {
     const r = radial({ cx: 50, cy: 50, r: 40, count: 3 });

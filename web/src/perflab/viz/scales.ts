@@ -63,18 +63,31 @@ export interface BandScale {
   count: number;
 }
 
-/** Evenly spaced bands for categorical columns/bars. */
+/** Evenly spaced bands for categorical columns/bars.
+ *
+ * `count === 0` is valid emptiness (an empty dataset): zero step and bandwidth, positions
+ * collapse to the range start — never a nonzero bandwidth for zero categories. Negative or
+ * non-integer counts are a programmer error and are rejected, rather than silently
+ * normalized (which would hide an upstream bug behind a plausible but wrong chart).
+ * Descending ranges are supported: `step` carries direction so positions descend, while
+ * `bandWidth` stays a nonnegative magnitude. */
 export function bandScale({ count, range, innerPad = 0.2 }: BandScaleOpts): BandScale {
+  if (!Number.isInteger(count) || count < 0) {
+    throw new RangeError(`bandScale: count must be a non-negative integer, got ${count}`);
+  }
   const [r0, r1] = range;
+  if (count === 0) {
+    return { step: 0, bandWidth: 0, count: 0, center: () => r0, start: () => r0 };
+  }
   const span = r1 - r0;
-  const step = count > 0 ? span / count : span;
-  const bandWidth = step * (1 - innerPad);
+  const step = span / count; // carries direction (negative for a descending range)
+  const bandWidth = Math.abs(step) * (1 - innerPad); // a width is a magnitude — nonnegative
   return {
     step,
     bandWidth,
     count,
-    start: (i: number) => r0 + i * step + (step - bandWidth) / 2,
     center: (i: number) => r0 + i * step + step / 2,
+    start: (i: number) => r0 + i * step + step / 2 - bandWidth / 2,
   };
 }
 
