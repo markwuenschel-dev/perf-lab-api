@@ -262,3 +262,42 @@ describe("radial (count > 0)", () => {
     expect(allFinite(parsePolygon(r.gridPolygon(0.5)))).toBe(true);
   });
 });
+
+describe("radial (fractions clamped to [0,1])", () => {
+  // startAngle defaults to -90 (up): axis 0 sits straight above the center, so
+  // point(0, radius) = [cx, cy - radius].
+  const r = radial({ cx: 50, cy: 50, r: 40, count: 3 });
+  const axis0 = (v: number): Vec2 => parsePolygon(r.valuePolygon([v, 0, 0]))[0];
+
+  it.each([
+    ["negative -> center", -0.5, [50, 50]],
+    ["zero -> center", 0, [50, 50]],
+    ["half -> halfway radius", 0.5, [50, 30]],
+    ["one -> outer radius", 1, [50, 10]],
+    ["above one -> outer radius (clamped)", 1.5, [50, 10]],
+  ])("value %s", (_label, v, [ex, ey]) => {
+    const [x, y] = axis0(v);
+    expect(x).toBeCloseTo(ex);
+    expect(y).toBeCloseTo(ey);
+  });
+
+  it("treats a negative fraction exactly like zero, and >1 exactly like one", () => {
+    expect(axis0(-0.5)).toEqual(axis0(0));
+    expect(axis0(1.5)).toEqual(axis0(1));
+  });
+});
+
+describe("radial (count = 0 is empty, not NaN)", () => {
+  const r = radial({ cx: 50, cy: 50, r: 40, count: 0 });
+
+  it("returns empty polygons", () => {
+    expect(r.valuePolygon([])).toBe("");
+    expect(r.gridPolygon(0.5)).toBe("");
+  });
+
+  it("returns the center for point/spoke (finite, never NaN)", () => {
+    expect(r.point(0, 20)).toEqual([50, 50]);
+    expect(r.spoke(0)).toEqual([50, 50]);
+    expect(r.spoke(0).every(Number.isFinite)).toBe(true);
+  });
+});

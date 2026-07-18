@@ -100,10 +100,18 @@ export interface Radial {
   valuePolygon(values: readonly number[]): string;
 }
 
-/** Polar placement for radar/spider charts. Replaces the Twin radar trig. */
+/** Polar placement for radar/spider charts. Replaces the Twin radar trig.
+ *
+ * `valuePolygon` values are normalized fractions clamped to [0, 1]: a negative fraction
+ * would otherwise reflect a point through the center and a >1 fraction would escape the
+ * radar boundary — both geometric artifacts with no product meaning. With `count === 0`
+ * (an empty dataset) every helper is total: polygons are empty and `point`/`spoke` return
+ * the center rather than NaN coordinates that would corrupt SVG geometry downstream. */
 export function radial({ cx, cy, r, count, startAngle = -90 }: RadialOpts): Radial {
+  const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
   const angle = (i: number) => ((startAngle + (360 / count) * i) * Math.PI) / 180;
   const point = (i: number, radius: number): Vec2 => {
+    if (count < 1) return [cx, cy]; // no angular structure -> center
     const a = angle(i);
     return [cx + radius * Math.cos(a), cy + radius * Math.sin(a)];
   };
@@ -113,7 +121,7 @@ export function radial({ cx, cy, r, count, startAngle = -90 }: RadialOpts): Radi
     point,
     spoke: (i) => point(i, r),
     gridPolygon: (frac) => poly(() => r * frac),
-    valuePolygon: (values) => poly((i) => r * (values[i] ?? 0)),
+    valuePolygon: (values) => poly((i) => r * clamp01(values[i] ?? 0)),
   };
 }
 
