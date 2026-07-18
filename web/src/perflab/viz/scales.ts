@@ -143,21 +143,29 @@ export function areaPath(points: readonly Vec2[], baselineY: number): string {
 
 // ── ticks ────────────────────────────────────────────────────────────────────
 
-/** "Nice" rounded tick values spanning [lo, hi] (~count ticks). */
+/** "Nice" rounded tick values spanning [lo, hi] (~count ticks).
+ *
+ * Reversed bounds (`lo > hi`) are supported: ticks are computed over the normalized
+ * [min, max] domain and returned in the caller's original direction, so
+ * `niceTicks(b, a) === reverse(niceTicks(a, b))`. Reversed domains are valid in
+ * visualization (screen-coordinate and ranking axes), so this must not lose them. */
 export function niceTicks(lo: number, hi: number, count = 5): number[] {
   if (lo === hi) return [lo];
-  const span = hi - lo;
+  const reversed = lo > hi;
+  const a = Math.min(lo, hi);
+  const b = Math.max(lo, hi);
+  const span = b - a;
   const rawStep = span / Math.max(1, count);
   const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
   const norm = rawStep / mag;
   const step = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag;
-  const start = Math.ceil(lo / step) * step;
+  const start = Math.ceil(a / step) * step;
   const ticks: number[] = [];
-  for (let v = start; v <= hi + step * 1e-9; v += step) {
+  for (let v = start; v <= b + step * 1e-9; v += step) {
     // guard float drift so 0 prints as 0, not -0 / 1e-16
     ticks.push(Math.abs(v) < step * 1e-9 ? 0 : +v.toFixed(10));
   }
-  return ticks;
+  return reversed ? ticks.reverse() : ticks;
 }
 
 /** Compact number formatter for axis ticks / stat values (1,284 / 13K / 4.2M).

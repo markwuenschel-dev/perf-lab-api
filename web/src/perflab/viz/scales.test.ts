@@ -212,6 +212,26 @@ describe("niceTicks (ascending domains)", () => {
   });
 });
 
+describe("niceTicks (reversed domains preserve direction)", () => {
+  it.each([
+    [0, 10],
+    [-3, 7],
+    [-100, -10],
+  ])("niceTicks(%i, %i) reversed is reverse(ascending)", (a, b) => {
+    expect(niceTicks(b, a)).toEqual([...niceTicks(a, b)].reverse());
+  });
+
+  it("returns finite, negative-zero-free ticks in descending order for reversed bounds", () => {
+    const ticks = niceTicks(10, 0);
+    expect(ticks.length).toBeGreaterThan(1);
+    for (let i = 1; i < ticks.length; i++) {
+      expect(ticks[i]).toBeLessThan(ticks[i - 1]);
+    }
+    expect(ticks.every(Number.isFinite)).toBe(true);
+    expect(ticks.some((v) => Object.is(v, -0))).toBe(false);
+  });
+});
+
 describe("bandScale (positive integer count, ascending range)", () => {
   it("exposes the requested count", () => {
     expect(bandScale({ count: 7, range: [0, 700] }).count).toBe(7);
