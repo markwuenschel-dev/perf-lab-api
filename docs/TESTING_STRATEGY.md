@@ -21,6 +21,33 @@ It is:
 
 > Did the engine behave correctly, safely, and consistently under realistic training conditions?
 
+## Running the suite
+
+The backend tests run against a **real PostgreSQL** — there is no in-memory fake. Any test
+that requests the `async_db` or `http_client` fixture is auto-marked `requires_db`.
+
+```bash
+uv run pytest -q                     # full suite (serial)
+uv run pytest -q -n auto             # parallel — how CI runs it
+uv run pytest -q -m "not requires_db"  # unit-only; no database needed
+```
+
+Point the suite at a database with `TEST_DATABASE_URL` (falls back to
+`postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab_test`, the
+`docker-compose` dev DB). The schema is migrated to head once per session and each test
+truncates the data, so tests start empty.
+
+**Parallel runs shard the database, not just the process.** Per-test isolation is a global
+`TRUNCATE`, so under `-n auto` one worker would wipe another's rows mid-test. Each xdist
+worker therefore gets its **own** database — `perflab_test_gw0`, `perflab_test_gw1`, … —
+auto-created on first use. Serial runs keep the plain database name, so nothing changes
+without `-n auto`. (This is what closed the old cross-worker race; see `tests/conftest.py`.)
+
+**A missing database is a hard failure in CI, never a silent skip.** CI sets `REQUIRE_DB=1`,
+which turns an unreachable database into a real error so the integration suite cannot pass by
+skipping (INT-23). Locally, without `REQUIRE_DB`, `requires_db` tests skip when Postgres is
+down — set `REQUIRE_DB=1` to force the same hard-fail behavior as CI.
+
 ## Current Scope to Test
 
 Backend surfaces currently include:
