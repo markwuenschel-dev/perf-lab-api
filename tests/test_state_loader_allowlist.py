@@ -27,7 +27,10 @@ APP = Path(__file__).resolve().parents[1] / "app"
 # DO NOT ADD TO THIS LIST. Each entry is removed as slice 2B/2C/S3/S4 reclassifies it.
 PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "api/v1/history.py",  # 2C: -> load_current_state_for_display
+        # AUD-C15 REMOVED `api/v1/history.py` — its state-history read now delegates to
+        # `state_service.load_recent_states` behind the AthleteContextRepository seam, so the
+        # route no longer imports a permissive loader directly. The permissive conversion is
+        # consolidated in `state_service.py` (below), which INT-15 retires in 2D.
         "services/state_service.py",  # defines the wrappers; retired in 2D
         "services/assessment_surface_service.py",  # 2B4: strict unless proven display-only
         "services/benchmark_service.py",  # 2B3: strict, gated on the e1RM transaction proof

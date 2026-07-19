@@ -1,14 +1,14 @@
 // src/types.ts
 //
 // API contract types are GENERATED from the backend's OpenAPI schema — see
-// `types.gen.ts` (produced by `npm run gen:types`, which reads the backend's
+// `types.gen.ts` (produced by `pnpm run gen:types`, which reads the backend's
 // committed `openapi.json`). This module is a thin, hand-curated adapter that
 // re-exports those generated shapes under the friendly names the app uses, plus
 // the few frontend-only types that have no backend counterpart.
 //
 // Do NOT hand-edit API field shapes here. To change a field: edit the backend
 // Pydantic schema, regenerate `openapi.json` + `types.gen.ts`, then fix whatever
-// `tsc --noEmit` flags. See docs/SYNC_WITH_BACKEND.md.
+// `tsc --noEmit` flags. See ../../docs/SYNC_WITH_BACKEND.md.
 
 import type { components } from "./types.gen";
 

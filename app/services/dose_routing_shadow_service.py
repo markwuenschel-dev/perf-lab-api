@@ -85,8 +85,16 @@ async def record_dose_routing(
     external_intensity: ExternalIntensity | None = None,
     routed_at: datetime | None = None,
 ) -> None:
-    """Compute + persist the Model B shadow routing for one workout (best-effort)."""
-    async with best_effort_write(db, f"dose routing shadow for user {user_id}"):
+    """Compute + persist the Model B shadow routing for one workout (best-effort).
+
+    Routes its commit/rollback through the shared :func:`best_effort_write` seam like every
+    other ``*_shadow_service`` — so the swallow behavior (and the guard against a rollback
+    that itself raises) lives in one place, and a failure here can never break the workout
+    ingestion that awaits it (AUD-C14).
+    """
+    async with best_effort_write(
+        db, f"dose routing shadow (user {user_id}, workout {workout_log_id})"
+    ):
         e1rm_by_key = await _e1rm_by_exercise_key(db, user_id, log)
         r = dr.build_routing(
             log, e1rm_by_key=e1rm_by_key, external_intensity=external_intensity

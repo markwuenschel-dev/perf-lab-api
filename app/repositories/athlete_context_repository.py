@@ -10,10 +10,13 @@ call sites are routed through them, so every method here has real callers.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete_state import AthleteState
+from app.models.workout_log import WorkoutLog
 
 
 class AthleteContextRepository:
@@ -33,3 +36,33 @@ class AthleteContextRepository:
             .limit(1)
         )
         return result.scalars().first()
+
+    async def list_recent_states(self, user_id: int, limit: int) -> Sequence[AthleteState]:
+        """The athlete's most recent ``AthleteState`` rows, newest first (≤ ``limit``)."""
+        result = await self.session.execute(
+            select(AthleteState)
+            .where(AthleteState.user_id == user_id)
+            .order_by(AthleteState.timestamp.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def list_states_ascending(self, user_id: int) -> Sequence[AthleteState]:
+        """The athlete's full ``AthleteState`` history, oldest first (for feature-building)."""
+        result = await self.session.execute(
+            select(AthleteState)
+            .where(AthleteState.user_id == user_id)
+            .order_by(AthleteState.timestamp)
+        )
+        return result.scalars().all()
+
+    # ----- Workouts -----
+    async def list_recent_workouts(self, user_id: int, limit: int) -> Sequence[WorkoutLog]:
+        """The athlete's most recently logged ``WorkoutLog`` rows, newest first (≤ ``limit``)."""
+        result = await self.session.execute(
+            select(WorkoutLog)
+            .where(WorkoutLog.user_id == user_id)
+            .order_by(WorkoutLog.logged_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
