@@ -28,6 +28,7 @@ from app.logic.personalization.hierarchical import (
     partial_pool_with_sampling_var,
 )
 from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
+from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.logic.wellness_signals import SIGNAL_CONFIG
 from app.ml.personalization.partial_pool_fit import fit_athlete
 from app.models.athlete_state import AthleteState
@@ -102,8 +103,13 @@ async def _build_recovery_frame(
     return np.array(z_list, dtype=float), np.array(y_list, dtype=float)
 
 
-async def record_personalization_shadow(db: AsyncSession, user_id: int, wellness: object) -> None:
-    """Write one per-athlete personalization shadow row. Never raises to the caller."""
+async def record_personalization_shadow(
+    db: AsyncSession, user_id: int, snapshot: WellnessTelemetrySnapshot
+) -> None:
+    """Write one per-athlete personalization shadow row. Never raises to the caller.
+
+    Takes an immutable current-wellness snapshot, never a live WellnessSample ORM instance
+    (AUD-C24)."""
     async with best_effort_write(db, f"personalization shadow log for user {user_id}"):
         params = default_parameters()
         artifact = load_namespace_override(_NAMESPACE)
@@ -150,9 +156,9 @@ async def record_personalization_shadow(db: AsyncSession, user_id: int, wellness
                 n_obs=n,
                 shrinkage_weight=round(w_mean, 4),
                 theta_trace=round(theta_trace, 6),
-                wellness=wellness_snapshot(wellness),
-                population_multiplier=multipliers_by_axis(population, wellness),
-                personalized_multiplier=multipliers_by_axis(personalized, wellness),
+                wellness=wellness_snapshot(snapshot),
+                population_multiplier=multipliers_by_axis(population, snapshot),
+                personalized_multiplier=multipliers_by_axis(personalized, snapshot),
                 decision_impact="none_shadow_only",
             )
         )

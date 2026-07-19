@@ -17,6 +17,7 @@ from app.domain.vectors import FatigueState
 from app.engine.parameter_overrides import apply_parameter_overrides, load_namespace_override
 from app.engine.parameters import default_parameters
 from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
+from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.services.state_service import load_current_state
 from app.services.telemetry_common import best_effort_write
@@ -24,8 +25,12 @@ from app.services.telemetry_common import best_effort_write
 _NAMESPACE = "q2_recovery"
 
 
-async def record_recovery_shadow(db: AsyncSession, user_id: int, wellness: object) -> None:
-    """Write one recovery shadow-telemetry row. Never raises to the caller."""
+async def record_recovery_shadow(
+    db: AsyncSession, user_id: int, snapshot: WellnessTelemetrySnapshot
+) -> None:
+    """Write one recovery shadow-telemetry row. Never raises to the caller.
+
+    Takes an immutable snapshot, never a live WellnessSample ORM instance (AUD-C24)."""
     async with best_effort_write(db, f"recovery shadow log for user {user_id}"):
         params = default_parameters()
         artifact = load_namespace_override(_NAMESPACE)
@@ -47,10 +52,10 @@ async def record_recovery_shadow(db: AsyncSession, user_id: int, wellness: objec
             RecoveryShadowLog(
                 user_id=user_id,
                 model_version=model_version,
-                wellness=wellness_snapshot(wellness),
+                wellness=wellness_snapshot(snapshot),
                 fatigue_before=fatigue_before,
-                baseline_clearance_multiplier=multipliers_by_axis(params, wellness),
-                learned_clearance_multiplier=multipliers_by_axis(learned, wellness),
+                baseline_clearance_multiplier=multipliers_by_axis(params, snapshot),
+                learned_clearance_multiplier=multipliers_by_axis(learned, snapshot),
                 decision_impact="none_shadow_only",
             )
         )
