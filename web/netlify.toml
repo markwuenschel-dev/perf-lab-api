@@ -1,5 +1,5 @@
 [build]
-  command = "pnpm run build"
+  command = "pnpm test && pnpm run build"
   publish = "dist"
 
 [build.environment]
