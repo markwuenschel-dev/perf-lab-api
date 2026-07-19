@@ -15,7 +15,17 @@ always ``"none_shadow_only"`` — nothing here affects a prescription or product
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +34,25 @@ from app.core.db import Base
 
 class EkfShadowLog(Base):
     __tablename__ = "ekf_shadow_log"
+    __table_args__ = (
+        # AUD-C8: at most one shadow assimilation per (wellness observation, model version).
+        # Partial — legacy/predict/benchmark rows carry no source identity and are unrestricted.
+        # This is the database concurrency authority for wellness-observation idempotency.
+        Index(
+            "uq_ekf_shadow_wellness_sample_model",
+            "source_wellness_sample_id",
+            "model_version",
+            unique=True,
+            postgresql_where=text("source_wellness_sample_id IS NOT NULL"),
+        ),
+        # A row linked to a wellness observation must carry complete hash provenance;
+        # legacy/unlinked rows stay NULL. Prevents a half-populated new identity.
+        CheckConstraint(
+            "source_wellness_sample_id IS NULL "
+            "OR (assimilated_content_hash IS NOT NULL AND latest_seen_content_hash IS NOT NULL)",
+            name="ck_ekf_shadow_wellness_hash_complete",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(
@@ -55,3 +84,26 @@ class EkfShadowLog(Base):
     decision_impact: Mapped[str] = mapped_column(
         String(40), nullable=False, default="none_shadow_only"
     )
+
+    # ── AUD-C8: wellness-observation idempotency ────────────────────────────────────────
+    # All nullable — legacy rows and predict/benchmark rows carry no wellness source. New
+    # wellness-writer code must always populate the source id + both hashes (enforced by the
+    # CHECK above and a service-level assertion). CASCADE matches the sibling shadow tables
+    # (capacity_floor/dose_routing/strength_decline -> their source), so a privacy deletion
+    # of the wellness sample removes its derived shadow rows.
+    source_wellness_sample_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("wellness_samples.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # Hash of the content actually assimilated into the belief (frozen at first assimilation).
+    assimilated_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Hash of the most recently received content for this observation (advances on corrections).
+    latest_seen_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Sticky: set when a correction (changed content, same identity) arrives; cleared only by
+    # a real replay that rebuilds the trajectory, never by a later identical retry.
+    correction_requires_replay: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    correction_detected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
