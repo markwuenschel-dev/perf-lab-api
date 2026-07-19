@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from app.domain.vectors import FatigueState
 from app.engine.simulate import baseline_state
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
+from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.athlete_state import AthleteState
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.user import AthleteProfile, User
@@ -73,7 +74,7 @@ async def _rows(db, user_id: int) -> list[PersonalizationShadowLog]:
 async def test_personalization_activates_with_enough_history(async_db):
     user = await _mk_user(async_db)
     last = await _seed_history(async_db, user.id, n_days=16)
-    await record_personalization_shadow(async_db, user.id, last)
+    await record_personalization_shadow(async_db, user.id, WellnessTelemetrySnapshot.from_sample(last))
 
     rows = await _rows(async_db, user.id)
     assert len(rows) == 1
@@ -90,7 +91,7 @@ async def test_sparse_athlete_falls_back_to_population(async_db):
     user = await _mk_user(async_db, email="sparse@test.com")
     # only 3 days → fewer than _MIN_OBS pairs
     last = await _seed_history(async_db, user.id, n_days=3)
-    await record_personalization_shadow(async_db, user.id, last)
+    await record_personalization_shadow(async_db, user.id, WellnessTelemetrySnapshot.from_sample(last))
 
     rows = await _rows(async_db, user.id)
     assert len(rows) == 1
@@ -108,7 +109,7 @@ async def test_estimator_failure_never_breaks_ingest(async_db, monkeypatch):
         raise RuntimeError("simulated estimator failure")
 
     monkeypatch.setattr("app.services.personalization_shadow_service.fit_athlete", _boom)
-    await record_personalization_shadow(async_db, uid, last)  # must not raise
+    await record_personalization_shadow(async_db, uid, WellnessTelemetrySnapshot.from_sample(last))  # must not raise
 
     count = (await async_db.execute(
         select(func.count()).where(PersonalizationShadowLog.user_id == uid)

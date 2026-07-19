@@ -5,8 +5,6 @@ placeholder override yields learned == baseline (zero shadow divergence until a 
 v1 prior is fitted), that recovery signals move the multiplier the right way, and that
 the clip envelope is enforced.
 """
-from types import SimpleNamespace
-
 from app.domain.vectors import FatigueState
 from app.engine.parameter_overrides import (
     apply_parameter_overrides,
@@ -19,11 +17,12 @@ from app.logic.recovery_telemetry import (
     multipliers_by_axis,
     wellness_snapshot,
 )
+from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 
 
 def _wellness(sleep_hours=8.0, hrv_ms=60.0, resting_hr=55.0, soreness=3.0, mood=6.0):
     # Defaults are the neutral baselines → every z-score is 0.
-    return SimpleNamespace(
+    return WellnessTelemetrySnapshot(
         sleep_hours=sleep_hours, hrv_ms=hrv_ms, resting_hr=resting_hr,
         soreness=soreness, mood=mood,
     )
@@ -87,7 +86,9 @@ def test_wellness_snapshot_shape():
 
 def test_missing_signals_are_skipped():
     p = default_parameters()
-    partial = SimpleNamespace(sleep_hours=None, hrv_ms=None, resting_hr=None, soreness=None, mood=None)
+    partial = WellnessTelemetrySnapshot(
+        sleep_hours=None, hrv_ms=None, resting_hr=None, soreness=None, mood=None
+    )
     # No usable signals → neutral multiplier.
     assert clearance_multiplier(p, "cns", partial) == 1.0
     assert wellness_snapshot(partial) == {

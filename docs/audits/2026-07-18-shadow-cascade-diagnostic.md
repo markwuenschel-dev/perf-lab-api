@@ -56,7 +56,21 @@ later shadows' telemetry for that request (data loss in the shadow logs), not a 
 
 ## Disposition
 
-Open as a new ledger candidate (**AUD-C24: shadow-input isolation**). Per the grill lock, no
-production change is made until classification (done); the fix is scoped separately from the
-#165 audit-remnants batch and from AUD-C8 (EKF idempotency), though remedy (1) would also
-harden the EKF path.
+Opened as **AUD-C24: shadow-input isolation** and **resolved** via remedy (1), the immutable
+payload hand-off:
+
+- The route snapshots every shadow input from the valid sample **before** the shadow chain
+  runs. The EKF path already used the C8 ``WellnessShadowInput``; the recovery + personalization
+  writers now take a frozen ``WellnessTelemetrySnapshot`` (the five consumed values) and the
+  personalization feature-builder reads wellness history as immutable ``WellnessHistoryPoint``
+  projections via the repository. No shadow writer receives a live ``WellnessSample`` (enforced
+  by a narrow ORM-boundary guard).
+- **Session isolation was NOT required.** The escape clause asked whether the failure was
+  object-expiration or shared-session unusability. A pooled-vs-NullPool probe showed the shared
+  session stays *usable* after an early best-effort rollback on **both** pools — so the defect is
+  purely data-handoff (an expired ORM instance read by a later writer), which the snapshot fixes.
+  The route-level regression was therefore exercised at the service level over one shared
+  request-session (avoiding a NullPool+ASGI reconnect artifact), and is red-capable: passing the
+  live ``sample`` instead of the snapshot drops the later shadow's row.
+
+Follow-up still open: an **EKF replay mechanism** to consume AUD-C8's ``correction_requires_replay``.

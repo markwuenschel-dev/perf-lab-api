@@ -8,10 +8,10 @@ unit-testable. Nothing here touches production state — this is the shadow comp
 from __future__ import annotations
 
 import math
-from typing import Any
 
 from app.domain.vectors import FatigueState
 from app.engine.parameters import EngineParameters
+from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.logic.wellness_signals import SIGNAL_CONFIG
 
 # Recovery-clearance beta signal key -> wellness field name. The per-field z-score
@@ -29,22 +29,32 @@ _BETA_KEY_FIELD: dict[str, str] = {
 }
 
 
-def _signal(wellness: Any, field: str) -> float | None:
-    v = getattr(wellness, field, None)
-    return None if v is None else float(v)
+def _field_values(snapshot: WellnessTelemetrySnapshot) -> dict[str, float | None]:
+    """The consumed signals as a field-name -> value map, by direct typed access (no
+    duck typing). ``None`` (missing) is preserved distinctly from a real ``0.0``."""
+    return {
+        "sleep_hours": snapshot.sleep_hours,
+        "hrv_ms": snapshot.hrv_ms,
+        "resting_hr": snapshot.resting_hr,
+        "soreness": snapshot.soreness,
+        "mood": snapshot.mood,
+    }
 
 
-def clearance_multiplier(params: EngineParameters, axis: str, wellness: Any) -> float:
-    """Fatigue-clearance multiplier for one axis given a wellness sample. Signals absent
-    from either the params' beta map or the sample are skipped (contribute nothing)."""
+def clearance_multiplier(
+    params: EngineParameters, axis: str, snapshot: WellnessTelemetrySnapshot
+) -> float:
+    """Fatigue-clearance multiplier for one axis given a wellness snapshot. Signals absent
+    from either the params' beta map or the snapshot are skipped (contribute nothing)."""
     beta = params.recovery_clearance_beta.get(axis, {})
     z_clip = params.recovery_zscore_scale
+    values = _field_values(snapshot)
     total = 0.0
     for key, field in _BETA_KEY_FIELD.items():
         w = beta.get(key)
         if w is None:
             continue
-        val = _signal(wellness, field)
+        val = values[field]
         if val is None:
             continue
         direction, base, norm = SIGNAL_CONFIG[field]
@@ -54,11 +64,13 @@ def clearance_multiplier(params: EngineParameters, axis: str, wellness: Any) -> 
     return max(params.recovery_clearance_min, min(params.recovery_clearance_max, math.exp(total)))
 
 
-def multipliers_by_axis(params: EngineParameters, wellness: Any) -> dict[str, float]:
+def multipliers_by_axis(
+    params: EngineParameters, snapshot: WellnessTelemetrySnapshot
+) -> dict[str, float]:
     """Per-axis clearance multipliers (rounded) for all six fatigue axes."""
-    return {axis: round(clearance_multiplier(params, axis, wellness), 4) for axis in FatigueState.KEYS}
+    return {axis: round(clearance_multiplier(params, axis, snapshot), 4) for axis in FatigueState.KEYS}
 
 
-def wellness_snapshot(wellness: Any) -> dict[str, float | None]:
+def wellness_snapshot(snapshot: WellnessTelemetrySnapshot) -> dict[str, float | None]:
     """The wellness signals used by the multiplier, for the telemetry row."""
-    return {field: _signal(wellness, field) for field in _BETA_KEY_FIELD.values()}
+    return _field_values(snapshot)

@@ -17,7 +17,6 @@ from datetime import timedelta
 from typing import Any
 
 import numpy as np
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.vectors import FatigueState
@@ -28,11 +27,11 @@ from app.logic.personalization.hierarchical import (
     partial_pool_with_sampling_var,
 )
 from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
+from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.logic.wellness_signals import SIGNAL_CONFIG
 from app.ml.personalization.partial_pool_fit import fit_athlete
 from app.models.athlete_state import AthleteState
 from app.models.personalization_shadow import PersonalizationShadowLog
-from app.models.wellness import WellnessSample
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.services.telemetry_common import best_effort_write
@@ -70,10 +69,9 @@ async def _build_recovery_frame(
     ``meanF(d) − meanF(d+1)``. Rows with a missing signal or no consecutive-day fatigue pair are
     dropped; an athlete without enough aligned data yields an empty frame.
     """
-    w_rows = (await db.execute(
-        select(WellnessSample).where(WellnessSample.user_id == user_id).order_by(WellnessSample.date)
-    )).scalars().all()
-    s_rows = await AthleteContextRepository(db).list_states_ascending(user_id)
+    repo = AthleteContextRepository(db)
+    w_rows = await repo.list_wellness_history(user_id)  # immutable projections, not ORM rows
+    s_rows = await repo.list_states_ascending(user_id)
     if not w_rows or not s_rows:
         return np.empty((0, 3)), np.empty((0,))
 
@@ -81,13 +79,13 @@ async def _build_recovery_frame(
     fat_by_day: dict[Any, float] = {}
     for r in s_rows:
         fat_by_day[r.timestamp.date()] = _mean_fatigue(r)
-    latest = max(w_rows, key=lambda r: r.date).date
+    latest = max(w_rows, key=lambda r: r.recorded_date).recorded_date
     cutoff = latest - timedelta(days=_WINDOW_DAYS)
 
     z_list: list[list[float]] = []
     y_list: list[float] = []
     for r in w_rows:
-        d = r.date
+        d = r.recorded_date
         if d < cutoff:
             continue
         nxt = d + timedelta(days=1)
@@ -102,8 +100,13 @@ async def _build_recovery_frame(
     return np.array(z_list, dtype=float), np.array(y_list, dtype=float)
 
 
-async def record_personalization_shadow(db: AsyncSession, user_id: int, wellness: object) -> None:
-    """Write one per-athlete personalization shadow row. Never raises to the caller."""
+async def record_personalization_shadow(
+    db: AsyncSession, user_id: int, snapshot: WellnessTelemetrySnapshot
+) -> None:
+    """Write one per-athlete personalization shadow row. Never raises to the caller.
+
+    Takes an immutable current-wellness snapshot, never a live WellnessSample ORM instance
+    (AUD-C24)."""
     async with best_effort_write(db, f"personalization shadow log for user {user_id}"):
         params = default_parameters()
         artifact = load_namespace_override(_NAMESPACE)
@@ -150,9 +153,9 @@ async def record_personalization_shadow(db: AsyncSession, user_id: int, wellness
                 n_obs=n,
                 shrinkage_weight=round(w_mean, 4),
                 theta_trace=round(theta_trace, 6),
-                wellness=wellness_snapshot(wellness),
-                population_multiplier=multipliers_by_axis(population, wellness),
-                personalized_multiplier=multipliers_by_axis(personalized, wellness),
+                wellness=wellness_snapshot(snapshot),
+                population_multiplier=multipliers_by_axis(population, snapshot),
+                personalized_multiplier=multipliers_by_axis(personalized, snapshot),
                 decision_impact="none_shadow_only",
             )
         )
