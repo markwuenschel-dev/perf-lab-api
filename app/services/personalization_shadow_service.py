@@ -32,9 +32,9 @@ from app.logic.wellness_signals import SIGNAL_CONFIG
 from app.ml.personalization.partial_pool_fit import fit_athlete
 from app.models.athlete_state import AthleteState
 from app.models.personalization_shadow import PersonalizationShadowLog
-from app.models.user import AthleteProfile
 from app.models.wellness import WellnessSample
 from app.repositories.athlete_context_repository import AthleteContextRepository
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.services.telemetry_common import best_effort_write
 
 _NAMESPACE = "q2_recovery"
@@ -113,9 +113,7 @@ async def record_personalization_shadow(db: AsyncSession, user_id: int, wellness
         model_version = str(artifact["version"])
         mu0_resp = dict(artifact.get("training", {}).get("learned_response", {}))
 
-        profile = (await db.execute(
-            select(AthleteProfile).where(AthleteProfile.user_id == user_id)
-        )).scalars().first()
+        profile = await AthleteProfileRepository(db).get_for_user(user_id)
         scale = experience_prior_scale(profile.experience_level if profile else None)
 
         clip = params.recovery_zscore_scale

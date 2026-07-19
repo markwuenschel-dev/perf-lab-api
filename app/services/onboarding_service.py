@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.vectors import CapacityState
 from app.logic import confidence_presentation as cp
 from app.logic import onboarding_state as ob
 from app.models.user import AthleteProfile
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.onboarding import (
     OnboardingStateResponse,
     OnboardingTwinSummary,
@@ -28,10 +28,7 @@ _DEBT_PROMPT_LIMIT = 5
 
 
 async def _profile(db: AsyncSession, user_id: int) -> AthleteProfile | None:
-    result = await db.execute(
-        select(AthleteProfile).where(AthleteProfile.user_id == user_id)
-    )
-    return result.scalars().first()
+    return await AthleteProfileRepository(db).get_for_user(user_id)
 
 
 async def _twin_summary(db: AsyncSession, user_id: int, profile: AthleteProfile | None) -> OnboardingTwinSummary:

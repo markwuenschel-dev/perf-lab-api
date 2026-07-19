@@ -39,6 +39,7 @@ from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
+from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import (
@@ -248,16 +249,11 @@ async def _persist_seed_snapshot(
     bench_1rm_kg: float | None,
     run_5k_seconds: float | None,
 ) -> None:
-    from app.models.user import AthleteProfile
-
     try:
         plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
         seeded_at = datetime.now(UTC).replace(tzinfo=None)
         snapshot = seed_snapshot.build_seed_snapshot(plan, seeded_at=seeded_at)
-        result = await db.execute(
-            select(AthleteProfile).where(AthleteProfile.user_id == user_id)
-        )
-        profile = result.scalars().first()
+        profile = await AthleteProfileRepository(db).get_for_user(user_id)
         if profile is None:
             return
         profile.initial_seed_by_axis = snapshot
