@@ -33,6 +33,25 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+# ---------------------------------------------------------------------------
+# HARD COST KILL — must run BEFORE any app import (Settings reads .env).
+# A developer .env with LITELLM_VIRTUAL_KEY / OPENAI_API_KEY must never bill
+# providers during pytest. Process env overrides pydantic env_file values.
+# ---------------------------------------------------------------------------
+for _cost_env in (
+    "LITELLM_VIRTUAL_KEY",
+    "LITELLM_BASE_URL",
+    "LITELLM_MODEL",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "XAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+):
+    os.environ[_cost_env] = ""
+os.environ["LLG_HERMETIC"] = "1"
+os.environ["PERF_LAB_HERMETIC_TESTS"] = "1"
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -48,6 +67,24 @@ from sqlalchemy.pool import NullPool
 import app.models  # noqa: F401
 from alembic import command
 from app.core.db import get_db
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_no_live_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep provider/gateway credentials empty for every test (cost leak guard)."""
+    for key in (
+        "LITELLM_VIRTUAL_KEY",
+        "LITELLM_BASE_URL",
+        "LITELLM_MODEL",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "XAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+    ):
+        monkeypatch.setenv(key, "")
+    monkeypatch.setenv("LLG_HERMETIC", "1")
+    monkeypatch.setenv("PERF_LAB_HERMETIC_TESTS", "1")
 
 
 @contextmanager

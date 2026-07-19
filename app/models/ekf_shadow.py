@@ -1,11 +1,16 @@
 """EkfShadowLog — shadow telemetry for the full-covariance EKF (never a live decision).
 
-One row per EKF step in the parallel shadow estimator (ADR-0041):
+One row per EKF step in the parallel shadow estimator (ADR-0041). ``event_type`` names the
+transition operator; the observation *source* is carried orthogonally by
+``source_wellness_sample_id`` (AUD-C8):
 
 - ``event_type="predict"`` — written when a workout is ingested; records the belief after
   propagating the covariance through the deterministic twin.
-- ``event_type="update"`` — written when a benchmark is assimilated; records the belief
-  after the joint measurement correction, plus innovation/gain/trace diagnostics.
+- ``event_type="update"`` — a measurement correction: a benchmark (source NULL) or an original
+  wellness assimilation (source non-NULL), plus innovation/gain/trace diagnostics.
+- ``event_type="replay"`` (source non-NULL) — a corrected wellness observation replayed from its
+  predecessor belief when it was still the effective head; supersedes the row it corrects and
+  links back to the belief it rebuilt from (head-correction replay, a038).
 
 ``mean_json``/``variance_json`` are per-axis maps keyed ``"domain.key"`` in normalized
 space; ``covariance_json`` is the full 22x22 matrix as a nested list (enough to rehydrate
@@ -35,15 +40,31 @@ from app.core.db import Base
 class EkfShadowLog(Base):
     __tablename__ = "ekf_shadow_log"
     __table_args__ = (
-        # AUD-C8: at most one shadow assimilation per (wellness observation, model version).
-        # Partial — legacy/predict/benchmark rows carry no source identity and are unrestricted.
-        # This is the database concurrency authority for wellness-observation idempotency.
+        # AUD-C8/replay: at most one ORIGINAL wellness assimilation per (observation, model).
+        # Scoped POSITIVELY to event_type='update' (Q9) so replay rows (event_type='replay') for
+        # the same (sample, model) coexist, and a future source-carrying event type cannot
+        # silently inherit this uniqueness. The concurrency authority for at-most-once assimilation.
         Index(
-            "uq_ekf_shadow_wellness_sample_model",
+            "uq_ekf_original_wellness_source_model",
             "source_wellness_sample_id",
             "model_version",
             unique=True,
-            postgresql_where=text("source_wellness_sample_id IS NOT NULL"),
+            postgresql_where=text(
+                "source_wellness_sample_id IS NOT NULL AND event_type = 'update'"
+            ),
+        ),
+        # Replay idempotency: one replay per source observation, per model, per correction
+        # generation — keyed by source identity, not lineage, so retries under a shifting head
+        # cannot admit a second replay for the same generation.
+        Index(
+            "uq_ekf_wellness_replay_revision",
+            "source_wellness_sample_id",
+            "model_version",
+            "correction_revision",
+            unique=True,
+            postgresql_where=text(
+                "source_wellness_sample_id IS NOT NULL AND event_type = 'replay'"
+            ),
         ),
         # A row linked to a wellness observation must carry complete hash provenance;
         # legacy/unlinked rows stay NULL. Prevents a half-populated new identity.
@@ -51,6 +72,19 @@ class EkfShadowLog(Base):
             "source_wellness_sample_id IS NULL "
             "OR (assimilated_content_hash IS NOT NULL AND latest_seen_content_hash IS NOT NULL)",
             name="ck_ekf_shadow_wellness_hash_complete",
+        ),
+        # A replay row must carry complete lineage provenance.
+        CheckConstraint(
+            "event_type <> 'replay' OR ("
+            "source_wellness_sample_id IS NOT NULL AND supersedes_log_id IS NOT NULL "
+            "AND replay_base_log_id IS NOT NULL AND correction_revision > 0)",
+            name="ck_ekf_replay_lineage_complete",
+        ),
+        # correction_requires_replay ⇔ replayed_revision < correction_revision; never negative,
+        # never ahead of the correction generation.
+        CheckConstraint(
+            "replayed_revision >= 0 AND replayed_revision <= correction_revision",
+            name="ck_ekf_replayed_revision_bounds",
         ),
     )
 
@@ -102,8 +136,36 @@ class EkfShadowLog(Base):
     # Hash of the most recently received content for this observation (advances on corrections).
     latest_seen_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Sticky: set when a correction (changed content, same identity) arrives; cleared only by
-    # a real replay that rebuilds the trajectory, never by a later identical retry.
+    # a real replay that rebuilds the trajectory, never by a later identical retry. Materializes
+    # the invariant ``replayed_revision < correction_revision`` (kept consistent by the classifier
+    # and reconciliation).
     correction_requires_replay: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     correction_detected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # ── AUD-C8: head-correction replay lineage (a038) ───────────────────────────────────
+    # Monotonic correction generation on the ORIGINAL assimilation row: bumped once per changed
+    # ``latest_seen_content_hash`` (so A→B→A counts as two generations, not zero). Replay rows
+    # carry the generation they reproduce (> 0).
+    correction_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # Highest generation whose replay has been durably appended (on the original row). The flag is
+    # true exactly while this trails ``correction_revision``.
+    replayed_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    replayed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Provenance (nullable; populated on the relevant row). ``replayed_by_log_id`` lives on the
+    # original row → the replay that resolved it; ``supersedes``/``replay_base`` live on the
+    # replay row → the head it replaced and the predecessor belief it rebuilt from.
+    replayed_by_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("ekf_shadow_log.id", ondelete="SET NULL"), nullable=True
+    )
+    supersedes_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("ekf_shadow_log.id", ondelete="SET NULL"), nullable=True
+    )
+    replay_base_log_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("ekf_shadow_log.id", ondelete="SET NULL"), nullable=True
+    )
