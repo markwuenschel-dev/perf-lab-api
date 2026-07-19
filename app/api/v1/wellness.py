@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.logic.ekf.wellness_input import build_wellness_shadow_input
 from app.models.user import User
 from app.schemas.wellness import ReadinessScore, WellnessSampleIn, WellnessSampleOut
 from app.services import (
@@ -36,15 +37,21 @@ async def ingest_wellness(
     # afterwards would trigger an async lazy-load outside a greenlet and 500 a durable write.
     # (Same guard as the workout path, state_service.py:1056-1058.)
     result = WellnessSampleOut.model_validate(sample)
+    # Snapshot the shadow-EKF input from the VALID sample now, before the shadows run (AUD-C8/
+    # C24): the EKF writer must receive an immutable payload, never a live ORM instance an
+    # earlier shadow's rollback could expire. (sample.user_id == current_user.id by construction
+    # of the upsert above — the idempotency row's tenant is consistent with the source sample.)
+    ekf_input = build_wellness_shadow_input(current_user.id, sample.id, sample.soreness)
     # Shadow-only (Q2 recovery priors): record baseline-vs-learned clearance multipliers.
     # Best-effort — never affects the response or a live decision.
     await recovery_shadow_service.record_recovery_shadow(db, current_user.id, sample)
     # Shadow-only (ADR-0043): per-athlete partial-pooled recovery β vs the population prior.
     # Best-effort — never affects the response or a live decision.
     await personalization_shadow_service.record_personalization_shadow(db, current_user.id, sample)
-    # Shadow EKF (ADR-0041): assimilate the soreness reading into the belief's fatigue block.
+    # Shadow EKF (ADR-0041): assimilate the soreness reading into the belief's fatigue block,
+    # exactly once per (observation, model version) — AUD-C8 DB-enforced idempotency.
     await ekf_shadow_service.record_ekf_wellness_observation(
-        db, current_user.id, sample, observed_at=datetime.now(UTC)
+        db, current_user.id, ekf_input, observed_at=datetime.now(UTC)
     )
     return result
 
