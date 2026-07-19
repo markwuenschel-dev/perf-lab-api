@@ -34,6 +34,7 @@ from app.models.athlete_state import AthleteState
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.user import AthleteProfile
 from app.models.wellness import WellnessSample
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.services.telemetry_common import best_effort_write
 
 _NAMESPACE = "q2_recovery"
@@ -72,9 +73,7 @@ async def _build_recovery_frame(
     w_rows = (await db.execute(
         select(WellnessSample).where(WellnessSample.user_id == user_id).order_by(WellnessSample.date)
     )).scalars().all()
-    s_rows = (await db.execute(
-        select(AthleteState).where(AthleteState.user_id == user_id).order_by(AthleteState.timestamp)
-    )).scalars().all()
+    s_rows = await AthleteContextRepository(db).list_states_ascending(user_id)
     if not w_rows or not s_rows:
         return np.empty((0, 3)), np.empty((0,))
 

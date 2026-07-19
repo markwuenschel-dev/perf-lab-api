@@ -284,6 +284,20 @@ async def load_current_state(
     return unified_from_athlete_row(row) if row is not None else None
 
 
+async def load_recent_states(
+    db: AsyncSession, user_id: int, limit: int
+) -> list[UnifiedStateVector]:
+    """The athlete's recent domain state vectors, oldest→newest (chart order).
+
+    The multi-row twin of load_current_state: fetch recent rows via the repository seam
+    and convert them to domain vectors, staying above the seam per CONTEXT.md (the
+    repository returns rows, never vectors — this owns the fetch→convert pairing so routes
+    don't re-pair select(AthleteState) with unified_from_athlete_row by hand).
+    """
+    rows = await AthleteContextRepository(db).list_recent_states(user_id, limit)
+    return [unified_from_athlete_row(r) for r in reversed(rows)]
+
+
 async def load_or_init_current_state(
     db: AsyncSession, user_id: int
 ) -> UnifiedStateVector:
