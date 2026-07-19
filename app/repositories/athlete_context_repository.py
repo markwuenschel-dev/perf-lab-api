@@ -7,16 +7,41 @@ updates, or benchmark mapping). Callers convert ORM rows to domain vectors via
 
 The interface grows one migrated query at a time; methods are added only as
 call sites are routed through them, so every method here has real callers.
+
+Exception (AUD-C24): ``list_wellness_history`` returns immutable
+``WellnessHistoryPoint`` **projections**, not ``WellnessSample`` ORM rows, so the
+shadow feature-builder never holds a live entity an earlier shadow's rollback
+could expire. This is a flat scalar projection, not a ``state_bridge`` domain-vector
+mapping, so it does not pull domain logic into the repository — the rule this
+boundary exists to keep.
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete_state import AthleteState
+from app.models.wellness import WellnessSample
 from app.models.workout_log import WorkoutLog
+
+
+@dataclass(frozen=True, slots=True)
+class WellnessHistoryPoint:
+    """Immutable projection of one wellness observation's feature-building inputs.
+
+    Exactly the fields the personalization recovery frame consumes (``recorded_date`` plus the
+    three z-scored signals) — not the full ``WellnessSample`` surface. ``None`` (missing) is
+    preserved distinctly from a real ``0.0``.
+    """
+
+    recorded_date: date
+    sleep_hours: float | None
+    hrv_ms: float | None
+    resting_hr: float | None
 
 
 class AthleteContextRepository:
@@ -55,6 +80,47 @@ class AthleteContextRepository:
             .order_by(AthleteState.timestamp)
         )
         return result.scalars().all()
+
+    # ----- Wellness -----
+    async def list_wellness_history(
+        self,
+        user_id: int,
+        *,
+        through_date: date | None = None,
+        limit: int | None = None,
+    ) -> list[WellnessHistoryPoint]:
+        """The athlete's wellness history as immutable projections, oldest first.
+
+        Athlete-scoped; ordered by ``(date, id)`` so the sequence is deterministic when
+        multiple sources share a day; empty history returns ``[]``. Returns projections, never
+        ``WellnessSample`` entities, so session lifecycle cannot affect the returned values
+        (AUD-C24).
+        """
+        conditions = [WellnessSample.user_id == user_id]
+        if through_date is not None:
+            conditions.append(WellnessSample.date <= through_date)
+        stmt = (
+            select(
+                WellnessSample.date,
+                WellnessSample.sleep_hours,
+                WellnessSample.hrv_ms,
+                WellnessSample.resting_hr,
+            )
+            .where(*conditions)
+            .order_by(WellnessSample.date, WellnessSample.id)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        rows = await self.session.execute(stmt)
+        return [
+            WellnessHistoryPoint(
+                recorded_date=row.date,
+                sleep_hours=row.sleep_hours,
+                hrv_ms=row.hrv_ms,
+                resting_hr=row.resting_hr,
+            )
+            for row in rows
+        ]
 
     # ----- Workouts -----
     async def list_recent_workouts(self, user_id: int, limit: int) -> Sequence[WorkoutLog]:
