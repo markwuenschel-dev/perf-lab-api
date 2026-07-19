@@ -122,7 +122,7 @@ export function Chart({
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label={ariaLabel}
-        className="block h-auto w-full overflow-visible"
+        className="block h-full w-full overflow-hidden"
         style={{ fontVariantNumeric: "tabular-nums", touchAction: "none" }}
         onPointerMove={onMove}
         onPointerLeave={onLeave}
