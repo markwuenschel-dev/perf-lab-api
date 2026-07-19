@@ -8,7 +8,7 @@ Requires a live PostgreSQL instance (async_db fixture).
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -16,11 +16,13 @@ from psd_helpers import assert_covariance_psd
 from sqlalchemy import func, select
 
 from app.analysis.feature_builders.ekf_calibration_features import summarize_ekf_shadow
+from app.logic.ekf.wellness_input import build_wellness_shadow_input
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.ekf_shadow import EkfShadowLog
 from app.models.observation_mapping import ObservationMapping
 from app.models.user import User
+from app.models.wellness import WellnessSample
 from app.schemas.benchmarks import BenchmarkObservationCreate
 from app.schemas.workouts import WorkoutLog
 from app.services import benchmark_service, ekf_shadow_service
@@ -105,18 +107,23 @@ async def test_update_shrinks_trace_and_writes_update_row(async_db):
 
 
 async def test_wellness_observation_writes_fatigue_update_row(async_db):
-    from types import SimpleNamespace
-
     user = await _create_user(async_db)
     await initialize_athlete_state(async_db, user.id)
-    await ekf_shadow_service.record_ekf_wellness_observation(
-        async_db, user.id, SimpleNamespace(soreness=7.0), observed_at=datetime.now(UTC)
+    sample = WellnessSample(user_id=user.id, date=date(2026, 1, 1), source="manual", soreness=7.0)
+    async_db.add(sample)
+    await async_db.commit()
+    await async_db.refresh(sample)
+    si = build_wellness_shadow_input(user.id, sample.id, 7.0)
+    outcome = await ekf_shadow_service.record_ekf_wellness_observation(
+        async_db, user.id, si, observed_at=datetime.now(UTC)
     )
+    assert outcome == "assimilated"
     rows = [r for r in await _ekf_rows(async_db, user.id) if r.event_type == "update"]
     assert len(rows) == 1
     assert rows[0].benchmark_code == "wellness"
     assert rows[0].n_obs == 2  # muscular + structural fatigue (soreness only)
     assert rows[0].trace_post < rows[0].trace_pre
+    assert rows[0].source_wellness_sample_id == sample.id  # AUD-C8 idempotency linkage
 
 
 async def test_benchmark_endpoint_end_to_end_writes_update_and_keeps_production(async_db):

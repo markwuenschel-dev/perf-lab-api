@@ -1,15 +1,16 @@
 """Read-only shadow-inspection summary (ADR-0041/0042/0043)."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from types import SimpleNamespace
+from datetime import UTC, date, datetime
 
 import pytest
 
+from app.logic.ekf.wellness_input import build_wellness_shadow_input
 from app.models.mpc_shadow import MpcShadowLog
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.models.user import User
+from app.models.wellness import WellnessSample
 from app.services import ekf_shadow_service
 from app.services.shadow_summary_service import athlete_shadow_summary
 from app.services.state_service import initialize_athlete_state
@@ -41,8 +42,12 @@ async def test_summary_aggregates_every_subsystem(async_db):
     await initialize_athlete_state(async_db, uid)
 
     # EKF: a wellness observation writes an update row.
+    w = WellnessSample(user_id=uid, date=date(2026, 1, 1), source="manual", soreness=6.0)
+    async_db.add(w)
+    await async_db.commit()
+    await async_db.refresh(w)
     await ekf_shadow_service.record_ekf_wellness_observation(
-        async_db, uid, SimpleNamespace(soreness=6.0), observed_at=datetime.now(UTC)
+        async_db, uid, build_wellness_shadow_input(uid, w.id, 6.0), observed_at=datetime.now(UTC)
     )
     # Seed one row in each of the other shadow logs.
     async_db.add(RecoveryShadowLog(
