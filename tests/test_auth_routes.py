@@ -27,6 +27,36 @@ async def test_register_duplicate_email(http_client):
     assert second.status_code == 409, second.text
 
 
+async def test_register_precheck_normalizes_email_before_lookup(http_client, monkeypatch):
+    """The duplicate-email precheck must call get_by_email with a normalized
+    (lower-cased) email, per that method's own documented contract ("the caller
+    is responsible for any normalization... before calling") and matching the
+    lower-cased value the insert below it always stores.
+
+    A black-box "register mixed case twice -> 409" test would pass even without
+    this fix, because a mismatched precheck falls through to the generic
+    IntegrityError catch, which also returns 409 -- so it can't tell the two
+    code paths apart. This test asserts the actual call argument instead.
+    """
+    from app.repositories.user_repository import UserRepository
+
+    seen_args: list[str] = []
+    original = UserRepository.get_by_email
+
+    async def spy(self, email):
+        seen_args.append(email)
+        return await original(self, email)
+
+    monkeypatch.setattr(UserRepository, "get_by_email", spy)
+
+    resp = await http_client.post(
+        "/auth/register",
+        json={"email": "MixedCase@Test.com", "password": "securepass1"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert seen_args == ["mixedcase@test.com"]
+
+
 async def test_register_missing_field(http_client):
     """POST /auth/register without the password field returns 422."""
     resp = await http_client.post(

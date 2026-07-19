@@ -28,6 +28,10 @@ dependencies = [
     "pyjwt>=2.8.0",
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.3.0",
+    # app/core/crypto.py imports cryptography.fernet directly for at-rest wearable
+    # OAuth token encryption; declared explicitly rather than relying on it arriving
+    # transitively via python-jose[cryptography]'s own extra.
+    "cryptography>=41.0.0",
     "email-validator>=2.1.0",
     "bcrypt>=4.0.0",
     # HTTP / JSON
