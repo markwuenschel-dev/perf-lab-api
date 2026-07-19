@@ -6,14 +6,18 @@ between the live schema and ``Base.metadata`` — no table or column present in 
 but missing from the other, and no column whose type silently changed. That is
 the class of drift that breaks production queries.
 
-Scope note (deliberate): autogenerate also reports *cosmetic* metadata drift —
-column comments, ``NOT NULL`` flags, and index/constraint naming — that has
-accumulated in this repo (109 such diffs at introduction, 0 structural). Those do
-not change query correctness, and reconciling them is a separate, migration-heavy
-cleanup (adding ``NOT NULL`` needs a data audit; renaming indexes is churn). This
-gate intentionally excludes them so it stays a meaningful, green structural check
-rather than a red backlog. The cosmetic categories are surfaced (printed) for
-visibility. See the follow-up note in the INT quick-wins PR.
+Scope note: autogenerate also reports *cosmetic* metadata drift — column comments,
+``NOT NULL`` flags, and index/constraint naming — that accumulated in this repo (109
+such diffs at introduction, 0 structural). Those do not change query correctness, and
+reconciling them is a separate, migration-heavy cleanup (adding ``NOT NULL`` needs a
+data audit; renaming indexes is churn). Rather than fail on that backlog, the cosmetic
+categories are held to a **per-category shrink-only ratchet** (AUD-C7,
+``test_cosmetic_drift_does_not_grow``): each category must exactly match a reviewed
+baseline, so a regression fails, a reduction fails until the baseline is lowered in the
+same PR (the debt can never quietly regain slack), and a brand-new drift category fails
+until it is reviewed into the baseline. The baseline is *containment, not closure* — the
+``modify_nullable`` count is the C12 nullability surface, tracked as debt with a separate
+owner, not blessed as correct.
 
 This is a ``requires_db`` test (uses ``async_db``); it skips only when Postgres is
 unreachable, and fails loudly on real structural drift.
@@ -63,20 +67,75 @@ def _diffs(sync_conn: Connection) -> list:
     return compare_metadata(context, Base.metadata)
 
 
+# Reviewed per-category baseline of KNOWN cosmetic (non-structural) drift, from a live
+# autogenerate run. SHRINK-ONLY: `test_cosmetic_drift_does_not_grow` asserts each actual
+# count *equals* its baseline, so this dict is the single reviewed source of truth —
+# raising an entry accepts new drift (reviewed here in the PR diff), lowering one locks in
+# a fix, and neither may drift without a code change a reviewer sees. `modify_nullable` is
+# the C12 nullability surface: tracked debt with a separate owner, contained here, not
+# declared correct.
+COSMETIC_DRIFT_BASELINE = {
+    "modify_comment": 43,
+    "modify_nullable": 29,
+    "add_index": 13,
+    "remove_index": 7,
+    "remove_constraint": 2,
+}
+
+
 async def test_no_structural_drift(async_db):
     """Models and the Alembic head agree on every table, column, and column type."""
     conn = await async_db.connection()
     diffs = await conn.run_sync(_diffs)
-
-    by_op: collections.Counter[str] = collections.Counter(_op_name(d) for d in diffs)
-    cosmetic = {op: n for op, n in by_op.items() if op not in STRUCTURAL_OPS}
-    if cosmetic:
-        # Visible, non-failing: the known metadata-drift backlog (INT-03 follow-up).
-        print(f"[INT-03] non-structural (cosmetic) drift, not gated: {dict(cosmetic)}")
 
     structural = [d for d in diffs if _op_name(d) in STRUCTURAL_OPS]
     assert structural == [], (
         "Structural model/migration drift — a table, column, or column type "
         "differs between the models and the Alembic head. Generate a migration "
         "(or fix the model):\n" + "\n".join(f"  - {d}" for d in structural)
+    )
+
+
+async def test_cosmetic_drift_does_not_grow(async_db):
+    """Per-category shrink-only ratchet on cosmetic (non-structural) drift (AUD-C7).
+
+    Each cosmetic category must match its reviewed ``COSMETIC_DRIFT_BASELINE`` exactly:
+    a regression (count above baseline) fails, a reduction (count below baseline) fails
+    until the baseline is lowered in the same PR — so no category can quietly regain slack
+    and offset another's regression — and a brand-new drift category fails until it is
+    reviewed into the baseline. Containment of known debt, not a claim it is correct.
+    """
+    conn = await async_db.connection()
+    diffs = await conn.run_sync(_diffs)
+
+    by_op: collections.Counter[str] = collections.Counter(_op_name(d) for d in diffs)
+    cosmetic = {op: n for op, n in by_op.items() if op not in STRUCTURAL_OPS}
+
+    unknown = sorted(set(cosmetic) - set(COSMETIC_DRIFT_BASELINE))
+    assert not unknown, (
+        f"new cosmetic drift categor(ies) not in the reviewed baseline: "
+        f"{ {op: cosmetic[op] for op in unknown} }. Reconcile the drift, or add the "
+        "category to COSMETIC_DRIFT_BASELINE with review explaining the accepted drift."
+    )
+
+    regressions = {
+        op: (cosmetic.get(op, 0), base)
+        for op, base in COSMETIC_DRIFT_BASELINE.items()
+        if cosmetic.get(op, 0) > base
+    }
+    assert not regressions, (
+        "cosmetic drift GREW past its baseline {actual > baseline}: "
+        f"{regressions}. Generate a migration to reconcile it — a category may not expand "
+        "(and cannot be offset by a shrink elsewhere, since each is gated independently)."
+    )
+
+    reductions = {
+        op: (cosmetic.get(op, 0), base)
+        for op, base in COSMETIC_DRIFT_BASELINE.items()
+        if cosmetic.get(op, 0) < base
+    }
+    assert not reductions, (
+        "cosmetic drift SHRANK below its baseline {actual < baseline}: "
+        f"{reductions}. Good — now lower the corresponding COSMETIC_DRIFT_BASELINE entr"
+        "y(ies) to lock the reduction in, so the slack can't return as a silent regression."
     )
