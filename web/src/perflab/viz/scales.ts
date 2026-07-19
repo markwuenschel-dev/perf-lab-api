@@ -63,18 +63,31 @@ export interface BandScale {
   count: number;
 }
 
-/** Evenly spaced bands for categorical columns/bars. */
+/** Evenly spaced bands for categorical columns/bars.
+ *
+ * `count === 0` is valid emptiness (an empty dataset): zero step and bandwidth, positions
+ * collapse to the range start — never a nonzero bandwidth for zero categories. Negative or
+ * non-integer counts are a programmer error and are rejected, rather than silently
+ * normalized (which would hide an upstream bug behind a plausible but wrong chart).
+ * Descending ranges are supported: `step` carries direction so positions descend, while
+ * `bandWidth` stays a nonnegative magnitude. */
 export function bandScale({ count, range, innerPad = 0.2 }: BandScaleOpts): BandScale {
+  if (!Number.isInteger(count) || count < 0) {
+    throw new RangeError(`bandScale: count must be a non-negative integer, got ${count}`);
+  }
   const [r0, r1] = range;
+  if (count === 0) {
+    return { step: 0, bandWidth: 0, count: 0, center: () => r0, start: () => r0 };
+  }
   const span = r1 - r0;
-  const step = count > 0 ? span / count : span;
-  const bandWidth = step * (1 - innerPad);
+  const step = span / count; // carries direction (negative for a descending range)
+  const bandWidth = Math.abs(step) * (1 - innerPad); // a width is a magnitude — nonnegative
   return {
     step,
     bandWidth,
     count,
-    start: (i: number) => r0 + i * step + (step - bandWidth) / 2,
     center: (i: number) => r0 + i * step + step / 2,
+    start: (i: number) => r0 + i * step + step / 2 - bandWidth / 2,
   };
 }
 
@@ -100,10 +113,18 @@ export interface Radial {
   valuePolygon(values: readonly number[]): string;
 }
 
-/** Polar placement for radar/spider charts. Replaces the Twin radar trig. */
+/** Polar placement for radar/spider charts. Replaces the Twin radar trig.
+ *
+ * `valuePolygon` values are normalized fractions clamped to [0, 1]: a negative fraction
+ * would otherwise reflect a point through the center and a >1 fraction would escape the
+ * radar boundary — both geometric artifacts with no product meaning. With `count === 0`
+ * (an empty dataset) every helper is total: polygons are empty and `point`/`spoke` return
+ * the center rather than NaN coordinates that would corrupt SVG geometry downstream. */
 export function radial({ cx, cy, r, count, startAngle = -90 }: RadialOpts): Radial {
+  const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
   const angle = (i: number) => ((startAngle + (360 / count) * i) * Math.PI) / 180;
   const point = (i: number, radius: number): Vec2 => {
+    if (count < 1) return [cx, cy]; // no angular structure -> center
     const a = angle(i);
     return [cx + radius * Math.cos(a), cy + radius * Math.sin(a)];
   };
@@ -113,7 +134,7 @@ export function radial({ cx, cy, r, count, startAngle = -90 }: RadialOpts): Radi
     point,
     spoke: (i) => point(i, r),
     gridPolygon: (frac) => poly(() => r * frac),
-    valuePolygon: (values) => poly((i) => r * (values[i] ?? 0)),
+    valuePolygon: (values) => poly((i) => r * clamp01(values[i] ?? 0)),
   };
 }
 
@@ -135,28 +156,46 @@ export function areaPath(points: readonly Vec2[], baselineY: number): string {
 
 // ── ticks ────────────────────────────────────────────────────────────────────
 
-/** "Nice" rounded tick values spanning [lo, hi] (~count ticks). */
+/** "Nice" rounded tick values spanning [lo, hi] (~count ticks).
+ *
+ * Reversed bounds (`lo > hi`) are supported: ticks are computed over the normalized
+ * [min, max] domain and returned in the caller's original direction, so
+ * `niceTicks(b, a) === reverse(niceTicks(a, b))`. Reversed domains are valid in
+ * visualization (screen-coordinate and ranking axes), so this must not lose them. */
 export function niceTicks(lo: number, hi: number, count = 5): number[] {
   if (lo === hi) return [lo];
-  const span = hi - lo;
+  const reversed = lo > hi;
+  const a = Math.min(lo, hi);
+  const b = Math.max(lo, hi);
+  const span = b - a;
   const rawStep = span / Math.max(1, count);
   const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
   const norm = rawStep / mag;
   const step = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag;
-  const start = Math.ceil(lo / step) * step;
+  const start = Math.ceil(a / step) * step;
   const ticks: number[] = [];
-  for (let v = start; v <= hi + step * 1e-9; v += step) {
+  for (let v = start; v <= b + step * 1e-9; v += step) {
     // guard float drift so 0 prints as 0, not -0 / 1e-16
     ticks.push(Math.abs(v) < step * 1e-9 ? 0 : +v.toFixed(10));
   }
-  return ticks;
+  return reversed ? ticks.reverse() : ticks;
 }
 
-/** Compact number formatter for axis ticks / stat values (1,284 / 12.9K / 4.2M). */
+/** Compact number formatter for axis ticks / stat values (1,284 / 13K / 4.2M).
+ *
+ * Unit representation is normalized after rounding: a value that rounds to 1000K is
+ * promoted to "1M" rather than rendered as an out-of-range "1000K" (e.g. 999_500 → "1M").
+ * The carry therefore happens at the rounding boundary, not only at the raw 1_000_000.
+ */
 export function compact(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1e6) return (n / 1e6).toFixed(abs >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
-  if (abs >= 1e4) return (n / 1e3).toFixed(0) + "K";
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1e4) {
+    const k = Math.round(abs / 1e3);
+    if (k < 1000) return sign + k + "K";
+    const m = abs / 1e6;
+    return sign + (abs >= 1e7 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, "")) + "M";
+  }
   if (abs >= 1e3) return n.toLocaleString("en-US");
   return String(n);
 }

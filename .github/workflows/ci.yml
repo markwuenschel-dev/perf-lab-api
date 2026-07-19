@@ -37,6 +37,10 @@ jobs:
               # claim '.github/**' on purpose: a CI-only change should prove itself
               # against everything it gates.
               - '.github/**'
+              # The domain-vocab parity gate (tests/test_domain_vocab_web_parity.py)
+              # binds this TS mirror to app.logic.domain_vocab.DOMAINS. Run the Python
+              # suite when either side moves, including a mirror-only edit (AUD-C20).
+              - 'web/src/perflab/domains.ts'
             web:
               - 'web/**'
               # The frontend types are generated from the contract — regenerate +
@@ -196,6 +200,12 @@ jobs:
 
       - name: Build (tsc + vite)
         run: pnpm run build
+
+      # PA-22 added the vitest suite (web/src/**/*.test.ts) but no job ran it, so a
+      # units-helper regression shipped green. Run it here as a blocking gate — the
+      # frontend tests now actually gate the web job (AUD-C21).
+      - name: Unit tests (vitest)
+        run: pnpm run test
 
       - name: Lint (non-blocking)
         run: pnpm run lint

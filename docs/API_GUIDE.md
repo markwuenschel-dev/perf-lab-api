@@ -760,6 +760,15 @@ Implemented and active:
 
 Not yet exposed as standalone public APIs in the uploaded source:
 
-- weak-point create/update/resolve routes outside onboarding/benchmark feedback
 - exercise library management routes
 - route-level tests were not provided in the uploaded source set
+
+Backend-ready, not yet consumed by the reference frontend (`web/`) — real, committed
+routes with request/response schemas in `openapi.json`, deliberately kept as intentional
+future surface rather than removed:
+
+- `GET/POST /v1/weak-points/`, `GET/PATCH/DELETE /v1/weak-points/{weak_point_id}`
+- `POST /v1/feedback`
+- `GET /v1/shadow/summary`
+- `GET /v1/benchmarks/definitions`, `POST /v1/benchmarks/recompute-derived`
+- `GET /v1/dashboard/domain-summary`, `GET /v1/dashboard/kpis`, `GET /v1/dashboard/readiness`
