@@ -2,7 +2,7 @@
 
 Consumes the ``correction_requires_replay`` flag a037 introduced. A corrected wellness
 observation that is still the effective EKF head is repaired by replaying the trusted
-predict→update kernel from the original predecessor belief with the corrected content and
+update kernel from the exact original predecessor belief with the corrected content and
 appending an ``event_type='replay'`` row; this migration adds the lineage/revision bookkeeping
 and re-scopes uniqueness so an original assimilation and its replays coexist.
 
@@ -30,8 +30,8 @@ _LINEAGE_FKS = ("replayed_by_log_id", "supersedes_log_id", "replay_base_log_id")
 
 
 def upgrade() -> None:
-    # Revision + lineage bookkeeping. correction_revision/replayed_revision default 0 on every
-    # existing row (predict/benchmark/original-wellness): nothing has been replayed yet.
+    # Revision + lineage bookkeeping. New columns begin at zero; sticky a037 corrections are
+    # backfilled to generation 1 below before the flag/revision invariant is installed.
     op.add_column(
         "ekf_shadow_log",
         sa.Column("correction_revision", sa.Integer(), nullable=False, server_default=sa.text("0")),
@@ -56,6 +56,19 @@ def upgrade() -> None:
             ["id"],
             ondelete="SET NULL",
         )
+
+    # a037 can already contain sticky pending corrections. Give each one an initial generation
+    # before installing the flag/revision invariant; otherwise (0 == 0, flag=true) would be both
+    # invalid and invisible to the replay consumer.
+    op.execute(
+        """
+        UPDATE ekf_shadow_log
+           SET correction_revision = 1
+         WHERE source_wellness_sample_id IS NOT NULL
+           AND event_type = 'update'
+           AND correction_requires_replay IS TRUE
+        """
+    )
 
     # Re-scope original-wellness uniqueness positively to event_type='update' so replay rows for
     # the same (sample, model) coexist with the original assimilation.
@@ -92,9 +105,21 @@ def upgrade() -> None:
         "ekf_shadow_log",
         "replayed_revision >= 0 AND replayed_revision <= correction_revision",
     )
+    # On the mutable ORIGINAL assimilation row, the sticky flag exactly materializes whether a
+    # correction generation remains unreplayed. Replay rows carry their own revision but are not
+    # reconciliation records, so the equivalence is intentionally scoped to source-backed updates.
+    op.create_check_constraint(
+        "ck_ekf_original_replay_flag_consistent",
+        "ekf_shadow_log",
+        "event_type <> 'update' OR source_wellness_sample_id IS NULL OR "
+        "correction_requires_replay = (replayed_revision < correction_revision)",
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint(
+        "ck_ekf_original_replay_flag_consistent", "ekf_shadow_log", type_="check"
+    )
     op.drop_constraint("ck_ekf_replayed_revision_bounds", "ekf_shadow_log", type_="check")
     op.drop_constraint("ck_ekf_replay_lineage_complete", "ekf_shadow_log", type_="check")
     op.drop_index("uq_ekf_wellness_replay_revision", table_name="ekf_shadow_log")

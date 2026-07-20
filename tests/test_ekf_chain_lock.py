@@ -83,3 +83,45 @@ def test_user_id_is_int4_so_the_two_int_advisory_key_is_exact() -> None:
         "users.id must be a 32-bit Integer for pg_advisory_xact_lock(ns, user_id); a BigInteger "
         "id would silently truncate in the two-int form and need a 64-bit advisory-key scheme"
     )
+
+
+def _named_call_lines(func: ast.AsyncFunctionDef, name: str) -> list[int]:
+    return sorted(
+        node.lineno
+        for node in ast.walk(func)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == name
+    )
+
+
+def test_lock_precedes_every_chain_read_or_replay_operation() -> None:
+    """Presence alone is insufficient: moving the helper below the prior/head read reopens the race."""
+    defs = _appender_defs()
+    dependencies = {
+        "record_ekf_predict": ("load_current_state", "_load_latest_belief"),
+        "record_ekf_update": ("load_current_state", "_load_latest_belief"),
+        "record_ekf_wellness_observation": (
+            "_replay_pending_head_correction",
+            "_assimilate_or_classify",
+        ),
+    }
+    for appender, names in dependencies.items():
+        lock_lines = _named_call_lines(defs[appender], _LOCK_HELPER)
+        assert lock_lines, f"{appender} has no {_LOCK_HELPER} call"
+        first_lock = lock_lines[0]
+        for dependency in names:
+            call_lines = _named_call_lines(defs[appender], dependency)
+            assert call_lines, f"{appender} no longer calls expected chain operation {dependency}"
+            assert first_lock < call_lines[0], (
+                f"{appender} calls {dependency} before {_LOCK_HELPER}; the prior/head can move "
+                "between the read and append"
+            )
+
+
+def test_each_wellness_replay_attempt_has_a_preceding_lock() -> None:
+    wellness = _appender_defs()["record_ekf_wellness_observation"]
+    lock_lines = _named_call_lines(wellness, _LOCK_HELPER)
+    replay_lines = _named_call_lines(wellness, "_replay_pending_head_correction")
+    assert len(lock_lines) >= len(replay_lines) == 2
+    assert all(lock_line < replay_line for lock_line, replay_line in zip(lock_lines, replay_lines))

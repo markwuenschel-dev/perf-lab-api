@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -30,16 +31,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.benchmark_validity import get_validity_profile
-from app.logic.ekf.belief import EkfBelief
+from app.logic.ekf.belief import EKF_MODEL_VERSION, EkfBelief
 from app.logic.ekf.events import (
     EKF_EVENT_PREDICT,
     EKF_EVENT_REPLAY,
     EKF_EVENT_UPDATE,
     original_wellness_assimilation_clause,
+    wellness_replay_clause,
 )
 from app.logic.ekf.observation import (
     MappingSpec,
     Observation,
+    UpdateResult,
     build_observation,
     build_wellness_observation,
     update,
@@ -64,7 +67,38 @@ logger = logging.getLogger(__name__)
 # while a concurrent workout advances it. Both args are int4 (the namespace salt is a constant;
 # users.id is a 32-bit Integer PK — asserted in tests/test_ekf_chain_lock.py), so the two-int
 # advisory form is exact with no BIGINT truncation.
-_EKF_CHAIN_LOCK_NAMESPACE = 0x454B4631  # "EKF1"; 1_163_481_137 — within signed int4
+_EKF_CHAIN_LOCK_NAMESPACE = 0x454B4631  # "EKF1"; 1_162_561_073 — within signed int4
+_SUPPORTED_HEAD_REPLAY_MODEL_VERSIONS = frozenset({EKF_MODEL_VERSION})
+
+
+class _AbortPreIngestReplay(RuntimeError):
+    """Abort the shared pre-ingest shadow transaction without affecting the live wellness write."""
+
+
+@dataclass(frozen=True)
+class _ReplayLogRecord:
+    """A structured replay outcome whose emission may need to wait for transaction commit."""
+
+    outcome: str
+    user_id: int
+    phase: str
+    source_id: int | None = None
+    model_version: str | None = None
+    revision: int | None = None
+    superseded: int | None = None
+    replay_id: int | None = None
+
+    def emit(self, *, outcome: str | None = None) -> None:
+        _log_replay(
+            outcome or self.outcome,
+            user_id=self.user_id,
+            phase=self.phase,
+            source_id=self.source_id,
+            model_version=self.model_version,
+            revision=self.revision,
+            superseded=self.superseded,
+            replay_id=self.replay_id,
+        )
 
 
 async def _acquire_ekf_chain_lock(db: AsyncSession, user_id: int) -> None:
@@ -169,6 +203,27 @@ async def record_ekf_update(
         db.add(_staged_update_row(user_id, prior, obs, params, observed_at))
 
 
+def _validate_wellness_shadow_input(
+    user_id: int, shadow_input: WellnessShadowInput
+) -> None:
+    """Reject malformed immutable hand-offs before they can classify or replay chain state."""
+    if shadow_input.user_id != user_id:
+        raise ValueError("wellness shadow input user does not match EKF chain user")
+    expected_hash = wellness_content_hash(shadow_input.measurement)
+    if shadow_input.content_hash != expected_hash:
+        raise ValueError("wellness shadow input content hash does not match its measurement")
+
+
+async def _validate_wellness_source_tenant(
+    db: AsyncSession, user_id: int, source_id: int
+) -> None:
+    source_user_id = await db.scalar(
+        select(WellnessSample.user_id).where(WellnessSample.id == source_id)
+    )
+    if source_user_id != user_id:
+        raise ValueError("wellness source does not belong to EKF chain user")
+
+
 async def record_ekf_wellness_observation(
     db: AsyncSession,
     user_id: int,
@@ -199,22 +254,50 @@ async def record_ekf_wellness_observation(
     ``correction_requires_replay`` | ``skipped``.
     """
     outcome = "skipped"
-    async with best_effort_write(db, f"ekf wellness update for user {user_id}"):
+    pre_replay_logs: list[_ReplayLogRecord] = []
+    async with best_effort_write(
+        db, f"ekf wellness update for user {user_id}"
+    ) as main_write:
         await _acquire_ekf_chain_lock(db, user_id)  # serialize the per-user belief chain
+        _validate_wellness_shadow_input(user_id, shadow_input)
+        await _validate_wellness_source_tenant(
+            db, user_id, shadow_input.wellness_sample_id
+        )
         # (1) Pre-existing pending head correction, in THIS transaction (see docstring). Blocked/
         # no_pending return normally; an unexpected error propagates and aborts the shadow txn.
-        await _replay_pending_head_correction(db, user_id, phase="pre_ingest")
+        await _replay_pending_head_correction(
+            db,
+            user_id,
+            phase="pre_ingest",
+            current_input=shadow_input,
+            deferred_logs=pre_replay_logs,
+        )
         # (2) Assimilate or classify the current input.
         outcome = await _assimilate_or_classify(db, user_id, shadow_input, observed_at)
+    _flush_deferred_replay_logs(pre_replay_logs, committed=main_write.committed)
+
     # (3) A newly detected correction: repair it in its own best-effort transaction so a replay
     # failure leaves the (already committed) pending correction and the live wellness write intact.
     if outcome == "correction_requires_replay":
-        async with best_effort_write(db, f"ekf head replay for user {user_id}"):
+        post_replay_logs: list[_ReplayLogRecord] = []
+        async with best_effort_write(
+            db, f"ekf head replay for user {user_id}"
+        ) as replay_write:
             await _acquire_ekf_chain_lock(db, user_id)
-            await _replay_pending_head_correction(db, user_id, phase="post_classification")
+            await _replay_pending_head_correction(
+                db,
+                user_id,
+                phase="post_classification",
+                deferred_logs=post_replay_logs,
+            )
+        _flush_deferred_replay_logs(post_replay_logs, committed=replay_write.committed)
+        if replay_write.failed and not post_replay_logs:
+            _log_replay("failed", user_id=user_id, phase="post_classification")
     logger.info(
-        "ekf_wellness_processing outcome=%s user=%s sample=%s model=%s",
-        outcome, user_id, shadow_input.wellness_sample_id, shadow_input.content_hash[:8],
+        "ekf_wellness_processing outcome=%s user_id=%s source_wellness_sample_id=%s",
+        outcome,
+        user_id,
+        shadow_input.wellness_sample_id,
     )
     return outcome
 
@@ -222,18 +305,42 @@ async def record_ekf_wellness_observation(
 async def _assimilate_or_classify(
     db: AsyncSession, user_id: int, shadow_input: WellnessShadowInput, observed_at: datetime
 ) -> str:
-    """Assimilate a new wellness observation once, or classify a retry/correction. Runs inside the
-    caller's shadow transaction + advisory lock; never opens its own. No predict step — a wellness
-    assimilation is a pure measurement update on the current head belief."""
+    """Assimilate a new wellness observation once, or classify a retry/correction.
+
+    Runs inside the caller's shadow transaction + advisory lock and never opens its own. A
+    wellness assimilation is a pure measurement update on the current head belief: no predict
+    step. Existing identities are classified before numerical work, which also lets a correction
+    that removes the last EKF-consumed value (for example soreness -> NULL) retract the original
+    update through head replay instead of disappearing as an unobserved no-op.
+    """
+    _validate_wellness_shadow_input(user_id, shadow_input)
+
     params = default_parameters()
+    prior_row = await _load_latest_belief(db, user_id)
+    model_version = prior_row.model_version if prior_row is not None else EKF_MODEL_VERSION
+
+    original = await _original_assimilation(
+        db,
+        shadow_input.wellness_sample_id,
+        model_version,
+        user_id=user_id,
+    )
+    if original is not None:
+        return await _classify_wellness_conflict(
+            db,
+            user_id,
+            shadow_input,
+            model_version,
+            original_id=original.id,
+        )
+
     obs = build_wellness_observation(shadow_input.measurement, params)
     if obs is None:
-        return "skipped"  # no soreness → nothing to assimilate
+        return "skipped"  # no EKF-consumed value and no prior assimilation to retract
+
     state = await load_current_state(db, user_id)
     if state is None:
         return "skipped"
-
-    prior_row = await _load_latest_belief(db, user_id)
     prior = (
         _belief_from_row(prior_row)
         if prior_row is not None
@@ -251,9 +358,9 @@ async def _assimilate_or_classify(
         replayed_revision=0,
     )
 
-    # Insert-first claim: the partial unique index is the concurrency authority. If the INSERT
-    # wins, this row's belief update IS the one assimilation. If it conflicts, an original
-    # assimilation exists — classify the incoming content atomically, never re-assimilating.
+    # Insert-first claim remains the final duplicate-identity authority even though the shared
+    # advisory lock makes the normal path conflict-free. If a non-participating legacy writer races
+    # us, classify its winning original row rather than assimilating twice.
     claim = (
         pg_insert(EkfShadowLog)
         .values(**values)
@@ -266,36 +373,51 @@ async def _assimilate_or_classify(
     inserted_id = (await db.execute(claim)).scalar_one_or_none()
     if inserted_id is not None:
         return "assimilated"
-    return await _classify_wellness_conflict(db, shadow_input, model_version)
+    return await _classify_wellness_conflict(
+        db,
+        user_id,
+        shadow_input,
+        model_version,
+    )
 
 
 async def _classify_wellness_conflict(
-    db: AsyncSession, shadow_input: WellnessShadowInput, model_version: str
+    db: AsyncSession,
+    user_id: int,
+    shadow_input: WellnessShadowInput,
+    model_version: str,
+    *,
+    original_id: int | None = None,
 ) -> str:
-    """An original assimilation exists for this (sample, model). Advance ``latest_seen`` and, when
-    the incoming content differs from the LAST SEEN content, register a new correction generation:
-    bump ``correction_revision``, set the sticky flag, stamp first detection — atomically, in one
-    UPDATE scoped to the original assimilation row (``event_type='update'``), never a replay row.
-    Comparing against ``latest_seen`` (not ``assimilated``) makes A→B→A two generations. Never
-    re-assimilates. Returns ``exact_retry`` or ``correction_requires_replay``.
+    """Classify an existing original assimilation as an exact retry or a new correction.
+
+    The update is scoped to the centralized ORIGINAL-assimilation predicate and, when available,
+    its known primary key. Every genuinely changed latest-seen hash creates one monotonic
+    correction generation and stamps that generation's detection time. Exact retries preserve the
+    sticky pending state and never touch replay rows.
     """
     changed = EkfShadowLog.latest_seen_content_hash != shadow_input.content_hash
+    identity_clause = (
+        EkfShadowLog.id == original_id
+        if original_id is not None
+        else and_(
+            EkfShadowLog.user_id == user_id,
+            EkfShadowLog.source_wellness_sample_id == shadow_input.wellness_sample_id,
+            EkfShadowLog.model_version == model_version,
+        )
+    )
     stmt = (
         sa_update(EkfShadowLog)
         .where(
-            EkfShadowLog.source_wellness_sample_id == shadow_input.wellness_sample_id,
-            EkfShadowLog.model_version == model_version,
-            EkfShadowLog.event_type == EKF_EVENT_UPDATE,  # the original assimilation row only
+            identity_clause,
+            original_wellness_assimilation_clause(),
         )
         .values(
             latest_seen_content_hash=shadow_input.content_hash,
-            # A new generation only on genuinely changed content.
             correction_revision=EkfShadowLog.correction_revision + case((changed, 1), else_=0),
-            # Sticky: an exact retry after a correction must not clear the flag.
             correction_requires_replay=or_(EkfShadowLog.correction_requires_replay, changed),
-            # Stamp only the first correction.
             correction_detected_at=case(
-                (and_(changed, EkfShadowLog.correction_detected_at.is_(None)), func.now()),
+                (changed, func.now()),
                 else_=EkfShadowLog.correction_detected_at,
             ),
         )
@@ -313,59 +435,156 @@ async def _classify_wellness_conflict(
 # an ``event_type='replay'`` row that supersedes the current head. Mid-history corrections (a later
 # transition exists) stay pending — owned by a separate deterministic replay-engine mission.
 
-_REPLAY_NONEVENT = frozenset({"no_pending"})  # not worth a log line
-
-
 async def _replay_pending_head_correction(
-    db: AsyncSession, user_id: int, *, phase: str
+    db: AsyncSession,
+    user_id: int,
+    *,
+    phase: str,
+    current_input: WellnessShadowInput | None = None,
+    deferred_logs: list[_ReplayLogRecord] | None = None,
 ) -> str:
-    """Replay the pending head correction if one is eligible; otherwise return why not.
+    """Replay one eligible pending head correction and return a stable outcome.
 
-    Runs inside the caller's transaction + advisory lock (never opens its own). Raises only on an
-    *unexpected* error, so the caller's shadow transaction aborts. Outcomes: ``no_pending`` |
-    ``completed`` | ``blocked_mid_history`` | ``blocked_missing_predecessor`` |
-    ``source_revision_changed`` | ``claim_lost``.
+    The caller owns the transaction and shared advisory lock. Expected blocked/retry states return
+    normally; unexpected failures are logged with the replay taxonomy and re-raised so
+    ``best_effort_write`` rolls back the whole shadow transaction.
     """
-    head = await _load_latest_belief(db, user_id)  # the canonical per-user effective head
+    try:
+        return await _replay_pending_head_correction_impl(
+            db,
+            user_id,
+            phase=phase,
+            current_input=current_input,
+            deferred_logs=deferred_logs,
+        )
+    except _AbortPreIngestReplay:
+        raise
+    except Exception:
+        record = _ReplayLogRecord(outcome="failed", user_id=user_id, phase=phase)
+        if deferred_logs is None:
+            record.emit()
+        else:
+            deferred_logs.append(record)
+        raise
+
+
+async def _replay_pending_head_correction_impl(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    phase: str,
+    current_input: WellnessShadowInput | None,
+    deferred_logs: list[_ReplayLogRecord] | None,
+) -> str:
+    head = await _load_latest_belief(db, user_id)  # canonical per-user effective head
     original = await _pending_correction_on_head(db, user_id, head)
     if original is None:
-        outcome = "blocked_mid_history" if await _any_pending_correction(db, user_id) else "no_pending"
+        outcome = (
+            "blocked_mid_history"
+            if await _any_pending_correction(db, user_id)
+            else "no_pending"
+        )
         _log_replay(outcome, user_id=user_id, phase=phase)
         return outcome
 
-    assert head is not None  # _pending_correction_on_head returns None when head is None
-    assert original.source_wellness_sample_id is not None  # original is a wellness-lineage row
+    assert head is not None
+    assert original.source_wellness_sample_id is not None
+    assert original.latest_seen_content_hash is not None
     claimed_revision = original.correction_revision
+    claimed_hash = original.latest_seen_content_hash
     source_id = original.source_wellness_sample_id
 
-    # Eligibility: the source sample still exists and its CURRENT normalized content still equals
-    # what we intend to replay (latest_seen). If it changed again, a newer generation is coming —
-    # leave pending for that one.
+    if original.model_version not in _SUPPORTED_HEAD_REPLAY_MODEL_VERSIONS:
+        _log_replay(
+            "blocked_unsupported_version",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
+        return "blocked_unsupported_version"
+
+    # Re-read the durable source under the chain lock and prove that it still represents the
+    # classified generation. The tenant predicate prevents a malformed cross-user FK from becoming
+    # a replay input.
     sample = (
         await db.execute(
-            select(WellnessSample.id, WellnessSample.soreness).where(WellnessSample.id == source_id)
+            select(WellnessSample.id, WellnessSample.soreness).where(
+                WellnessSample.id == source_id,
+                WellnessSample.user_id == user_id,
+            )
         )
     ).first()
     if sample is None:
-        # Unreachable under the source FK CASCADE (deleting the sample removes its lineage), but
-        # the inputs to reproduce the update are then unavailable.
-        _log_replay("blocked_missing_predecessor", user_id=user_id, phase=phase, source_id=source_id)
+        _log_replay(
+            "blocked_missing_predecessor",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
         return "blocked_missing_predecessor"
+
     measurement = WellnessMeasurement(soreness=sample.soreness)
-    if wellness_content_hash(measurement) != original.latest_seen_content_hash:
-        _log_replay("source_revision_changed", user_id=user_id, phase=phase, source_id=source_id)
+    source_hash = wellness_content_hash(measurement)
+    if source_hash != claimed_hash:
+        _log_replay(
+            "source_revision_changed",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
+        current_input_explains_change = (
+            current_input is not None
+            and current_input.wellness_sample_id == source_id
+            and current_input.content_hash == source_hash
+        )
+        if phase == "pre_ingest" and not current_input_explains_change:
+            # Continuing with an unrelated current append would convert an eligible correction
+            # whose source changed behind its classification into an unsupported mid-history case.
+            raise _AbortPreIngestReplay("pending source revision changed outside current input")
         return "source_revision_changed"
 
-    # Predecessor belief = the row immediately before the ORIGINAL assimilation (what its prior
-    # was). Rebuild from there — NOT from the current head/prior replay.
+    # Exact predecessor = the row immediately before the ORIGINAL assimilation. Later revisions
+    # always rebuild from this row, never from the prior replay head.
     base_row = await _belief_before(db, user_id, original.id)
     if base_row is None:
-        _log_replay("blocked_missing_predecessor", user_id=user_id, phase=phase, source_id=source_id)
+        _log_replay(
+            "blocked_missing_predecessor",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
         return "blocked_missing_predecessor"
+    if base_row.model_version != original.model_version:
+        _log_replay(
+            "blocked_unsupported_version",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
+        return "blocked_unsupported_version"
 
+    params = default_parameters()
     base = _belief_from_row(base_row)
-    obs = build_wellness_observation(measurement, default_parameters())
-    posterior = base if obs is None else update(base, obs, default_parameters()).belief
+    obs = build_wellness_observation(measurement, params)
+    if obs is None:
+        # Retraction correction: the corrected source no longer contains an EKF-consumed value, so
+        # the exact posterior is the predecessor belief itself.
+        posterior = base
+        diagnostics: dict[str, Any] = {}
+    else:
+        update_result = update(base, obs, params)
+        posterior = update_result.belief
+        diagnostics = _update_diagnostic_values(update_result, obs)
 
     replay_values: dict[str, Any] = {
         "user_id": user_id,
@@ -377,15 +596,14 @@ async def _replay_pending_head_correction(
         "covariance_json": posterior.cov_list(),
         "decision_impact": "none_shadow_only",
         "source_wellness_sample_id": source_id,
-        "assimilated_content_hash": original.latest_seen_content_hash,
-        "latest_seen_content_hash": original.latest_seen_content_hash,
+        "assimilated_content_hash": claimed_hash,
+        "latest_seen_content_hash": claimed_hash,
         "correction_requires_replay": False,
         "correction_revision": claimed_revision,
         "supersedes_log_id": head.id,
         "replay_base_log_id": base_row.id,
+        **diagnostics,
     }
-    # Insert-first claim against the replay idempotency index (source, model, revision): one
-    # replay per correction generation, robust to a shifting head under retries.
     claim = (
         pg_insert(EkfShadowLog)
         .values(**replay_values)
@@ -397,41 +615,161 @@ async def _replay_pending_head_correction(
     )
     replay_id = (await db.execute(claim)).scalar_one_or_none()
     if replay_id is None:
-        # This generation is already replayed (belt-and-suspenders under the lock).
-        _log_replay("claim_lost", user_id=user_id, phase=phase, source_id=source_id, revision=claimed_revision)
+        # The unique index is the final race/retry authority. Reconcile an already-durable,
+        # canonical replay only when it is now the effective head and exactly matches this claim;
+        # otherwise preserve the pending original and surface claim_lost.
+        existing = await _replay_for_revision(
+            db,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
+        refreshed_head = await _load_latest_belief(db, user_id)
+        if (
+            existing is not None
+            and refreshed_head is not None
+            and refreshed_head.id == existing.id
+            and existing.replay_base_log_id == base_row.id
+            and existing.assimilated_content_hash == claimed_hash
+        ):
+            reconciled = await _reconcile_after_replay(
+                db,
+                original.id,
+                claimed_revision,
+                claimed_hash,
+                existing.id,
+            )
+            outcome = "exact_retry" if reconciled else "source_revision_changed"
+            record = _ReplayLogRecord(
+                outcome=outcome,
+                user_id=user_id,
+                phase=phase,
+                source_id=source_id,
+                model_version=original.model_version,
+                revision=claimed_revision,
+                superseded=existing.supersedes_log_id,
+                replay_id=existing.id,
+            )
+            if reconciled and deferred_logs is not None:
+                deferred_logs.append(record)
+            else:
+                record.emit()
+            if not reconciled and phase == "pre_ingest":
+                raise _AbortPreIngestReplay(
+                    "eligible pre-ingest replay could not reconcile its claimed revision"
+                )
+            return outcome
+
+        _log_replay(
+            "claim_lost",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+        )
+        if phase == "pre_ingest":
+            raise _AbortPreIngestReplay("eligible pre-ingest replay claim was lost")
         return "claim_lost"
 
-    await _reconcile_after_replay(db, original.id, claimed_revision, replay_id)
-    _log_replay(
-        "completed", user_id=user_id, phase=phase, source_id=source_id,
-        model_version=original.model_version, revision=claimed_revision,
-        superseded=head.id, replay_id=replay_id,
+    reconciled = await _reconcile_after_replay(
+        db,
+        original.id,
+        claimed_revision,
+        claimed_hash,
+        replay_id,
     )
+    if not reconciled:
+        record = _ReplayLogRecord(
+            outcome="source_revision_changed",
+            user_id=user_id,
+            phase=phase,
+            source_id=source_id,
+            model_version=original.model_version,
+            revision=claimed_revision,
+            superseded=head.id,
+            replay_id=replay_id,
+        )
+        if phase == "pre_ingest":
+            record.emit()
+            raise _AbortPreIngestReplay(
+                "eligible pre-ingest replay could not reconcile its claimed revision"
+            )
+        if deferred_logs is None:
+            record.emit()
+        else:
+            deferred_logs.append(record)
+        return "source_revision_changed"
+
+    record = _ReplayLogRecord(
+        outcome="completed",
+        user_id=user_id,
+        phase=phase,
+        source_id=source_id,
+        model_version=original.model_version,
+        revision=claimed_revision,
+        superseded=head.id,
+        replay_id=replay_id,
+    )
+    if deferred_logs is None:
+        record.emit()
+    else:
+        deferred_logs.append(record)
     return "completed"
 
 
 async def _reconcile_after_replay(
-    db: AsyncSession, original_id: int, claimed_revision: int, replay_id: int
-) -> None:
-    """Advance ``replayed_revision`` to the replayed generation on the original row and clear the
-    flag ONLY if no newer correction arrived (``correction_revision`` still == claimed). Guarded by
-    ``replayed_revision < claimed`` so it is idempotent and never regresses. A newer generation
-    (``correction_revision > claimed``) keeps the flag true for its own future replay."""
+    db: AsyncSession,
+    original_id: int,
+    claimed_revision: int,
+    claimed_hash: str,
+    replay_id: int,
+) -> bool:
+    """Revision-guarded reconciliation of mutable metadata on the ORIGINAL row.
+
+    The compare condition proves that the claimed generation/hash is still current. If a newer
+    correction arrived, no metadata is advanced and its pending flag remains untouched. Numerical
+    history is never updated.
+    """
     stmt = (
         sa_update(EkfShadowLog)
         .where(
             EkfShadowLog.id == original_id,
-            EkfShadowLog.event_type == EKF_EVENT_UPDATE,
+            original_wellness_assimilation_clause(),
+            EkfShadowLog.correction_revision == claimed_revision,
+            EkfShadowLog.latest_seen_content_hash == claimed_hash,
             EkfShadowLog.replayed_revision < claimed_revision,
         )
         .values(
+            assimilated_content_hash=claimed_hash,
             replayed_revision=claimed_revision,
             replayed_at=func.now(),
             replayed_by_log_id=replay_id,
-            correction_requires_replay=EkfShadowLog.correction_revision > claimed_revision,
+            correction_requires_replay=False,
         )
+        .returning(EkfShadowLog.id)
     )
-    await db.execute(stmt)
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def _replay_for_revision(
+    db: AsyncSession,
+    *,
+    source_id: int,
+    model_version: str,
+    revision: int,
+) -> EkfShadowLog | None:
+    result = await db.execute(
+        select(EkfShadowLog)
+        .where(
+            wellness_replay_clause(),
+            EkfShadowLog.source_wellness_sample_id == source_id,
+            EkfShadowLog.model_version == model_version,
+            EkfShadowLog.correction_revision == revision,
+        )
+        .limit(1)
+    )
+    return result.scalars().first()
 
 
 async def _pending_correction_on_head(
@@ -446,7 +784,10 @@ async def _pending_correction_on_head(
         original: EkfShadowLog | None = head
     elif head.event_type == EKF_EVENT_REPLAY:
         original = await _original_assimilation(
-            db, head.source_wellness_sample_id, head.model_version
+            db,
+            head.source_wellness_sample_id,
+            head.model_version,
+            user_id=user_id,
         )
     else:
         return None
@@ -458,18 +799,21 @@ async def _pending_correction_on_head(
 
 
 async def _original_assimilation(
-    db: AsyncSession, source_id: int, model_version: str
+    db: AsyncSession,
+    source_id: int,
+    model_version: str,
+    *,
+    user_id: int | None = None,
 ) -> EkfShadowLog | None:
-    res = await db.execute(
-        select(EkfShadowLog)
-        .where(
-            EkfShadowLog.source_wellness_sample_id == source_id,
-            EkfShadowLog.model_version == model_version,
-            EkfShadowLog.event_type == EKF_EVENT_UPDATE,
-        )
-        .limit(1)
+    stmt = select(EkfShadowLog).where(
+        original_wellness_assimilation_clause(),
+        EkfShadowLog.source_wellness_sample_id == source_id,
+        EkfShadowLog.model_version == model_version,
     )
-    return res.scalars().first()
+    if user_id is not None:
+        stmt = stmt.where(EkfShadowLog.user_id == user_id)
+    result = await db.execute(stmt.limit(1))
+    return result.scalars().first()
 
 
 async def _any_pending_correction(db: AsyncSession, user_id: int) -> bool:
@@ -501,6 +845,19 @@ async def _belief_before(
     return res.scalars().first()
 
 
+def _flush_deferred_replay_logs(
+    records: list[_ReplayLogRecord], *, committed: bool
+) -> None:
+    """Emit durability-sensitive outcomes only after the owning transaction exits.
+
+    A replay that was numerically computed and staged but rolled back is a ``failed`` outcome,
+    never ``completed``. This also covers a later current-event failure in the shared pre-ingest
+    transaction and a commit failure after the replay body returned normally.
+    """
+    for record in records:
+        record.emit(outcome=record.outcome if committed else "failed")
+
+
 def _log_replay(
     outcome: str,
     *,
@@ -515,8 +872,6 @@ def _log_replay(
     """Structured replay telemetry. No metrics runtime exists yet; the outcome taxonomy maps 1:1
     to future counters. Deliberately logs NO soreness/HRV values, content hashes, or belief
     payloads (privacy)."""
-    if outcome in _REPLAY_NONEVENT:
-        return
     logger.info(
         "ekf_wellness_replay phase=%s outcome=%s user_id=%s source_wellness_sample_id=%s "
         "model_version=%s correction_revision=%s superseded_log_id=%s replay_log_id=%s",
@@ -546,14 +901,21 @@ def _belief_update_values(
         "mean_json": belief.mean_map(),
         "variance_json": belief.variance_map(),
         "covariance_json": belief.cov_list(),
-        "benchmark_code": obs.benchmark_code,
-        "innovation": float(np.mean(res.innovation)),
-        "gain_norm": res.gain_norm,
-        "trace_pre": res.trace_pre,
-        "trace_post": res.trace_post,
-        "nis": res.nis,
-        "n_obs": len(obs.axis_keys),
         "decision_impact": "none_shadow_only",
+        **_update_diagnostic_values(res, obs),
+    }
+
+
+def _update_diagnostic_values(result: UpdateResult, obs: Observation) -> dict[str, Any]:
+    """Persist the same numerical diagnostics for original and replayed measurement updates."""
+    return {
+        "benchmark_code": obs.benchmark_code,
+        "innovation": float(np.mean(result.innovation)),
+        "gain_norm": result.gain_norm,
+        "trace_pre": result.trace_pre,
+        "trace_post": result.trace_post,
+        "nis": result.nis,
+        "n_obs": len(obs.axis_keys),
     }
 
 

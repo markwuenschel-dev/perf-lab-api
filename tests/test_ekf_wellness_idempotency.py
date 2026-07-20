@@ -73,6 +73,15 @@ async def _mk_wellness(factory, user_id: int, soreness: float, d: date = _D) -> 
         return w.id
 
 
+async def _set_soreness(factory, sample_id: int, soreness: float | None) -> None:
+    """Correct the durable wellness sample (the production upsert does this before the shadow)."""
+    async with factory() as db:
+        await db.execute(
+            sa.update(WellnessSample).where(WellnessSample.id == sample_id).values(soreness=soreness)
+        )
+        await db.commit()
+
+
 async def _assimilate(factory, user_id: int, sample_id: int, soreness: float) -> str:
     """Run the shadow-EKF wellness assimilation in its own session; return the outcome."""
     async with factory() as db:
@@ -162,21 +171,51 @@ async def test_changed_content_marks_correction_without_reassimilating(factory):
     assert len(rows) == 1  # NO second assimilation
     row = rows[0]
     assert row.correction_requires_replay is True
+    assert row.correction_revision == 1
+    assert row.replayed_revision == 0
     assert row.correction_detected_at is not None
     # assimilated hash unchanged; latest hash advanced to the corrected content
     assert row.assimilated_content_hash == wellness_content_hash(WellnessMeasurement(4.0))
     assert row.latest_seen_content_hash == wellness_content_hash(WellnessMeasurement(8.0))
 
 
-async def test_repeated_correction_stays_pending(factory):
-    uid = await _seed(factory)
-    sid = await _mk_wellness(factory, uid, soreness=4.0)
-    await _assimilate(factory, uid, sid, 4.0)
-    await _assimilate(factory, uid, sid, 8.0)  # correction
+async def test_repeated_correction_self_heals_then_repeat_is_idempotent(factory):
+    """A same-day correction self-heals (ADR-0068 head-correction replay), and an identical
+    re-POST is an exact retry.
 
-    assert await _assimilate(factory, uid, sid, 8.0) == "correction_requires_replay"
+    Production upserts the durable wellness sample BEFORE the shadow runs, so a correction to the
+    effective head is replayed on the ingest that detects it — it does not linger pending. A
+    second identical correction POST then classifies as an exact retry: no new correction
+    generation and no second replay row. (Pre-replay this file asserted the correction stayed
+    perpetually pending; that state only arose because the harness never corrected the durable
+    source, which the pre-ingest hardening now aborts rather than act on.)
+    """
+    uid = await _seed(factory)
+    a = await _mk_wellness(factory, uid, soreness=4.0, d=date(2026, 1, 1))  # predecessor belief
+    b = await _mk_wellness(factory, uid, soreness=5.0, d=date(2026, 1, 2))  # correction target (head)
+    await _assimilate(factory, uid, a, 4.0)
+    await _assimilate(factory, uid, b, 5.0)
+
+    # Correct B the way production does: durable sample first, then the shadow observation.
+    await _set_soreness(factory, b, 8.0)
+    assert await _assimilate(factory, uid, b, 8.0) == "correction_requires_replay"
+
     rows = await _wellness_rows(factory, uid)
-    assert len(rows) == 1 and rows[0].correction_requires_replay is True
+    original_b = next(r for r in rows if r.event_type == "update" and r.source_wellness_sample_id == b)
+    replays = [r for r in rows if r.event_type == "replay" and r.source_wellness_sample_id == b]
+    assert len(replays) == 1                               # self-healed on the detecting ingest
+    assert original_b.correction_revision == 1
+    assert original_b.replayed_revision == 1               # the generation was replayed
+    assert original_b.correction_requires_replay is False  # sticky flag consumed
+
+    # An identical re-POST of the same correction is an exact retry — idempotent.
+    assert await _assimilate(factory, uid, b, 8.0) == "exact_retry"
+    rows = await _wellness_rows(factory, uid)
+    assert len([r for r in rows if r.event_type == "replay" and r.source_wellness_sample_id == b]) == 1
+    original_b = next(r for r in rows if r.event_type == "update" and r.source_wellness_sample_id == b)
+    assert original_b.correction_revision == 1             # no new generation
+    assert original_b.replayed_revision == 1
+    assert original_b.correction_requires_replay is False
 
 
 async def test_content_returning_to_original_keeps_correction_until_replay(factory):
@@ -190,6 +229,7 @@ async def test_content_returning_to_original_keeps_correction_until_replay(facto
     assert await _assimilate(factory, uid, sid, 4.0) == "correction_requires_replay"
     rows = await _wellness_rows(factory, uid)
     assert rows[0].correction_requires_replay is True
+    assert rows[0].correction_revision == 2  # A -> B -> A is two correction generations
 
 
 async def test_different_samples_both_assimilate(factory):
