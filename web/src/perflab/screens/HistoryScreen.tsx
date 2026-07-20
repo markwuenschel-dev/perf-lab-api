@@ -1,7 +1,7 @@
 // src/perflab/screens/HistoryScreen.tsx
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
-import type { UnifiedStateVector, WellnessSampleOut, WorkoutLogSummary } from "@/types";
+import type { BenchmarkObservationRead, UnifiedStateVector, WellnessSampleOut, WorkoutLogSummary } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { Card, ScreenHeader, SectionLabel, Track } from "../ui";
@@ -133,6 +133,7 @@ function DayMarkers({ readiness, onPick, color }: { readiness: number[]; onPick:
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const FIELD_TEST_CODE = "run_vo2_field_test_300m_1p5mi";
 const fmtDay = (iso: string): string => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : `${d.getDate()} ${MONTHS[d.getMonth()]}`;
@@ -177,15 +178,66 @@ function RecentWellnessCard() {
   );
 }
 
+function FieldTestLogCard() {
+  const { token } = useAuth();
+  const { data, loading, error } = useAuthedResource<BenchmarkObservationRead[]>(
+    (t) => api.listBenchmarkObservations(t, { benchmarkCode: FIELD_TEST_CODE, limit: 10 }),
+    [],
+  );
+
+  const body = !token ? (
+    <div className="text-[13px] font-medium leading-[1.5] text-mute">
+      Sign in and log a field test to see your results here.
+    </div>
+  ) : loading ? (
+    <div className="text-[13px] font-medium text-mute">Loading field tests…</div>
+  ) : error ? (
+    <div className="text-[13px] font-medium leading-[1.5] text-mute">
+      Couldn&apos;t load your field tests — try again.
+    </div>
+  ) : !data || data.length === 0 ? (
+    <div className="text-[13px] font-medium leading-[1.5] text-mute">
+      No field tests logged yet — record one in Assess.
+    </div>
+  ) : (
+    <TableView
+      columns={[
+        { key: "date", label: "Date" },
+        { key: "vo2", label: "VO₂max", numeric: true },
+        { key: "aerobicScore", label: "Aerobic score", numeric: true },
+        { key: "validity", label: "Validity" },
+      ]}
+      rows={data.map((observation, index) => ({
+        date: (
+          <span className="font-semibold text-ink">
+            {fmtDay(observation.observed_at)}
+            {index === 0 && <span className="ml-1 text-[10px] font-medium text-ac">latest</span>}
+          </span>
+        ),
+        vo2: (
+          <span className={index === 0 ? "font-semibold text-teal" : "font-semibold"}>
+            {observation.raw_value.toFixed(1)}
+          </span>
+        ),
+        aerobicScore: cell(
+          observation.normalized_value == null ? null : Math.round(observation.normalized_value),
+          "/100",
+        ),
+        validity: observation.validity_status,
+      }))}
+    />
+  );
+
+  return (
+    <Card className="px-[22px] py-5">
+      <SectionLabel className="mb-2">Field test log</SectionLabel>
+      {body}
+    </Card>
+  );
+}
+
 const LOAD_BARS: [number, boolean][] = [
   [62, true], [58, true], [70, true], [65, true], [72, true], [48, false], [88, true], [82, true], [60, true], [90, true], [76, true], [74, true],
-];
-
-const FT_LOG: [string, string, string, string, string, boolean][] = [
-  ["12 Jun", "0:52", "9:18", "58.4", "−7.2 · endurance", true],
-  ["21 May", "0:53", "9:31", "56.9", "−6.1 · endurance", false],
-  ["30 Apr", "0:54", "9:48", "55.2", "−5.4 · endurance", false],
-  ["02 Apr", "0:55", "10:02", "54.1", "−4.8 · endurance", false],
 ];
 
 export function HistoryScreen() {
@@ -327,30 +379,7 @@ export function HistoryScreen() {
         <LoadBalanceCard acwr={acwr} acute={thisWeek} chronic={chronic} />
       </div>
 
-      <Card className="px-[22px] py-5">
-        <SectionLabel className="mb-2">Field test log</SectionLabel>
-        <TableView
-          columns={[
-            { key: "date", label: "Date" },
-            { key: "t3", label: "300 m", numeric: true },
-            { key: "t15", label: "1.5 mi", numeric: true },
-            { key: "vo2", label: "VO₂max", numeric: true },
-            { key: "profile", label: "Profile", align: "right" },
-          ]}
-          rows={FT_LOG.map(([date, t3, t15, vo2, profile, latest]) => ({
-            date: (
-              <span className="font-semibold text-ink">
-                {date}
-                {latest && <span className="ml-1 text-[10px] font-medium text-ac">latest</span>}
-              </span>
-            ),
-            t3,
-            t15,
-            vo2: <span className={latest ? "font-semibold text-teal" : "font-semibold"}>{vo2}</span>,
-            profile: <span className="text-info">{profile}</span>,
-          }))}
-        />
-      </Card>
+      <FieldTestLogCard />
     </section>
   );
 }
