@@ -10,24 +10,43 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def best_effort_write(db: AsyncSession, description: str) -> AsyncIterator[None]:
-    """Commit the telemetry rows staged in the body; on ANY failure log and roll back.
+@dataclass
+class BestEffortWriteStatus:
+    """Observable result of a best-effort transaction after its context exits.
 
-    A telemetry failure must never propagate to the caller's request. The body stages
-    rows (``db.add(...)``); this commits on exit. If the body or the commit raises, it is
-    logged with traceback and rolled back; a rollback that itself fails is also swallowed.
+    Existing callers may ignore the yielded object. Callers whose own structured outcome means
+    "durably persisted" can inspect ``committed`` before emitting it, avoiding a false success log
+    when the body completed but the commit or a later operation in the same transaction failed.
     """
+
+    committed: bool = False
+    failed: bool = False
+
+
+@asynccontextmanager
+async def best_effort_write(
+    db: AsyncSession, description: str
+) -> AsyncIterator[BestEffortWriteStatus]:
+    """Commit telemetry staged in the body; on ANY failure log, roll back, and suppress it.
+
+    A telemetry failure must never propagate to the caller's request. The yielded status is
+    finalized only after commit/rollback, so durability-sensitive callers can distinguish a
+    committed write from a body that merely reached its end.
+    """
+    status = BestEffortWriteStatus()
     try:
-        yield
+        yield status
         await db.commit()
+        status.committed = True
     except Exception:
+        status.failed = True
         logger.warning("telemetry write failed (%s)", description, exc_info=True)
         try:
             await db.rollback()

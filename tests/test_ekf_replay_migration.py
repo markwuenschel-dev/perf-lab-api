@@ -123,3 +123,135 @@ async def test_downgrade_deletes_replays_and_reupgrade_restores(engine):
         idxs = await conn.run_sync(_index_names)
     assert _A038_COLUMNS <= cols
     assert {"uq_ekf_original_wellness_source_model", "uq_ekf_wellness_replay_revision"} <= idxs
+
+
+async def test_a037_pending_rows_are_revision_backfilled_and_flag_invariant_enforced(engine):
+    # Start at the shipped C8 schema, then seed the two possible original-row states it can contain.
+    async with engine.connect() as conn:
+        await conn.run_sync(lambda c: _alembic(c, "down", _A037))
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    async with engine.begin() as conn:
+        user_id = int(
+            (
+                await conn.execute(
+                    sa.text(
+                        """
+                        INSERT INTO users (email, hashed_password, is_active, created_at)
+                        VALUES (:email, 'x', true, :now)
+                        RETURNING id
+                        """
+                    ),
+                    {"email": "a037-backfill@test.com", "now": now},
+                )
+            ).scalar_one()
+        )
+        pending_sample_id = int(
+            (
+                await conn.execute(
+                    sa.text(
+                        """
+                        INSERT INTO wellness_samples
+                            (user_id, date, source, soreness, created_at)
+                        VALUES (:uid, :day, 'manual', 8.0, :now)
+                        RETURNING id
+                        """
+                    ),
+                    {"uid": user_id, "day": date(2026, 7, 1), "now": now},
+                )
+            ).scalar_one()
+        )
+        clean_sample_id = int(
+            (
+                await conn.execute(
+                    sa.text(
+                        """
+                        INSERT INTO wellness_samples
+                            (user_id, date, source, soreness, created_at)
+                        VALUES (:uid, :day, 'manual', 4.0, :now)
+                        RETURNING id
+                        """
+                    ),
+                    {"uid": user_id, "day": date(2026, 7, 2), "now": now},
+                )
+            ).scalar_one()
+        )
+        h8 = wellness_content_hash(WellnessMeasurement(8.0))
+        for source_id, assimilated_hash, latest_hash, pending in (
+            (pending_sample_id, _H, h8, True),
+            (clean_sample_id, _H, _H, False),
+        ):
+            await conn.execute(
+                sa.text(
+                    """
+                    INSERT INTO ekf_shadow_log (
+                        user_id, created_at, belief_at, model_version, event_type,
+                        mean_json, variance_json, covariance_json, decision_impact,
+                        source_wellness_sample_id, assimilated_content_hash,
+                        latest_seen_content_hash, correction_requires_replay,
+                        correction_detected_at
+                    ) VALUES (
+                        :uid, :now, :now, 'ekf-v1', 'update',
+                        '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, 'none_shadow_only',
+                        :source_id, :assimilated_hash, :latest_hash, :pending, :detected_at
+                    )
+                    """
+                ),
+                {
+                    "uid": user_id,
+                    "now": now,
+                    "source_id": source_id,
+                    "assimilated_hash": assimilated_hash,
+                    "latest_hash": latest_hash,
+                    "pending": pending,
+                    "detected_at": now if pending else None,
+                },
+            )
+
+    async with engine.connect() as conn:
+        await conn.run_sync(lambda c: _alembic(c, "up", "head"))
+
+    Session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as db:
+        pending_row = (
+            await db.execute(
+                select(EkfShadowLog).where(
+                    EkfShadowLog.source_wellness_sample_id == pending_sample_id
+                )
+            )
+        ).scalar_one()
+        clean_row = (
+            await db.execute(
+                select(EkfShadowLog).where(
+                    EkfShadowLog.source_wellness_sample_id == clean_sample_id
+                )
+            )
+        ).scalar_one()
+
+    assert pending_row.event_type == "update"
+    assert pending_row.correction_revision == 1
+    assert pending_row.replayed_revision == 0
+    assert pending_row.correction_requires_replay is True
+    assert clean_row.event_type == "update"
+    assert clean_row.correction_revision == 0
+    assert clean_row.replayed_revision == 0
+    assert clean_row.correction_requires_replay is False
+
+    # The database, not only service code, enforces both directions of the sticky flag invariant.
+    with pytest.raises(sa.exc.IntegrityError):
+        async with Session() as db:
+            await db.execute(
+                sa.update(EkfShadowLog)
+                .where(EkfShadowLog.id == clean_row.id)
+                .values(correction_requires_replay=True)
+            )
+            await db.commit()
+
+    with pytest.raises(sa.exc.IntegrityError):
+        async with Session() as db:
+            await db.execute(
+                sa.update(EkfShadowLog)
+                .where(EkfShadowLog.id == pending_row.id)
+                .values(correction_requires_replay=False)
+            )
+            await db.commit()

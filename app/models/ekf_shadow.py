@@ -80,11 +80,18 @@ class EkfShadowLog(Base):
             "AND replay_base_log_id IS NOT NULL AND correction_revision > 0)",
             name="ck_ekf_replay_lineage_complete",
         ),
-        # correction_requires_replay ⇔ replayed_revision < correction_revision; never negative,
-        # never ahead of the correction generation.
+        # Reconciliation revisions are never negative and never ahead of the correction generation.
         CheckConstraint(
             "replayed_revision >= 0 AND replayed_revision <= correction_revision",
             name="ck_ekf_replayed_revision_bounds",
+        ),
+        # On ORIGINAL source-backed update rows, the sticky flag exactly materializes whether a
+        # correction generation remains unreplayed. Replay rows carry a correction revision but are
+        # not themselves reconciliation records, so they are intentionally outside this equivalence.
+        CheckConstraint(
+            "event_type <> 'update' OR source_wellness_sample_id IS NULL OR "
+            "correction_requires_replay = (replayed_revision < correction_revision)",
+            name="ck_ekf_original_replay_flag_consistent",
         ),
     )
 
@@ -98,7 +105,7 @@ class EkfShadowLog(Base):
     # Timestamp the belief is valid "as of" (workout/observation time).
     belief_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     model_version: Mapped[str] = mapped_column(String(80), nullable=False)
-    event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # predict | update
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # predict | update | replay
 
     mean_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     variance_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -131,7 +138,8 @@ class EkfShadowLog(Base):
         nullable=True,
         index=True,
     )
-    # Hash of the content actually assimilated into the belief (frozen at first assimilation).
+    # Hash represented by the effective lineage. It advances only after a replay is durably
+    # appended and revision-guarded reconciliation succeeds; historical numerical rows stay fixed.
     assimilated_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Hash of the most recently received content for this observation (advances on corrections).
     latest_seen_content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)

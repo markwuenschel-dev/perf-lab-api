@@ -19,6 +19,8 @@ from .numerics import nearest_psd
 from .params_vectors import seed_variance_vector
 from .state_packing import N_STATE, STATE_KEYS, pack
 
+EKF_MODEL_VERSION = "ekf-v1"
+
 
 @dataclass
 class EkfBelief:
@@ -27,14 +29,14 @@ class EkfBelief:
     mean: np.ndarray
     cov: np.ndarray
     timestamp: datetime
-    model_version: str = "ekf-v1"
+    model_version: str = EKF_MODEL_VERSION
 
     @classmethod
     def seed_from_unified(
         cls,
         state: UnifiedStateVector,
         params: EngineParameters,
-        model_version: str = "ekf-v1",
+        model_version: str = EKF_MODEL_VERSION,
     ) -> EkfBelief:
         """Seed a belief from a production state: mean = normalized X/F/T, P block-diagonal."""
         mean = pack(state)
