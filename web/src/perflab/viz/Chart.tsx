@@ -9,7 +9,7 @@
 // When it has an x scale and at least one Line/Area registers, the Chart also
 // drives ONE shared crosshair + tooltip across every series (the reader aims at
 // an x, never at a 2px line). Same details on keyboard focus as on hover.
-import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useVizTheme } from "./useVizTheme";
 import { linearScale } from "./scales";
@@ -64,12 +64,37 @@ export function Chart({
   defs,
 }: ChartProps) {
   const { colors, chrome, mode, accent } = useVizTheme();
+
+  // The width/height props are the chart's *fallback* aspect + default coordinate
+  // scale. Once mounted we draw in the wrapper's real pixel box so the marks fill
+  // the available width at their intended pixel sizes (bar thickness, marker r,…) —
+  // a fixed viewBox aspect that mismatches the container either bleeds past a
+  // fixed-height wrapper (h-auto) or letterboxes into side gutters (h-full + meet).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setBox({ w: r.width, h: r.height });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Effective viewBox dimensions: the measured box once known, the props until then.
+  const vw = box?.w ?? width;
+  const vh = box?.h ?? height;
+
   const pad = resolvePadding(padding);
   const plot: PlotRect = {
     x: pad.left,
     y: pad.top,
-    w: Math.max(0, width - pad.left - pad.right),
-    h: Math.max(0, height - pad.top - pad.bottom),
+    w: Math.max(0, vw - pad.left - pad.right),
+    h: Math.max(0, vh - pad.top - pad.bottom),
   };
   const xScale = xDomain ? linearScale({ domain: xDomain, range: [plot.x, plot.x + plot.w] }) : undefined;
   const yScale = yDomain ? linearScale({ domain: yDomain, range: [plot.y + plot.h, plot.y] }) : undefined;
@@ -87,20 +112,20 @@ export function Chart({
     if (!svg || !xScale) return;
     const rect = svg.getBoundingClientRect();
     if (rect.width === 0) return;
-    const px = ((clientX - rect.left) / rect.width) * width;
+    const px = ((clientX - rect.left) / rect.width) * vw;
     const dataX = xScale.invert(px);
     const first = series.current.values().next().value as SeriesReg | undefined;
     if (!first || first.points.length === 0) return;
     let ni = 0, best = Infinity;
     first.points.forEach((p, i) => { const d = Math.abs(p[0] - dataX); if (d < best) { best = d; ni = i; } });
     setHover(ni);
-  }, [xScale, width]);
+  }, [xScale, vw]);
 
   const onMove = (e: ReactPointerEvent) => { if (enabled) moveTo(e.clientX); };
   const onLeave = () => setHover(null);
 
   const ctx: ChartCtx = {
-    width, height, plot, colors, chrome, mode, accent, xScale, yScale,
+    width: vw, height: vh, plot, colors, chrome, mode, accent, xScale, yScale,
     register: enabled ? register : undefined,
     unregister: enabled ? unregister : undefined,
   };
@@ -115,14 +140,14 @@ export function Chart({
     : [];
 
   return (
-    <div className={cn("relative", className)}>
+    <div ref={wrapRef} className={cn("relative", className)}>
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${vw} ${vh}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label={ariaLabel}
-        className="block h-auto w-full overflow-visible"
+        className="block h-full w-full overflow-hidden"
         style={{ fontVariantNumeric: "tabular-nums", touchAction: "none" }}
         onPointerMove={onMove}
         onPointerLeave={onLeave}
@@ -140,7 +165,7 @@ export function Chart({
         )}
       </svg>
       {canShow && rows.length > 0 && (
-        <Tooltip leftPct={(crossX / width) * 100} title={formatX ? formatX(hi!) : undefined} rows={rows} />
+        <Tooltip leftPct={(crossX / vw) * 100} title={formatX ? formatX(hi!) : undefined} rows={rows} />
       )}
     </div>
   );

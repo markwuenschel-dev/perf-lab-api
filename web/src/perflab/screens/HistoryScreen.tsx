@@ -36,6 +36,86 @@ function weeklyLoad(workouts: WorkoutLogSummary[] | null, weeks = 12): number[] 
   return any ? buckets : null;
 }
 
+/** Compact load formatter — real volume-load totals run large, so thousands
+ *  collapse to "12.4k" while the mock's small numbers stay whole. */
+function fmtLoad(v: number): string {
+  if (!Number.isFinite(v)) return "—";
+  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`;
+}
+
+/** Acute:chronic workload ratio band. Optimal 0.8–1.3 is the injury-risk sweet
+ *  spot from the training-load literature; below detrains, above ramps risk. */
+function acwrBand(r: number): { label: string; color: string } {
+  if (r < 0.8) return { label: "Detraining", color: "var(--color-info)" };
+  if (r <= 1.3) return { label: "Optimal", color: "var(--color-good)" };
+  if (r <= 1.5) return { label: "Ramping", color: "#e0a33a" };
+  return { label: "Spike risk", color: "var(--color-hot)" };
+}
+
+/** Map a ratio onto the gauge's 0.5–2.0 visual scale (band edges 0.8/1.3/1.5
+ *  land at 20% / 53.3% / 66.7%). */
+const acwrPos = (r: number): number => Math.max(2, Math.min(98, ((r - 0.5) / 1.5) * 100));
+
+// Load balance (ACWR) — reads the same weekly buckets the chart draws, so the
+// gauge literally reflects the bars beside it: acute = this week, chronic = the
+// trailing 4-week (28d) average. The band says whether that ramp is safe.
+function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute: number; chronic: number }) {
+  const band = acwr != null ? acwrBand(acwr) : null;
+  return (
+    <Card className="px-[22px] py-5">
+      <div className="mb-3 flex items-center justify-between">
+        <SectionLabel>Load balance</SectionLabel>
+        <div className="text-[11px] font-medium leading-none text-dim">acute : chronic</div>
+      </div>
+      {acwr == null || band == null ? (
+        <>
+          <div className="font-mono text-[34px] font-semibold leading-none text-dim">—</div>
+          <p className="mt-3 text-[12px] font-medium leading-[1.5] text-mute">
+            Log a few more weeks of training to gauge your acute-to-chronic load balance.
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="flex items-end gap-[10px]">
+            <span className="font-mono text-[34px] font-semibold leading-none text-ink">{acwr.toFixed(2)}</span>
+            <span
+              className="mb-[5px] rounded-full px-[9px] py-[4px] text-[10px] font-bold uppercase leading-none tracking-[0.08em]"
+              style={{
+                color: band.color,
+                background: `color-mix(in srgb, ${band.color} 13%, transparent)`,
+                border: `1px solid color-mix(in srgb, ${band.color} 30%, transparent)`,
+              }}
+            >
+              {band.label}
+            </span>
+          </div>
+          <div className="mt-2 font-mono text-[11px] leading-none text-mute">
+            acute 7d · {fmtLoad(acute)} &nbsp;·&nbsp; chronic 28d · {fmtLoad(chronic)}
+          </div>
+          <div className="relative mt-4">
+            <div
+              className="h-[9px] rounded-[6px]"
+              style={{ background: "linear-gradient(90deg,var(--color-dim) 0 20%,var(--color-good) 20% 53.3%,#e0a33a 53.3% 66.7%,var(--color-hot) 66.7% 100%)" }}
+            />
+            <div
+              className="absolute top-[-2px] h-[13px] w-[2px] rounded-[2px] bg-ink"
+              style={{ left: `${acwrPos(acwr)}%`, boxShadow: "0 0 0 2px var(--color-tile)" }}
+            />
+          </div>
+          <div className="relative mt-[7px] h-[10px] font-mono text-[8.5px] text-dim">
+            <span className="absolute -translate-x-1/2" style={{ left: "20%" }}>0.8</span>
+            <span className="absolute -translate-x-1/2" style={{ left: "53.3%" }}>1.3</span>
+            <span className="absolute -translate-x-1/2" style={{ left: "66.7%" }}>1.5</span>
+          </div>
+          <p className="mt-4 text-[11px] font-medium leading-[1.45] text-faint">
+            The 7-day vs 28-day workload ratio — is this week's load safe and progressing. The green band builds fitness without an injury-linked spike.
+          </p>
+        </>
+      )}
+    </Card>
+  );
+}
+
 /** Clickable day dots over the readiness chart — each time-travels the twin. */
 function DayMarkers({ readiness, onPick, color }: { readiness: number[]; onPick: (i: number) => void; color: string }) {
   const { xScale, yScale } = useChart();
@@ -128,6 +208,20 @@ export function HistoryScreen() {
   const loadMax = Math.max(1, ...loadSeries) * 1.1;
   const nowIdx = loadSeries.length - 1;
 
+  // Weekly-load detail strip: this week vs last, block average, and the peak week.
+  const thisWeek = loadSeries[nowIdx] ?? 0;
+  const lastWeek = loadSeries.length >= 2 ? loadSeries[nowIdx - 1] : null;
+  const avgLoad = loadSeries.length ? loadSeries.reduce((a, b) => a + b, 0) / loadSeries.length : 0;
+  const peakVal = Math.max(0, ...loadSeries);
+  const peakWk = loadSeries.indexOf(peakVal) + 1;
+  const wowDelta = lastWeek && lastWeek > 0 ? (thisWeek - lastWeek) / lastWeek : null;
+
+  // Acute:chronic balance from the same buckets — acute = current week, chronic =
+  // trailing 4-week (28d) mean. Needs ≥2 weeks of real load or it's not meaningful.
+  const recent4 = loadSeries.slice(-4);
+  const chronic = recent4.length ? recent4.reduce((a, b) => a + b, 0) / recent4.length : 0;
+  const acwr = chronic > 0 && recent4.filter((v) => v > 0).length >= 2 ? thisWeek / chronic : null;
+
   const goDay = (i: number) => {
     actions.setTwinDay(i);
     actions.setScreen("twin");
@@ -185,28 +279,53 @@ export function HistoryScreen() {
 
       <RecentWellnessCard />
 
-      <Card className="px-[22px] py-5">
-        <div className="mb-[18px] flex items-center justify-between">
-          <SectionLabel>Weekly training load</SectionLabel>
-          <div className="text-[11px] font-medium leading-none text-dim">arbitrary units · last 12 weeks</div>
-        </div>
-        <Chart
-          width={600}
-          height={128}
-          padding={{ top: 6, right: 2, bottom: 2, left: 2 }}
-          yDomain={[0, loadMax]}
-          ariaLabel="Weekly training load, last 12 weeks"
-          className="h-[128px] w-full"
-        >
-          <Bars
-            data={loadSeries.map((v, i) => ({ key: `W${i + 1}`, value: v }))}
-            color="series"
-            baseColor={colors.categorical[1]}
-            emphasisKey={`W${nowIdx + 1}`}
-          />
-        </Chart>
-        <div className="mt-[10px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>W1</span><span>W12 · now</span></div>
-      </Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+        <Card className="px-[22px] py-5">
+          <div className="mb-4 flex items-center justify-between">
+            <SectionLabel>Weekly training load</SectionLabel>
+            <div className="text-[11px] font-medium leading-none text-dim">volume load · last 12 weeks</div>
+          </div>
+          <div className="mb-4 flex flex-wrap gap-x-7 gap-y-3">
+            <div>
+              <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">This week</div>
+              <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">{fmtLoad(thisWeek)}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">vs last wk</div>
+              <div className={`mt-[6px] font-mono text-[22px] font-semibold leading-none ${wowDelta == null ? "text-dim" : wowDelta >= 0 ? "text-good" : "text-hot"}`}>
+                {wowDelta == null ? "—" : `${wowDelta >= 0 ? "+" : "−"}${Math.abs(wowDelta * 100).toFixed(0)}%`}
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">12-wk avg</div>
+              <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">{fmtLoad(avgLoad)}</div>
+            </div>
+            <div>
+              <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Peak</div>
+              <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">
+                {fmtLoad(peakVal)}<span className="ml-[3px] text-[12px] font-medium text-mute">· W{peakWk}</span>
+              </div>
+            </div>
+          </div>
+          <Chart
+            width={600}
+            height={100}
+            padding={{ top: 6, right: 2, bottom: 2, left: 2 }}
+            yDomain={[0, loadMax]}
+            ariaLabel="Weekly training load, last 12 weeks"
+            className="h-[100px] w-full"
+          >
+            <Bars
+              data={loadSeries.map((v, i) => ({ key: `W${i + 1}`, value: v }))}
+              color="series"
+              baseColor={colors.categorical[1]}
+              emphasisKey={`W${nowIdx + 1}`}
+            />
+          </Chart>
+          <div className="mt-[10px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>W1</span><span>W12 · now</span></div>
+        </Card>
+        <LoadBalanceCard acwr={acwr} acute={thisWeek} chronic={chronic} />
+      </div>
 
       <Card className="px-[22px] py-5">
         <SectionLabel className="mb-2">Field test log</SectionLabel>

@@ -108,7 +108,7 @@ export function ObjectivesScreen() {
         <span className="mt-[1px] text-[13px] text-ac">◆</span>
         <p className="m-0 text-[12px] font-medium leading-[1.5] text-mute">
           Objectives aren’t just a wishlist — they <span className="text-soft">drive what your plan emphasizes</span>
-          {" "}(more work toward a near, high-priority goal), <span className="text-soft">taper you before a target date</span>,
+          {" "}(more work toward your highest-priority goal), <span className="text-soft">taper you before a target date</span>,
           and <span className="text-soft">decide which benchmarks the Assess tab suggests</span>. Set a priority and, for measurable goals, link a benchmark so progress tracks automatically.
         </p>
       </div>

@@ -4,9 +4,11 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
-import type { ApiError, ConnectionStatus, ProfileRead, ProfileUpdate } from "@/types";
+import type { ApiError, ConnectionStatus, ObjectiveRead, ProfileRead, ProfileUpdate } from "@/types";
 import { TRAINING_GOALS, usePerfLab } from "../store";
 import type { Settings } from "../store";
+import { DOMAIN_OPTIONS } from "../domains";
+import { useAuthedResource } from "../useAuthedResource";
 import { Card, SectionLabel } from "../ui";
 
 const ACCENTS = ["#c6f135", "#45d6c4", "#86b8ff", "#f5c451", "#ff8a5c"];
@@ -25,6 +27,98 @@ function Seg({ options, value, onChange, className }: { options: string[]; value
       {options.map((o) => (
         <div key={o} onClick={() => onChange(o)} className={segCls(value === o)}>{o}</div>
       ))}
+    </div>
+  );
+}
+
+// Multi-goal selector (bridges Settings ↔ Objectives). The single "Primary goal"
+// dropdown above drives each day's *one* prescribed session; these chips let an
+// athlete train for several disciplines at once — each toggled-on domain becomes
+// a priority-ranked Objective (the already-wired multi-goal mechanism: objectives
+// drive plan emphasis, taper, and which benchmarks Assess suggests). Mirrors the
+// onboarding "pick all that apply" step so the two surfaces stay consistent.
+function GoalChips() {
+  const auth = useAuth();
+  const { state, actions } = usePerfLab();
+  const { data: objectives } = useAuthedResource<ObjectiveRead[]>(
+    (t) => api.listObjectives(t),
+    [state.objectivesRefreshKey],
+  );
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const active = (objectives ?? []).filter((o) => o.status === "active");
+  const activeDomains = new Set(active.map((o) => o.domain).filter(Boolean) as string[]);
+  // "Bare" goal objectives (no date / target / benchmark) are the ones these chips
+  // own and may delete on toggle-off. A dated race or benchmark-linked objective
+  // lights its chip too, but is never deleted here — it's managed in the Objectives
+  // tab, so we can't silently destroy real target data from Settings.
+  const bareByDomain = new Map<string, ObjectiveRead[]>();
+  for (const o of active) {
+    if (!o.domain || o.target_date || o.target_value != null || o.benchmark_code) continue;
+    const list = bareByDomain.get(o.domain) ?? [];
+    list.push(o);
+    bareByDomain.set(o.domain, list);
+  }
+
+  async function toggle(domain: string, label: string) {
+    if (!auth.token || busy) return;
+    setBusy(domain);
+    setErr(null);
+    try {
+      if (activeDomains.has(domain)) {
+        const bare = bareByDomain.get(domain) ?? [];
+        if (bare.length === 0) {
+          setErr(`“${label}” is tied to a dated or benchmark-linked objective — remove it in the Objectives tab.`);
+          return;
+        }
+        await Promise.all(bare.map((o) => api.deleteObjective(o.id, auth.token!)));
+        actions.refreshObjectives();
+      } else {
+        const priority = Math.min(activeDomains.size + 1, 5);
+        await api.createObjective({ label, domain, priority }, auth.token);
+        actions.refreshObjectives();
+      }
+    } catch (e) {
+      setErr((e as ApiError)?.message ?? "Couldn't update that goal.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div>
+      <span className="text-[12px] font-medium leading-none text-mute">Also training for</span>
+      <p className="mb-[10px] mt-[6px] text-[11px] font-medium leading-[1.45] text-faint">
+        Pick every discipline you’re training for — each becomes a priority-ranked objective that shapes what your plan emphasizes and which benchmarks Assess suggests. Your primary goal above still drives each day’s prescribed session.
+      </p>
+      {!auth.token ? (
+        <p className="text-[11px] font-medium leading-[1.4] text-faint">Sign in to train for more than one goal.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {DOMAIN_OPTIONS.map((d) => {
+              const on = activeDomains.has(d.value);
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  aria-pressed={on}
+                  disabled={busy === d.value}
+                  onClick={() => void toggle(d.value, d.label)}
+                  className={cn(
+                    "cursor-pointer rounded-[10px] border px-3 py-[10px] text-[12.5px] font-semibold leading-none disabled:opacity-50",
+                    on ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-panel text-mute",
+                  )}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          {err && <p className="mt-2 text-[11px] font-medium leading-[1.4] text-hot">{err}</p>}
+        </>
+      )}
     </div>
   );
 }
@@ -539,7 +633,7 @@ export function SettingsScreen() {
         <SectionLabel className="mb-4">Preferences</SectionLabel>
         <div className="flex flex-col gap-4">
           <label className="block">
-            <span className="text-[12px] font-medium leading-none text-mute">Training goal</span>
+            <span className="text-[12px] font-medium leading-none text-mute">Primary goal</span>
             <select
               value={s.goal}
               onChange={(e) => void onGoalChange(e.target.value)}
@@ -550,8 +644,9 @@ export function SettingsScreen() {
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
             </select>
-            <span className="mt-2 block text-[11px] font-medium leading-[1.4] text-faint">Drives your prescribed sessions — anything from strength to marathon.</span>
+            <span className="mt-2 block text-[11px] font-medium leading-[1.4] text-faint">Drives each day’s prescribed session — anything from strength to marathon.</span>
           </label>
+          <GoalChips />
           <div>
             <span className="text-[12px] font-medium leading-none text-mute">Units</span>
             <Seg options={["Metric (km)", "Imperial (mi)"]} value={s.units} onChange={(v) => actions.setSetting("units", v)} />
