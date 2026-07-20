@@ -124,4 +124,7 @@ def test_each_wellness_replay_attempt_has_a_preceding_lock() -> None:
     lock_lines = _named_call_lines(wellness, _LOCK_HELPER)
     replay_lines = _named_call_lines(wellness, "_replay_pending_head_correction")
     assert len(lock_lines) >= len(replay_lines) == 2
-    assert all(lock_line < replay_line for lock_line, replay_line in zip(lock_lines, replay_lines))
+    assert all(
+        lock_line < replay_line
+        for lock_line, replay_line in zip(lock_lines, replay_lines, strict=False)
+    )

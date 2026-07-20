@@ -19,7 +19,6 @@ from .numerics import nearest_psd
 from .params_vectors import seed_variance_vector
 from .state_packing import N_STATE, STATE_KEYS, pack
 
-
 EKF_MODEL_VERSION = "ekf-v1"
 
 
