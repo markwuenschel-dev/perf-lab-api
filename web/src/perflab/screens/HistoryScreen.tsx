@@ -1,7 +1,7 @@
 // src/perflab/screens/HistoryScreen.tsx
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
-import type { BenchmarkObservationRead, UnifiedStateVector, WellnessSampleOut, WorkoutLogSummary } from "@/types";
+import type { BenchmarkObservationRead, StateHistorySnapshotRead, UnifiedStateVector, WellnessSampleOut, WorkoutLogSummary } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { Card, ScreenHeader, SectionLabel, Track } from "../ui";
@@ -246,10 +246,12 @@ export function HistoryScreen() {
   const { accent, colors } = useVizTheme();
 
   // Real trends when signed in; the deterministic sim backs guests / empty history.
-  const historyRes = useAuthedResource<UnifiedStateVector[]>((t) => api.getStateHistory(t, 22), []);
+  const historyRes = useAuthedResource<StateHistorySnapshotRead[]>((t) => api.getStateHistory(t, 22), []);
   const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 300), []);
 
-  const realReadiness = token && historyRes.data && historyRes.data.length ? historyRes.data.map(stateReadinessProxy) : null;
+  const historyRows = historyRes.data;
+  const usingRealHistory = !!(token && historyRows && historyRows.length);
+  const realReadiness = usingRealHistory ? historyRows!.map(stateReadinessProxy) : null;
   const readinessSeries = realReadiness ?? DAYS.map((d) => d.readiness);
   const N = readinessSeries.length;
   const hDiff = readinessSeries[N - 1] - readinessSeries[0];
@@ -274,8 +276,16 @@ export function HistoryScreen() {
   const chronic = recent4.length ? recent4.reduce((a, b) => a + b, 0) / recent4.length : 0;
   const acwr = chronic > 0 && recent4.filter((v) => v > 0).length >= 2 ? thisWeek / chronic : null;
 
+  // Time-travel the twin from a clicked readiness dot. On live history we hand the
+  // twin the CLICKED ROW's snapshot_id (its durable identity), never the chart
+  // index — the Twin resolves that id to a local scrub position. The sim fallback
+  // (guest / empty history) still keys on the fixture day index.
   const goDay = (i: number) => {
-    actions.setTwinDay(i);
+    if (usingRealHistory && historyRows![i]) {
+      actions.setSelectedTwinSnapshot(historyRows![i].snapshot_id);
+    } else {
+      actions.setTwinDay(i);
+    }
     actions.setScreen("twin");
   };
 
