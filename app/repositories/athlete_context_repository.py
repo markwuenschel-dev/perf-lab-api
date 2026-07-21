@@ -63,11 +63,16 @@ class AthleteContextRepository:
         return result.scalars().first()
 
     async def list_recent_states(self, user_id: int, limit: int) -> Sequence[AthleteState]:
-        """The athlete's most recent ``AthleteState`` rows, newest first (≤ ``limit``)."""
+        """The athlete's most recent ``AthleteState`` rows, newest first (≤ ``limit``).
+
+        Ties on ``timestamp`` break by ``id`` DESC so the ordering is total and
+        deterministic — the state-history scrub is row-INDEXED, so an unstable tie
+        order would shuffle which snapshot a slider position maps to between reloads.
+        """
         result = await self.session.execute(
             select(AthleteState)
             .where(AthleteState.user_id == user_id)
-            .order_by(AthleteState.timestamp.desc())
+            .order_by(AthleteState.timestamp.desc(), AthleteState.id.desc())
             .limit(limit)
         )
         return result.scalars().all()

@@ -20,20 +20,25 @@ from app.models.user import User
 from app.models.workout_log import WorkoutLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.history import WorkoutLogSummary
-from app.schemas.state import UnifiedStateVector
+from app.schemas.state import StateHistorySnapshotRead
 from app.services import state_service
 
 router = APIRouter(prefix="/v1", tags=["history"])
 
 
-@router.get("/state-history", response_model=list[UnifiedStateVector])
+@router.get("/state-history", response_model=list[StateHistorySnapshotRead])
 async def state_history(
     limit: int = Query(60, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[UnifiedStateVector]:
-    """The athlete's recent state vectors, oldest→newest (chart order)."""
-    return await state_service.load_recent_states(db, current_user.id, limit)
+) -> list[StateHistorySnapshotRead]:
+    """The athlete's recent recorded state snapshots, oldest→newest (scrub order).
+
+    Each snapshot carries a per-axis confidence-presentation band derived from that
+    row's own variance (ADR-0059), so the Twin can render certainty without
+    re-declaring the policy thresholds client-side.
+    """
+    return await state_service.load_recent_state_snapshots(db, current_user.id, limit)
 
 
 @router.get("/workouts", response_model=list[WorkoutLogSummary])

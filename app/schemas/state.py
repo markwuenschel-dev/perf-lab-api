@@ -9,6 +9,7 @@ from app.domain.vectors import (
     FatigueState,
     TissueState,
 )
+from app.logic.confidence_presentation import POLICY_VERSION, confidence_status
 
 
 class UnifiedStateVector(BaseModel):
@@ -48,3 +49,56 @@ class UnifiedStateVector(BaseModel):
     model_version: str = Field(default="v0.3", description="State engine version")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StateHistorySnapshotRead(UnifiedStateVector):
+    """A recorded state snapshot projected for the Digital Twin's time-travel view.
+
+    The canonical ``UnifiedStateVector`` plus a per-axis confidence *presentation*
+    band derived from THIS snapshot's own live ``capacity_confidence`` variance
+    (confidence_presentation_policy_v1; ADR-0059 keeps provenance separate from
+    certainty). Endpoint-specific on purpose: the canonical vector stays free of
+    presentation state, and the derivation lives once in
+    ``app.logic.confidence_presentation`` so the web app never re-declares the
+    thresholds (they would silently drift).
+    """
+
+    snapshot_id: int = Field(
+        ...,
+        description=(
+            "Persisted AthleteState row id — the stable identity of this recorded "
+            "snapshot. Cross-screen navigation (History→Twin deep-link) and the "
+            "time-travel scrub must key on this, never on list position: the "
+            "endpoint is a bounded window (default 60, max 365) that shifts as rows "
+            "accrue, so index N is not a durable reference to a snapshot."
+        ),
+    )
+    capacity_confidence_status: dict[str, str] = Field(
+        ...,
+        description=(
+            "Per-capacity-axis certainty band (established | provisional | "
+            "insufficient), derived from this snapshot's own capacity_confidence "
+            "variance. All 8 capacity axes, even those the Twin does not plot."
+        ),
+    )
+    confidence_presentation_policy_version: str = Field(
+        ...,
+        description="Version of the confidence-presentation policy that produced the statuses.",
+    )
+
+    @classmethod
+    def from_state(
+        cls, state: UnifiedStateVector, snapshot_id: int
+    ) -> "StateHistorySnapshotRead":
+        """Project a domain state vector + its persisted row id into the read model,
+        deriving per-axis confidence status from that vector's own variance (all 8 axes)."""
+        statuses = {
+            axis: confidence_status(getattr(state.capacity_confidence, axis))
+            for axis in CapacityConfidence.KEYS
+        }
+        return cls(
+            snapshot_id=snapshot_id,
+            **state.model_dump(),
+            capacity_confidence_status=statuses,
+            confidence_presentation_policy_version=POLICY_VERSION,
+        )

@@ -755,7 +755,11 @@ export interface paths {
         };
         /**
          * State History
-         * @description The athlete's recent state vectors, oldest→newest (chart order).
+         * @description The athlete's recent recorded state snapshots, oldest→newest (scrub order).
+         *
+         *     Each snapshot carries a per-axis confidence-presentation band derived from that
+         *     row's own variance (ADR-0059), so the Twin can render certainty without
+         *     re-declaring the policy thresholds client-side.
          */
         get: operations["state_history_v1_state_history_get"];
         put?: never;
@@ -2531,6 +2535,106 @@ export interface components {
             unknown_today?: string[];
             /** Untracked */
             untracked?: string[];
+        };
+        /**
+         * StateHistorySnapshotRead
+         * @description A recorded state snapshot projected for the Digital Twin's time-travel view.
+         *
+         *     The canonical ``UnifiedStateVector`` plus a per-axis confidence *presentation*
+         *     band derived from THIS snapshot's own live ``capacity_confidence`` variance
+         *     (confidence_presentation_policy_v1; ADR-0059 keeps provenance separate from
+         *     certainty). Endpoint-specific on purpose: the canonical vector stays free of
+         *     presentation state, and the derivation lives once in
+         *     ``app.logic.confidence_presentation`` so the web app never re-declares the
+         *     thresholds (they would silently drift).
+         */
+        StateHistorySnapshotRead: {
+            /**
+             * B Met Anaerobic
+             * @description Anaerobic work capacity (W'/D')
+             */
+            b_met_anaerobic: number;
+            /**
+             * C Met Aerobic
+             * @description Aerobic capacity (e.g. CS / VO2 proxy)
+             */
+            c_met_aerobic: number;
+            /**
+             * C Nm Force
+             * @description Maximal strength / force capacity
+             */
+            c_nm_force: number;
+            /**
+             * C Struct
+             * @description Structural capacity / CSA proxy
+             */
+            c_struct: number;
+            capacity_confidence?: components["schemas"]["CapacityConfidence"];
+            /**
+             * Capacity Confidence Status
+             * @description Per-capacity-axis certainty band (established | provisional | insufficient), derived from this snapshot's own capacity_confidence variance. All 8 capacity axes, even those the Twin does not plot.
+             */
+            capacity_confidence_status: {
+                [key: string]: string;
+            };
+            capacity_x?: components["schemas"]["CapacityState"];
+            /**
+             * Confidence Presentation Policy Version
+             * @description Version of the confidence-presentation policy that produced the statuses.
+             */
+            confidence_presentation_policy_version: string;
+            /**
+             * F Met Systemic
+             * @default 0
+             */
+            f_met_systemic: number;
+            /**
+             * F Nm Central
+             * @default 0
+             */
+            f_nm_central: number;
+            /**
+             * F Nm Peripheral
+             * @default 0
+             */
+            f_nm_peripheral: number;
+            /**
+             * F Struct Damage
+             * @default 0
+             */
+            f_struct_damage: number;
+            fatigue_f?: components["schemas"]["FatigueState"];
+            /**
+             * Habit Strength
+             * @default 0
+             */
+            habit_strength: number;
+            /**
+             * Model Version
+             * @description State engine version
+             * @default v0.3
+             */
+            model_version: string;
+            /**
+             * S Struct Signal
+             * @default 0
+             */
+            s_struct_signal: number;
+            /** Skill State */
+            skill_state?: {
+                [key: string]: number;
+            };
+            /**
+             * Snapshot Id
+             * @description Persisted AthleteState row id — the stable identity of this recorded snapshot. Cross-screen navigation (History→Twin deep-link) and the time-travel scrub must key on this, never on list position: the endpoint is a bounded window (default 60, max 365) that shifts as rows accrue, so index N is not a durable reference to a snapshot.
+             */
+            snapshot_id: number;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            tissue_t?: components["schemas"]["TissueState"];
         };
         /** StrengthSession */
         StrengthSession: {
@@ -4626,7 +4730,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UnifiedStateVector"][];
+                    "application/json": components["schemas"]["StateHistorySnapshotRead"][];
                 };
             };
             /** @description Validation Error */

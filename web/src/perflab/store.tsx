@@ -7,7 +7,7 @@
 
 import { createContext, useContext } from "react";
 import type { Dispatch } from "react";
-import { DAY_COUNT, PHASES } from "./sim";
+import { PHASES } from "./sim";
 import type { CheckinState, SimParams } from "./sim";
 import type { MetricsResponse, ReadinessScore, UnifiedStateVector } from "../types";
 
@@ -85,7 +85,15 @@ export interface PerfLabState {
   durationMin: number;
   distanceKm: number;
   paceSec: number;
+  /** GUEST-preview scrub index over the deterministic sim `DAYS` only. Never the
+   *  cross-screen contract for the live twin — that is `selectedTwinSnapshotId`. */
   twinDayIdx: number | null;
+  /** Cross-screen selection for the LIVE twin: the persisted AthleteState row id
+   *  (StateHistorySnapshotRead.snapshot_id), NOT a list index — the state-history
+   *  window shifts as rows accrue, so position is not a durable reference. null =
+   *  select the newest recorded snapshot. Set by History→Twin deep-links and by
+   *  the Twin time-travel scrub. */
+  selectedTwinSnapshotId: number | null;
   navCollapsed: boolean;
   fresh: boolean;
   sessOpen: boolean;
@@ -138,7 +146,6 @@ interface Persisted {
 }
 
 export const STORAGE_KEY = "perflab_v1";
-export const LAST = DAY_COUNT - 1;
 
 function loadPersisted(): Partial<Persisted> {
   try {
@@ -166,6 +173,7 @@ export function initialState(): PerfLabState {
     distanceKm: 9,
     paceSec: 278,
     twinDayIdx: null,
+    selectedTwinSnapshotId: null,
     navCollapsed: false,
     fresh: typeof sv.fresh === "boolean" ? sv.fresh : false,
     sessOpen: false,
@@ -268,9 +276,8 @@ export interface PerfLabActions {
   setDist: (n: number) => void;
   setPaceSec: (n: number) => void;
   setTwinDay: (i: number) => void;
-  dayPrev: () => void;
-  dayNext: () => void;
-  dayToday: () => void;
+  /** Select a live twin snapshot by its persisted row id (null = newest). */
+  setSelectedTwinSnapshot: (id: number | null) => void;
   setCapView: (v: "bars" | "radar") => void;
   openSession: () => void;
   closeSession: () => void;
@@ -339,9 +346,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     setDist: (n) => merge({ distanceKm: n }),
     setPaceSec: (n) => merge({ paceSec: n }),
     setTwinDay: (i) => merge({ twinDayIdx: i }),
-    dayPrev: () => mergeFn((s) => ({ twinDayIdx: Math.max(0, (s.twinDayIdx == null ? LAST : s.twinDayIdx) - 1) })),
-    dayNext: () => mergeFn((s) => ({ twinDayIdx: Math.min(LAST, (s.twinDayIdx == null ? LAST : s.twinDayIdx) + 1) })),
-    dayToday: () => merge({ twinDayIdx: LAST }),
+    setSelectedTwinSnapshot: (id) => merge({ selectedTwinSnapshotId: id }),
     setCapView: (v) => merge({ capView: v }),
     openSession: () => dispatch({ type: "openSession" }),
     closeSession: () => merge({ sessOpen: false, sessRunning: false }),

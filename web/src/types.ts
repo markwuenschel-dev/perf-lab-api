@@ -20,10 +20,15 @@ export type UserResponse = Schemas["UserResponse"];
 
 /* ---------- Engine vectors / unified state ---------- */
 export type CapacityState = Schemas["CapacityState"];
+export type CapacityConfidence = Schemas["CapacityConfidence"];
 export type FatigueState = Schemas["FatigueState"];
 export type TissueState = Schemas["TissueState"];
 export type StressDoseSix = Schemas["StressDoseSix"];
 export type UnifiedStateVector = Schemas["UnifiedStateVector"];
+/** The canonical vector plus per-axis confidence *presentation* bands, projected
+ *  for the Twin's time-travel view (GET /v1/state-history; ADR-0059). A structural
+ *  superset of UnifiedStateVector. */
+export type StateHistorySnapshotRead = Schemas["StateHistorySnapshotRead"];
 
 /* ---------- Workouts / dose ---------- */
 export type Modality = Schemas["WorkoutLog"]["modality"];
