@@ -31,6 +31,7 @@ import type {
   ProjectionRequest,
   ProjectionResponse,
   ReadinessScore,
+  StateHistorySnapshotRead,
   StressDose,
   SyncResult,
   TokenResponse,
@@ -288,17 +289,21 @@ export async function onboard(request: OnboardRequest): Promise<OnboardResponse>
   return handleResponse<OnboardResponse>(res);
 }
 
-/** The athlete's recent state vectors, oldest→newest (Twin time-travel, trends). */
+/** The athlete's recent state snapshots, oldest→newest (Twin time-travel, trends).
+ *  Each row is a `StateHistorySnapshotRead` — the canonical `UnifiedStateVector`
+ *  (a structural superset, so Overview/History that read only vector fields keep
+ *  compiling) plus this snapshot's `snapshot_id`, per-axis confidence-presentation
+ *  bands, and the policy version (ADR-0059). */
 export async function getStateHistory(
   token: string,
   limit?: number,
-): Promise<UnifiedStateVector[]> {
+): Promise<StateHistorySnapshotRead[]> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const query = limit != null ? `?limit=${limit}` : "";
   const res = await fetch(`${API_V1_BASE}/state-history${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<UnifiedStateVector[]>(res, { sessionOn401: true });
+  return handleResponse<StateHistorySnapshotRead[]>(res, { sessionOn401: true });
 }
 
 /** The athlete's logged workouts, most recent first (recent sessions, load). */

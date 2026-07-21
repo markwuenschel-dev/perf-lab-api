@@ -1,12 +1,25 @@
 // src/perflab/screens/TwinScreen.tsx
+//
+// The Digital Twin screen. For an AUTHENTICATED athlete this is fully live: the
+// state vector, its time-travel scrub, readiness, capacities, fatigue and tissue
+// all come from GET /v1/state-history + GET /v1/readiness — no sim, no fabricated
+// numbers. A GUEST sees a clearly-labelled preview driven by the deterministic
+// sim (sim.ts), which is the ONLY place the VO2 / Profile / Skill mock tiles and
+// the simulated Explain drawer appear.
+//
+// Snapshot identity: cross-screen selection is a snapshot_id (store.selectedTwin
+// SnapshotId), never a list index — the state-history window shifts as rows
+// accrue. The slider/prev/next operate over the LOCAL index of the loaded window
+// and write back the adjacent row's snapshot_id.
 import type { ReactNode } from "react";
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
-import type { WorkoutPrescription } from "@/types";
+import type { ReadinessScore, StateHistorySnapshotRead, WorkoutPrescription } from "@/types";
 import { usePerfLab } from "../store";
-import { useAuthedResource } from "../useAuthedResource";
+import { useAuthedResource, type Resource } from "../useAuthedResource";
 import { Card, MetricBar, Pill, ReadinessRing, SectionLabel, SyncChip } from "../ui";
 import { Chart, Line, Marker, Radar, useVizTheme } from "../viz";
+import { CapacityView } from "./twin/CapacityView";
 import {
   CAP_CFG,
   CAP_TIPS,
@@ -26,7 +39,413 @@ import {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// Mean of the six fatigue axes (0–100), decomposed vector when present else the
+// legacy scalars. Copied module-local from OverviewScreen (not shared) so the
+// Twin owns its own timeline arithmetic.
+function meanFatigue(sv: StateHistorySnapshotRead): number {
+  const f = sv.fatigue_f;
+  const vals = f
+    ? [f.cns, f.muscular, f.metabolic, f.structural, f.tendon, f.grip]
+    : [sv.f_nm_central, sv.f_nm_peripheral, sv.f_met_systemic, sv.f_struct_damage];
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+/** Compact "Xh ago" for the sync chip. */
+function relativeTime(iso: string): string {
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return "just now";
+  const m = Math.floor(secs / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+/** "Viewing" date + relative word from a recorded snapshot's timestamp. */
+function viewingLabel(iso: string): { date: string; when: string } {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: iso, when: "" };
+  const date = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  const a = new Date();
+  a.setHours(0, 0, 0, 0);
+  const b = new Date(d);
+  b.setHours(0, 0, 0, 0);
+  const days = Math.round((a.getTime() - b.getTime()) / 864e5);
+  const when = days <= 0 ? "Today" : days === 1 ? "Yesterday" : `${days} days ago`;
+  return { date, when };
+}
+
 export function TwinScreen() {
+  const { token } = useAuth();
+  const { state, actions } = usePerfLab();
+
+  const historyRes = useAuthedResource<StateHistorySnapshotRead[]>((t) => api.getStateHistory(t, 60), []);
+  const readinessRes = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey]);
+
+  const isGuest = token == null;
+  const rows = historyRes.data;
+  const newest = rows && rows.length ? rows[rows.length - 1] : null;
+  const syncLabel = isGuest
+    ? "Preview"
+    : newest
+      ? `Synced ${relativeTime(newest.timestamp)}`
+      : historyRes.loading
+        ? "Syncing…"
+        : "No recorded state";
+
+  return (
+    <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
+      <ScreenHeaderTwin authed={!isGuest} syncLabel={syncLabel} onLog={actions.openLog} />
+
+      <NextSessionCard />
+
+      {isGuest ? (
+        <GuestTwinPreview />
+      ) : (
+        <AuthedTwinBody historyRes={historyRes} readinessRes={readinessRes} />
+      )}
+    </section>
+  );
+}
+
+// ============================ AUTHENTICATED (LIVE) ============================
+
+function AuthedTwinBody({
+  historyRes,
+  readinessRes,
+}: {
+  historyRes: Resource<StateHistorySnapshotRead[]>;
+  readinessRes: Resource<ReadinessScore>;
+}) {
+  const { state, actions } = usePerfLab();
+  const { accent } = useVizTheme();
+  const rows = historyRes.data;
+
+  // ---- LOADING: neutral skeletons, never sim ----
+  if (historyRes.loading && !rows) {
+    return <TwinSkeleton />;
+  }
+  // ---- ERROR: honest retry, distinct from empty (no sim, no manufactured 50s) ----
+  if (historyRes.error && !rows) {
+    return (
+      <Card className="px-[22px] py-8 text-center">
+        <div className="text-[14px] font-semibold text-ink">Couldn&apos;t load your twin</div>
+        <div className="mx-auto mt-2 max-w-[420px] text-[12.5px] font-medium leading-[1.5] text-mute">{historyRes.error}</div>
+        <div className="mt-2 text-[12px] font-medium text-dim">Reload to try again.</div>
+      </Card>
+    );
+  }
+  // ---- EMPTY: real empty prompt (never default 50s) ----
+  if (!rows || rows.length === 0) {
+    return (
+      <Card className="px-[22px] py-8 text-center">
+        <div className="text-[14px] font-semibold text-ink">No twin state yet</div>
+        <div className="mx-auto mt-2 max-w-[440px] text-[12.5px] font-medium leading-[1.5] text-mute">
+          Log a workout or run a field test to seed your twin — your evolving state vector will appear here.
+        </div>
+        <button onClick={actions.openLog} className="mt-4 rounded-[9px] bg-ink px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">
+          Log workout
+        </button>
+      </Card>
+    );
+  }
+
+  // ---- THIN (len 1) / LIVE (len >= 2) ----
+  const len = rows.length;
+  const thin = len < 2;
+  const showDelta = !thin;
+
+  // Resolve the cross-screen snapshot_id to a LOCAL index in the loaded window.
+  // If the requested id is not in the window, fall back EXPLICITLY to the newest
+  // row — never silently reinterpret an old id as a position.
+  const selId = state.selectedTwinSnapshotId;
+  const found = selId != null ? rows.findIndex((r) => r.snapshot_id === selId) : -1;
+  const di = found >= 0 ? found : len - 1;
+  const row = rows[di];
+  const startRow = rows[0];
+  const isLatest = di === len - 1;
+
+  const selectLocal = (li: number) => {
+    const clamped = Math.max(0, Math.min(len - 1, li));
+    actions.setSelectedTwinSnapshot(rows[clamped].snapshot_id);
+  };
+
+  const { date: vDate, when: vWhen } = viewingLabel(row.timestamp);
+  const sparkData = rows.map((r, i) => [i, meanFatigue(r)] as [number, number]);
+
+  // Canonical readiness for the LATEST snapshot only (PDR-0005: never recompute).
+  const canonicalScore = readinessRes.data?.score ?? null;
+
+  // ---- Fatigue / tissue: live decomposed axes (guarded for optional fields) ----
+  const fRec = (row.fatigue_f ?? {}) as Record<string, number>;
+  const tRec = (row.tissue_t ?? {}) as Record<string, number>;
+  const fatigueOf = (label: string) => Math.round(fRec[label.toLowerCase()] ?? 0);
+  const tissueOf = (label: string) => Math.round(tRec[label.toLowerCase()] ?? 0);
+
+  // ---- Structural signal trend (guarded for di==0 / thin) ----
+  const signalVal = row.s_struct_signal ?? 0;
+  const prevRow = di > 0 ? rows[di - 1] : null;
+  const signalTrend = prevRow ? (signalVal >= (prevRow.s_struct_signal ?? 0) ? "↗ rising" : "→ steady") : "—";
+  const habitPct = Math.round((row.habit_strength ?? 0) * 100);
+
+  return (
+    <>
+      {/* time-travel — axis is recorded snapshots, x = ordinal 0..len-1 */}
+      <Card className="flex items-center gap-[22px] px-5 py-[15px]">
+        <div className="min-w-[118px] flex-none">
+          <SectionLabel className="text-faint">Viewing</SectionLabel>
+          <div className="mt-[7px] flex items-baseline gap-2">
+            <span className="text-[18px] font-bold leading-none text-ink">{vDate}</span>
+            {vWhen && <span className="text-[11px] font-medium leading-none text-teal">{vWhen}</span>}
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <Chart
+            width={560}
+            height={40}
+            padding={{ top: 5, right: 10, bottom: 5, left: 10 }}
+            xDomain={[0, Math.max(1, len - 1)]}
+            yDomain={[0, 100]}
+            ariaLabel="Mean fatigue across recorded states"
+            className="h-[38px] w-full"
+          >
+            {!thin && <Line data={sparkData} color={accent} opacity={0.7} label="Mean fatigue" />}
+            <Marker x={di} y={meanFatigue(row)} color={accent} />
+          </Chart>
+          <input
+            type="range"
+            min={0}
+            max={len - 1}
+            value={di}
+            disabled={thin}
+            onChange={(e) => selectLocal(+e.target.value)}
+            className="mt-[2px] w-full cursor-pointer disabled:cursor-default disabled:opacity-40"
+            style={{ accentColor: "var(--ac)" }}
+          />
+          <div className="mt-[2px] font-mono text-[9px] leading-none text-dim">
+            {thin ? "Only one recorded state so far" : "Mean fatigue · oldest → newest recorded state"}
+          </div>
+        </div>
+        <div className="flex flex-none items-center gap-[7px]">
+          <button onClick={() => selectLocal(di - 1)} disabled={thin || di === 0} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft disabled:opacity-30">‹</button>
+          <button onClick={() => selectLocal(di + 1)} disabled={thin || di === len - 1} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft disabled:opacity-30">›</button>
+          <button onClick={() => actions.setSelectedTwinSnapshot(rows[len - 1].snapshot_id)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-[#0a0c10]">Today</button>
+        </div>
+      </Card>
+
+      {/* readiness + two live tiles */}
+      <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[300px_1fr]">
+        <ReadinessCard isLatest={isLatest} canonicalScore={canonicalScore} readinessRes={readinessRes} meanF={Math.round(meanFatigue(row))} />
+        <div className="grid grid-cols-2 gap-[14px]">
+          <MiniTile
+            tip="Consistency of training vs plan — habit strength on a 0–100 scale."
+            label="Habit"
+            value={<>{habitPct}<span className="text-[16px] text-faint">%</span></>}
+            sub="adherence"
+            bar={habitPct}
+          />
+          <MiniTile
+            tip="Structural adaptation drive — how strongly recent load is stimulating tissue remodelling. Higher = actively building structure."
+            label="Struct. signal"
+            value={signalVal.toFixed(1)}
+            sub="adaptation drive"
+            foot={signalTrend}
+            footColor="text-teal"
+          />
+        </div>
+      </div>
+
+      {/* capacities + confidence (extracted, BA-4) */}
+      <CapacityView row={row} startRow={startRow} showDelta={showDelta} />
+
+      {/* fatigue + tissue */}
+      <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
+        <Card>
+          <div className="mb-4 flex items-center justify-between">
+            <SectionLabel>Fatigue · F(t)</SectionLabel>
+            <div className="font-mono text-[10px] leading-none text-dim">0 fresh → 100 maxed</div>
+          </div>
+          <div className="flex flex-col gap-[13px]">
+            {FATIGUE_ORDER.map((k) => {
+              const v = fatigueOf(k);
+              return <MetricBar key={k} label={k} value={v} pct={v} color={fatigueColor(v)} labelClassName="w-[74px]" valueClassName="w-[26px] text-soft" />;
+            })}
+          </div>
+        </Card>
+        <Card>
+          <div className="mb-4 flex items-center justify-between">
+            <SectionLabel>Tissue load · T(t)</SectionLabel>
+            <div className="font-mono text-[10px] leading-none text-dim">local stress, not injury</div>
+          </div>
+          <TissueBody getT={tissueOf} />
+        </Card>
+      </div>
+
+      {/* skills — out of the live view for now (no sim skills for authed) */}
+      <Card className="px-[22px] py-5">
+        <SectionLabel>Skill state</SectionLabel>
+        <div className="mt-3 text-[12.5px] font-medium leading-[1.5] text-mute">
+          Skill detail is not available in this live view yet.
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function ReadinessCard({
+  isLatest,
+  canonicalScore,
+  readinessRes,
+  meanF,
+}: {
+  isLatest: boolean;
+  canonicalScore: number | null;
+  readinessRes: Resource<ReadinessScore>;
+  meanF: number;
+}) {
+  // HISTORICAL snapshot: a neutral, non-scored ring + an honest message and a
+  // SEPARATE labeled mean-fatigue metric. Never fill the ring from 100−meanF or
+  // inverted fatigue; never borrow readinessWord/readinessColor here.
+  if (!isLatest) {
+    return (
+      <Card className="flex items-center gap-[18px]">
+        <NeutralRing />
+        <div>
+          <SectionLabel className="text-faint">Readiness</SectionLabel>
+          <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-mute">
+            Wellness-adjusted readiness was not recorded for this snapshot.
+          </div>
+          <div className="mt-[11px] font-mono text-[13px] font-semibold leading-none text-soft">
+            Mean fatigue · {meanF} / 100
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  // LATEST snapshot with a canonical score → the one backend-owned readiness.
+  if (canonicalScore != null) {
+    const rc = readinessColor(canonicalScore);
+    return (
+      <Card className="flex items-center gap-[18px]">
+        <ReadinessRing value={Math.round(canonicalScore)} color={rc} />
+        <div>
+          <SectionLabel className="text-faint">Readiness</SectionLabel>
+          <div className="mt-2 text-[18px] font-bold leading-none" style={{ color: rc }}>{readinessWord(canonicalScore)}</div>
+          <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(canonicalScore)}</div>
+        </div>
+      </Card>
+    );
+  }
+
+  // LATEST but no score yet (loading / not anchored) — neutral, honest.
+  return (
+    <Card className="flex items-center gap-[18px]">
+      <NeutralRing />
+      <div>
+        <SectionLabel className="text-faint">Readiness</SectionLabel>
+        <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-mute">
+          {readinessRes.loading ? "Loading your readiness…" : "Readiness isn't available yet — check in or log a workout."}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** A greyed, non-scored ring shell for historical / unavailable readiness. */
+function NeutralRing() {
+  return (
+    <div className="grid h-[118px] w-[118px] flex-none place-items-center rounded-full" style={{ background: "conic-gradient(rgba(255,255,255,.08) 0 100%)" }}>
+      <div className="grid h-[92px] w-[92px] place-items-center rounded-full bg-tile">
+        <span className="font-mono text-[26px] font-semibold leading-none text-dim">—</span>
+      </div>
+    </div>
+  );
+}
+
+function TwinSkeleton() {
+  const bar = "animate-pl-pulse rounded-[14px] bg-white/[0.05]";
+  return (
+    <div className="flex flex-col gap-[14px]">
+      <div className={`${bar} h-[74px]`} />
+      <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[300px_1fr]">
+        <div className={`${bar} h-[132px]`} />
+        <div className={`${bar} h-[132px]`} />
+      </div>
+      <div className={`${bar} h-[220px]`} />
+      <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
+        <div className={`${bar} h-[240px]`} />
+        <div className={`${bar} h-[240px]`} />
+      </div>
+    </div>
+  );
+}
+
+/** The tissue body-map + region list, fed by a value getter keyed on region label. */
+function TissueBody({ getT }: { getT: (label: string) => number }) {
+  const reg = (label: string) => {
+    const c = fatigueColor(getT(label));
+    return { fill: swatch(c), stroke: c };
+  };
+  const tm = {
+    knee: reg("Knee"),
+    lumbar: reg("Lumbar"),
+    hip: reg("Hip"),
+    ankle: reg("Ankle"),
+    shoulder: reg("Shoulder"),
+    elbow: reg("Elbow"),
+    wrist: reg("Wrist"),
+    finger: reg("Finger"),
+  };
+  const tHalo = swatchLite(fatigueColor(getT("Knee")));
+  return (
+    <>
+      <div className="grid grid-cols-[150px_1fr] items-center gap-[18px]">
+        <svg viewBox="0 0 130 300" className="block h-auto w-full">
+          <g fill="#1b212b" stroke="rgba(255,255,255,.06)" strokeWidth="1">
+            <circle cx="65" cy="24" r="14" /><rect x="47" y="42" width="36" height="70" rx="15" /><rect x="28" y="46" width="13" height="74" rx="6.5" /><rect x="89" y="46" width="13" height="74" rx="6.5" /><rect x="45" y="104" width="40" height="26" rx="13" /><rect x="49" y="126" width="14" height="96" rx="7" /><rect x="67" y="126" width="14" height="96" rx="7" />
+          </g>
+          <circle cx="56" cy="172" r="12" fill={tHalo} className="animate-pl-pulse" /><circle cx="74" cy="172" r="12" fill={tHalo} className="animate-pl-pulse" />
+          <g strokeWidth="1.5">
+            <circle cx="40" cy="54" r="5.5" fill={tm.shoulder.fill} stroke={tm.shoulder.stroke} /><circle cx="90" cy="54" r="5.5" fill={tm.shoulder.fill} stroke={tm.shoulder.stroke} />
+            <circle cx="34" cy="86" r="5.5" fill={tm.elbow.fill} stroke={tm.elbow.stroke} /><circle cx="96" cy="86" r="5.5" fill={tm.elbow.fill} stroke={tm.elbow.stroke} />
+            <circle cx="34" cy="114" r="5.5" fill={tm.wrist.fill} stroke={tm.wrist.stroke} /><circle cx="96" cy="114" r="5.5" fill={tm.wrist.fill} stroke={tm.wrist.stroke} />
+            <circle cx="34" cy="127" r="4" fill={tm.finger.fill} stroke={tm.finger.stroke} /><circle cx="96" cy="127" r="4" fill={tm.finger.fill} stroke={tm.finger.stroke} />
+            <circle cx="65" cy="98" r="6" fill={tm.lumbar.fill} stroke={tm.lumbar.stroke} />
+            <circle cx="54" cy="116" r="5.5" fill={tm.hip.fill} stroke={tm.hip.stroke} /><circle cx="76" cy="116" r="5.5" fill={tm.hip.fill} stroke={tm.hip.stroke} />
+            <circle cx="56" cy="172" r="6.5" fill={tm.knee.fill} stroke={tm.knee.stroke} /><circle cx="74" cy="172" r="6.5" fill={tm.knee.fill} stroke={tm.knee.stroke} />
+            <circle cx="56" cy="214" r="5.5" fill={tm.ankle.fill} stroke={tm.ankle.stroke} /><circle cx="74" cy="214" r="5.5" fill={tm.ankle.fill} stroke={tm.ankle.stroke} />
+          </g>
+        </svg>
+        <div className="flex flex-col gap-[9px]">
+          {TISSUE_ORDER.map((k) => {
+            const v = getT(k);
+            const c = fatigueColor(v);
+            return (
+              <div key={k} className="flex items-center gap-[9px]">
+                <span className="h-[7px] w-[7px] flex-none rounded-[2px]" style={{ background: c }} />
+                <span className="flex-1 text-[12px] font-medium leading-none" style={{ color: v >= 45 ? COLORS.soft : COLORS.mute }}>{k}</span>
+                <span className="font-mono text-[12px] font-semibold leading-none" style={{ color: v >= 45 ? c : COLORS.soft }}>{v}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-4 flex gap-4 border-t border-white/[0.06] pt-[14px] text-[11px] font-medium leading-none text-mute">
+        <span><span className="mr-[6px] inline-block h-[8px] w-[8px] rounded-[2px] bg-good" />ready</span>
+        <span><span className="mr-[6px] inline-block h-[8px] w-[8px] rounded-[2px] bg-warn" />monitor</span>
+        <span><span className="mr-[6px] inline-block h-[8px] w-[8px] rounded-[2px] bg-hot" />load high</span>
+      </div>
+    </>
+  );
+}
+
+// ================================ GUEST PREVIEW ================================
+// Everything below is the deterministic sim (sim.ts) — a labelled preview of a
+// sample athlete. This is the only path that shows VO2 / Profile / Skill mock
+// tiles and opens the simulated Explain drawer.
+
+function GuestTwinPreview() {
   const { state, actions } = usePerfLab();
   const { accent } = useVizTheme();
   const N = DAY_COUNT;
@@ -40,6 +459,8 @@ export function TwinScreen() {
   const tWhen = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
   const rc = readinessColor(D.readiness);
 
+  const clampDay = (i: number) => Math.max(0, Math.min(N - 1, i));
+
   // VO₂ / Profile tiles read the cached field test when viewing today; the sim
   // backs the historical days (and the case where no field test has been run).
   const ft = isToday ? state.fieldTest : null;
@@ -47,10 +468,8 @@ export function TwinScreen() {
   const tProfileVal = ft ? ft.fatigue_percent : D.profile;
   const tProfileFoot = ft ? ft.fatigue_profile : "endurance-biased";
 
-  // top sparkline (readiness over the 22-day window)
   const sparkData = DAYS.map((d, i) => [i, d.readiness] as [number, number]);
 
-  // capacities
   const tCaps = CAP_CFG.map((c, idx) => {
     const v = D.C[c.key];
     const pct = Math.max(4, Math.min(100, (v / c.max) * 100));
@@ -58,7 +477,6 @@ export function TwinScreen() {
     return { label: c.label, val: v, sub, tip: CAP_TIPS[c.key], key: c.key, first: idx === 0, pct };
   });
 
-  // radar (normalized 0–1 per axis; used for the profile stats + the axis table)
   const radVals = CAP_CFG.map((c) => Math.max(0.06, Math.min(1, D.C[c.key] / c.max)));
   const radShort = ["Aerobic", "Glyco", "Strength", "Power", "Work"];
   const base0 = DAYS[0].C;
@@ -78,14 +496,6 @@ export function TwinScreen() {
   const composite = Math.round((radVals.reduce((a, b) => a + b, 0) / radVals.length) * 100);
   const profileNote = `Strongest in ${domAxis.toLowerCase()}. ${balPct >= 80 ? "Capacities are evenly developed across all axes." : "Development skews toward the leading axes — room to round out the lower ones."}`;
 
-  // tissue body
-  const reg = (k: string) => {
-    const c = fatigueColor(D.T[k]);
-    return { fill: swatch(c), stroke: c };
-  };
-  const tm = { knee: reg("Knee"), lumbar: reg("Lumbar"), hip: reg("Hip"), ankle: reg("Ankle"), shoulder: reg("Shoulder"), elbow: reg("Elbow"), wrist: reg("Wrist"), finger: reg("Finger") };
-  const tHalo = swatchLite(fatigueColor(D.T.Knee));
-
   const sprog = 0.9 + 0.1 * (di / (N - 1));
   const tSignalTrend = D.signal >= DAYS[Math.max(0, di - 1)].signal ? "↗ rising" : "→ steady";
 
@@ -93,11 +503,19 @@ export function TwinScreen() {
   const segBtn = (active: boolean) =>
     `rounded-[6px] border-0 px-3 py-[6px] font-mono text-[11px] font-semibold leading-none ${active ? "bg-ink text-[#0a0c10]" : "bg-transparent text-mute"}`;
 
-  return (
-    <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
-      <ScreenHeaderTwin syncLabel={isToday ? "Synced 2h ago" : "Historical view"} onLog={actions.openLog} />
+  const tHalo = swatchLite(fatigueColor(D.T.Knee));
+  const reg = (k: string) => {
+    const c = fatigueColor(D.T[k]);
+    return { fill: swatch(c), stroke: c };
+  };
+  const tm = { knee: reg("Knee"), lumbar: reg("Lumbar"), hip: reg("Hip"), ankle: reg("Ankle"), shoulder: reg("Shoulder"), elbow: reg("Elbow"), wrist: reg("Wrist"), finger: reg("Finger") };
 
-      <NextSessionCard />
+  return (
+    <>
+      <div className="flex items-center gap-2 rounded-[12px] border border-mint/25 bg-mint/[0.08] px-4 py-[10px] text-[12px] font-medium leading-none text-[#9ad6c8]">
+        <span className="h-[7px] w-[7px] flex-none rounded-full bg-ac" />
+        Preview — sample athlete. Sign in to see your own live twin.
+      </div>
 
       {/* time-travel */}
       <Card className="flex items-center gap-[22px] px-5 py-[15px]">
@@ -115,23 +533,23 @@ export function TwinScreen() {
             padding={{ top: 5, right: 10, bottom: 5, left: 10 }}
             xDomain={[0, N - 1]}
             yDomain={[20, 100]}
-            ariaLabel="Readiness across the 22-day window"
+            ariaLabel="Sample readiness across the preview window"
             className="h-[38px] w-full"
           >
             <Line data={sparkData} color={accent} opacity={0.7} />
             <Marker x={di} y={D.readiness} color={accent} />
           </Chart>
           <input type="range" min={0} max={N - 1} value={di} onChange={(e) => actions.setTwinDay(+e.target.value)} className="mt-[2px] w-full cursor-pointer" style={{ accentColor: "var(--ac)" }} />
-          <div className="mt-[2px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>3 weeks ago</span><span>today</span></div>
+          <div className="mt-[2px] font-mono text-[9px] leading-none text-dim">sample history</div>
         </div>
         <div className="flex flex-none items-center gap-[7px]">
-          <button onClick={actions.dayPrev} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft">‹</button>
-          <button onClick={actions.dayNext} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft">›</button>
-          <button onClick={actions.dayToday} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-[#0a0c10]">Today</button>
+          <button onClick={() => actions.setTwinDay(clampDay(di - 1))} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft">‹</button>
+          <button onClick={() => actions.setTwinDay(clampDay(di + 1))} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft">›</button>
+          <button onClick={() => actions.setTwinDay(N - 1)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-[#0a0c10]">Today</button>
         </div>
       </Card>
 
-      {/* readiness + 4 tiles */}
+      {/* readiness + 4 sim tiles */}
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[300px_1fr]">
         <Card className="flex items-center gap-[18px]">
           <ReadinessRing value={D.readiness} color={rc} onClick={() => actions.openExplain("readiness")} />
@@ -139,18 +557,17 @@ export function TwinScreen() {
             <SectionLabel className="text-faint">Readiness</SectionLabel>
             <div className="mt-2 text-[18px] font-bold leading-none" style={{ color: rc }}>{readinessWord(D.readiness)}</div>
             <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(D.readiness)}</div>
-            <div className="mt-[10px] font-mono text-[10px] leading-none text-dim">100 − 0.55·F̄ − 0.45·Tₘₐₓ</div>
           </div>
         </Card>
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
-          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — your aerobic ceiling, derived from the 1.5-mile split. Age/sex not yet wired into v0.3." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="field test" footColor="text-teal" />
-          <MiniTile tip="Speed↔endurance bias. Negative leans endurance, positive leans speed. A style index, not a fitness score — don't read negative as bad." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot={tProfileFoot} footColor="text-info" />
+          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — sample data." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="field test" footColor="text-teal" />
+          <MiniTile tip="Speed↔endurance bias — sample data." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot={tProfileFoot} footColor="text-info" />
           <MiniTile label="Habit" value={<>{D.habit}<span className="text-[16px] text-faint">%</span></>} sub="adherence" bar={D.habit} />
-          <MiniTile tip="Structural adaptation drive — how strongly recent load is stimulating tissue remodelling. Higher = actively building structure." label="Struct. signal" value={D.signal.toFixed(1)} sub="adaptation drive" foot={tSignalTrend} footColor="text-teal" />
+          <MiniTile tip="Structural adaptation drive — sample data." label="Struct. signal" value={D.signal.toFixed(1)} sub="adaptation drive" foot={tSignalTrend} footColor="text-teal" />
         </div>
       </div>
 
-      {/* capacities */}
+      {/* capacities (sim) */}
       <Card className="px-[22px] py-5">
         <div className="mb-[18px] flex items-center justify-between">
           <SectionLabel>Capacities · X(t)</SectionLabel>
@@ -208,7 +625,7 @@ export function TwinScreen() {
         )}
       </Card>
 
-      {/* fatigue + tissue */}
+      {/* fatigue + tissue (sim) */}
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
         <Card>
           <div className="mb-4 flex items-center justify-between">
@@ -265,11 +682,11 @@ export function TwinScreen() {
         </Card>
       </div>
 
-      {/* skills */}
+      {/* skills (sim) */}
       <Card className="px-[22px] py-5">
         <div className="mb-4 flex items-center justify-between">
           <SectionLabel>Skill state</SectionLabel>
-          <div data-tip="Skill ratings 0–1 (shown as %) — technical proficiencies that gate how efficiently capacity converts to performance. Built through practice, not load." className="font-mono text-[10px] leading-none text-dim">0–1 · proficiency</div>
+          <div data-tip="Skill ratings 0–1 (shown as %) — sample data." className="font-mono text-[10px] leading-none text-dim">0–1 · proficiency</div>
         </div>
         <div className="grid grid-cols-1 gap-x-7 gap-y-[13px] md:grid-cols-2">
           {SKILL_DEFS.map((sd) => {
@@ -280,7 +697,7 @@ export function TwinScreen() {
           })}
         </div>
       </Card>
-    </section>
+    </>
   );
 }
 
@@ -354,7 +771,7 @@ function NextSessionCard() {
   );
 }
 
-function ScreenHeaderTwin({ syncLabel, onLog }: { syncLabel: string; onLog: () => void }) {
+function ScreenHeaderTwin({ authed, syncLabel, onLog }: { authed: boolean; syncLabel: string; onLog: () => void }) {
   return (
     <header className="flex items-start justify-between gap-5">
       <div>
@@ -362,7 +779,9 @@ function ScreenHeaderTwin({ syncLabel, onLog }: { syncLabel: string; onLog: () =
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">Digital Twin</h1>
           <Pill>S(t) · v0.3</Pill>
         </div>
-        <p className="m-0 mt-[9px] max-w-[440px] text-[13.5px] font-medium leading-[1.5] text-mute">Evolving state vector — capacities, fatigue &amp; tissue load. Seeded from the latest field-test handoff.</p>
+        <p className="m-0 mt-[9px] max-w-[440px] text-[13.5px] font-medium leading-[1.5] text-mute">
+          Evolving state vector — capacities, fatigue &amp; tissue load.{authed ? "" : " Sample preview until you sign in."}
+        </p>
       </div>
       <div className="flex items-center gap-[9px]">
         <SyncChip label={syncLabel} />
