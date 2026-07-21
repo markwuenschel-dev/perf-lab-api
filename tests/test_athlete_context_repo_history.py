@@ -30,10 +30,12 @@ async def _mk_user(db, email: str) -> User:
     return u
 
 
-def _state_row(user_id: int, when: datetime) -> AthleteState:
+def _state_row(user_id: int, when: datetime, aerobic: float | None = None) -> AthleteState:
     s = baseline_state(when=when)
     for k in FatigueState.KEYS:
         setattr(s.fatigue_f, k, 10.0)
+    if aerobic is not None:
+        s.capacity_x.aerobic = aerobic  # marker to identify a row through the loader
     return AthleteState(user_id=user_id, **athlete_state_kwargs_from_unified(s))
 
 
@@ -84,6 +86,30 @@ async def test_load_recent_states_returns_oldest_to_newest_vectors(async_db):
     assert len(vectors) == 2
     assert vectors[0].timestamp < vectors[1].timestamp
     assert vectors[1].timestamp == _T0 + timedelta(days=3)
+
+
+async def test_list_recent_states_breaks_timestamp_ties_by_id_desc(async_db):
+    """Two snapshots at the SAME timestamp must order deterministically by id DESC —
+    row-indexed scrubbing needs a total order, not timestamp-only (which ties)."""
+    user = await _mk_user(async_db, "hist_tie@test.com")
+    same = _T0 + timedelta(days=5)
+    r1 = _state_row(user.id, same, aerobic=301.0)  # inserted first → smaller id
+    r2 = _state_row(user.id, same, aerobic=302.0)  # inserted second → larger id
+    async_db.add(r1)
+    async_db.add(r2)
+    await async_db.commit()
+    await async_db.refresh(r1)
+    await async_db.refresh(r2)
+    assert r1.id < r2.id
+
+    recent = await AthleteContextRepository(async_db).list_recent_states(user.id, limit=10)
+    tie_ids = [r.id for r in recent if r.timestamp == same]
+    assert tie_ids == [r2.id, r1.id]  # id DESC on the tie
+
+    # The loader reverses to chart order → the tie comes out id ASC, stably.
+    vectors = await state_service.load_recent_states(async_db, user.id, limit=10)
+    tie_aerobic = [v.capacity_x.aerobic for v in vectors if v.timestamp == same]
+    assert tie_aerobic == [301.0, 302.0]  # r1 (smaller id) first
 
 
 async def test_history_reads_are_user_scoped_and_empty_is_empty(async_db):

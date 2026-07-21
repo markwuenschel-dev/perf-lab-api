@@ -4527,6 +4527,126 @@
         "title": "SignalSummary",
         "type": "object"
       },
+      "StateHistorySnapshotRead": {
+        "description": "A recorded state snapshot projected for the Digital Twin's time-travel view.\n\nThe canonical ``UnifiedStateVector`` plus a per-axis confidence *presentation*\nband derived from THIS snapshot's own live ``capacity_confidence`` variance\n(confidence_presentation_policy_v1; ADR-0059 keeps provenance separate from\ncertainty). Endpoint-specific on purpose: the canonical vector stays free of\npresentation state, and the derivation lives once in\n``app.logic.confidence_presentation`` so the web app never re-declares the\nthresholds (they would silently drift).",
+        "properties": {
+          "b_met_anaerobic": {
+            "description": "Anaerobic work capacity (W'/D')",
+            "title": "B Met Anaerobic",
+            "type": "number"
+          },
+          "c_met_aerobic": {
+            "description": "Aerobic capacity (e.g. CS / VO2 proxy)",
+            "title": "C Met Aerobic",
+            "type": "number"
+          },
+          "c_nm_force": {
+            "description": "Maximal strength / force capacity",
+            "title": "C Nm Force",
+            "type": "number"
+          },
+          "c_struct": {
+            "description": "Structural capacity / CSA proxy",
+            "title": "C Struct",
+            "type": "number"
+          },
+          "capacity_confidence": {
+            "$ref": "#/components/schemas/CapacityConfidence"
+          },
+          "capacity_confidence_status": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Per-capacity-axis certainty band (established | provisional | insufficient), derived from this snapshot's own capacity_confidence variance. All 8 capacity axes, even those the Twin does not plot.",
+            "title": "Capacity Confidence Status",
+            "type": "object"
+          },
+          "capacity_x": {
+            "$ref": "#/components/schemas/CapacityState"
+          },
+          "confidence_presentation_policy_version": {
+            "description": "Version of the confidence-presentation policy that produced the statuses.",
+            "title": "Confidence Presentation Policy Version",
+            "type": "string"
+          },
+          "f_met_systemic": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Met Systemic",
+            "type": "number"
+          },
+          "f_nm_central": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Nm Central",
+            "type": "number"
+          },
+          "f_nm_peripheral": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Nm Peripheral",
+            "type": "number"
+          },
+          "f_struct_damage": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Struct Damage",
+            "type": "number"
+          },
+          "fatigue_f": {
+            "$ref": "#/components/schemas/FatigueState"
+          },
+          "habit_strength": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Habit Strength",
+            "type": "number"
+          },
+          "model_version": {
+            "default": "v0.3",
+            "description": "State engine version",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "s_struct_signal": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "S Struct Signal",
+            "type": "number"
+          },
+          "skill_state": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Skill State",
+            "type": "object"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "tissue_t": {
+            "$ref": "#/components/schemas/TissueState"
+          }
+        },
+        "required": [
+          "timestamp",
+          "c_met_aerobic",
+          "c_nm_force",
+          "c_struct",
+          "b_met_anaerobic",
+          "capacity_confidence_status",
+          "confidence_presentation_policy_version"
+        ],
+        "title": "StateHistorySnapshotRead",
+        "type": "object"
+      },
       "StrengthSession": {
         "properties": {
           "accessory": {
@@ -8150,7 +8270,7 @@
     },
     "/v1/state-history": {
       "get": {
-        "description": "The athlete's recent state vectors, oldest\u2192newest (chart order).",
+        "description": "The athlete's recent recorded state snapshots, oldest\u2192newest (scrub order).\n\nEach snapshot carries a per-axis confidence-presentation band derived from that\nrow's own variance (ADR-0059), so the Twin can render certainty without\nre-declaring the policy thresholds client-side.",
         "operationId": "state_history_v1_state_history_get",
         "parameters": [
           {
@@ -8172,7 +8292,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/UnifiedStateVector"
+                    "$ref": "#/components/schemas/StateHistorySnapshotRead"
                   },
                   "title": "Response State History V1 State History Get",
                   "type": "array"
