@@ -63,6 +63,16 @@ class StateHistorySnapshotRead(UnifiedStateVector):
     thresholds (they would silently drift).
     """
 
+    snapshot_id: int = Field(
+        ...,
+        description=(
+            "Persisted AthleteState row id — the stable identity of this recorded "
+            "snapshot. Cross-screen navigation (History→Twin deep-link) and the "
+            "time-travel scrub must key on this, never on list position: the "
+            "endpoint is a bounded window (default 60, max 365) that shifts as rows "
+            "accrue, so index N is not a durable reference to a snapshot."
+        ),
+    )
     capacity_confidence_status: dict[str, str] = Field(
         ...,
         description=(
@@ -77,14 +87,17 @@ class StateHistorySnapshotRead(UnifiedStateVector):
     )
 
     @classmethod
-    def from_state(cls, state: UnifiedStateVector) -> "StateHistorySnapshotRead":
-        """Project a domain state vector into the read model, deriving per-axis
-        confidence status from that vector's own variance (all 8 axes)."""
+    def from_state(
+        cls, state: UnifiedStateVector, snapshot_id: int
+    ) -> "StateHistorySnapshotRead":
+        """Project a domain state vector + its persisted row id into the read model,
+        deriving per-axis confidence status from that vector's own variance (all 8 axes)."""
         statuses = {
             axis: confidence_status(getattr(state.capacity_confidence, axis))
             for axis in CapacityConfidence.KEYS
         }
         return cls(
+            snapshot_id=snapshot_id,
             **state.model_dump(),
             capacity_confidence_status=statuses,
             confidence_presentation_policy_version=POLICY_VERSION,

@@ -112,6 +112,21 @@ async def test_list_recent_states_breaks_timestamp_ties_by_id_desc(async_db):
     assert tie_aerobic == [301.0, 302.0]  # r1 (smaller id) first
 
 
+async def test_load_recent_state_snapshots_carry_ids_in_chart_order(async_db):
+    """The history projection carries each row's persisted id as snapshot_id, in
+    oldest→newest chart order — the durable identity the deep-link/scrub key on."""
+    user = await _mk_user(async_db, "hist_snap_ids@test.com")
+    await _seed_states(async_db, user.id, [0, 1, 2])
+    repo_newest_first = await AthleteContextRepository(async_db).list_recent_states(user.id, limit=10)
+
+    snaps = await state_service.load_recent_state_snapshots(async_db, user.id, limit=10)
+    ids = [s.snapshot_id for s in snaps]
+    # oldest→newest == reverse of the repo's newest-first ids
+    assert ids == [r.id for r in reversed(repo_newest_first)]
+    # every projection carries the full 8-axis confidence-status map
+    assert all(len(s.capacity_confidence_status) == 8 for s in snaps)
+
+
 async def test_history_reads_are_user_scoped_and_empty_is_empty(async_db):
     a = await _mk_user(async_db, "hist_a@test.com")
     b = await _mk_user(async_db, "hist_b@test.com")

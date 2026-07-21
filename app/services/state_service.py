@@ -41,7 +41,7 @@ from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.engine_vectors import FatigueState, TissueState
-from app.schemas.state import UnifiedStateVector
+from app.schemas.state import StateHistorySnapshotRead, UnifiedStateVector
 from app.schemas.workouts import (
     ExerciseEntry,
     ExternalIntensity,
@@ -292,6 +292,24 @@ async def load_recent_states(
     """
     rows = await AthleteContextRepository(db).list_recent_states(user_id, limit)
     return [unified_from_athlete_row(r) for r in reversed(rows)]
+
+
+async def load_recent_state_snapshots(
+    db: AsyncSession, user_id: int, limit: int
+) -> list[StateHistorySnapshotRead]:
+    """Recent state snapshots projected for the history endpoint, oldest→newest.
+
+    Like load_recent_states, but carries each row's persisted id as ``snapshot_id`` and
+    derives the per-axis confidence-presentation band (ADR-0059). Pairs the id with the
+    converted vector here — above the repository seam — so the route stays free of ORM/id
+    knowledge, and so the durable snapshot identity survives the row→vector conversion
+    that ``unified_from_athlete_row`` would otherwise drop.
+    """
+    rows = await AthleteContextRepository(db).list_recent_states(user_id, limit)
+    return [
+        StateHistorySnapshotRead.from_state(unified_from_athlete_row(r), snapshot_id=r.id)
+        for r in reversed(rows)
+    ]
 
 
 async def load_or_init_current_state(

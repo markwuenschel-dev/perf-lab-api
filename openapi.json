@@ -4626,6 +4626,11 @@
             "title": "Skill State",
             "type": "object"
           },
+          "snapshot_id": {
+            "description": "Persisted AthleteState row id \u2014 the stable identity of this recorded snapshot. Cross-screen navigation (History\u2192Twin deep-link) and the time-travel scrub must key on this, never on list position: the endpoint is a bounded window (default 60, max 365) that shifts as rows accrue, so index N is not a durable reference to a snapshot.",
+            "title": "Snapshot Id",
+            "type": "integer"
+          },
           "timestamp": {
             "format": "date-time",
             "title": "Timestamp",
@@ -4641,6 +4646,7 @@
           "c_nm_force",
           "c_struct",
           "b_met_anaerobic",
+          "snapshot_id",
           "capacity_confidence_status",
           "confidence_presentation_policy_version"
         ],

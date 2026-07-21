@@ -38,8 +38,7 @@ async def state_history(
     row's own variance (ADR-0059), so the Twin can render certainty without
     re-declaring the policy thresholds client-side.
     """
-    states = await state_service.load_recent_states(db, current_user.id, limit)
-    return [StateHistorySnapshotRead.from_state(s) for s in states]
+    return await state_service.load_recent_state_snapshots(db, current_user.id, limit)
 
 
 @router.get("/workouts", response_model=list[WorkoutLogSummary])

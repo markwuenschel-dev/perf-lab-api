@@ -37,24 +37,26 @@ def _vec(**variances: float) -> UnifiedStateVector:
 def test_from_state_derives_band_from_that_rows_own_variance():
     # aerobic <= 0.35 established; glycolytic <= 1.05 provisional; max_strength > 1.05 insufficient
     snap = StateHistorySnapshotRead.from_state(
-        _vec(aerobic=0.10, glycolytic=0.50, max_strength=1.20)
+        _vec(aerobic=0.10, glycolytic=0.50, max_strength=1.20), snapshot_id=7
     )
     status = snap.capacity_confidence_status
     assert status["aerobic"] == STATUS_ESTABLISHED
     assert status["glycolytic"] == STATUS_PROVISIONAL
     assert status["max_strength"] == STATUS_INSUFFICIENT
     assert snap.confidence_presentation_policy_version == POLICY_VERSION
+    assert snap.snapshot_id == 7
 
 
 def test_from_state_covers_all_eight_capacity_axes():
-    snap = StateHistorySnapshotRead.from_state(_vec())
+    snap = StateHistorySnapshotRead.from_state(_vec(), snapshot_id=1)
     assert set(snap.capacity_confidence_status) == set(CapacityConfidence.KEYS)
     assert len(snap.capacity_confidence_status) == 8
 
 
-def test_from_state_preserves_canonical_vector_fields():
+def test_from_state_preserves_canonical_vector_fields_and_carries_id():
     vec = _vec(power=0.2)
-    snap = StateHistorySnapshotRead.from_state(vec)
+    snap = StateHistorySnapshotRead.from_state(vec, snapshot_id=42)
+    assert snap.snapshot_id == 42  # persisted identity survives the projection
     assert snap.timestamp == vec.timestamp
     assert snap.capacity_x == vec.capacity_x
     assert snap.fatigue_f == vec.fatigue_f
@@ -65,7 +67,7 @@ def test_from_state_preserves_canonical_vector_fields():
 def test_thresholds_are_at_the_boundaries():
     """Boundary values land on the inclusive side of each band (<=)."""
     snap = StateHistorySnapshotRead.from_state(
-        _vec(aerobic=0.35, glycolytic=1.05, max_strength=1.06)
+        _vec(aerobic=0.35, glycolytic=1.05, max_strength=1.06), snapshot_id=1
     )
     assert snap.capacity_confidence_status["aerobic"] == STATUS_ESTABLISHED
     assert snap.capacity_confidence_status["glycolytic"] == STATUS_PROVISIONAL
@@ -106,6 +108,8 @@ async def test_state_history_returns_confidence_projection(http_client):
     row = rows[-1]
     # canonical vector fields survive the projection
     assert "timestamp" in row and "capacity_x" in row and "capacity_confidence" in row
+    # + the persisted identity for cross-screen deep-link / scrub keying
+    assert isinstance(row["snapshot_id"], int)
     # + the presentation contract
     assert set(row["capacity_confidence_status"]) == set(CapacityConfidence.KEYS)
     assert row["confidence_presentation_policy_version"] == POLICY_VERSION

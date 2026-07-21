@@ -2625,6 +2625,11 @@ export interface components {
                 [key: string]: number;
             };
             /**
+             * Snapshot Id
+             * @description Persisted AthleteState row id — the stable identity of this recorded snapshot. Cross-screen navigation (History→Twin deep-link) and the time-travel scrub must key on this, never on list position: the endpoint is a bounded window (default 60, max 365) that shifts as rows accrue, so index N is not a durable reference to a snapshot.
+             */
+            snapshot_id: number;
+            /**
              * Timestamp
              * Format: date-time
              */
