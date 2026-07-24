@@ -453,15 +453,3 @@ async def compute_readiness(
             else ("stale_wellness_sample" if stale_sample is not None else "no_wellness_sample")
         ),
     )
-
-
-async def combined_readiness_scalar(
-    db: AsyncSession, user_id: int, *, today: date_cls | None = None
-) -> float | None:
-    """The freshness-respecting combined readiness in 0–1 for the prescriber (ADR-0052).
-
-    This is the *score* channel only — the prescriber may let it transparently nudge candidate
-    scoring (bounded by ``WELLNESS_WEIGHT``). Confidence is NOT part of this and must never gate.
-    """
-    rs = await compute_readiness(db, user_id, today=today)
-    return None if rs.score is None else rs.score / 100.0
