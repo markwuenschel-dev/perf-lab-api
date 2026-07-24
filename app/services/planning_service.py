@@ -269,6 +269,16 @@ async def get_today_session(
     user_id: int,
     for_date: date | None = None,
 ) -> PlannedSession | None:
+    """The canonical "today's target session" for prescription.
+
+    User-wide pending session on ``for_date`` (default today), lowest ``id`` wins.
+    Both prescribe entry points resolve through this: ``/planning/today`` passes the
+    result straight into ``prescribe_for_athlete``; ``/next-session`` lets the
+    prescriber call it. Sharing one resolver is what makes them target the same row
+    by construction (CONTEXT.md: prescribe-and-persist). The ``id`` ordering matches
+    ``state_service._match_planned_session`` so the prescribed session equals the one
+    a later log fulfills.
+    """
     d = for_date or date.today()
     result = await db.execute(
         select(PlannedSession)

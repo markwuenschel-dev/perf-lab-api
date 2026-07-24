@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from datetime import date
 from typing import Any, TypedDict, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +18,7 @@ from app.logic.workout_history import recent_workout_summaries
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.exercise import Exercise
-from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
+from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession
 from app.models.weak_point import WeakPoint
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.schemas.prescription import WorkoutPrescription
@@ -29,7 +28,7 @@ from app.services import dashboard_service, readiness_service, strength_decline_
 from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
-from app.services.planning_service import count_block_skips
+from app.services.planning_service import count_block_skips, get_today_session
 from app.services.state_service import (
     load_current_state_strict,
     load_or_init_current_state_strict,
@@ -304,16 +303,27 @@ async def prescribe_for_athlete(
     )
     active_weak_points = [row[0] for row in wp_result.all()]
 
-    # Resolve the owning block + the session to prescribe into.
+    # Resolve the session to prescribe into, then its owning block.
+    # get_today_session is the single canonical "today's target session" resolver
+    # (user-wide, PENDING, ORDER BY id ASC). /planning/today passes the session it
+    # resolved that way straight in; /next-session resolves it here through the same
+    # function — so both entry points target the same row by construction, with no
+    # nondeterministic tie-break (CONTEXT.md: prescribe-and-persist).
     if planned_session is not None:
-        # Caller-supplied target: persist here, take context from its block.
         target_session: PlannedSession | None = planned_session
+    else:
+        target_session = await get_today_session(db, user_id)
+
+    if target_session is not None:
+        # Context comes from the session's own block, not a guessed "latest active"
+        # block — robust when today's session lives outside the latest active block.
         block_result = await db.execute(
-            select(MesocycleBlock).where(MesocycleBlock.id == planned_session.block_id)
+            select(MesocycleBlock).where(MesocycleBlock.id == target_session.block_id)
         )
         active_block = block_result.scalars().first()
     else:
-        # Resolve today's pending session in the latest active block.
+        # No session scheduled today: still let the latest active block inform the
+        # day's goal/context (ADR-0030).
         block_result = await db.execute(
             select(MesocycleBlock)
             .where(
@@ -324,19 +334,6 @@ async def prescribe_for_athlete(
             .limit(1)
         )
         active_block = block_result.scalars().first()
-
-        target_session = None
-        if active_block:
-            ps_result = await db.execute(
-                select(PlannedSession)
-                .where(
-                    PlannedSession.block_id == active_block.id,
-                    PlannedSession.scheduled_date == date.today(),
-                    PlannedSession.status == SessionStatus.PENDING,
-                )
-                .limit(1)
-            )
-            target_session = ps_result.scalars().first()
 
     block_context: BlockContext = BlockContext()
     if active_block and target_session:
