@@ -1,8 +1,35 @@
 ---
 status: proposed
 date: 2026-07-11
+delivery: partial
 ---
 # Objective mix reaches the plan through hierarchical receding-horizon assignment
+
+> **Delivered — the `ResolvedPlanningConstraint` seam only (2026-09-07).**
+> `app/logic/planning_constraints.py` implements the typed, scoped, provenance-bearing
+> constraint record and `apply_constraints`, applied in `app/logic/prescriber.py` between
+> pool assembly and scoring — the only point where candidate *membership* can change,
+> since every adjustment after it is additive bias. Hard constraints exclude and state a
+> reason; soft constraints record a hit and remove nothing, because no scored alternative
+> or tradeoff trace exists yet to trade one against. An all-excluded pool returns a
+> labelled `planning:infeasible` recovery session rather than falling through to the
+> general-template pool or the equipment map, per the "never bypass a constraint to fill
+> the calendar" rule above.
+>
+> The closure test this ADR names is `tests/test_planning_constraint_seam.py::
+> test_a_synthetic_external_hard_constraint_is_honored`, with
+> `test_the_solver_is_unchanged_when_no_constraints_are_supplied` pinning the other half
+> of "without changing solver architecture". `AuthorityClass.USER_OVERRIDE` exists and is
+> produced by nothing in P11 — it is the slot P12 fills by compiling `PlanningOverride`
+> rows into constraints, which is what makes that an insertion.
+>
+> **Not delivered:** everything else in this ADR. No `PlanningDecisionTrace` (the
+> explanation is still the `constraints_applied` string list). No `preview_best_session`,
+> no two-stage assignment, no `remaining_need[m]` — those depend on ADR-0060/0061/0062,
+> none of which are implemented. `_candidate_domain(goal)` and the `+0.15` objective boost
+> are both still in final authority. Movement-level exclusion is deliberately absent: a
+> `SessionCandidate` carries slot *requirements*, not resolved movements, so it belongs at
+> slot resolution. **This ADR stays `proposed`** — a seam is not the decision.
 
 [ADR-0060](0060-objective-mix-live-receding-horizon-microcycle.md) makes the objective target mix a live, receding-horizon
 quantity and [ADR-0062](0062-session-load-au-allocation-ledger.md) reduces it to `remaining_need_H[m]`
