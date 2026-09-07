@@ -22,6 +22,7 @@ The constraint_engine package also provides template-driven validation
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +44,11 @@ from app.logic.exercise_slot import (
     resolve_slots,
 )
 from app.logic.planning import periodization_envelope
+from app.logic.planning_constraints import (
+    ConstraintApplication,
+    ResolvedPlanningConstraint,
+    apply_constraints,
+)
 from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
@@ -639,6 +645,38 @@ def _exercise_list_for_candidate(
     return out or _exercise_list_for_equipment(available_equipment)
 
 
+def _infeasible_prescription(
+    application: ConstraintApplication,
+    state: UnifiedStateVector,
+    goal: TrainingGoal,
+    recent_sessions: list[dict[str, Any]] | None,
+) -> WorkoutPrescription:
+    """Every candidate was barred by a hard constraint.
+
+    Deliberately NOT the equipment fallback and NOT the general-template pool: both would
+    prescribe work the constraint forbade, which is the failure ADR-0064:67 names
+    ("never bypass a safety constraint to fill the calendar"). The athlete gets a
+    conservative session that no exclusion can object to, and — the part that matters —
+    the reasons are stated rather than the refusal being silent.
+    """
+    reasons = application.reason_codes()
+    rx = WorkoutPrescription(
+        type="Recovery",
+        focus="Easy movement + mobility",
+        rationale=(
+            "Every candidate session was ruled out by an active constraint "
+            f"({', '.join(reasons[:4])}). Prescribing low-risk movement rather than "
+            "work a constraint forbids."
+        ),
+        duration_min=30,
+    )
+    out = finalize_prescription(rx, state, goal, "constraint_infeasible", recent_sessions)
+    if out.why is not None:
+        out.why.constraints_applied.append("planning:infeasible")
+        out.why.constraints_applied.extend(f"constraint:{r}" for r in reasons)
+    return out
+
+
 def recommend_next_session(
     state: UnifiedStateVector,
     goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
@@ -651,6 +689,7 @@ def recommend_next_session(
     prescription_arm: str = "adaptive",
     readiness_override: float | None = None,
     catalog: list[CatalogExercise] | None = None,
+    constraints: Sequence[ResolvedPlanningConstraint] | None = None,
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -692,6 +731,26 @@ def recommend_next_session(
     redirects = _readiness_redirect(state, goal, kpi)
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
+
+    # --- 2b. Typed constraints (ADR-0064 seam) ---
+    # This is the only point where pool MEMBERSHIP changes. It sits here because
+    # `all_candidates` is still a fully-typed list[SessionCandidate] and nothing has yet
+    # collapsed a candidate into a score — every adjustment below is additive bias, which
+    # can lower a candidate but never exclude it.
+    #
+    # P11 never reads PlanningOverride (ADR-0064:95). Constraints arrive already resolved,
+    # which is what lets P12 add user overrides by producing more of them rather than by
+    # changing anything here.
+    constraint_application = apply_constraints(all_candidates, constraints or ())
+    if constraint_application.survivors:
+        all_candidates = constraint_application.survivors
+    elif constraint_application.infeasible:
+        # Every candidate was barred. Do NOT fall through to the general-template
+        # fallback below: that would quietly prescribe the very work a hard constraint
+        # forbade (ADR-0064:67 — "never bypass a safety constraint to fill the calendar").
+        # A conservative recovery session, clearly labelled with the reasons, is the only
+        # honest output, and the excluded pool is still logged for telemetry.
+        return _infeasible_prescription(constraint_application, state, goal, recent_sessions)
 
     # --- 3. Score and sort ---
     recent_skips = int(block.get("recent_skips", 0) or 0)
@@ -805,6 +864,15 @@ def recommend_next_session(
             rx.why.constraints_applied.append(f"block:deload(×{factor:.2f})")
     if block.get("is_benchmark") and rx.why:
         rx.why.constraints_applied.append("block:benchmark")
+    if rx.why is not None:
+        # State what the constraint layer actually did, including a soft hit that did
+        # NOT remove anything — an applied-but-not-binding constraint is information the
+        # athlete is owed, and reporting only exclusions would make soft constraints
+        # invisible and therefore indistinguishable from unimplemented.
+        for reason in constraint_application.reason_codes():
+            rx.why.constraints_applied.append(f"constraint:{reason}")
+        for hit in dict.fromkeys(h.reason for h in constraint_application.soft_hits):
+            rx.why.constraints_applied.append(f"constraint_soft:{hit}")
     if adherence_friction >= RECENT_SKIPS_BIAS_THRESHOLD and rx.why:
         # Report the components, not the combined score: the athlete is owed the
         # evidence ("you skipped 3") rather than an opaque friction number. Each
