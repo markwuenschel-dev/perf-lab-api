@@ -131,7 +131,11 @@ export function missingRequiredReadings(
  *
  * When per-set groups are present (ADR-0045) they are the record: `sets` is sent,
  * the session modality is derived from them (the backend derives it too), and the
- * running-shaped session distance is dropped so the backend rolls it up from sets. */
+ * running-shaped session distance is dropped so the backend rolls it up from sets.
+ *
+ * `plannedSessionId` is today's planned session the pre-fill came from. It is sent only
+ * when the athlete recorded at least one of that session's prescribed exercises: the link
+ * says "this log fulfils that plan", and an untouched recommendation says no such thing. */
 export function buildWorkoutLog(
   logType: string,
   rpe: number | null,
@@ -139,12 +143,15 @@ export function buildWorkoutLog(
   distanceKm: number | null,
   wellness: WorkoutWellness,
   setGroups: SetGroup[] = [],
+  plannedSessionId: number | null = null,
 ): WorkoutLog | null {
   if (missingRequiredReadings(logType, rpe, durationMin, distanceKm, setGroups).length) {
     return null;
   }
   const sets = groupsToSets(setGroups);
   const modality: Modality = resolveModality(logType, setGroups);
+  const fulfilsPlan =
+    plannedSessionId !== null && setGroups.some((g) => g.target !== undefined && g.confirmed);
   // We send only what the form captures; the backend fills server-side defaults
   // for omitted fields (is_benchmark, novelty, total_volume_load, …). `satisfies`
   // still type-checks the fields we DO set against the contract; the cast covers
@@ -167,5 +174,6 @@ export function buildWorkoutLog(
       : modality === "Running"
         ? { distance_meters: Math.round((distanceKm as number) * 1000) }
         : {}),
+    ...(fulfilsPlan ? { planned_session_id: plannedSessionId } : {}),
   } satisfies Partial<WorkoutLog> as WorkoutLog;
 }

@@ -4,11 +4,22 @@
 // it binds to a catalog Exercise; the exercise's `load_type` types which fields are
 // shown. A `count` acts as a quick-entry multiplier — 3×5 @ 100 kg is one row that
 // the backend materializes into three set rows. Modality is derived from the mix.
+//
+// A group pre-filled from the recommended workout shows its target and stays out of the
+// log until the athlete confirms it ("Done as prescribed") or enters a value of their own.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { listExercises } from "@/api/perfLabClient";
 import type { ExerciseCatalogOut } from "@/types";
-import { blankGroup, LOADED, type SetGroup, topSetKeys } from "./setBuilderLogic";
+import {
+  blankGroup,
+  confirmAsPrescribed,
+  describeTarget,
+  isRecorded,
+  LOADED,
+  type SetGroup,
+  topSetKeys,
+} from "./setBuilderLogic";
 
 const numField =
   "w-full rounded-[9px] border border-white/10 bg-panel px-[10px] py-[8px] font-mono text-[13px] text-ink";
@@ -61,19 +72,31 @@ function GroupCard({
   onRemove: () => void;
 }) {
   const lt = group.loadType;
+  const target = group.target;
+  const awaiting = target !== undefined && !isRecorded(group);
+  // Entering anything on a recommended group is the athlete taking it as their own.
+  const patch = (p: Partial<SetGroup>) => onPatch(awaiting ? { ...p, confirmed: true } : p);
   const num = (set: (n: number | undefined) => void) => (v: string) => {
     const n = parseFloat(v);
     set(isNaN(n) ? undefined : n);
   };
+  // A short target doubles as the field's placeholder; a pace sentence does not fit a field.
+  const repsHint = target?.reps && target.reps.length <= 5 ? target.reps : undefined;
+  const loadHint = target?.loadKg != null ? String(target.loadKg) : undefined;
 
   return (
-    <div className="rounded-[12px] border border-white/[0.08] bg-panel/60 p-3">
+    <div
+      className={cn(
+        "rounded-[12px] border p-3",
+        awaiting ? "border-dashed border-white/15 bg-panel/30" : "border-white/[0.08] bg-panel/60",
+      )}
+    >
       <div className="mb-[10px] flex items-center gap-2">
         <ExercisePicker
           exercise={group.exercise}
           freeText={group.freeText}
-          onPick={(ex) => onPatch({ exercise: ex, loadType: ex.load_type })}
-          onFreeText={(t) => onPatch({ exercise: null, freeText: t })}
+          onPick={(ex) => patch({ exercise: ex, loadType: ex.load_type })}
+          onFreeText={(t) => patch({ exercise: null, freeText: t })}
         />
         {isTop && (
           <span className="rounded-[6px] border border-ac/30 bg-ac/[0.12] px-[7px] py-[4px] font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.08em] text-ac">
@@ -89,21 +112,48 @@ function GroupCard({
         </button>
       </div>
 
+      {target && (
+        <div className="mb-[10px] flex flex-wrap items-center gap-x-[10px] gap-y-[6px]">
+          <span
+            className={cn(
+              "rounded-[6px] border px-[7px] py-[4px] font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.08em]",
+              awaiting ? "border-white/15 text-dim" : "border-mint/30 bg-mint/[0.1] text-mint",
+            )}
+          >
+            {awaiting ? "recommended" : "done"}
+          </span>
+          <span className="font-mono text-[12px] leading-none text-soft">{describeTarget(target)}</span>
+          {awaiting && (
+            <button
+              onClick={() => onPatch(confirmAsPrescribed(group))}
+              className="ml-auto rounded-[8px] border border-ac/35 bg-ac/[0.1] px-[10px] py-[6px] text-[11.5px] font-semibold leading-none text-ac hover:bg-ac/[0.18]"
+            >
+              ✓ Done as prescribed
+            </button>
+          )}
+          {awaiting && (
+            <span className="basis-full text-[11px] leading-[1.4] text-dim">
+              {target.note ? `${target.note} · ` : ""}Not logged until you confirm it or enter your own numbers.
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-[10px]">
         {/* Sets multiplier — always meaningful */}
         <Field label="Sets" className="w-[58px]">
           <input type="number" min={1} value={group.count}
-            onChange={(e) => onPatch({ count: Math.max(1, parseInt(e.target.value) || 1) })}
+            onChange={(e) => patch({ count: Math.max(1, parseInt(e.target.value) || 1) })}
             className={numField} />
         </Field>
 
         {LOADED.has(lt) && (
           <>
             <Field label="Reps" className="w-[58px]">
-              <input type="number" min={0} defaultValue={group.reps} onChange={(e) => num((n) => onPatch({ reps: n }))(e.target.value)} className={numField} />
+              <input type="number" min={0} value={group.reps ?? ""} placeholder={repsHint} onChange={(e) => num((n) => patch({ reps: n }))(e.target.value)} className={numField} />
             </Field>
             <Field label="Load (kg)" className="w-[78px]">
-              <input type="number" min={0} step={2.5} value={group.loadKg ?? ""} onChange={(e) => num((n) => onPatch({ loadKg: n }))(e.target.value)} className={numField} />
+              <input type="number" min={0} step={2.5} value={group.loadKg ?? ""} placeholder={loadHint} onChange={(e) => num((n) => patch({ loadKg: n }))(e.target.value)} className={numField} />
             </Field>
           </>
         )}
@@ -111,10 +161,10 @@ function GroupCard({
         {lt === "bodyweight" && (
           <>
             <Field label="Reps" className="w-[58px]">
-              <input type="number" min={0} defaultValue={group.reps} onChange={(e) => num((n) => onPatch({ reps: n }))(e.target.value)} className={numField} />
+              <input type="number" min={0} value={group.reps ?? ""} placeholder={repsHint} onChange={(e) => num((n) => patch({ reps: n }))(e.target.value)} className={numField} />
             </Field>
             <Field label="Band" className="w-[76px]">
-              <input defaultValue={group.band} onChange={(e) => onPatch({ band: e.target.value })} className={numField} />
+              <input defaultValue={group.band} onChange={(e) => patch({ band: e.target.value })} className={numField} />
             </Field>
           </>
         )}
@@ -122,22 +172,22 @@ function GroupCard({
         {lt === "distance" && (
           <>
             <Field label="Distance (m)" className="w-[92px]">
-              <input type="number" min={0} defaultValue={group.distanceM} onChange={(e) => num((n) => onPatch({ distanceM: n }))(e.target.value)} className={numField} />
+              <input type="number" min={0} defaultValue={group.distanceM} onChange={(e) => num((n) => patch({ distanceM: n }))(e.target.value)} className={numField} />
             </Field>
             <Field label="Time (s)" className="w-[76px]">
-              <input type="number" min={0} defaultValue={group.durationS} onChange={(e) => num((n) => onPatch({ durationS: n }))(e.target.value)} className={numField} />
+              <input type="number" min={0} defaultValue={group.durationS} onChange={(e) => num((n) => patch({ durationS: n }))(e.target.value)} className={numField} />
             </Field>
           </>
         )}
 
         {lt === "time" && (
           <Field label="Time (s)" className="w-[76px]">
-            <input type="number" min={0} defaultValue={group.durationS} onChange={(e) => num((n) => onPatch({ durationS: n }))(e.target.value)} className={numField} />
+            <input type="number" min={0} defaultValue={group.durationS} onChange={(e) => num((n) => patch({ durationS: n }))(e.target.value)} className={numField} />
           </Field>
         )}
 
         <Field label="RPE" className="w-[58px]">
-          <input type="number" min={1} max={10} step={0.5} defaultValue={group.rpe} onChange={(e) => num((n) => onPatch({ rpe: n }))(e.target.value)} className={numField} />
+          <input type="number" min={1} max={10} step={0.5} defaultValue={group.rpe} onChange={(e) => num((n) => patch({ rpe: n }))(e.target.value)} className={numField} />
         </Field>
       </div>
     </div>
