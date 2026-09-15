@@ -127,6 +127,48 @@ def test_schema_allows_untracked_wellness_signals_to_be_omitted_or_null():
 
 
 # ---------------------------------------------------------------------------
+# S-C — equipment_preference is validated at the write boundary
+# ---------------------------------------------------------------------------
+
+
+@_asyncio
+async def test_patch_rejects_an_unknown_equipment_preference(async_db):
+    """The resolver would ignore an unknown value while the API echoed it — refuse it instead."""
+    user = await _mk_user(async_db, email="profile-sc-unknown@test.com")
+    try:
+        async with _client_for(async_db, user) as client:
+            resp = await client.patch("/v1/profile", json={"equipment_preference": ["dumbbell", "sled"]})
+        assert resp.status_code == 422, resp.text
+        assert "sled" in resp.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+@_asyncio
+async def test_patch_round_trips_a_preference_and_clears_it(async_db):
+    user = await _mk_user(async_db, email="profile-sc-roundtrip@test.com")
+    try:
+        async with _client_for(async_db, user) as client:
+            set_resp = await client.patch(
+                "/v1/profile", json={"equipment_preference": ["Machine", "dumbbell", "machine"]}
+            )
+            assert set_resp.status_code == 200, set_resp.text
+            assert set_resp.json()["equipment_preference"] == ["dumbbell", "machine"]
+            cleared = await client.patch("/v1/profile", json={"equipment_preference": []})
+            assert cleared.json()["equipment_preference"] == []
+            # A preference is not availability: setting one leaves the equipment list alone.
+            assert cleared.json()["equipment"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_schema_normalises_the_preference_and_passes_null_through():
+    assert ProfileUpdate(equipment_preference=[" BARBELL "]).equipment_preference == ["barbell"]
+    assert ProfileUpdate(equipment_preference=None).equipment_preference is None
+    assert "equipment_preference" not in ProfileUpdate().model_fields_set
+
+
+# ---------------------------------------------------------------------------
 # INT-A6 — the PATCH column map resolves to real columns
 # ---------------------------------------------------------------------------
 
@@ -168,5 +210,5 @@ def test_every_update_field_resolves_to_a_column():
 
 def test_resolution_guard_detects_a_drifted_map():
     """The guard above must actually catch drift — prove it fails on a bad map."""
-    drifted = {**_COLUMN_MAP, "squat_1rm_kg": "squat_one_rep_max_typo"}
-    assert _unresolvable_fields(drifted) == ["squat_1rm_kg"]
+    drifted = {**_COLUMN_MAP, "overhead_1rm_kg": "overhead_one_rep_max_typo"}
+    assert _unresolvable_fields(drifted) == ["overhead_1rm_kg"]

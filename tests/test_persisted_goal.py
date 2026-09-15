@@ -94,5 +94,5 @@ async def test_next_session_uses_persisted_goal_with_no_query_param(http_client:
     joined = " ".join(names)
     assert any(m in joined for m in ("Squat", "Bench", "Deadlift")), names
     assert "Push-up" not in names
-    assert "Split Squat" not in names
-    assert "Tempo Back Squat (3-0-1)" not in names
+    assert "Air Squat" not in names
+    assert "Lunges" not in names

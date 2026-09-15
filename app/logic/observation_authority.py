@@ -83,6 +83,10 @@ PV_INVALID = "invalid"
 # provenance_operation — migration is NOT a collection_mode.
 OP_LIVE_WRITE = "live_write"
 OP_SCHEMA_BACKFILL = "schema_backfill"
+#: The strength-report writer (``app/services/strength_evidence_service.py``). Chosen by the
+#: server for rows that writer creates, never taken from a request body; the profile's
+#: squat/bench/deadlift projection reads only rows carrying it.
+OP_STRENGTH_REPORT = "strength_report"
 
 # ---------------------------------------------------------------------------
 # Dimension 5 — capacity_effect: the state-transition operator (a meet-semilattice)

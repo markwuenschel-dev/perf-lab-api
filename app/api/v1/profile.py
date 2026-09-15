@@ -5,6 +5,10 @@ Read + partial-update the authenticated athlete's profile. ``register`` creates
 an empty shell and ``/v1/onboard`` fills it once; this lets the Settings screen
 load that data back and edit it any time. Lift/biometric API fields use the
 ``*_kg`` vocabulary (see ProfileUpdate) and are mapped to the model's columns.
+
+Squat, bench and deadlift are not editable here (S2 decision 3). Their columns are a
+projection of characterized strength evidence written only by
+``strength_evidence_service``; PATCH refuses them, so there is one write authority.
 """
 
 from fastapi import APIRouter, Depends
@@ -18,11 +22,9 @@ from app.schemas.profile import ProfileRead, ProfileUpdate
 
 router = APIRouter(prefix="/v1", tags=["profile"])
 
-# API field name -> AthleteProfile column name (only where they differ).
+# API field name -> AthleteProfile column name (only where they differ). Squat, bench and
+# deadlift are absent on purpose: ProfileUpdate refuses them (S2 single write authority).
 _COLUMN_MAP = {
-    "squat_1rm_kg": "squat_1rm",
-    "deadlift_1rm_kg": "deadlift_1rm",
-    "bench_1rm_kg": "bench_1rm",
     "overhead_1rm_kg": "overhead_1rm",
 }
 
@@ -47,6 +49,7 @@ def _to_read(p: AthleteProfile) -> ProfileRead:
         available_days_per_week=p.available_days_per_week,
         session_duration_minutes=p.session_duration_minutes,
         equipment=p.equipment or [],
+        equipment_preference=list(p.equipment_preference or []),
         squat_1rm_kg=p.squat_1rm,
         deadlift_1rm_kg=p.deadlift_1rm,
         bench_1rm_kg=p.bench_1rm,

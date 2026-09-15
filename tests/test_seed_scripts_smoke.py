@@ -54,3 +54,35 @@ async def test_catalog_seeders_run_clean_and_are_idempotent(
     await async_db.rollback()
     assert await _count(async_db, BenchmarkDefinition) == benchmarks
     assert await _count(async_db, Exercise) == exercises
+
+
+async def test_explanations_reach_already_seeded_rows_and_write_nothing_else(
+    async_db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The insert loop skips a code that already exists, so the code-owned explanation text
+    must arrive through its own pass — and that pass owns two columns, not the whole row."""
+    test_factory = async_sessionmaker(async_db.bind, expire_on_commit=False)
+    monkeypatch.setattr(seed_benchmarks, "AsyncSessionLocal", test_factory)
+    # A definition seeded before explanations existed, carrying values that belong to it.
+    async_db.add(BenchmarkDefinition(
+        code="mm_row_2k", name="Row, as first seeded", domain="mixed", metric_type="time",
+        unit="seconds", better_direction="lower", observation_weight=0.42,
+        state_targets=["aerobic"],
+    ))
+    await async_db.commit()
+
+    await seed_benchmarks.seed()
+    await async_db.rollback()
+
+    row = (await async_db.execute(
+        select(BenchmarkDefinition)
+        .where(BenchmarkDefinition.code == "mm_row_2k")
+        .execution_options(populate_existing=True)
+    )).scalar_one()
+    expected = seed_benchmarks.BENCHMARK_EXPLANATIONS["mm_row_2k"]
+    assert (row.description, row.protocol_summary) == (
+        expected["description"], expected["protocol_summary"]
+    )
+    assert (row.name, row.observation_weight, row.state_targets) == (
+        "Row, as first seeded", 0.42, ["aerobic"]
+    )

@@ -75,12 +75,15 @@ Outside production these log a warning instead of raising.
 
 ## Container deploy
 
-The `Dockerfile` applies migrations before the server starts:
+The `Dockerfile` applies migrations, then seeds the catalog, before the server starts:
 
 ```dockerfile
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
+CMD alembic upgrade head && python -m app.scripts.seed_catalog ; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
 ```
 
 So in a normal container deploy the schema is brought to head first, and the
-startup check is a safety net. Set `ENVIRONMENT=production` (and a real
+startup check is a safety net. The catalog seed is idempotent and also rewrites the
+code-owned benchmark text (`description`, `protocol_summary`, from
+`app/scripts/seed_benchmarks.py`); it is joined with `;`, so a seed failure is logged and
+does not block boot — which also means that text can be missing if the seed fails. Set `ENVIRONMENT=production` (and a real
 `SECRET_KEY` / `DATABASE_URL`) in the host's environment configuration.

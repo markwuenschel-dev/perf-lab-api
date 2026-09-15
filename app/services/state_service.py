@@ -40,9 +40,7 @@ from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
-from app.repositories.benchmark_observation_repository import (
-    prescription_basis_filter,
-)
+from app.repositories.benchmark_observation_repository import select_prescription_basis
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.history import WorkoutLogSummary
 from app.schemas.state import StateHistorySnapshotRead, UnifiedStateVector
@@ -207,6 +205,51 @@ def _baseline_tier_plan(
     )
 
 
+async def stage_baseline_state(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    experience_level: str = "intermediate",
+    squat_1rm_kg: float | None = None,
+    deadlift_1rm_kg: float | None = None,
+    bench_1rm_kg: float | None = None,
+    bodyweight_kg: float | None = None,
+    run_5k_seconds: float | None = None,
+    experience_years: float = 0.0,
+    goal: str | None = None,
+) -> UnifiedStateVector:
+    """Stage baseline S0 for a new user in the caller's transaction. Does not commit.
+
+    For writers that must commit once — onboarding, and an observation that seeds an athlete
+    with no state — so a later failure leaves no baseline behind. The row is flushed, so
+    reads later in the same transaction find it. :func:`initialize_athlete_state` is this
+    plus a commit.
+    """
+    _, row = _build_baseline_vector(
+        user_id,
+        experience_level,
+        squat_1rm_kg,
+        deadlift_1rm_kg,
+        bench_1rm_kg,
+        bodyweight_kg,
+        run_5k_seconds,
+        experience_years,
+        goal=goal,
+    )
+    db.add(row)
+    await db.flush()
+    await db.refresh(row)
+    state = unified_from_athlete_row(row)
+
+    # Persist the immutable per-axis seed provenance snapshot (ADR-0059). Best-effort:
+    # provenance capture must not fail account seeding. Never read at runtime for
+    # current provisionality — the live CapacityConfidence above is the sole authority.
+    await _stage_seed_snapshot(
+        db, user_id, squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds
+    )
+    return state
+
+
 async def initialize_athlete_state(
     db: AsyncSession,
     user_id: int,
@@ -221,31 +264,23 @@ async def initialize_athlete_state(
     goal: str | None = None,
 ) -> UnifiedStateVector:
     """Creates baseline S0 for a new user and commits it."""
-    _, row = _build_baseline_vector(
+    state = await stage_baseline_state(
+        db,
         user_id,
-        experience_level,
-        squat_1rm_kg,
-        deadlift_1rm_kg,
-        bench_1rm_kg,
-        bodyweight_kg,
-        run_5k_seconds,
-        experience_years,
+        experience_level=experience_level,
+        squat_1rm_kg=squat_1rm_kg,
+        deadlift_1rm_kg=deadlift_1rm_kg,
+        bench_1rm_kg=bench_1rm_kg,
+        bodyweight_kg=bodyweight_kg,
+        run_5k_seconds=run_5k_seconds,
+        experience_years=experience_years,
         goal=goal,
     )
-    db.add(row)
     await db.commit()
-    await db.refresh(row)
-
-    # Persist the immutable per-axis seed provenance snapshot (ADR-0059). Best-effort:
-    # provenance capture must not fail account seeding. Never read at runtime for
-    # current provisionality — the live CapacityConfidence above is the sole authority.
-    await _persist_seed_snapshot(
-        db, user_id, squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds
-    )
-    return unified_from_athlete_row(row)
+    return state
 
 
-async def _persist_seed_snapshot(
+async def _stage_seed_snapshot(
     db: AsyncSession,
     user_id: int,
     squat_1rm_kg: float | None,
@@ -253,20 +288,29 @@ async def _persist_seed_snapshot(
     bench_1rm_kg: float | None,
     run_5k_seconds: float | None,
 ) -> None:
+    """Write the seed snapshot onto the profile inside a SAVEPOINT.
+
+    A failure discards only the snapshot. It used to commit on its own and roll back the
+    whole session on failure, which was harmless only while the baseline had already
+    committed; inside a caller's single transaction that rollback would have silently
+    discarded everything staged before it.
+    """
+    # Outside the savepoint: a failure flushing the caller's pending work is the caller's
+    # failure, and must not be swallowed as a snapshot problem.
+    await db.flush()
     try:
-        plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
-        seeded_at = datetime.now(UTC).replace(tzinfo=None)
-        snapshot = seed_snapshot.build_seed_snapshot(plan, seeded_at=seeded_at)
-        profile = await AthleteProfileRepository(db).get_for_user(user_id)
-        if profile is None:
-            return
-        profile.initial_seed_by_axis = snapshot
-        profile.seed_policy_version = snapshot["policy_version"]
-        profile.seeded_at = seeded_at
-        profile.initial_seed_status = seed_snapshot.initial_seed_status_rollup(snapshot)
-        await db.commit()
+        async with db.begin_nested():
+            plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
+            seeded_at = datetime.now(UTC).replace(tzinfo=None)
+            snapshot = seed_snapshot.build_seed_snapshot(plan, seeded_at=seeded_at)
+            profile = await AthleteProfileRepository(db).get_for_user(user_id)
+            if profile is None:
+                return
+            profile.initial_seed_by_axis = snapshot
+            profile.seed_policy_version = snapshot["policy_version"]
+            profile.seeded_at = seeded_at
+            profile.initial_seed_status = seed_snapshot.initial_seed_status_rollup(snapshot)
     except Exception:
-        await db.rollback()
         logger.warning("seed snapshot persist failed for user %s", user_id, exc_info=True)
 
 
@@ -344,6 +388,12 @@ async def load_or_init_current_state(
     if row is None:
         return await initialize_athlete_state(db, user_id)
     return unified_from_athlete_row(row)
+
+
+async def has_state(db: AsyncSession, user_id: int) -> bool:
+    """Whether the athlete has any state row yet. Absence of a row is the question; nothing
+    is decoded."""
+    return await AthleteContextRepository(db).get_latest_state(user_id) is not None
 
 
 async def load_current_state_strict(
@@ -563,6 +613,9 @@ async def _match_planned_session(
             )
         )
         return res.scalars().first()
+    # Deliberately the client's WALL-CLOCK day, not the UTC date: `scheduled_date` is a
+    # calendar day, and converting an evening session to UTC could move it onto the next
+    # day. (The instant-based times — log_ts and the evidence performed_at — use UTC.)
     session_day = (
         log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
     ).date()
@@ -652,7 +705,7 @@ async def _apply_sets_to_log(
     set_rows: list[WorkoutSetLog] = []
     set_index = 0
 
-    for entry in log.sets:
+    for entry_group_id, entry in enumerate(log.sets):
         ex_row: Exercise | None = None
         if entry.exercise_id is not None:
             ex_row = by_id.get(entry.exercise_id)
@@ -671,6 +724,7 @@ async def _apply_sets_to_log(
         for _ in range(max(1, entry.sets)):
             row = WorkoutSetLog(
                 set_index=set_index,
+                entry_group_id=entry_group_id,
                 exercise_id=ex_row.id if ex_row else None,
                 free_text_name=free_text,
                 load_type=load_type,
@@ -692,13 +746,14 @@ async def _apply_sets_to_log(
 
     # Pre-log e1RM denominators for the intensity computation (ADR-0039/0056). Read
     # once, up front — before any write-time extraction — so I = load / e1RM_pre uses
-    # an uncorrupted denominator.
+    # an uncorrupted denominator. The reference time is the workout's own time (S2): a
+    # lift performed after this session cannot be this session's pre-log e1RM.
     e1rm_codes = {
         ex_row.e1rm_benchmark_code
         for ex_row, _ in groups.values()
         if ex_row is not None and ex_row.e1rm_benchmark_code
     }
-    e1rm_denoms = await prelog_e1rm_denominators(db, user_id, e1rm_codes)
+    e1rm_denoms = await prelog_e1rm_denominators(db, user_id, e1rm_codes, as_of=log.timestamp)
 
     # Per exercise: mark exactly one top set (heaviest loaded set, ties → last),
     # unless the client already forced one. Drives e1RM extraction.
@@ -722,6 +777,10 @@ async def _apply_sets_to_log(
 
         top_set = next((r for r in rows if r.is_top_set), None)
         fidelity = "group_level" if group_quick.get(key) else "set_level"
+        # Persist the inferred label on every row (S2), so the set can be reprocessed
+        # without re-deriving provenance nobody recorded.
+        for r in rows:
+            r.effort_fidelity = fidelity
         # Extraction gate (ADR-0055): only low-rep, high-effort top sets of a mapped lift
         # yield e1RM evidence — and it is always estimated/lower-bound, never capacity.
         if (
@@ -735,9 +794,7 @@ async def _apply_sets_to_log(
             e1rm_specs.append(
                 {
                     "code": ex_row.e1rm_benchmark_code,
-                    "raw_value": round(
-                        sc.epley_e1rm(top_set.load_kg, top_set.reps), 1
-                    ),
+                    "raw_value": sc.e1rm_from_set(top_set.load_kg, top_set.reps),
                     "exercise_id": ex_row.id,
                     "reps": top_set.reps,
                     "rpe": top_set.rpe,
@@ -837,51 +894,34 @@ async def _apply_sets_to_log(
 
 
 async def prelog_e1rm_denominators(
-    db: AsyncSession, user_id: int, codes: set[str]
+    db: AsyncSession, user_id: int, codes: set[str], *, as_of: datetime
 ) -> dict[str, dict[str, Any]]:
-    """Current (pre-log) e1RM per benchmark code, with denominator provenance.
+    """Pre-log e1RM per benchmark code at ``as_of``, with denominator provenance.
 
-    The intensity denominator for ADR-0039's ``I = load / e1RM_pre``. Reads the latest
-    **valid** observation per code — the same prescription-grade denominator that
-    ``prescription_service`` uses — so dose intensity and prescribed load agree on the
-    number (the ADR-0056 invariant). Uncorrupted by construction: the ADR-0055 guard
-    keeps training-derived rows from regressing capacity, and quarantined rows are
-    excluded by the ``valid`` filter. Returns
+    The intensity denominator for ADR-0039's ``I = load / e1RM_pre``. Selected by
+    ``select_prescription_basis`` — the selection ``prescription_service`` sizes load with
+    — so for the same evidence and the same ``as_of``, dose intensity and prescribed load
+    resolve the same e1RM (ADR-0056). Across time they can differ: a prescription and a
+    later or backdated workout log may straddle an expiry, so the caller passes the
+    workout's own time. Pre-log isolation holds by ordering (this runs before the
+    workout's own extraction writes) and by time (evidence performed after ``as_of`` is
+    future-dated and ineligible). Codes with no qualifying evidence are absent. Returns
     ``code -> {value, observation_id, value_semantics, source}``.
     """
     if not codes:
         return {}
-    res = await db.execute(
-        select(
-            BenchmarkDefinition.code,
-            BenchmarkObservation.raw_value,
-            BenchmarkObservation.id,
-            BenchmarkObservation.value_semantics,
-            BenchmarkObservation.source,
-        )
-        .join(
-            BenchmarkObservation,
-            BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id,
-        )
-        .where(
-            BenchmarkObservation.user_id == user_id,
-            BenchmarkDefinition.code.in_(codes),
-            # ADR-0056: shares one predicate with
-            # `prescription_service._current_e1rm_values` so dose intensity and
-            # prescribed load resolve the same e1RM.
-            prescription_basis_filter(),
-        )
-        .order_by(BenchmarkObservation.observed_at.desc())
-    )
+    selections = await select_prescription_basis(db, user_id, codes, as_of=as_of)
     out: dict[str, dict[str, Any]] = {}
-    for code, raw, obs_id, semantics, source in res.all():
-        if code not in out and raw is not None:
-            out[code] = {
-                "value": float(raw),
-                "observation_id": obs_id,
-                "value_semantics": semantics,
-                "source": source,
-            }
+    for code, selection in selections.items():
+        row = selection.selected
+        if row is None or row.raw_value is None:
+            continue
+        out[code] = {
+            "value": float(row.raw_value),
+            "observation_id": row.observation_id,
+            "value_semantics": row.value_semantics,
+            "source": row.source,
+        }
     return out
 
 
@@ -957,12 +997,17 @@ async def _extract_e1rm_observations(
                     raw_value=spec["raw_value"],
                     observed_at=observed_at,
                     source=se.SOURCE_WORKOUT_EXTRACTION,
+                    # `is_pr` governs the CAPACITY labels only: a set below the watermark is
+                    # estimated history, never lower-bound floor evidence (ADR-0055).
                     evidence_type=(
                         se.EV_LOWER_BOUND if is_pr else se.EV_ESTIMATED_FROM_TRAINING_SET
                     ),
                     value_semantics=(se.VS_LOWER_BOUND if is_pr else se.VS_ESTIMATED),
-                    # A below-watermark set is history only — not even a prescription basis.
-                    affects_prescription=is_pr,
+                    # Prescription permission is NOT tied to beating the watermark (S2): the
+                    # set cleared the extraction gate, so it may size a load. Whether it does
+                    # is decided at selection time by freshness and the in-window maximum
+                    # (app.logic.prescription_evidence) — never "latest lighter set wins".
+                    affects_prescription=True,
                     observation_weight=(0.10 if is_pr else 0.0),
                     confidence=(0.15 if fidelity == "group_level" else 0.30) if is_pr else None,
                     exercise_id=spec.get("exercise_id"),
@@ -974,6 +1019,8 @@ async def _extract_e1rm_observations(
                     formula="epley",
                     effort_fidelity=fidelity,
                 ),
+                # The workout's own time is the performance time (S2).
+                performed_at=observed_at,
             )
             written += 1
         except Exception:
@@ -994,9 +1041,16 @@ async def process_new_workout(
     """
     last_record = await AthleteContextRepository(db).get_latest_state(user_id)
 
-    # UTC-naive workout time — the anchor for this state transition. The DB stores
-    # naive datetimes; log.timestamp may arrive tz-aware.
-    log_ts = log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+    # UTC-naive workout time — the anchor for this state transition. The DB stores naive
+    # UTC; log.timestamp may arrive tz-aware in ANY offset. Convert to the UTC instant
+    # before dropping tzinfo: `replace(tzinfo=None)` alone keeps the wall clock, so
+    # 10:00+05:00 would be stored as 10:00 when the instant is 05:00 UTC — and that value
+    # becomes the extracted evidence's performance time, which prescription freshness reads.
+    log_ts = (
+        log.timestamp.astimezone(UTC).replace(tzinfo=None)
+        if log.timestamp.tzinfo
+        else log.timestamp
+    )
 
     if not last_record:
         # Build and stage the baseline row without committing yet — the whole
@@ -1060,7 +1114,7 @@ async def process_new_workout(
         user_id=user_id,
         # Never the raw request field: only the ownership-verified match above.
         planned_session_id=planned_session.id if planned_session is not None else None,
-        session_timestamp=log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp,
+        session_timestamp=log_ts,
         modality=log.modality,
         duration_minutes=log.duration_minutes,
         session_rpe=log.session_rpe,
@@ -1087,8 +1141,13 @@ async def process_new_workout(
         workout_row.planned_session_id = planned_session.id
 
     # Physical decay interval since the current state, clamped non-negative so an
-    # out-of-order/backfilled log never applies negative decay.
-    state_ts = current_state.timestamp.replace(tzinfo=None) if current_state.timestamp.tzinfo else current_state.timestamp
+    # out-of-order/backfilled log never applies negative decay. Same instant rule as
+    # log_ts: convert an aware value to UTC before dropping its offset.
+    state_ts = (
+        current_state.timestamp.astimezone(UTC).replace(tzinfo=None)
+        if current_state.timestamp.tzinfo
+        else current_state.timestamp
+    )
     dt = timedelta(seconds=0) if log_ts < state_ts else log_ts - state_ts
 
     new_state_schema = update_athlete_state(current_state, dose, dt, log)

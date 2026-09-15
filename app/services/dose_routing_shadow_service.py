@@ -58,7 +58,7 @@ async def _e1rm_by_exercise_key(
 
     from app.services.state_service import prelog_e1rm_denominators
 
-    denoms = await prelog_e1rm_denominators(db, user_id, codes)
+    denoms = await prelog_e1rm_denominators(db, user_id, codes, as_of=log.timestamp)
     out: dict[str, float] = {}
     for e in log.exercises:
         code = (

@@ -16,6 +16,7 @@ import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, type AuthedResource } from "../resource";
 import { Card, MetricBar, ScreenHeader, SectionLabel, WeakPointTags } from "../ui";
 import { WhyThisSession } from "../prescription/WhyThisSession";
+import { LoadExplanation } from "../prescription/LoadExplanation";
 import { ExpectedOutcomes } from "../prescription/ExpectedOutcomes";
 import { PlanRevisionTriggers } from "../prescription/PlanRevisionTriggers";
 import { Chart, Bars, Line, Marker, Axis, Legend, useVizTheme } from "../viz";
@@ -276,6 +277,7 @@ function prescriptionSummary(resource: AuthedResource<WorkoutPrescription>): str
 }
 
 function PrescribedSessionBody({ resource }: { resource: AuthedResource<WorkoutPrescription> }) {
+  const { actions } = usePerfLab();
   switch (resource.status) {
     // Unreachable (the card only mounts inside the authenticated body) and
     // deliberately silent, as it was before: a guest is told nothing here.
@@ -319,6 +321,11 @@ function PrescribedSessionBody({ resource }: { resource: AuthedResource<WorkoutP
                       <span className="text-[13px] font-semibold leading-none text-soft">{ex.name}</span>
                       {detail && <span className="font-mono text-[12px] leading-none text-faint">{detail}</span>}
                     </div>
+                    <LoadExplanation
+                      explanation={ex.load_explanation}
+                      exerciseName={ex.name}
+                      onOpenAssess={() => actions.setScreen("assess")}
+                    />
                     <WeakPointTags tags={tags} />
                   </div>
                 );

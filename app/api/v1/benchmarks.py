@@ -10,8 +10,14 @@ from app.schemas.benchmarks import (
     BenchmarkObservationCreate,
     BenchmarkObservationRead,
     RecomputeDerivedResponse,
+    StrengthEvidenceCreate,
 )
-from app.services import assessment_surface_service, benchmark_service, dashboard_service
+from app.services import (
+    assessment_surface_service,
+    benchmark_service,
+    dashboard_service,
+    strength_evidence_service,
+)
 
 router = APIRouter(prefix="/benchmarks", tags=["Benchmarks"])
 
@@ -50,6 +56,23 @@ async def post_benchmark_observation(
 ) -> BenchmarkObservationRead:
     try:
         return await benchmark_service.create_observation(db, current_user.id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/strength-evidence", response_model=BenchmarkObservationRead)
+async def post_strength_evidence(
+    body: StrengthEvidenceCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BenchmarkObservationRead:
+    """Record an athlete-reported strength observation for a canonical lift (S2).
+
+    Evidence only: no workout is created and no training dose is applied. The server
+    derives the value semantics, the estimate for a reported set, and whether the
+    observation may ever size a prescribed load."""
+    try:
+        return await strength_evidence_service.record_strength_evidence(db, current_user.id, body)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

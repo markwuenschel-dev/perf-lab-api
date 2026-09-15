@@ -69,6 +69,15 @@ def test_openapi_declares_prescription_as_workout_prescription() -> None:
     assert {"type": "null"} in prop.get("anyOf", []), prop
 
 
+def test_openapi_declares_each_exercise_load_explanation() -> None:
+    """N1: every prescribed exercise publishes a typed, nullable explanation of its weight."""
+    schema = app.openapi()
+    prop = schema["components"]["schemas"]["ExercisePrescription"]["properties"]["load_explanation"]
+    refs = [branch.get("$ref") for branch in prop.get("anyOf", []) if isinstance(branch, dict)]
+    assert "#/components/schemas/LoadExplanation" in refs, prop
+    assert {"type": "null"} in prop.get("anyOf", []), prop
+
+
 async def _mk_user(db, email: str) -> User:
     u = User(email=email, hashed_password="h", is_active=True)
     db.add(u)
@@ -189,3 +198,6 @@ async def test_today_prescription_validates_as_workout_prescription(async_db):
     assert rx.exercises, raw
     # The nested explanation is typed too, not a passthrough dict.
     assert rx.why is None or rx.why.goal_alignment is not None
+    # N1: the weight explanation is on the wire for every exercise — null when there is
+    # nothing to explain, never an absent key the client has to guess about.
+    assert all("load_explanation" in ex for ex in raw["exercises"]), raw

@@ -189,23 +189,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = useCallback(
     async (req: Partial<OnboardRequest>) => {
+      // Errors propagate to the screen. This used to swallow them, which hid that the call
+      // was sent without a token and every onboarding was refused: a refused onboarding
+      // means the athlete's facts were NOT saved, and they must be told.
       try {
         // Guests persist nothing — skip the profile-seeding call entirely.
-        if (isGuest) return;
-        // Identity comes from the auth token, so OnboardRequest has no `email`.
+        if (isGuest || !token) return;
+        // Identity comes from the bearer token, so OnboardRequest has no `email`.
         // The backend fills server-side defaults for any field we omit, so a
         // partial (even `{}`) is a valid payload.
-        await api.onboard(req as OnboardRequest);
-        // Pull the freshly-seeded profile so the sidebar shows the onboarded
-        // name immediately (not just the email fallback until a reload).
-        await refreshProfile();
-      } catch {
-        // Best-effort: baseline state seeds on first /next-session anyway
+        await api.onboard(req as OnboardRequest, token);
+        // Pull the freshly-seeded profile so the sidebar shows the onboarded name
+        // immediately. Best-effort: the onboarding itself already succeeded.
+        await refreshProfile().catch(() => undefined);
       } finally {
         setOnboardingPending(false);
       }
     },
-    [isGuest, refreshProfile],
+    [isGuest, token, refreshProfile],
   );
 
   const value = useMemo<AuthContextValue>(

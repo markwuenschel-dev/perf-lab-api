@@ -7,6 +7,12 @@ Run from repo root after migrations:
 
 Idempotent: skips rows that already exist (by code). Seeds mappings only when
 observation_mappings is empty.
+
+Two enrichment passes then update rows that already exist, because the insert loop never
+touches them: the skill-state view metadata, and ``BENCHMARK_EXPLANATIONS``. The
+explanations are code-owned — this module is the source of every benchmark's
+``description`` and ``protocol_summary``, and that pass writes those two columns and nothing
+else. Edit the text here, not in the database.
 """
 
 from __future__ import annotations
@@ -15,8 +21,10 @@ import asyncio
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
+from app.logic.prescription_evidence import STRENGTH_PRESCRIPTION_EVIDENCE_MAX_AGE_DAYS
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.observation_mapping import ObservationMapping
@@ -38,7 +46,7 @@ BENCHMARKS: list[dict[str, Any]] = [
     # Running
     _b(code="run_400m_time", name="400 m time", domain="running", metric_type="time", unit="seconds",
        is_primary_anchor=True, better_direction="lower", observation_weight=1.0,
-       state_targets=["aerobic", "power"], protocol_summary="Track or measured 400 m",
+       state_targets=["aerobic", "power"],
        standardization_rules={"floor": 120.0, "cap": 50.0}),
     _b(code="run_1mile_time", name="1 mile time", domain="running", metric_type="time", unit="seconds",
        is_primary_anchor=True, better_direction="lower", observation_weight=1.0,
@@ -66,8 +74,6 @@ BENCHMARKS: list[dict[str, Any]] = [
        domain="running", metric_type="score", unit="ml_kg_min",
        is_primary_anchor=True, better_direction="higher", observation_weight=0.9,
        state_targets=["aerobic"],
-       protocol_summary="300 m all-out + 1.5 mi time trial; estimates VO₂max / "
-                        "aerobic capacity. The onramp aerobic benchmark.",
        standardization_rules={"floor": 25.0, "cap": 70.0},
        domain_lenses=["running"],
        assessable_skill_tags=["aerobic_capacity"],
@@ -249,6 +255,227 @@ SKILL_VIEW_METADATA: dict[str, dict[str, Any]] = {
             "summary": "Talk-test validator of threshold-pace effort perception.",
             "scale": "0-100",
         },
+    },
+}
+
+
+#: Shown as a benchmark's "how to measure" when no protocol has been established. Saying so is
+#: the honest answer; an invented set of instructions would change what the number means.
+PROTOCOL_NOT_YET_DEFINED = "Measurement protocol not yet defined."
+
+#: Benchmarks whose measurement protocol is not established anywhere in this codebase. Each
+#: shows :data:`PROTOCOL_NOT_YET_DEFINED` until a real protocol is written for it.
+UNDEFINED_PROTOCOL_CODES: frozenset[str] = frozenset({
+    "pl_top_set_rpe_delta",
+    "pl_std_load_bar_speed",
+    "grip_crush_test",
+    "mm_short_benchmark_wod",
+    "mm_aerobic_skill_benchmark_wod",
+    "mm_repeatability_test",
+})
+
+#: States the qualification rule as the selector applies it (app/logic/prescription_evidence.py
+#: and the set gate in app/logic/strength_evidence.py), so the help never promises more than the
+#: rule allows. The window comes from the constant; the RPE 8 bar is the set-level gate.
+_E1RM_PROTOCOL = (
+    "Report a tested 1-rep max, a set you did (load, reps and effort), or your own estimate, "
+    "with the date you did it. A dated tested max, or a dated set of 1–5 reps at RPE 8 or "
+    f"higher, performed within the last {STRENGTH_PRESCRIPTION_EVIDENCE_MAX_AGE_DAYS} days, can "
+    "guide weight recommendations; an estimate is saved but not used for that."
+)
+
+#: What each benchmark measures (``description``) and how to measure it (``protocol_summary``).
+#: CODE-OWNED: the enrichment pass in :func:`seed` writes exactly these two columns, on every
+#: seed, for already-seeded rows too. Wording is grounded in each definition (name, unit,
+#: targets, direction) and the protocol text already in this file; it adds no numbers.
+BENCHMARK_EXPLANATIONS: dict[str, dict[str, str]] = {
+    # Running
+    "run_400m_time": {
+        "description": "Your time for 400 m. It reflects both speed and aerobic capacity.",
+        "protocol_summary": "Run 400 m as fast as you can on a track or a measured course, "
+                            "and record your time.",
+    },
+    "run_1mile_time": {
+        "description": "Your time for 1 mile — mainly a measure of aerobic capacity.",
+        "protocol_summary": "Run 1 mile as fast as you can on a track or a measured course, "
+                            "and record your time.",
+    },
+    "run_5k_time": {
+        "description": "Your time for 5 km — a measure of aerobic capacity and work capacity.",
+        "protocol_summary": "Run 5 km as fast as you can on a measured course, and record your time.",
+    },
+    "run_threshold_pace_30min_tt": {
+        "description": "The average pace you can hold for a 30-minute time trial — a measure of "
+                       "aerobic (threshold) fitness.",
+        "protocol_summary": "Run a 30-minute time trial at the fastest pace you can hold for the "
+                            "whole 30 minutes, and record your average pace.",
+    },
+    "run_long_run_decoupling": {
+        "description": "How much your heart rate drifts relative to your pace across a steady "
+                       "long run. Lower means better aerobic durability.",
+        "protocol_summary": "Run a steady long run while recording heart rate, and record the "
+                            "heart-rate drift (decoupling) as a percent.",
+    },
+    "run_threshold_talk_test": {
+        "description": "A check on how you perceive threshold-pace effort, scored 0–100. It is "
+                       "used to validate other measurements.",
+        "protocol_summary": "Talk-test validator of threshold-pace effort perception, scored 0–100.",
+    },
+    "run_vo2_field_test_300m_1p5mi": {
+        "description": "An estimate of your VO₂max (aerobic capacity). The onramp aerobic "
+                       "benchmark.",
+        "protocol_summary": "A two-part run test: a 300 m all-out run and a 1.5 mi time trial.",
+    },
+    # Sprinting
+    "sprint_0_30_split": {
+        "description": "Your time over the first 30 m of a sprint — a measure of acceleration.",
+        "protocol_summary": "Time the first 30 m of an all-out sprint from the start, and record "
+                            "the seconds.",
+    },
+    "sprint_flying_30": {
+        "description": "Your time over 30 m at full speed, after a running start — a measure of "
+                       "top speed.",
+        "protocol_summary": "Build up to full speed, then time 30 m at full speed, and record the "
+                            "seconds.",
+    },
+    "sprint_60m_time": {
+        "description": "Your time for a 60 m sprint — a measure of sprint power.",
+        "protocol_summary": "Sprint 60 m all-out, and record your time.",
+    },
+    "sprint_150m_time": {
+        "description": "Your time for 150 m — speed together with glycolytic (short-burst "
+                       "anaerobic) capacity.",
+        "protocol_summary": "Run 150 m all-out, and record your time.",
+    },
+    "sprint_300m_time": {
+        "description": "Your time for 300 m — mainly glycolytic (anaerobic) capacity, with speed.",
+        "protocol_summary": "Run 300 m all-out, and record your time.",
+    },
+    # Powerlifting
+    "pl_e1rm_squat": {
+        "description": "Your estimated one-rep max (e1RM) for the squat: the most you could lift "
+                       "for a single rep.",
+        "protocol_summary": _E1RM_PROTOCOL,
+    },
+    "pl_e1rm_bench": {
+        "description": "Your estimated one-rep max (e1RM) for the bench press: the most you could "
+                       "lift for a single rep.",
+        "protocol_summary": _E1RM_PROTOCOL,
+    },
+    "pl_e1rm_deadlift": {
+        "description": "Your estimated one-rep max (e1RM) for the deadlift: the most you could "
+                       "lift for a single rep.",
+        "protocol_summary": _E1RM_PROTOCOL,
+    },
+    "pl_top_set_rpe_delta": {
+        "description": "How far the effort (RPE) of your top set was from the planned effort. "
+                       "Lower is better.",
+        "protocol_summary": PROTOCOL_NOT_YET_DEFINED,
+    },
+    "pl_std_load_bar_speed": {
+        "description": "Bar speed at a standardized load, expressed as a ratio. Higher is better.",
+        "protocol_summary": PROTOCOL_NOT_YET_DEFINED,
+    },
+    # Olympic lifting
+    "wl_snatch_1rm": {
+        "description": "The heaviest snatch you can complete for one rep.",
+        "protocol_summary": "Work up to your heaviest successful single snatch, and record the load.",
+    },
+    "wl_clean_jerk_1rm": {
+        "description": "The heaviest clean & jerk you can complete for one rep.",
+        "protocol_summary": "Work up to your heaviest successful single clean & jerk, and record "
+                            "the load.",
+    },
+    "wl_front_squat_1rm": {
+        "description": "The heaviest front squat you can complete for one rep.",
+        "protocol_summary": "Work up to your heaviest successful single front squat, and record "
+                            "the load.",
+    },
+    "wl_technical_grade_85pct": {
+        "description": "The technical quality of your snatch and clean at about 85% of your 1RM, "
+                       "scored 0–100.",
+        "protocol_summary": "Coach- or self-graded technique rubric on lifts at about 85% of 1RM, "
+                            "scored 0–100.",
+    },
+    "wl_back_squat_1rm": {
+        "description": "The heaviest back squat you can complete for one rep.",
+        "protocol_summary": "Work up to your heaviest successful single back squat, and record "
+                            "the load.",
+    },
+    # Gymnastics
+    "gym_strict_pullup_max": {
+        "description": "The most strict pull-ups you can do in one set.",
+        "protocol_summary": "Do as many strict (no kipping) pull-ups as you can in one set, and "
+                            "record the reps.",
+    },
+    "gym_ring_support_hold": {
+        "description": "How long you can hold a support position on rings.",
+        "protocol_summary": "Hold a support position on rings for as long as you can, and record "
+                            "the seconds.",
+    },
+    "gym_handstand_hold": {
+        "description": "How long you can hold a handstand.",
+        "protocol_summary": "Hold a handstand for as long as you can, and record the seconds.",
+    },
+    "gym_strict_dip_max": {
+        "description": "The most strict dips you can do in one set.",
+        "protocol_summary": "Do as many strict dips as you can in one set, and record the reps.",
+    },
+    "gym_false_grip_hang": {
+        "description": "How long you can hang using a false grip.",
+        "protocol_summary": "Hang with a false grip for as long as you can, and record the seconds.",
+    },
+    "gym_transition_quality": {
+        "description": "The quality of your ring or bar transitions, such as the ring muscle-up, "
+                       "scored 0–100.",
+        "protocol_summary": "Rubric-scored quality of ring or bar transitions, 0–100.",
+    },
+    # Grip
+    "grip_plate_pinch_hold": {
+        "description": "How long you can hold plates in a pinch grip.",
+        "protocol_summary": "Pinch-grip the plates and hold for as long as you can, and record the "
+                            "seconds.",
+    },
+    "grip_thick_bar_hold": {
+        "description": "How long you can hold a thick bar.",
+        "protocol_summary": "Hold a thick bar for as long as you can, and record the seconds.",
+    },
+    "grip_rolling_handle_lift": {
+        "description": "The heaviest load you can lift with a rolling handle.",
+        "protocol_summary": "Work up to your heaviest successful rolling-handle lift, and record "
+                            "the load.",
+    },
+    "grip_crush_test": {
+        "description": "Your crushing grip strength, as a score.",
+        "protocol_summary": PROTOCOL_NOT_YET_DEFINED,
+    },
+    "grip_farmers_hold": {
+        "description": "How long you can hold farmers-carry handles at a fixed load.",
+        "protocol_summary": "Hold farmers-carry handles at a fixed load for as long as you can, and "
+                            "record the seconds. Use the same load when you retest.",
+    },
+    # Mixed modal
+    "mm_short_benchmark_wod": {
+        "description": "Your time for a short benchmark workout.",
+        "protocol_summary": PROTOCOL_NOT_YET_DEFINED,
+    },
+    "mm_aerobic_skill_benchmark_wod": {
+        "description": "Your time for a benchmark workout that combines aerobic work and skill.",
+        "protocol_summary": PROTOCOL_NOT_YET_DEFINED,
+    },
+    "mm_row_2k": {
+        "description": "Your time to row 2,000 m — aerobic capacity and work capacity.",
+        "protocol_summary": "Row 2,000 m as fast as you can, and record your time.",
+    },
+    "mm_bike_10min_output": {
+        "description": "The calories you can produce on a bike in 10 minutes — a measure of "
+                       "aerobic capacity.",
+        "protocol_summary": "Ride as hard as you can for 10 minutes, and record the calories shown "
+                            "on the bike.",
+    },
+    "mm_repeatability_test": {
+        "description": "How well you can repeat a workout effort, as a score.",
+        "protocol_summary": PROTOCOL_NOT_YET_DEFINED,
     },
 }
 
@@ -442,6 +669,22 @@ MAPPINGS: list[dict[str, Any]] = [
 ]
 
 
+async def apply_benchmark_explanations(db: AsyncSession) -> int:
+    """Write each existing definition's ``description`` and ``protocol_summary`` from
+    :data:`BENCHMARK_EXPLANATIONS`. Those two columns only: every other column belongs to
+    the definition's own seed row or to the view-metadata pass. Does not commit."""
+    written = 0
+    for code, text in BENCHMARK_EXPLANATIONS.items():
+        res = await db.execute(select(BenchmarkDefinition).where(BenchmarkDefinition.code == code))
+        defn = res.scalars().first()
+        if defn is None:
+            continue
+        defn.description = text["description"]
+        defn.protocol_summary = text["protocol_summary"]
+        written += 1
+    return written
+
+
 async def seed() -> None:
     async with AsyncSessionLocal() as db:
         b_inserted = 0
@@ -473,6 +716,11 @@ async def seed() -> None:
             b_enriched += 1
         await db.commit()
         print(f"Benchmark definitions: enriched {b_enriched} with view metadata.")
+
+        # Code-owned explanations: writes description + protocol_summary and nothing else.
+        b_explained = await apply_benchmark_explanations(db)
+        await db.commit()
+        print(f"Benchmark definitions: wrote explanations for {b_explained}.")
 
         d_inserted = 0
         for row in DERIVED_METRICS:

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { isImperial, kgToLbs } from "@/lib/units";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
 import type { ApiError, ConnectionStatus, ObjectiveRead, ProfileRead, ProfileUpdate } from "@/types";
@@ -9,7 +10,15 @@ import { TRAINING_GOALS, usePerfLab } from "../store";
 import type { Settings } from "../store";
 import { DOMAIN_OPTIONS } from "../domains";
 import { useAuthedResource } from "../useAuthedResource";
+import { CANONICAL_LIFTS } from "./canonicalLifts";
 import { goalChipsView } from "./goalChipsView";
+import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import {
+  EMPTY_STRENGTH_FORM,
+  strengthEvidenceBody,
+  type StrengthForm,
+  type WeightUnit,
+} from "./strengthEvidenceBody";
 import { Card, SectionLabel } from "../ui";
 
 const ACCENTS = ["#c6f135", "#45d6c4", "#86b8ff", "#f5c451", "#ff8a5c"];
@@ -153,6 +162,8 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 // any time via GET/PATCH /v1/profile. The local `settings` (units, accent…) are
 // per-device prefs and live in localStorage instead — see store.tsx.
 
+// Squat / bench / deadlift are not part of this form (S2): they are characterized strength
+// reports edited through <StrengthLiftsEditor>, and the profile only shows their projection.
 type ProfileForm = {
   display_name: string;
   experience_level: string;
@@ -160,9 +171,6 @@ type ProfileForm = {
   available_days_per_week: string;
   session_duration_minutes: string;
   bodyweight_kg: string;
-  squat_1rm_kg: string;
-  bench_1rm_kg: string;
-  deadlift_1rm_kg: string;
   run_5k: string; // mm:ss
 };
 
@@ -173,9 +181,6 @@ const EMPTY_FORM: ProfileForm = {
   available_days_per_week: "",
   session_duration_minutes: "",
   bodyweight_kg: "",
-  squat_1rm_kg: "",
-  bench_1rm_kg: "",
-  deadlift_1rm_kg: "",
   run_5k: "",
 };
 
@@ -214,9 +219,6 @@ function formFromProfile(p: ProfileRead): ProfileForm {
     available_days_per_week: numStr(p.available_days_per_week),
     session_duration_minutes: numStr(p.session_duration_minutes),
     bodyweight_kg: numStr(p.bodyweight_kg),
-    squat_1rm_kg: numStr(p.squat_1rm_kg),
-    bench_1rm_kg: numStr(p.bench_1rm_kg),
-    deadlift_1rm_kg: numStr(p.deadlift_1rm_kg),
     run_5k: secToMMSS(p.run_5k_seconds),
   };
 }
@@ -227,9 +229,6 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
     // Nullable fields: an empty input clears the stored value.
     display_name: f.display_name.trim() === "" ? null : f.display_name.trim(),
     bodyweight_kg: numOrNull(f.bodyweight_kg),
-    squat_1rm_kg: numOrNull(f.squat_1rm_kg),
-    bench_1rm_kg: numOrNull(f.bench_1rm_kg),
-    deadlift_1rm_kg: numOrNull(f.deadlift_1rm_kg),
     run_5k_seconds: mmssToSec(f.run_5k),
   };
   // Required-ish fields: only send when the input parses, so a blank doesn't
@@ -245,9 +244,121 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+type LiftValues = Pick<ProfileRead, "squat_1rm_kg" | "bench_1rm_kg" | "deadlift_1rm_kg">;
+
+/** Squat, bench and deadlift, edited as characterized strength reports (S2). The values shown
+ *  are the profile's projection of the athlete's reports; saving sends a new report through
+ *  the one strength-evidence service rather than overwriting a number. Values are shown and
+ *  typed in the selected unit; the request carries kilograms. */
+function StrengthLiftsEditor({
+  token,
+  values,
+  onSaved,
+}: {
+  token: string;
+  values: LiftValues | null;
+  onSaved: () => void;
+}) {
+  const { state } = usePerfLab();
+  const unit: WeightUnit = isImperial(state.settings.units) ? "lb" : "kg";
+  const [editing, setEditing] = useState<string | null>(null);
+  const [form, setForm] = useState<StrengthForm>(EMPTY_STRENGTH_FORM);
+  // The unit an open report is typed in, fixed when it opens: switching units under
+  // Preferences while a report is half-typed must not reinterpret the digits already entered.
+  const [formUnit, setFormUnit] = useState<WeightUnit>(unit);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function open(code: string) {
+    setEditing(code);
+    setForm(EMPTY_STRENGTH_FORM);
+    setFormUnit(unit);
+    setError(null);
+  }
+
+  async function save(code: string) {
+    const built = strengthEvidenceBody(code, "retest", form, { unit: formUnit });
+    if (!built.ok) {
+      setError(built.error);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.submitStrengthEvidence(built.body, token);
+      setEditing(null);
+      onSaved();
+    } catch (e) {
+      const msg = (e as ApiError)?.message;
+      setError(typeof msg === "string" ? msg : "Couldn't save that result.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 flex flex-col gap-2">
+      <span className="text-[12px] font-medium leading-none text-mute">Strength</span>
+      {CANONICAL_LIFTS.map((lift) => {
+        const current = values?.[lift.profileKey];
+        return (
+          <div key={lift.code} className="rounded-[11px] border border-white/[0.08] px-3 py-[10px]">
+            <div className="flex items-center gap-3">
+              <span className="text-[13px] font-semibold leading-none text-ink">{lift.label}</span>
+              <span className="font-mono text-[13px] leading-none text-soft">
+                {current == null
+                  ? "—"
+                  : unit === "lb"
+                    ? `${kgToLbs(current).toFixed(0)} lb`
+                    : `${current} kg`}
+              </span>
+              {editing !== lift.code && (
+                <button
+                  onClick={() => open(lift.code)}
+                  className="ml-auto rounded-[8px] border border-white/10 bg-white/[0.04] px-3 py-[6px] text-[11.5px] font-semibold leading-none text-soft"
+                >
+                  Update
+                </button>
+              )}
+            </div>
+            {editing === lift.code && (
+              <div className="mt-3 flex flex-col gap-2">
+                <StrengthEvidenceFields
+                  form={form}
+                  onChange={setForm}
+                  liftLabel={lift.label}
+                  unit={formUnit}
+                />
+                {error && <div className="text-[11px] font-medium leading-none text-hot">{error}</div>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void save(lift.code)}
+                    disabled={busy}
+                    className="rounded-[9px] bg-ac px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+                  >
+                    {busy ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setEditing(null)}
+                    className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold leading-none text-soft"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PerformanceProfileCard() {
   const { token, isAuthenticated, refreshProfile } = useAuth();
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
+  // The strength projections, shown read-only beside their report editor.
+  const [lifts, setLifts] = useState<LiftValues | null>(null);
   const [loading, setLoading] = useState(false);
   const [save, setSave] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -268,7 +379,10 @@ function PerformanceProfileCard() {
     void (async () => {
       try {
         const p = await api.getProfile(token);
-        if (!cancelled) setForm(formFromProfile(p));
+        if (!cancelled) {
+          setForm(formFromProfile(p));
+          setLifts(p);
+        }
       } catch (e) {
         if (!cancelled) {
           const msg = (e as ApiError)?.message;
@@ -290,6 +404,7 @@ function PerformanceProfileCard() {
     try {
       const saved = await api.updateProfile(patchFromForm(form), token);
       setForm(formFromProfile(saved)); // re-seed from the persisted row
+      setLifts(saved);
       // Push the fresh profile into AuthContext so the sidebar name/initials
       // update live without a reload.
       void refreshProfile();
@@ -298,6 +413,17 @@ function PerformanceProfileCard() {
       const msg = (e as ApiError)?.message;
       setError(typeof msg === "string" ? msg : "Couldn't save — check your entries.");
       setSave("error");
+    }
+  }
+
+  // After a strength report is saved, the projection changed server-side: read it back.
+  async function reloadLifts() {
+    if (!token) return;
+    try {
+      setLifts(await api.getProfile(token));
+      void refreshProfile();
+    } catch {
+      // The report was saved; the displayed value catches up on the next load.
     }
   }
 
@@ -354,11 +480,9 @@ function PerformanceProfileCard() {
           {numInput("session_duration_minutes", "Session length (min)", "e.g. 60")}
         </div>
 
-        <div className="mt-1 grid grid-cols-3 gap-4">
-          {numInput("squat_1rm_kg", "Squat 1RM (kg)", "—")}
-          {numInput("bench_1rm_kg", "Bench 1RM (kg)", "—")}
-          {numInput("deadlift_1rm_kg", "Deadlift 1RM (kg)", "—")}
-        </div>
+        {token && (
+          <StrengthLiftsEditor token={token} values={lifts} onSaved={() => void reloadLifts()} />
+        )}
 
         <label className="block max-w-[220px]">
           <span className="text-[12px] font-medium leading-none text-mute">5K time (mm:ss)</span>
@@ -586,6 +710,187 @@ function WearableConnectCard() {
   );
 }
 
+// ---- Equipment: what the athlete has, and what they prefer (S-C) -------------------
+//
+// Two different things, kept apart on purpose (docs/PRESCRIBER_LOGIC.md): `equipment` is what
+// the athlete HAS and filters exercise selection; `equipment_preference` is a tie-break among
+// exercises they can already do and can neither add nor remove one. "What you have" has three
+// stored states: not set ([] — nothing is filtered), bodyweight only (["bodyweight"]), or a
+// list of equipment tags.
+
+/** Equipment tags the catalog actually requires (app/data/exercise_bulk.py, seed_exercises.py). */
+const EQUIPMENT_TAGS: { tag: string; label: string }[] = [
+  { tag: "barbell", label: "Barbell" },
+  { tag: "dumbbells", label: "Dumbbells" },
+  { tag: "kettlebell", label: "Kettlebells" },
+  { tag: "machine", label: "Machines" },
+  { tag: "cable", label: "Cable machine" },
+  { tag: "pullup_bar", label: "Pull-up bar" },
+  { tag: "box", label: "Plyo box" },
+  { tag: "rings", label: "Rings" },
+  { tag: "parallettes", label: "Parallettes" },
+  { tag: "jump_rope", label: "Jump rope" },
+  { tag: "rower", label: "Rower" },
+  { tag: "bike", label: "Bike" },
+  { tag: "sled", label: "Sled" },
+];
+
+const PREFERENCE_OPTIONS: { value: string; label: string }[] = [
+  { value: "barbell", label: "Barbells" },
+  { value: "dumbbell", label: "Dumbbells" },
+  { value: "machine", label: "Machines" },
+];
+
+type EquipmentMode = "unset" | "bodyweight" | "equipment";
+
+const BODYWEIGHT_ONLY_TAGS = new Set(["bodyweight", "none"]);
+
+function equipmentModeOf(list: string[]): EquipmentMode {
+  const tags = list.map((t) => t.trim().toLowerCase()).filter(Boolean);
+  if (tags.length === 0) return "unset";
+  if (tags.every((t) => BODYWEIGHT_ONLY_TAGS.has(t))) return "bodyweight";
+  return "equipment";
+}
+
+const MODE_OPTIONS: { mode: EquipmentMode; label: string; help: string }[] = [
+  { mode: "unset", label: "Not set", help: "Not set: any exercise may appear in your sessions." },
+  { mode: "bodyweight", label: "Bodyweight only", help: "Only exercises that need no equipment." },
+  { mode: "equipment", label: "I have equipment", help: "Only exercises you can do with what you select." },
+];
+
+const chipCls = (active: boolean) =>
+  cn(
+    "rounded-[9px] border px-3 py-[7px] text-[12px] font-semibold leading-none",
+    active ? "border-ac/45 bg-ac/[0.12] text-ac" : "border-white/10 bg-panel text-mute",
+  );
+
+function EquipmentCard() {
+  const auth = useAuth();
+  const [equipment, setEquipment] = useState<string[] | null>(null);
+  const [preference, setPreference] = useState<string[] | null>(null);
+  const [mode, setMode] = useState<EquipmentMode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const currentEquipment = equipment ?? auth.profile?.equipment ?? [];
+  const currentPreference = preference ?? auth.profile?.equipment_preference ?? [];
+  const currentMode = mode ?? equipmentModeOf(currentEquipment);
+  const ownedTags = currentMode === "equipment" ? currentEquipment.filter((t) => !BODYWEIGHT_ONLY_TAGS.has(t)) : [];
+
+  async function save(patch: ProfileUpdate) {
+    if (!auth.token) return;
+    setError(null);
+    try {
+      const next = await api.updateProfile(patch, auth.token);
+      setEquipment(next.equipment ?? []);
+      setPreference(next.equipment_preference ?? []);
+      void auth.refreshProfile();
+    } catch {
+      setError("Couldn't save your equipment. Try again.");
+    }
+  }
+
+  function chooseMode(next: EquipmentMode) {
+    setMode(next);
+    if (next === "unset") {
+      setEquipment([]);
+      void save({ equipment: [] });
+    } else if (next === "bodyweight") {
+      setEquipment(["bodyweight"]);
+      void save({ equipment: ["bodyweight"] });
+    }
+    // "I have equipment" saves on the first tag: an empty list would mean "not set".
+  }
+
+  function toggleTag(tag: string) {
+    const next = ownedTags.includes(tag) ? ownedTags.filter((t) => t !== tag) : [...ownedTags, tag];
+    if (next.length === 0) {
+      setMode("unset");
+      setEquipment([]);
+      void save({ equipment: [] });
+      return;
+    }
+    setMode("equipment");
+    setEquipment(next);
+    void save({ equipment: next });
+  }
+
+  function togglePreference(value: string) {
+    const next = currentPreference.includes(value)
+      ? currentPreference.filter((v) => v !== value)
+      : PREFERENCE_OPTIONS.map((o) => o.value).filter((v) => v === value || currentPreference.includes(v));
+    setPreference(next);
+    void save({ equipment_preference: next });
+  }
+
+  const modeHelp = MODE_OPTIONS.find((o) => o.mode === currentMode)?.help ?? "";
+
+  return (
+    <Card className="p-[22px]">
+      <SectionLabel className="mb-4">Equipment</SectionLabel>
+      <div className="flex flex-col gap-5">
+        <div>
+          <span className="text-[12px] font-medium leading-none text-mute">What you have</span>
+          <div role="radiogroup" aria-label="What you have" className="mt-2 flex flex-wrap gap-2">
+            {MODE_OPTIONS.map((o) => (
+              <button
+                key={o.mode}
+                type="button"
+                role="radio"
+                aria-checked={currentMode === o.mode}
+                onClick={() => chooseMode(o.mode)}
+                className={chipCls(currentMode === o.mode)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <span className="mt-2 block text-[11px] font-medium leading-[1.4] text-faint">{modeHelp}</span>
+          {currentMode === "equipment" && (
+            <div role="group" aria-label="Equipment you have" className="mt-3 flex flex-wrap gap-2">
+              {EQUIPMENT_TAGS.map((t) => (
+                <button
+                  key={t.tag}
+                  type="button"
+                  aria-pressed={ownedTags.includes(t.tag)}
+                  onClick={() => toggleTag(t.tag)}
+                  className={chipCls(ownedTags.includes(t.tag))}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <span className="text-[12px] font-medium leading-none text-mute">Preferred equipment</span>
+          <div role="group" aria-label="Preferred equipment" className="mt-2 flex flex-wrap items-center gap-2">
+            {PREFERENCE_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                aria-pressed={currentPreference.includes(o.value)}
+                onClick={() => togglePreference(o.value)}
+                className={chipCls(currentPreference.includes(o.value))}
+              >
+                {o.label}
+              </button>
+            ))}
+            {currentPreference.length === 0 && (
+              <span className="text-[12px] font-medium leading-none text-dim">No preference</span>
+            )}
+          </div>
+          <span className="mt-2 block text-[11px] font-medium leading-[1.4] text-faint">
+            A tie-breaker between exercises you can already do. It never adds or removes one. Machines include cable machines.
+          </span>
+        </div>
+
+        {error && <div role="alert" className="text-[11.5px] font-medium leading-none text-hot">{error}</div>}
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsScreen() {
   const { state, actions } = usePerfLab();
   const { resolvedTheme, setTheme } = useTheme();
@@ -669,6 +974,8 @@ export function SettingsScreen() {
           </div>
         </div>
       </Card>
+
+      <EquipmentCard />
 
       <Card className="p-[22px]">
         <SectionLabel className="mb-[6px]">Theme</SectionLabel>

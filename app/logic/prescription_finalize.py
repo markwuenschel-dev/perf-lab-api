@@ -42,7 +42,10 @@ from app.schemas.training_goals import TrainingGoal
 
 logger = logging.getLogger(__name__)
 
-NO_DRIVERS_LABEL = "state within normal twin bands for prescription"
+#: The driver list when no rule fired. Says only what is true: none of the fatigue and tissue
+#: rules adjusted anything. It does not claim the state is normal or adequately measured —
+#: measurement gaps are reported separately (``confidence``, ``measurement_recommendations``).
+NO_DRIVERS_LABEL = "no additional adjustment from the available fatigue and tissue signals"
 MAX_DRIVERS = 8
 
 

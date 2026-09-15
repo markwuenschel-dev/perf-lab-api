@@ -540,7 +540,17 @@ function InsightsCard({
 
   const today = resourceData(todayRes);
   const why = (today ? today.prescription : null)?.why ?? null;
-  (why?.constraints_applied ?? []).forEach((c) => insights.push({ dot: COLORS.warn, title: "Constraint applied", desc: c }));
+  // Labels, never engine codes (app/logic/constraint_labels.py). Bookkeeping stays hidden, and
+  // advisories are already covered by `warnings` below.
+  (why?.constraint_details ?? [])
+    .filter((d) => d.athlete_visible && d.group !== "advisory" && d.group !== "internal")
+    .forEach((d) =>
+      insights.push({
+        dot: d.group === "safety" ? COLORS.hot : COLORS.warn,
+        title: d.group === "safety" ? "Safety adjustment" : "Plan adjustment",
+        desc: d.label,
+      }),
+    );
   (why?.warnings ?? []).forEach((wn) => insights.push({ dot: COLORS.hot, title: "Heads up", desc: wn }));
 
   return (

@@ -1,5 +1,6 @@
 """Workout prescription + structured explainability (backward compatible)."""
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -158,6 +159,41 @@ class ExpectedOutcome(BaseModel):
     delta: float = Field(description="predicted - current. Positive means the session adds load.")
 
 
+#: How an athlete-facing explanation entry is grouped. ``internal`` entries are engine
+#: bookkeeping (an experiment arm, a shadow-only assessment, a rule a template merely checks)
+#: and are never shown; everything else describes something that shaped, or was noted for,
+#: this session.
+AppliedConstraintGroup = Literal[
+    "safety",
+    "plan_rule",
+    "block",
+    "objective",
+    "adherence",
+    "weak_point",
+    "state",
+    "equipment",
+    "advisory",
+    "internal",
+    "other",
+]
+
+
+class AppliedConstraint(BaseModel):
+    """One ``constraints_applied`` code with the words an athlete reads for it.
+
+    Built by ``app.logic.constraint_labels.describe_constraints`` from the same list, so the
+    code and its label cannot drift apart. A code the labeller does not recognise gets an
+    honest fallback label rather than a guess made from its punctuation.
+    """
+
+    code: str = Field(description="The engine code, exactly as in constraints_applied.")
+    label: str = Field(description="What the athlete reads.")
+    group: AppliedConstraintGroup = Field(description="Where the entry belongs when grouped.")
+    athlete_visible: bool = Field(
+        description="False for engine bookkeeping that did not shape the session."
+    )
+
+
 class PrescriptionExplanation(BaseModel):
     """Why this session — state drivers, constraints, sources."""
 
@@ -212,6 +248,13 @@ class PrescriptionExplanation(BaseModel):
     )
     goal_alignment: str = ""
     constraints_applied: list[str] = Field(default_factory=list)
+    constraint_details: list[AppliedConstraint] = Field(
+        default_factory=lambda: [],
+        description=(
+            "``constraints_applied`` with athlete-facing labels, one entry per code in the same "
+            "order. Empty for prescriptions stored before labels existed."
+        ),
+    )
     source_alignment: list[str] = Field(
         default_factory=list,
         description="Human-readable: templates + primitives + models",
@@ -236,6 +279,52 @@ class PrescriptionExplanation(BaseModel):
     )
 
 
+#: Why a loaded exercise has no suggested weight, in the athlete's terms. The values are
+#: ``app.logic.prescription_evidence.EXPLAIN_*`` (pinned equal by
+#: ``tests/test_load_explanation.py``); they describe prescription ELIGIBILITY, never a
+#: verdict that the athlete became weaker.
+LoadExplanationReason = Literal[
+    "stale",
+    "missing_performance_date",
+    "estimate_not_used",
+    "set_not_qualifying",
+    "no_evidence",
+    "not_qualifying",
+]
+
+
+class LoadExplanation(BaseModel):
+    """Whether this exercise carries a suggested weight, and if not, why (S2, N1).
+
+    * ``recommended`` — a qualifying e1RM sized the load.
+    * ``no_qualifying_evidence`` — the lift supports a weight, but nothing qualified at
+      ``evaluated_at``; ``reason`` says which kind of evidence came closest.
+    * ``not_supported`` — an externally loaded exercise with no e1RM benchmark, so no
+      athlete evidence could size it.
+
+    Unloaded, uncatalogued exercises carry no explanation at all. It is persisted with the
+    served prescription, so what the athlete was shown can be read back later.
+    """
+
+    status: Literal["recommended", "no_qualifying_evidence", "not_supported"]
+    reason: LoadExplanationReason | None = Field(
+        default=None, description="Set only when status is no_qualifying_evidence."
+    )
+    benchmark_code: str | None = Field(
+        default=None, description="The e1RM benchmark the lift was evaluated against."
+    )
+    evaluated_at: datetime = Field(
+        description="The instant evidence eligibility was evaluated (UTC)."
+    )
+    evidence_performed_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When the selected evidence (recommended) or the deterministic explanatory "
+            "evidence (no_qualifying_evidence) was performed, if known (UTC)."
+        ),
+    )
+
+
 class ExercisePrescription(BaseModel):
     """A single prescribed exercise within a session."""
     name: str
@@ -243,6 +332,10 @@ class ExercisePrescription(BaseModel):
     reps: str | None = None
     load_note: str | None = None
     weak_point_tags: list[str] = Field(default_factory=list)
+    load_explanation: LoadExplanation | None = Field(
+        default=None,
+        description="Why this exercise does or does not carry a suggested weight.",
+    )
 
     # ADR-0045: strength prescriptions speak in load. When the athlete has a current
     # e1RM for this lift, the service resolves %e1RM → a suggested working kg against
@@ -284,5 +377,8 @@ class WorkoutPrescription(BaseModel):
         seam (service + planning route) writes it, and state_service reads it back
         by string key (ADR-0031). Keeping it here means a new field flows to all
         three sites from one place.
+
+        JSON mode, because the column is JSONB written through plain ``json.dumps``: a
+        ``datetime`` (``LoadExplanation.evaluated_at``) must arrive as an ISO string.
         """
-        return self.model_dump()
+        return self.model_dump(mode="json")

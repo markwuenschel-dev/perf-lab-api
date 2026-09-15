@@ -43,6 +43,12 @@ class BenchmarkDefinition(Base):
         Boolean, default=False, nullable=False
     )
 
+    # What the benchmark measures (``description``) and how to measure it
+    # (``protocol_summary``) are separate on purpose, and both are CODE-OWNED:
+    # ``app.scripts.seed_benchmarks.BENCHMARK_EXPLANATIONS`` is the source, and the seed's
+    # enrichment pass rewrites exactly these two columns on every catalog seed. Change the
+    # text there, never in the database.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     protocol_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     standardization_rules: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True

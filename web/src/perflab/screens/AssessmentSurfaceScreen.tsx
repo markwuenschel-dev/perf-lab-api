@@ -10,16 +10,26 @@ import {
   getAssessmentSurface,
   getOnboardingState,
   submitBenchmarkObservation,
+  submitStrengthEvidence,
 } from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
+import { isImperial, unitLabel } from "@/lib/units";
 import type { AssessmentBenchmarkCard, ApiError, OnboardingStateResponse } from "@/types";
 import { Card, Pill, ScreenHeader, SectionLabel } from "../ui";
-import { BAND } from "../prescription/axes";
+import { InfoTip, type InfoSection } from "../InfoTip";
+import { axisLabel, BAND } from "../prescription/axes";
 import { MeasurementRecommendations } from "../prescription/MeasurementRecommendations";
 import { ResourceState } from "../ResourceState";
 import { assertNever, resourceData } from "../resource";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
+import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import {
+  EMPTY_STRENGTH_FORM,
+  strengthEvidenceBody,
+  type StrengthForm,
+  type WeightUnit,
+} from "./strengthEvidenceBody";
 
 type Mode = "onramp" | "retest";
 
@@ -31,9 +41,33 @@ const inputCls =
 // rather than renamed at the call site to keep this diff about the move.
 const CONF = BAND;
 
+// What the certainty band on a card means. The bands come from live per-axis variance only
+// (app/logic/confidence_presentation.py): a benchmark shrinks it, an experience-based starting
+// estimate leaves it provisional, and an unseeded axis is insufficient.
+const CONFIDENCE_HELP: InfoSection[] = [
+  { text: "How certain the twin currently is about the axes this benchmark measures." },
+  { heading: BAND.established.label, text: "Low uncertainty, as after a benchmark has measured it." },
+  { heading: BAND.provisional.label, text: "Still uncertain, as with an experience-based starting estimate." },
+  { heading: BAND.insufficient.label, text: "Very uncertain: there is not enough evidence yet." },
+];
+
+/** A card's help: what it measures and how to measure it, kept as separate sections. */
+function benchmarkHelp(card: AssessmentBenchmarkCard, unit: string): InfoSection[] {
+  return [
+    { heading: "What it measures", text: card.description ?? "No description yet." },
+    { heading: "How to measure", text: card.protocol_summary ?? "No measurement instructions yet." },
+    { heading: "Unit", text: unitLabel(unit) },
+    ...(card.measures_axes.length > 0
+      ? [{ heading: "Axes it measures", text: card.measures_axes.map(axisLabel).join(", ") }]
+      : []),
+  ];
+}
+
 export function AssessmentSurfaceScreen() {
   const { token } = useAuth();
-  const { actions } = usePerfLab();
+  const { state, actions } = usePerfLab();
+  // Strength reports are typed in the athlete's selected unit; the request carries kilograms.
+  const unit: WeightUnit = isImperial(state.settings.units) ? "lb" : "kg";
   const [mode, setMode] = useState<Mode>("onramp");
   const [refreshKey, setRefreshKey] = useState(0);
   const surface = useAuthedResource(
@@ -119,6 +153,7 @@ export function AssessmentSurfaceScreen() {
                         mode={mode}
                         recommended={recommended.has(card.code)}
                         token={token}
+                        unit={unit}
                         onSubmitted={() => setRefreshKey((k) => k + 1)}
                       />
                     ))}
@@ -222,21 +257,50 @@ function BenchmarkCard({
   mode,
   recommended,
   token,
+  unit,
   onSubmitted,
 }: {
   card: AssessmentBenchmarkCard;
   mode: Mode;
   recommended: boolean;
   token: string | null;
+  /** The unit a strength report is typed in. */
+  unit: WeightUnit;
   onSubmitted: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
+  const [strength, setStrength] = useState<StrengthForm>(EMPTY_STRENGTH_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const conf = card.confidence_status ? CONF[card.confidence_status] : null;
+  // Canonical-lift e1RM cards report characterized evidence (S2), never a bare number.
+  const isStrength = card.strength_evidence_entry === true;
+  const shownUnit = isStrength ? unit : card.unit;
+
+  async function submitStrength() {
+    if (!token) return;
+    const built = strengthEvidenceBody(card.code, mode, strength, { unit });
+    if (!built.ok) {
+      setError(built.error);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await submitStrengthEvidence(built.body, token);
+      setOpen(false);
+      setStrength(EMPTY_STRENGTH_FORM);
+      onSubmitted();
+    } catch (e) {
+      setError((e as ApiError)?.message ?? "Couldn't save that result.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit() {
+    if (isStrength) return submitStrength();
     if (!token) return;
     const raw = Number(value);
     if (!Number.isFinite(raw)) {
@@ -272,6 +336,7 @@ function BenchmarkCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-[14px] font-semibold leading-none text-ink">{card.name}</span>
+            <InfoTip label={`About ${card.name}`} sections={benchmarkHelp(card, shownUnit)} />
             {recommended && (
               <span className="flex-none rounded-full border border-ac/30 bg-ac/[0.1] px-2 py-[3px] text-[9.5px] font-semibold uppercase leading-none tracking-[0.08em] text-ac">
                 recommended
@@ -279,33 +344,36 @@ function BenchmarkCard({
             )}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-[6px] text-[11px] font-medium leading-none text-dim">
-            <span className="font-mono">{card.unit}</span>
+            <span className="font-mono">{unitLabel(shownUnit)}</span>
             {card.measures_axes.length > 0 && (
-              <span>· measures {card.measures_axes.join(", ")}</span>
+              <span>· measures {card.measures_axes.map(axisLabel).join(", ")}</span>
             )}
           </div>
         </div>
         {conf && (
-          <span className={`flex-none rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${conf.cls}`}>
-            {conf.label}
+          <span className="flex flex-none items-center gap-1">
+            <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${conf.cls}`}>
+              {conf.label}
+            </span>
+            <InfoTip label="About this confidence label" sections={CONFIDENCE_HELP} />
           </span>
         )}
       </div>
 
-      {card.protocol_summary && (
-        <div className="mt-3 text-[11.5px] font-medium leading-[1.5] text-mute">{card.protocol_summary}</div>
-      )}
-
       {open ? (
         <div className="mt-3 flex flex-col gap-2">
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            inputMode="decimal"
-            placeholder={`Result in ${card.unit}`}
-            className={inputCls}
-            autoFocus
-          />
+          {isStrength ? (
+            <StrengthEvidenceFields form={strength} onChange={setStrength} unit={unit} />
+          ) : (
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              inputMode="decimal"
+              placeholder={`Result in ${unitLabel(card.unit)}`}
+              className={inputCls}
+              autoFocus
+            />
+          )}
           {error && <div className="text-[11px] font-medium leading-none text-hot">{error}</div>}
           <div className="flex gap-2">
             <button
@@ -334,3 +402,4 @@ function BenchmarkCard({
     </Card>
   );
 }
+

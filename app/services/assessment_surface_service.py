@@ -27,7 +27,7 @@ from app.schemas.assessment import (
     AssessmentDomainGroup,
     AssessmentSurfaceRead,
 )
-from app.services import benchmark_service, state_service
+from app.services import benchmark_service, state_service, strength_evidence_service
 
 UTILITY_MODEL_VERSION = "information_gain_proxy_v1"
 SURFACE_POLICY_VERSION = "assessment_surface_v1"
@@ -147,6 +147,9 @@ async def build_assessment_surface(
         else None
     )
     last_obs = await _last_observed_by_code(db, user_id)
+    # Canonical-lift e1RM cards take characterized strength evidence (method + performance
+    # date) through POST /benchmarks/strength-evidence rather than a bare number (S2).
+    strength_codes = await strength_evidence_service.canonical_e1rm_codes(db)
 
     definitions = await benchmark_service.list_definitions(db)
     grouped: dict[str, list[tuple[AssessmentBenchmarkCard, float]]] = {}
@@ -165,6 +168,7 @@ async def build_assessment_surface(
             domain_lenses_source=source,
             metric_type=d.metric_type,
             unit=d.unit,
+            description=d.description,
             protocol_summary=d.protocol_summary,
             measures_axes=measures,
             confidence_status=_confidence_status(measures, variance_by_axis),
@@ -174,6 +178,7 @@ async def build_assessment_surface(
             recommend_rank=None,
             utility=util,
             utility_model_version=UTILITY_MODEL_VERSION,
+            strength_evidence_entry=d.code in strength_codes,
         )
         grouped.setdefault(d.domain, []).append((card, util))
 

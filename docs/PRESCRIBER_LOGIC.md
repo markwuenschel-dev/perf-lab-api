@@ -190,7 +190,11 @@ Fields:
 
 - `state_drivers`
 - `goal_alignment`
-- `constraints_applied`
+- `constraints_applied` — engine codes (`block:phase=…`, `equipment:unconfigured`, validator messages)
+- `constraint_details` — one entry per `constraints_applied` code with the athlete-facing label,
+  group and `athlete_visible`, built by `app/logic/constraint_labels.py`. Clients render these
+  labels and never parse codes. Every emitter family has a reviewed label
+  (`tests/test_constraint_labels.py`); an unrecognised code gets an honest fallback.
 - `source_alignment`
 - `template_id`
 - `prescription_branch`
@@ -453,7 +457,12 @@ The first explains the model's decision. The second does not.
 3. Letting weak points override safety or block identity.
 4. Picking exercises before deciding session intent.
 5. Giving opaque rationales.
-6. Treating equipment as a preference rather than a hard implementation constraint.
+6. Treating equipment as a preference rather than a hard implementation constraint. Equipment the
+   athlete HAS (`AthleteProfile.equipment`) filters selection — for primary slots and appended
+   accessories alike; `[]` means not set (no filter) and `["bodyweight"]` means bodyweight only.
+   A separate `equipment_preference` (barbell | dumbbell | machine, machines include cables) is
+   only a tie-break after weak-point matches: it can neither exclude nor admit an exercise, and
+   the explanation reports how many choices it actually changed.
 7. Ignoring benchmark/KPI context when it is available.
 
 ## Current Limitations

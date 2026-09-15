@@ -156,14 +156,16 @@ Displays the current prescription.
 - Planning context panel when `todaySession` exists (date/category/modality + deload/benchmark badges)
 - **Exercise list** (`exercises[]`) — only rendered if non-empty. Shows name,
   sets×reps, and load note per exercise
-- **"Why this session?" details** (expandable `<details>`) containing:
-  - `why.state_drivers` — comma-separated
-  - `why.goal_alignment` — plain text
-  - `why.constraints_applied` rendered as grouped chips for:
-    - `weak_point:*`
-    - `equipment:*`
-    - `block:deload`, `block:benchmark`
-  - `why.warnings` — amber warning text
+- **"Why this session"** (`prescription/WhyThisSession.tsx`, shared by Planning and Twin):
+  - Lead: "Built for {goal_alignment}." With state present and no driver firing, "No additional
+    adjustment from the available fatigue and tissue signals."; firing drivers render as
+    `state_evidence` rows under "Adjusted for". Unmeasured capacity axes are listed separately.
+  - "What shaped this session": `why.constraint_details` labels (never raw
+    `constraints_applied` codes), safety first; `athlete_visible: false` entries are hidden.
+    A prescription stored before labels existed shows one neutral line instead of codes.
+  - "Noted, not applied": advisory validator entries.
+  - "How sure the twin is" (collapsed `<details>`): least certain axis, then one row per band, and
+    the families with no uncertainty estimate.
 
 **Non-obvious:** The `exercises` list comes from the backend prescriber. It will
 be empty until the prescriber's exercise selection step is more fully wired.

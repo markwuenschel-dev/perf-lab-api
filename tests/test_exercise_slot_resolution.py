@@ -17,6 +17,7 @@ from __future__ import annotations
 from app.logic.exercise_slot import (
     CatalogExercise,
     ExerciseSlot,
+    preferred_load_types,
     resolve_slot,
     resolve_slots,
 )
@@ -176,3 +177,76 @@ def test_an_unfillable_slot_reports_why() -> None:
     assert results[0].chosen is not None
     assert results[1].chosen is None
     assert "handstand_walk" in (results[1].unmet_reason or "")
+
+
+# ---------------------------------------------------------------------------
+# Equipment preference (S-C): a tie-break that can neither exclude nor admit
+# ---------------------------------------------------------------------------
+
+PREFERENCE_CATALOG = [
+    _ex("Barbell Row", movement_pattern="pull_horizontal", pattern_family="row", skill_demand=0.3),
+    _ex("Dumbbell Row", movement_pattern="pull_horizontal", pattern_family="row", load_type="dumbbell",
+        equipment_required=("dumbbells",), skill_demand=0.4),
+    _ex("Cable Row", movement_pattern="pull_horizontal", pattern_family="row", load_type="cable",
+        equipment_required=("cable",), skill_demand=0.5),
+    _ex("Targeted Row", movement_pattern="pull_horizontal", pattern_family="row", skill_demand=0.9,
+        weak_point_tags=("posterior_chain",)),
+]
+ROW = ExerciseSlot(sets="3", reps="10", movement_pattern="pull_horizontal")
+
+
+def test_a_preference_breaks_the_tie_and_records_that_it_did() -> None:
+    plain = resolve_slot(ROW, PREFERENCE_CATALOG)
+    preferred = resolve_slot(ROW, PREFERENCE_CATALOG, preferred_load_types=preferred_load_types(["dumbbell"]))
+
+    assert plain.chosen is not None and plain.chosen.name == "Barbell Row"  # simplest
+    assert preferred.chosen is not None and preferred.chosen.name == "Dumbbell Row"
+    assert preferred.preference_changed is True
+    assert plain.preference_changed is False
+
+
+def test_machines_include_cables() -> None:
+    res = resolve_slot(ROW, PREFERENCE_CATALOG, preferred_load_types=preferred_load_types(["machine"]))
+    assert res.chosen is not None and res.chosen.name == "Cable Row"
+
+
+def test_a_preference_never_admits_an_exercise_the_athlete_cannot_do() -> None:
+    """Preferring dumbbells with only a barbell must still yield barbell work — not a dumbbell row."""
+    res = resolve_slot(
+        ROW,
+        PREFERENCE_CATALOG,
+        available_equipment=frozenset({"barbell"}),
+        preferred_load_types=preferred_load_types(["dumbbell"]),
+    )
+    assert res.chosen is not None and res.chosen.load_type == "barbell"
+    assert res.preference_changed is False
+
+
+def test_a_preference_never_excludes_the_only_option() -> None:
+    res = resolve_slot(
+        ROW,
+        [e for e in PREFERENCE_CATALOG if e.load_type == "barbell"],
+        preferred_load_types=preferred_load_types(["machine"]),
+    )
+    assert res.chosen is not None and res.preference_changed is False
+
+
+def test_a_weak_point_still_outranks_a_preference() -> None:
+    res = resolve_slot(
+        ROW,
+        PREFERENCE_CATALOG,
+        weak_point_tags=frozenset({"posterior_chain"}),
+        preferred_load_types=preferred_load_types(["dumbbell"]),
+    )
+    assert res.chosen is not None and res.chosen.name == "Targeted Row"
+
+
+def test_a_pinned_lift_ignores_the_preference() -> None:
+    slot = ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat")
+    res = resolve_slot(slot, CATALOG, preferred_load_types=preferred_load_types(["dumbbell", "machine"]))
+    assert res.chosen is not None and res.chosen.name == "Back Squat"
+
+
+def test_unknown_preference_values_prefer_nothing() -> None:
+    assert preferred_load_types(["kettlebell", ""]) == frozenset()
+    assert preferred_load_types(None) == frozenset()
