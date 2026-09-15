@@ -2,13 +2,25 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
-import { getNextSession, listExercises, logWorkout, simulateDose } from "@/api/perfLabClient";
+import {
+  getNextSession,
+  listExercises,
+  listPlannedSessions,
+  logWorkout,
+  simulateDose,
+} from "@/api/perfLabClient";
 import type { ApiError } from "@/types";
 import { usePerfLab } from "../store";
 import { MetricBar } from "../ui";
 import { COLORS, DOSE_NAMES, doseBarColor, PRESETS, projectLogDose } from "../sim";
 import { SetBuilder } from "./SetBuilder";
 import { deriveModality, groupsToSets, type SetGroup } from "./setBuilderLogic";
+import {
+  exercisesFromStoredPrescription,
+  isoLocalDate,
+  pickTodaysPendingSession,
+  plannedGroup,
+} from "./prescriptionPrefill";
 // #199: the request body is built in its own fixture-free module so the static
 // reachability guard (workoutLogBoundary.test.ts) can root there. This file cannot be
 // a root — it value-imports the fixture module `../sim` for its preview chrome below.
@@ -45,34 +57,41 @@ export function LogWorkoutModal() {
   const setsKey = JSON.stringify(groupsToSets(sets));
   const { sleepQuality, lifeStressInverse } = wellness;
 
-  // On open, best-effort pre-fill from today's prescription so a prescribed lift's
-  // suggested kg (ADR-0045) lands in the log. Resolves each exercise against the
-  // catalog for its load_type. Silent no-op when signed out or nothing is prescribed.
+  // Which planned session the pre-fill came from. The body links it only once the athlete
+  // records one of its exercises (buildWorkoutLog).
+  const [plannedSessionId, setPlannedSessionId] = useState<number | null>(null);
+  const goal = state.settings.goal;
+
+  // On open, best-effort pre-fill from the workout the app is recommending (which one:
+  // prescriptionPrefill.ts). Each exercise arrives as a TARGET the athlete confirms or
+  // overwrites — never as a reading. Silent no-op when signed out or nothing is prescribed.
   useEffect(() => {
     if (!logOpen || !auth.token) return;
+    const token = auth.token;
     let cancelled = false;
     (async () => {
       try {
-        const rx = await getNextSession("hybrid", auth.token!);
-        const prescribed = (rx.exercises ?? []).filter((e) => e.prescribed_load_kg != null);
-        if (!prescribed.length) return;
-        const groups: SetGroup[] = [];
-        let key = Date.now();
-        for (const ex of prescribed) {
-          const matches = await listExercises({ q: ex.name });
-          const cat = matches.find((m) => m.name === ex.name) ?? null;
-          groups.push({
-            key: key++,
-            exercise: cat,
-            freeText: cat ? "" : ex.name,
-            loadType: cat?.load_type ?? "barbell",
-            count: ex.sets ?? 3,
-            reps: parseInt(ex.reps ?? "5") || 5,
-            loadKg: ex.prescribed_load_kg ?? undefined,
-            rpe: ex.rpe_cap ?? undefined,
-          });
-        }
-        if (!cancelled && groups.length) setSets(groups);
+        const today = isoLocalDate(new Date());
+        const sessions = await listPlannedSessions(token, { start_date: today, end_date: today }).catch(
+          () => [],
+        );
+        const pending = pickTodaysPendingSession(sessions, today);
+        let exercises = exercisesFromStoredPrescription(pending?.prescribed_content);
+        if (!exercises.length) exercises = (await getNextSession(goal, token)).exercises ?? [];
+        if (!exercises.length) return;
+        const matches = await Promise.all(
+          exercises.map((ex) =>
+            listExercises({ q: ex.name })
+              .then((found) => found.find((m) => m.name === ex.name) ?? null)
+              .catch(() => null),
+          ),
+        );
+        if (cancelled) return;
+        const base = Date.now();
+        const groups: SetGroup[] = exercises.map((ex, i) => plannedGroup(ex, matches[i], base + i));
+        // Never overwrite anything the athlete started entering while this loaded.
+        setSets((current) => (current.length ? current : groups));
+        setPlannedSessionId(pending?.id ?? null);
       } catch {
         // best-effort — never block the log on a prescription fetch
       }
@@ -80,7 +99,7 @@ export function LogWorkoutModal() {
     return () => {
       cancelled = true;
     };
-  }, [logOpen, auth.token]);
+  }, [logOpen, auth.token, goal]);
 
   // Real D(t) preview from POST /v1/simulate-dose (debounced); falls back to the
   // sim bars while loading or if the call fails. Unauthenticated — works signed out.
@@ -88,6 +107,7 @@ export function LogWorkoutModal() {
     if (!logOpen) {
       setDoseSix(null);
       setSets([]);
+      setPlannedSessionId(null);
       return;
     }
     let cancelled = false;
@@ -139,7 +159,7 @@ export function LogWorkoutModal() {
     setApplying(true);
     setApplyError(null);
     try {
-      const body = buildWorkoutLog(logType, rpe, durationMin, distanceKm, wellness, sets);
+      const body = buildWorkoutLog(logType, rpe, durationMin, distanceKm, wellness, sets, plannedSessionId);
       if (!body) {
         // Unreachable while the button is disabled; kept so this path can never
         // fabricate a reading if a future caller bypasses the gate.
