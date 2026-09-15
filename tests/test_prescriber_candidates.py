@@ -262,7 +262,7 @@ def test_equipment_aware_exercises_fallback_to_bodyweight(catalog_snapshot):
     rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=None,
         catalog=catalog_snapshot,
     )
-    assert [e.name for e in rx.exercises] == ["Tempo Back Squat (3-0-1)", "Push-up", "Split Squat"]
+    assert [e.name for e in rx.exercises] == ["Air Squat", "Push-up", "Lunges"]
     assert any("equipment:fallback_bodyweight" in c for c in (rx.why.constraints_applied if rx.why else []))
 
 
@@ -275,6 +275,54 @@ def test_equipment_aware_exercises_use_available_equipment(catalog_snapshot):
     )
     assert [e.name for e in rx.exercises] == ["Back Squat", "Romanian Deadlift", "Bench Press"]
     assert any("equipment:filtered" in c for c in (rx.why.constraints_applied if rx.why else []))
+
+
+# ---------------------------------------------------------------------------
+# Equipment facts in the explanation (S-A): each code names the path that actually ran
+# ---------------------------------------------------------------------------
+
+def _equipment_codes(rx) -> list[str]:
+    return [c for c in (rx.why.constraints_applied if rx.why else []) if c.startswith("equipment:")]
+
+
+def test_unconfigured_equipment_with_slots_is_not_labelled_bodyweight(catalog_snapshot):
+    """An empty list does not filter, so slot-resolved exercises are not a bodyweight fallback.
+
+    The old label printed "fallback_bodyweight" whenever the list was empty — including for a
+    barbell strength session resolved from the catalog.
+    """
+    rx = recommend_next_session(_healthy_state(), goal="Strength", available_equipment=None,
+        catalog=catalog_snapshot,
+    )
+    assert _equipment_codes(rx) == ["equipment:unconfigured"]
+    assert rx.exercises
+
+
+def test_bodyweight_only_selects_differently_from_unconfigured(catalog_snapshot):
+    """["bodyweight"] is a choice — only movements that need nothing. [] is no choice — no filter."""
+    needs = {
+        ex.name: {e for e in ex.equipment_required if e not in ("bodyweight", "none", "")}
+        for ex in catalog_snapshot
+    }
+    unconfigured = recommend_next_session(_healthy_state(), goal="Strength", available_equipment=[],
+        catalog=catalog_snapshot,
+    )
+    bodyweight = recommend_next_session(_healthy_state(), goal="Strength", available_equipment=["bodyweight"],
+        catalog=catalog_snapshot,
+    )
+    assert _equipment_codes(unconfigured) == ["equipment:unconfigured"]
+    assert _equipment_codes(bodyweight) == ["equipment:bodyweight_only"]
+    assert all(not needs.get(e.name) for e in bodyweight.exercises), [e.name for e in bodyweight.exercises]
+    assert any(needs.get(e.name) for e in unconfigured.exercises), [e.name for e in unconfigured.exercises]
+
+
+def test_bodyweight_fallback_is_labelled_only_when_the_bodyweight_list_was_used(catalog_snapshot):
+    """Configured equipment that matches no equipment-map key really does get the bodyweight list."""
+    s = _state(muscular=70.0)  # hyp_maintenance: no slots, so the equipment map runs
+    rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=["rings"],
+        catalog=catalog_snapshot,
+    )
+    assert _equipment_codes(rx) == ["equipment:fallback_bodyweight"]
 
 
 # ---------------------------------------------------------------------------

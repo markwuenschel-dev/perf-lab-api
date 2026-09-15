@@ -16,6 +16,10 @@ class AssessmentBenchmarkCard(BaseModel):
     domain_lenses_source: str
     metric_type: str
     unit: str
+    # What the benchmark measures, and — separately — how to measure it. Both code-owned
+    # (app.scripts.seed_benchmarks.BENCHMARK_EXPLANATIONS); a protocol that is not established
+    # reads "Measurement protocol not yet defined." rather than invented instructions.
+    description: str | None
     protocol_summary: str | None
     # Capacity axes this benchmark measures (definition.state_targets).
     measures_axes: list[str]
@@ -28,6 +32,10 @@ class AssessmentBenchmarkCard(BaseModel):
     recommend_rank: int | None
     utility: float
     utility_model_version: str
+    # True for a canonical-lift e1RM benchmark: Assess records it as characterized strength
+    # evidence (method + performance date) via POST /benchmarks/strength-evidence rather
+    # than as a bare number (S2).
+    strength_evidence_entry: bool = False
 
 
 class AssessmentDomainGroup(BaseModel):

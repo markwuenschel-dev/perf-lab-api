@@ -33,6 +33,7 @@ import type {
   ReadinessScore,
   StateHistorySnapshotRead,
   StressDose,
+  StrengthEvidenceCreate,
   SyncResult,
   TokenResponse,
   TodaySessionResponse,
@@ -277,18 +278,19 @@ export async function getSimulateProjection(
 }
 
 /**
- * Onboarding: create athlete profile and seed baseline state.
+ * Onboarding: create athlete profile and seed baseline state. The route identifies the
+ * athlete by the bearer token — without it the request is refused, and nothing is saved.
  */
-export async function onboard(request: OnboardRequest): Promise<OnboardResponse> {
+export async function onboard(request: OnboardRequest, token: string): Promise<OnboardResponse> {
   if (!API_V1_BASE) {
     throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   }
   const res = await fetch(`${API_V1_BASE}/onboard`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(request),
   });
-  return handleResponse<OnboardResponse>(res);
+  return handleResponse<OnboardResponse>(res, { sessionOn401: true });
 }
 
 /** The athlete's recent state snapshots, oldest→newest (Twin time-travel, trends).
@@ -585,6 +587,22 @@ export async function submitBenchmarkObservation(
 ): Promise<BenchmarkObservationRead> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const res = await fetch(`${API_V1_BASE}/benchmarks/observations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<BenchmarkObservationRead>(res, { sessionOn401: true });
+}
+
+/** Report a strength observation for a canonical lift from Assess (S2). Build the body
+ *  with `strengthEvidenceBody`: it states what happened, and the server derives the value
+ *  semantics, the estimate, and whether it may size a load. Evidence only — no workout. */
+export async function submitStrengthEvidence(
+  body: StrengthEvidenceCreate,
+  token: string,
+): Promise<BenchmarkObservationRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/benchmarks/strength-evidence`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),

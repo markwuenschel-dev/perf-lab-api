@@ -81,6 +81,14 @@ class WorkoutSetLog(Base):
         nullable=False,
         comment="Heaviest/hardest set of its exercise this session; drives e1RM extraction",
     )
+    # Effort provenance (ADR-0045), persisted so a set can be reprocessed later (S2).
+    # `effort_fidelity` is the label ingest inferred for this set's exercise across the
+    # session — "group_level" when any entry for it was a sets>1 quick-entry, else
+    # "set_level". It records how effort was entered, not whether rpe/rir exist (those are
+    # on the row). `entry_group_id` is the position, within its workout log, of the
+    # submitted entry this row was cloned from: rows from one quick-entry share it.
+    effort_fidelity: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    entry_group_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Bodyweight modifiers
     band: Mapped[str | None] = mapped_column(

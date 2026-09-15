@@ -28,10 +28,27 @@ logic layer keeps its DB-free boundary and the resolution is directly unit-testa
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 #: Equipment an athlete is assumed to have without configuring anything.
 _ALWAYS_AVAILABLE: frozenset[str] = frozenset({"bodyweight", "none", ""})
+
+#: What each ``AthleteProfile.equipment_preference`` value prefers, as catalog ``load_type``s.
+#: "Machines" covers cable machines too; cable *availability* stays its own equipment tag.
+EQUIPMENT_PREFERENCE_LOAD_TYPES: dict[str, frozenset[str]] = {
+    "barbell": frozenset({"barbell"}),
+    "dumbbell": frozenset({"dumbbell"}),
+    "machine": frozenset({"machine", "cable"}),
+}
+
+
+def preferred_load_types(preference: Iterable[str] | None) -> frozenset[str]:
+    """The load types an equipment preference favours. Unknown values favour nothing."""
+    out: set[str] = set()
+    for value in preference or ():
+        out |= EQUIPMENT_PREFERENCE_LOAD_TYPES.get(value.strip().lower(), frozenset())
+    return frozenset(out)
 
 
 @dataclass(frozen=True)
@@ -140,9 +157,13 @@ class SlotResolution:
     #: Set when nothing satisfied the slot — carried so the caller can report a real reason
     #: rather than silently dropping the movement from the session.
     unmet_reason: str | None = None
+    #: True when an equipment preference picked a different movement than the same pool would
+    #: have yielded with no preference. Recorded so "the preference changed this" is a measured
+    #: fact, not a description of intent.
+    preference_changed: bool = False
 
 
-def _equipment_available(
+def equipment_available(
     exercise: CatalogExercise, available: frozenset[str] | None
 ) -> bool:
     """True when the athlete can perform this movement.
@@ -179,24 +200,31 @@ def _matches(slot: ExerciseSlot, ex: CatalogExercise) -> bool:
 
 
 def _rank(
-    ex: CatalogExercise, slot: ExerciseSlot, weak_point_tags: frozenset[str]
-) -> tuple[float, float, str]:
+    ex: CatalogExercise,
+    slot: ExerciseSlot,
+    weak_point_tags: frozenset[str],
+    preferred: frozenset[str] = frozenset(),
+) -> tuple[float, int, float, str]:
     """Deterministic ordering key. Lower sorts first.
 
     Bias toward movements that address a flagged deficit — that is the whole reason
-    `Exercise.weak_point_tags` exists, and until now selection never read it. Ties break on
-    skill (simpler first) and then name, so the same athlete and catalog always yield the same
-    session; a resolver that shuffled would make every prescriber test flaky.
+    `Exercise.weak_point_tags` exists, and until now selection never read it. An equipment
+    preference is the next tie-break: after weak-point and slot-preference matches, before
+    skill. It only ORDERS movements that already satisfy the slot and the athlete's equipment,
+    so it can neither exclude nor admit one — which says nothing about how often it decides.
+    Remaining ties break on skill (simpler first) and then name, so the same athlete and catalog
+    always yield the same session; a resolver that shuffled would make every prescriber test flaky.
     """
     tags = {t.lower() for t in ex.weak_point_tags}
     weak_hits = len(tags & {t.lower() for t in weak_point_tags})
     prefer_hits = len(tags & {t.lower() for t in slot.prefer_tags})
+    not_preferred = 0 if ex.load_type in preferred else 1
     skill = (
         abs(ex.skill_demand - slot.skill_target)
         if slot.skill_target is not None
         else ex.skill_demand
     )
-    return (-(weak_hits * 2 + prefer_hits), skill, ex.name)
+    return (-(weak_hits * 2 + prefer_hits), not_preferred, skill, ex.name)
 
 
 def resolve_slot(
@@ -206,6 +234,7 @@ def resolve_slot(
     available_equipment: frozenset[str] | None = None,
     weak_point_tags: frozenset[str] = frozenset(),
     already_used: frozenset[str] = frozenset(),
+    preferred_load_types: frozenset[str] = frozenset(),
 ) -> SlotResolution:
     """Pick the best catalog movement satisfying ``slot``, or report why none did.
 
@@ -216,7 +245,7 @@ def resolve_slot(
     if not matching:
         return SlotResolution(slot, None, 0, f"no catalog movement matches {slot.describe()}")
 
-    afforded = [ex for ex in matching if _equipment_available(ex, available_equipment)]
+    afforded = [ex for ex in matching if equipment_available(ex, available_equipment)]
     if not afforded:
         return SlotResolution(
             slot, None, len(matching), f"{slot.describe()} needs equipment the athlete lacks"
@@ -228,8 +257,13 @@ def resolve_slot(
         # movement, so fall back rather than return nothing.
         pool = afforded
 
-    pool.sort(key=lambda ex: _rank(ex, slot, weak_point_tags))
-    return SlotResolution(slot, pool[0], len(afforded))
+    pool.sort(key=lambda ex: _rank(ex, slot, weak_point_tags, preferred_load_types))
+    chosen = pool[0]
+    changed = False
+    if preferred_load_types:
+        without_preference = min(pool, key=lambda ex: _rank(ex, slot, weak_point_tags))
+        changed = without_preference.name != chosen.name
+    return SlotResolution(slot, chosen, len(afforded), preference_changed=changed)
 
 
 def resolve_slots(
@@ -238,6 +272,7 @@ def resolve_slots(
     *,
     available_equipment: frozenset[str] | None = None,
     weak_point_tags: frozenset[str] = frozenset(),
+    preferred_load_types: frozenset[str] = frozenset(),
 ) -> list[SlotResolution]:
     """Resolve a session's slots in order, so later slots can avoid earlier picks."""
     used: set[str] = set()
@@ -249,6 +284,7 @@ def resolve_slots(
             available_equipment=available_equipment,
             weak_point_tags=weak_point_tags,
             already_used=frozenset(used),
+            preferred_load_types=preferred_load_types,
         )
         if res.chosen is not None:
             used.add(res.chosen.name)

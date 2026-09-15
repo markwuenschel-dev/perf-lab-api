@@ -98,6 +98,7 @@ def test_state_history_publishes_an_enum_for_every_axis() -> None:
     "schema_name,pointer",
     [
         ("AssessmentBenchmarkCard", ("properties", "confidence_status")),
+        ("AssessmentBenchmarkCard", ("properties", "description")),
         ("StateHistorySnapshotRead", ("properties", "capacity_confidence_status")),
         ("OnboardingTwinSummary", ("properties", "overall_confidence")),
     ],

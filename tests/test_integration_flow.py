@@ -140,25 +140,44 @@ async def test_fatigue_accumulates_across_sessions(async_db):
 
 async def test_onboard_persists_all_baseline_fields(async_db):
     """
-    POST /v1/onboard with all five baseline fields → AthleteProfile row must
-    contain non-null values for every mapped column.
+    POST /v1/onboard with every baseline field → AthleteProfile row must contain
+    non-null values for every mapped column.
 
     Mapping verified:
-      squat_1rm_kg   → profile.squat_1rm
-      deadlift_1rm_kg → profile.deadlift_1rm
-      bench_1rm_kg   → profile.bench_1rm
-      bodyweight_kg  → profile.bodyweight_kg
-      run_5k_seconds → profile.run_5k_seconds
+      strength report (squat)    → profile.squat_1rm    (projected by the E1 service)
+      strength report (deadlift) → profile.deadlift_1rm (projected by the E1 service)
+      strength report (bench)    → profile.bench_1rm    (projected by the E1 service)
+      bodyweight_kg              → profile.bodyweight_kg
+      run_5k_seconds             → profile.run_5k_seconds
     """
+    from datetime import UTC, timedelta
+
     from httpx import ASGITransport, AsyncClient
     from sqlalchemy import select as sa_select
 
     from app.core.db import get_db
     from app.main import app
+    from app.models.benchmark_definition import BenchmarkDefinition
+    from app.models.exercise import Exercise
     from app.models.user import AthleteProfile
 
     async def _override_get_db():
         yield async_db
+
+    # The canonical lifts a strength report may name (the catalog seeds these in production).
+    for code, name in (("pl_e1rm_squat", "Back Squat"), ("pl_e1rm_deadlift", "Conventional Deadlift"),
+                       ("pl_e1rm_bench", "Bench Press")):
+        async_db.add(Exercise(
+            name=name, modality="Strength", movement_pattern="squat", load_type="barbell",
+            is_benchmark=True, e1rm_benchmark_code=code,
+        ))
+        async_db.add(BenchmarkDefinition(
+            code=code, name=f"{name} e1RM", domain="powerlifting", metric_type="load", unit="kg",
+            better_direction="higher", observation_weight=1.0,
+            standardization_rules={"floor": 20.0, "cap": 320.0},
+        ))
+    await async_db.commit()
+    performed = (datetime.now(UTC) - timedelta(days=3)).isoformat()
 
     app.dependency_overrides[get_db] = _override_get_db
 
@@ -190,9 +209,14 @@ async def test_onboard_persists_all_baseline_fields(async_db):
                     "experience_years": 3.0,
                     "available_days_per_week": 4,
                     "equipment": ["barbell"],
-                    "squat_1rm_kg": 140.0,
-                    "deadlift_1rm_kg": 180.0,
-                    "bench_1rm_kg": 100.0,
+                    "strength": [
+                        {"benchmark_code": "pl_e1rm_squat", "method": "tested_max",
+                         "value_kg": 140.0, "performed_at": performed},
+                        {"benchmark_code": "pl_e1rm_deadlift", "method": "tested_max",
+                         "value_kg": 180.0, "performed_at": performed},
+                        {"benchmark_code": "pl_e1rm_bench", "method": "tested_max",
+                         "value_kg": 100.0, "performed_at": performed},
+                    ],
                     "bodyweight_kg": 82.5,
                     "run_5k_seconds": 1350.0,
                 },

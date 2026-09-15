@@ -1,9 +1,11 @@
 from datetime import date
+from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.logic.confidence_presentation import ConfidenceStatus
 from app.logic.onboarding_state import validate_dob
+from app.schemas.benchmarks import StrengthReport, refuse_bare_canonical_lift_numbers
 
 
 def _validate_optional_dob(v: date | None) -> date | None:
@@ -11,6 +13,22 @@ def _validate_optional_dob(v: date | None) -> date | None:
     if v is not None:
         validate_dob(v, date.today())
     return v
+
+
+class OnboardStrengthReport(StrengthReport):
+    """A strength report given during onboarding (S2 decision 3).
+
+    The same characterization semantics as Assess — onboarding gets no weaker rules. It adds
+    one input requirement: a tested max or a set must carry the date it was performed, so a
+    fact asked for at signup is not recorded as undated. An estimate needs no date; it never
+    sizes a load either way.
+    """
+
+    @model_validator(mode="after")
+    def _dated_when_performed(self) -> "OnboardStrengthReport":
+        if self.method in ("tested_max", "rep_set") and self.performed_at is None:
+            raise ValueError(f"a {self.method} reported during onboarding needs performed_at")
+        return self
 
 
 class OnboardRequest(BaseModel):
@@ -23,14 +41,32 @@ class OnboardRequest(BaseModel):
     self_reported_weak_points: list[str] = Field(default_factory=list)
     goal: str = "Strength"
     date_of_birth: date | None = None
-    # Baseline lift / biometric context (all optional)
-    squat_1rm_kg: float | None = Field(None, gt=0)
-    deadlift_1rm_kg: float | None = Field(None, gt=0)
-    bench_1rm_kg: float | None = Field(None, gt=0)
+    # Squat / bench / deadlift, characterized (S2). Each report becomes strength evidence
+    # through the same service Assess uses, and the profile's seed value for that lift is
+    # derived from it — never written as a bare number.
+    strength: list[OnboardStrengthReport] = Field(default_factory=lambda: [])
+    # Biometric context (optional)
     bodyweight_kg: float | None = Field(None, gt=0)
     run_5k_seconds: float | None = Field(None, gt=0)
 
     _dob = field_validator("date_of_birth")(_validate_optional_dob)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_bare_lift_numbers(cls, data: Any) -> Any:
+        return refuse_bare_canonical_lift_numbers(data, instead="send them in `strength`.")
+
+    @field_validator("strength")
+    @classmethod
+    def _one_report_per_lift(cls, v: list[OnboardStrengthReport]) -> list[OnboardStrengthReport]:
+        codes = [report.benchmark_code for report in v]
+        repeated = sorted({code for code in codes if codes.count(code) > 1})
+        if repeated:
+            raise ValueError(
+                f"one strength report per lift during onboarding; repeated: {', '.join(repeated)}"
+            )
+        return v
+
 
 class OnboardResponse(BaseModel):
     user_id: int

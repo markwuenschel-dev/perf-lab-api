@@ -28,6 +28,11 @@ class BenchmarkObservation(Base):
     observed_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, index=True, nullable=False
     )
+    # When the lift was PERFORMED (naive UTC). NULL means unknown and stays unknown: never
+    # defaulted from submission, migration, or re-entry time. `observed_at` above is the
+    # record's timestamp — for athlete entries, often the submission time. Prescription
+    # freshness reads this column only (app.logic.prescription_evidence, S2).
+    performed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     raw_value: Mapped[float] = mapped_column(Float, nullable=False)
     secondary_value: Mapped[float | None] = mapped_column(Float, nullable=True)

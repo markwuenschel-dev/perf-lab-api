@@ -153,6 +153,16 @@ def epley_e1rm(load_kg: float, reps: float) -> float:
     return float(load_kg) * (1.0 + (r - 1.0) / 30.0)
 
 
+def e1rm_from_set(load_kg: float, reps: float) -> float:
+    """The stored e1RM of a set-derived strength observation, rounded to 0.1 kg.
+
+    The one estimate every route that records set-derived evidence uses — workout
+    extraction and a set an athlete reports in Assess — so the entry route can never
+    change the number a set produces.
+    """
+    return round(epley_e1rm(load_kg, reps), 1)
+
+
 def _epley_percent(reps: float, rir: float) -> float:
     """Reps-beyond-first Epley %1RM: ``1 / (1 + (reps + rir - 1) / 30)``.
 

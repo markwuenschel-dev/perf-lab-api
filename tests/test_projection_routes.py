@@ -59,15 +59,38 @@ async def test_projection_returns_frozen_contract(http_client):
     assert 0.0 <= body["peak_fatigue"] <= 100.0
 
 
-async def test_projection_is_goal_specific(http_client):
+async def test_projection_is_goal_specific(http_client, async_db):
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.benchmark_definition import BenchmarkDefinition
+    from app.models.exercise import Exercise
+
     token = await _register_and_get_token(http_client, "proj_goal@test.com", "securepass1")
     hdr = {"Authorization": f"Bearer {token}"}
 
     # Onboard with a modest squat 1RM so max_strength seeds below the axis ceiling
-    # (the default intermediate seed pins it at 100 = no headroom to grow).
+    # (the default intermediate seed pins it at 100 = no headroom to grow). A squat is
+    # reported as characterized strength evidence (S2), so its canonical lift must exist.
+    async_db.add(Exercise(
+        name="Back Squat", modality="Strength", movement_pattern="squat", load_type="barbell",
+        is_benchmark=True, e1rm_benchmark_code="pl_e1rm_squat",
+    ))
+    async_db.add(BenchmarkDefinition(
+        code="pl_e1rm_squat", name="Squat e1RM", domain="powerlifting", metric_type="load",
+        unit="kg", better_direction="higher", observation_weight=1.0,
+        standardization_rules={"floor": 40.0, "cap": 250.0},
+    ))
+    await async_db.commit()
     onb = await http_client.post(
         "/v1/onboard",
-        json={"experience_level": "beginner", "goal": "Powerlifting", "squat_1rm_kg": 70.0},
+        json={
+            "experience_level": "beginner",
+            "goal": "Powerlifting",
+            "strength": [{
+                "benchmark_code": "pl_e1rm_squat", "method": "tested_max", "value_kg": 70.0,
+                "performed_at": (datetime.now(UTC) - timedelta(days=3)).isoformat(),
+            }],
+        },
         headers=hdr,
     )
     assert onb.status_code == 200, onb.text

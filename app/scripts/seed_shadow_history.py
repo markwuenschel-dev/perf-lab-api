@@ -252,7 +252,7 @@ def _seed_kwargs(profile: AthleteProfile | None) -> dict[str, object]:
     """Baseline inputs for S0, taken from the athlete's real profile where present.
 
     Passing the measured numbers rather than relying on defaults is what gives the athlete a
-    non-``no_data`` seed tier — `_persist_seed_snapshot` records per-axis provenance from
+    non-``no_data`` seed tier — `_stage_seed_snapshot` records per-axis provenance from
     exactly these arguments.
     """
     if profile is None:

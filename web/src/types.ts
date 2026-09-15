@@ -47,6 +47,8 @@ export type ExerciseCatalogOut = Schemas["ExerciseCatalogOut"];
 export type ValidationSummary = Schemas["ValidationSummary"];
 export type PrescriptionExplanation = Schemas["PrescriptionExplanation"];
 export type ExercisePrescription = Schemas["ExercisePrescription"];
+/* Why an exercise does or does not carry a suggested weight (S2, N1). */
+export type LoadExplanation = Schemas["LoadExplanation"];
 export type WorkoutPrescription = Schemas["WorkoutPrescription"];
 /* The structured explanation contract that `PrescriptionExplanation` carries. */
 export type StateEvidence = Schemas["StateEvidence"];
@@ -58,6 +60,7 @@ export type ConservatismSummary = Schemas["ConservatismSummary"];
 
 /* ---------- Onboarding ---------- */
 export type OnboardRequest = Schemas["OnboardRequest"];
+export type OnboardStrengthReport = Schemas["OnboardStrengthReport"];
 export type OnboardResponse = Schemas["OnboardResponse"];
 export type OnboardingStateResponse = Schemas["OnboardingStateResponse"];
 export type OnboardingTwinSummary = Schemas["OnboardingTwinSummary"];
@@ -68,6 +71,7 @@ export type AssessmentSurfaceRead = Schemas["AssessmentSurfaceRead"];
 export type AssessmentDomainGroup = Schemas["AssessmentDomainGroup"];
 export type AssessmentBenchmarkCard = Schemas["AssessmentBenchmarkCard"];
 export type BenchmarkObservationCreate = Schemas["BenchmarkObservationCreate"];
+export type StrengthEvidenceCreate = Schemas["StrengthEvidenceCreate"];
 
 /* ---------- History (GET /v1/state-history, /v1/workouts) ---------- */
 export type WorkoutLogSummary = Schemas["WorkoutLogSummary"];

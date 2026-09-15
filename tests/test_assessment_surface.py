@@ -57,6 +57,21 @@ async def _user(db, email, *, primary_goal=None) -> User:
     return u
 
 
+async def test_card_says_what_it_measures_and_how_separately(async_db):
+    async_db.add(BenchmarkDefinition(
+        code="run_5k_time", name="5K time", domain="running", metric_type="time", unit="seconds",
+        better_direction="lower", observation_weight=1.0, state_targets=["aerobic"],
+        description="What it measures.", protocol_summary="How to measure it.",
+    ))
+    await async_db.commit()
+    user = await _user(async_db, "as-help@test.com")
+
+    surface = await ass.build_assessment_surface(async_db, user.id, "retest")
+
+    (card,) = [c for g in surface.groups for c in g.cards if c.code == "run_5k_time"]
+    assert (card.description, card.protocol_summary) == ("What it measures.", "How to measure it.")
+
+
 async def test_surface_filters_by_active_domain(async_db):
     await _seed_defs(async_db)
     user = await _user(async_db, "as1@test.com", primary_goal="Powerlifting")

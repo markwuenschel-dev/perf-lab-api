@@ -5,7 +5,7 @@ session modality and a marked top set; a top set emits an e1RM benchmark
 observation (measurement layer, not a set-log scan); the sets feed real external
 load into the dose; and a prescribed lift resolves %e1RM → a suggested kg.
 """
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -194,9 +194,13 @@ def _squat_rx() -> WorkoutPrescription:
 async def test_prescription_resolves_percent_e1rm_to_kg(async_db):
     user = await _create_user(async_db, "p9d@test.com")
     await _seed_catalog(async_db, with_e1rm_def=True)
+    # S2: a basis must be characterized and performed within the window.
     await benchmark_service.create_observation(
         async_db, user.id,
-        BenchmarkObservationCreate(benchmark_code="pl_e1rm_squat", raw_value=140.0),
+        BenchmarkObservationCreate(
+            benchmark_code="pl_e1rm_squat", raw_value=140.0, value_semantics="measured"
+        ),
+        performed_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=1),
     )
 
     rx = _squat_rx()

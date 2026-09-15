@@ -22,9 +22,9 @@ The constraint_engine package also provides template-driven validation
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from app.logic.candidate_library import get_templates, score_template
 from app.logic.constraint_engine.candidate import (
@@ -36,11 +36,20 @@ from app.logic.constraint_engine.candidate import (
 from app.logic.constraint_engine.candidate import (
     score_candidate as _score_candidate,
 )
+from app.logic.constraint_labels import (
+    EQUIPMENT_BODYWEIGHT_ONLY,
+    EQUIPMENT_FALLBACK_BODYWEIGHT,
+    EQUIPMENT_FILTERED,
+    EQUIPMENT_UNCONFIGURED,
+    describe_constraints,
+)
 from app.logic.deload_need import compute_deload_need
 from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
 from app.logic.exercise_slot import (
     CatalogExercise,
     ExerciseSlot,
+    equipment_available,
+    preferred_load_types,
     resolve_slots,
 )
 from app.logic.planning import periodization_envelope
@@ -456,6 +465,9 @@ def _finalize(
     )
 
 
+# Each list may name only exercises whose catalog `equipment_required` is covered by the key
+# it sits under; "bodyweight" is what an athlete with no matching equipment gets, so its
+# exercises require nothing. Guarded by tests/test_fallback_exercise_equipment.py.
 _EQUIPMENT_EXERCISE_MAP: dict[str, list[tuple[str, str, str]]] = {
     "barbell": [
         ("Back Squat", "4", "4-6"),
@@ -463,7 +475,7 @@ _EQUIPMENT_EXERCISE_MAP: dict[str, list[tuple[str, str, str]]] = {
         ("Bench Press", "4", "4-6"),
     ],
     "dumbbells": [
-        ("Goblet Squat", "4", "8-10"),
+        ("Reverse Lunge", "4", "8-10/side"),
         ("DB RDL", "3", "8-10"),
         ("DB Floor Press", "3", "8-12"),
     ],
@@ -472,9 +484,9 @@ _EQUIPMENT_EXERCISE_MAP: dict[str, list[tuple[str, str, str]]] = {
         ("Hanging Knee Raise", "3", "10-15"),
     ],
     "bodyweight": [
-        ("Tempo Back Squat (3-0-1)", "4", "8-12"),
+        ("Air Squat", "4", "12-15"),
         ("Push-up", "4", "8-15"),
-        ("Split Squat", "3", "8-12/side"),
+        ("Lunges", "3", "8-12/side"),
     ],
 }
 
@@ -538,11 +550,17 @@ def _select_accessories(
     focus_tags: list[str] | None,
     weak_point_tags: list[str] | None,
     existing_names: set[str],
+    is_available: Callable[[str], bool] | None = None,
+    skipped_out: list[str] | None = None,
 ) -> list[tuple[str, str, str]]:
     """Pick up to `count` accessory slots, preferring `focus_tags`, then
     falling back to `weak_point_tags`, then generic accessories. Skips names
     already present among `existing_names` (the template's own slots) to
-    avoid duplicate entries."""
+    avoid duplicate entries.
+
+    An accessory the athlete cannot do with their equipment (``is_available`` returns False) is
+    not prescribed: it is recorded in ``skipped_out``, so the explanation can say so, and the next
+    option takes its place. ``is_available=None`` means availability cannot be checked."""
     if count <= 0:
         return []
     tags = [t for t in (focus_tags or []) if t in _ACCESSORY_BY_TAG]
@@ -551,13 +569,23 @@ def _select_accessories(
 
     seen = set(existing_names)
     picks: list[tuple[str, str, str]] = []
+
+    def consider(item: tuple[str, str, str]) -> None:
+        name = item[0]
+        if name in seen:
+            return
+        seen.add(name)
+        if is_available is not None and not is_available(name):
+            if skipped_out is not None:
+                skipped_out.append(name)
+            return
+        picks.append(item)
+
     for tag in tags:
         for item in _ACCESSORY_BY_TAG[tag]:
             if len(picks) >= count:
                 break
-            if item[0] not in seen:
-                picks.append(item)
-                seen.add(item[0])
+            consider(item)
         if len(picks) >= count:
             break
 
@@ -565,14 +593,61 @@ def _select_accessories(
         for item in _GENERIC_ACCESSORIES:
             if len(picks) >= count:
                 break
-            if item[0] not in seen:
-                picks.append(item)
-                seen.add(item[0])
+            consider(item)
 
     return picks[:count]
 
 
-def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[ExercisePrescription]:
+def _accessory_availability(
+    available_equipment: Sequence[str] | None,
+    catalog: list[CatalogExercise] | None,
+) -> Callable[[str], bool] | None:
+    """The availability check appended accessories must pass — the same one primary slots pass.
+
+    ``None`` when nothing can be checked: equipment never set (no filter, exactly as for slots),
+    or no catalog to read requirements from (a pure-logic caller). With equipment set, an
+    accessory the catalog does not know has unknown requirements and cannot be promised, so it
+    counts as unavailable.
+    """
+    equipment = frozenset(e.strip().lower() for e in (available_equipment or []) if e and e.strip())
+    if not equipment or catalog is None:
+        return None
+    by_name = {ex.name: ex for ex in catalog}
+
+    def available(name: str) -> bool:
+        exercise = by_name.get(name)
+        return exercise is not None and equipment_available(exercise, equipment)
+
+    return available
+
+
+#: Equipment tags that mean "no external equipment". A list holding only these is an athlete who
+#: chose bodyweight-only training — a configuration, and not the same thing as an empty list.
+_BODYWEIGHT_ONLY_TAGS: frozenset[str] = frozenset({"bodyweight", "none"})
+
+_EquipmentState = Literal["unconfigured", "bodyweight_only", "configured"]
+
+
+def _equipment_state(available_equipment: Sequence[str] | None) -> _EquipmentState:
+    """What the athlete's equipment list says: nothing set, bodyweight only, or equipment.
+
+    The three are stored distinctly on ``AthleteProfile.equipment`` — ``[]``, ``["bodyweight"]``,
+    and a list of tags — and select differently: an empty list does not filter at all
+    (``exercise_slot.equipment_available``), while ``["bodyweight"]`` filters to movements
+    that need nothing.
+    """
+    tags = {e.strip().lower() for e in (available_equipment or []) if e and e.strip()}
+    if not tags:
+        return "unconfigured"
+    if tags <= _BODYWEIGHT_ONLY_TAGS:
+        return "bodyweight_only"
+    return "configured"
+
+
+def _equipment_map_exercises(
+    available_equipment: Sequence[str] | None,
+) -> tuple[list[ExercisePrescription], bool]:
+    """The equipment-map list, and whether it is the bodyweight list because no key matched."""
     equipment = {e.lower() for e in (available_equipment or [])}
     picks: list[tuple[str, str, str]] = []
 
@@ -580,21 +655,63 @@ def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[
         if key in equipment and key in _EQUIPMENT_EXERCISE_MAP:
             picks.extend(_EQUIPMENT_EXERCISE_MAP[key])
 
-    if not picks:
+    used_bodyweight_list = not picks
+    if used_bodyweight_list:
         picks.extend(_EQUIPMENT_EXERCISE_MAP["bodyweight"])
 
-    return [
+    exercises = [
         ExercisePrescription(name=name, sets=int(sets), reps=reps, load_note="Autoregulate by RPE")
         for name, sets, reps in picks[:4]
     ]
+    return exercises, used_bodyweight_list
 
 
-def _exercise_list_for_candidate(
+def _exercise_list_for_equipment(available_equipment: list[str] | None) -> list[ExercisePrescription]:
+    return _equipment_map_exercises(available_equipment)[0]
+
+
+@dataclass(frozen=True)
+class _ExerciseSelection:
+    """The exercises chosen for a session, and the equipment facts true of how they were chosen."""
+
+    exercises: list[ExercisePrescription]
+    equipment_codes: list[str]
+    #: How many slot choices the equipment preference changed, measured against the same pool
+    #: with no preference. ``None`` when no preference was applied (none set, or the slot-less
+    #: equipment-map path, which does not rank).
+    preference_changes: int | None = None
+
+
+def _map_selection(available_equipment: Sequence[str] | None) -> _ExerciseSelection:
+    exercises, used_bodyweight_list = _equipment_map_exercises(available_equipment)
+    state = _equipment_state(available_equipment)
+    codes: list[str]
+    if state == "bodyweight_only":
+        codes = [EQUIPMENT_BODYWEIGHT_ONLY]
+    elif used_bodyweight_list:
+        # The bodyweight list really was used. Say so — and, separately, that equipment was
+        # never set, because those are two different facts.
+        codes = [EQUIPMENT_UNCONFIGURED] if state == "unconfigured" else []
+        codes.append(EQUIPMENT_FALLBACK_BODYWEIGHT)
+    else:
+        codes = [EQUIPMENT_FILTERED]
+    return _ExerciseSelection(exercises, codes)
+
+
+_CATALOG_EQUIPMENT_CODE: dict[_EquipmentState, str] = {
+    "unconfigured": EQUIPMENT_UNCONFIGURED,
+    "bodyweight_only": EQUIPMENT_BODYWEIGHT_ONLY,
+    "configured": EQUIPMENT_FILTERED,
+}
+
+
+def _select_exercises(
     exercise_slots: list[ExerciseSlot],
     available_equipment: list[str] | None,
     catalog: list[CatalogExercise] | None = None,
     active_weak_points: list[str] | None = None,
-) -> list[ExercisePrescription]:
+    equipment_preference: Sequence[str] | None = None,
+) -> _ExerciseSelection:
     """Resolve the winning template's slots against the exercise catalog (ADR-0016).
 
     Each slot states what the movement must be; the catalog decides which one it is, filtered
@@ -605,25 +722,27 @@ def _exercise_list_for_candidate(
     (and so a caller without a database still gets a session). A slot that nothing satisfies
     costs that movement rather than the whole session — the reason is carried in `load_note`
     so an unfillable requirement is visible instead of silently shortening the workout.
-    """
-    if not exercise_slots:
-        return _exercise_list_for_equipment(available_equipment)
 
-    if catalog is None:
-        return _exercise_list_for_equipment(available_equipment)
+    The equipment codes describe the path that actually ran: the bodyweight fallback is
+    reported only when the bodyweight list was used, never merely because nothing was set.
+    """
+    if not exercise_slots or catalog is None:
+        return _map_selection(available_equipment)
 
     # An empty list means "never configured", which is NOT "owns nothing" — see
-    # exercise_slot._equipment_available. Only a populated list filters.
+    # exercise_slot.equipment_available. Only a populated list filters.
     equipment = (
         frozenset(e.strip().lower() for e in available_equipment if e and e.strip())
         if available_equipment
         else None
     )
+    preferred = preferred_load_types(equipment_preference)
     resolutions = resolve_slots(
         exercise_slots,
         catalog,
         available_equipment=equipment,
         weak_point_tags=frozenset(active_weak_points or ()),
+        preferred_load_types=preferred,
     )
 
     out: list[ExercisePrescription] = []
@@ -642,7 +761,44 @@ def _exercise_list_for_candidate(
                 load_note=res.slot.load_note or "Autoregulate by RPE; scale to available equipment",
             )
         )
-    return out or _exercise_list_for_equipment(available_equipment)
+    if not out:
+        return _map_selection(available_equipment)
+    changes = (
+        sum(1 for res in resolutions if res.chosen is not None and res.preference_changed)
+        if preferred
+        else None
+    )
+    return _ExerciseSelection(
+        out, [_CATALOG_EQUIPMENT_CODE[_equipment_state(available_equipment)]], changes
+    )
+
+
+def _exercise_list_for_candidate(
+    exercise_slots: list[ExerciseSlot],
+    available_equipment: list[str] | None,
+    catalog: list[CatalogExercise] | None = None,
+    active_weak_points: list[str] | None = None,
+) -> list[ExercisePrescription]:
+    """The exercises of :func:`_select_exercises`, for callers that need only the list."""
+    return _select_exercises(exercise_slots, available_equipment, catalog, active_weak_points).exercises
+
+
+#: How many resolved exercises the displayed session title names before "+N more".
+_FOCUS_NAMED_EXERCISES = 3
+
+
+def _focus_from_exercises(exercises: list[ExercisePrescription]) -> str:
+    """The session title, built from the primary exercises actually prescribed.
+
+    Template titles name exercises ("Leg Press 4×12 + Hack Squat 3×15 …") while slots resolve
+    by pattern, so a template title can name movements the session does not contain. The
+    template's focus still does its earlier job in scoring and constraint encoding; what the
+    athlete reads is rebuilt from the resolved list.
+    """
+    names = [e.name for e in exercises]
+    head = " + ".join(names[:_FOCUS_NAMED_EXERCISES])
+    extra = len(names) - _FOCUS_NAMED_EXERCISES
+    return f"{head} + {extra} more" if extra > 0 else head
 
 
 def _infeasible_prescription(
@@ -690,6 +846,50 @@ def recommend_next_session(
     readiness_override: float | None = None,
     catalog: list[CatalogExercise] | None = None,
     constraints: Sequence[ResolvedPlanningConstraint] | None = None,
+    equipment_preference: Sequence[str] | None = None,
+) -> WorkoutPrescription:
+    """Candidate-based controller — see :func:`_recommend_next_session`.
+
+    Every return path passes through here, so every prescription carries
+    ``why.constraint_details``: the athlete-facing labels for the final ``constraints_applied``.
+    """
+    rx = _recommend_next_session(
+        state,
+        goal=goal,
+        recent_sessions=recent_sessions,
+        kpi_summary=kpi_summary,
+        active_weak_points=active_weak_points,
+        available_equipment=available_equipment,
+        block_context=block_context,
+        candidate_log_out=candidate_log_out,
+        prescription_arm=prescription_arm,
+        readiness_override=readiness_override,
+        catalog=catalog,
+        constraints=constraints,
+        equipment_preference=equipment_preference,
+    )
+    if rx.why is not None:
+        rx.why.constraint_details = describe_constraints(
+            rx.why.constraints_applied,
+            hard_violations=rx.why.validation.hard_violations if rx.why.validation else (),
+        )
+    return rx
+
+
+def _recommend_next_session(
+    state: UnifiedStateVector,
+    goal: TrainingGoal = TRAINING_GOAL_DEFAULT,
+    recent_sessions: list[dict[str, Any]] | None = None,
+    kpi_summary: dict[str, float] | None = None,
+    active_weak_points: list[str] | None = None,
+    available_equipment: list[str] | None = None,
+    block_context: dict[str, Any] | None = None,
+    candidate_log_out: list[SessionCandidate] | None = None,
+    prescription_arm: str = "adaptive",
+    readiness_override: float | None = None,
+    catalog: list[CatalogExercise] | None = None,
+    constraints: Sequence[ResolvedPlanningConstraint] | None = None,
+    equipment_preference: Sequence[str] | None = None,
 ) -> WorkoutPrescription:
     """
     Candidate-based controller.
@@ -719,7 +919,12 @@ def recommend_next_session(
     if safety:
         if candidate_log_out is not None:
             candidate_log_out.clear()
-        return _finalize(safety[0], state, goal, recent_sessions)
+        rx = _finalize(safety[0], state, goal, recent_sessions)
+        if rx.why is not None:
+            # The override replaced whatever the goal would have prescribed. That is an applied
+            # adjustment the athlete is owed in words, not only as a branch id.
+            rx.why.constraints_applied.append(f"safety:override={safety[0].branch_id}")
+        return rx
 
     # --- Deload need (shadow/Level 1: explanation only) ---
     deload_need = compute_deload_need(state)
@@ -887,14 +1092,32 @@ def recommend_next_session(
     # Goal-specific exercise payload — prefer the winning template's
     # exercise_slots; equipment map (with bodyweight fallback) only applies
     # when the template doesn't specify slots.
-    rx.exercises = _exercise_list_for_candidate(
-        scored[0].exercise_slots, available_equipment, catalog, active_weak_points
+    selection = _select_exercises(
+        scored[0].exercise_slots,
+        available_equipment,
+        catalog,
+        active_weak_points,
+        equipment_preference=equipment_preference,
     )
+    rx.exercises = selection.exercises
+    # A hard validator failure replaced the session with a recovery override; its title says so
+    # and must not be rebuilt from the template's exercises.
+    overridden = (
+        rx.why is not None
+        and rx.why.validation is not None
+        and bool(rx.why.validation.hard_violations)
+    )
+    if rx.exercises and not overridden:
+        rx.focus = _focus_from_exercises(rx.exercises)
     if rx.why:
-        if available_equipment:
-            rx.why.constraints_applied.append("equipment:filtered")
-        else:
-            rx.why.constraints_applied.append("equipment:fallback_bodyweight")
+        rx.why.constraints_applied.extend(selection.equipment_codes)
+        if selection.preference_changes is not None:
+            chosen = {p.strip().lower() for p in equipment_preference or ()}
+            values = ",".join(p for p in ("barbell", "dumbbell", "machine") if p in chosen)
+            # The measured effect, not the intent: how many picks differ from no preference.
+            rx.why.constraints_applied.append(
+                f"equipment:preference={values}(changed={selection.preference_changes})"
+            )
 
     # --- 5. Block session preferences (Phase 3a): accessory append + target
     # duration override. `template_duration_min` is the winning template's own
@@ -926,7 +1149,19 @@ def recommend_next_session(
             accessory_count = min(accessory_count, SHORT_TARGET_ACCESSORY_CAP)
         if accessory_count > 0:
             existing_names = {e.name for e in rx.exercises}
-            accessories = _select_accessories(accessory_count, raw_focus, weak_points, existing_names)
+            skipped_accessories: list[str] = []
+            accessories = _select_accessories(
+                accessory_count,
+                raw_focus,
+                weak_points,
+                existing_names,
+                is_available=_accessory_availability(available_equipment, catalog),
+                skipped_out=skipped_accessories,
+            )
+            if skipped_accessories and rx.why:
+                rx.why.constraints_applied.append(
+                    f"equipment:accessories_skipped={len(skipped_accessories)}"
+                )
             if accessories:
                 rx.exercises = rx.exercises + [
                     ExercisePrescription(

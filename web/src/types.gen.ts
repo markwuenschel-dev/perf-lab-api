@@ -206,6 +206,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/benchmarks/strength-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Strength Evidence
+         * @description Record an athlete-reported strength observation for a canonical lift (S2).
+         *
+         *     Evidence only: no workout is created and no training dose is applied. The server
+         *     derives the value semantics, the estimate for a reported set, and whether the
+         *     observation may ever size a prescribed load.
+         */
+        post: operations["post_strength_evidence_v1_benchmarks_strength_evidence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/dashboard/domain-summary": {
         parameters: {
             query?: never;
@@ -521,7 +545,20 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Onboard Athlete */
+        /**
+         * Onboard Athlete
+         * @description Profile basics, self-reported weak points, the baseline state, and strength reports.
+         *
+         *     **One transaction.** Everything below commits together, or nothing does.
+         *
+         *     **Retry-safe.** The server cannot tell a retry whose first attempt committed (and whose
+         *     response was lost) from the same submission sent twice, so both are treated alike: the
+         *     baseline state is seeded only for an athlete with no state; a weak point the athlete has
+         *     already self-reported and not resolved is not added again; a report identical to one
+         *     onboarding already recorded is not recorded again. Profile fields take the submitted values.
+         *     Concurrent submissions for one athlete are serialized on the user row, so the second finds
+         *     the first's writes once it commits.
+         */
         post: operations["onboard_athlete_v1_onboard_post"];
         delete?: never;
         options?: never;
@@ -956,12 +993,45 @@ export interface components {
             /** Unit */
             unit: string;
         };
+        /**
+         * AppliedConstraint
+         * @description One ``constraints_applied`` code with the words an athlete reads for it.
+         *
+         *     Built by ``app.logic.constraint_labels.describe_constraints`` from the same list, so the
+         *     code and its label cannot drift apart. A code the labeller does not recognise gets an
+         *     honest fallback label rather than a guess made from its punctuation.
+         */
+        AppliedConstraint: {
+            /**
+             * Athlete Visible
+             * @description False for engine bookkeeping that did not shape the session.
+             */
+            athlete_visible: boolean;
+            /**
+             * Code
+             * @description The engine code, exactly as in constraints_applied.
+             */
+            code: string;
+            /**
+             * Group
+             * @description Where the entry belongs when grouped.
+             * @enum {string}
+             */
+            group: "safety" | "plan_rule" | "block" | "objective" | "adherence" | "weak_point" | "state" | "equipment" | "advisory" | "internal" | "other";
+            /**
+             * Label
+             * @description What the athlete reads.
+             */
+            label: string;
+        };
         /** AssessmentBenchmarkCard */
         AssessmentBenchmarkCard: {
             /** Code */
             code: string;
             /** Confidence Status */
             confidence_status: ("established" | "provisional" | "insufficient") | null;
+            /** Description */
+            description: string | null;
             /** Domain */
             domain: string;
             /** Domain Lenses */
@@ -984,6 +1054,11 @@ export interface components {
             recommend_rank: number | null;
             /** Recommended */
             recommended: boolean;
+            /**
+             * Strength Evidence Entry
+             * @default false
+             */
+            strength_evidence_entry: boolean;
             /** Unit */
             unit: string;
             /** Utility */
@@ -1063,6 +1138,8 @@ export interface components {
             better_direction: string;
             /** Code */
             code: string;
+            /** Description */
+            description: string | null;
             /** Domain */
             domain: string;
             /** Fatigue Targets */
@@ -1614,6 +1691,8 @@ export interface components {
              * @description The current e1RM the suggestion was resolved against.
              */
             e1rm_basis_kg?: number | null;
+            /** @description Why this exercise does or does not carry a suggested weight. */
+            load_explanation?: components["schemas"]["LoadExplanation"] | null;
             /** Load Note */
             load_note?: string | null;
             /** Name */
@@ -1895,6 +1974,47 @@ export interface components {
             /** Value */
             value: number;
         };
+        /**
+         * LoadExplanation
+         * @description Whether this exercise carries a suggested weight, and if not, why (S2, N1).
+         *
+         *     * ``recommended`` — a qualifying e1RM sized the load.
+         *     * ``no_qualifying_evidence`` — the lift supports a weight, but nothing qualified at
+         *       ``evaluated_at``; ``reason`` says which kind of evidence came closest.
+         *     * ``not_supported`` — an externally loaded exercise with no e1RM benchmark, so no
+         *       athlete evidence could size it.
+         *
+         *     Unloaded, uncatalogued exercises carry no explanation at all. It is persisted with the
+         *     served prescription, so what the athlete was shown can be read back later.
+         */
+        LoadExplanation: {
+            /**
+             * Benchmark Code
+             * @description The e1RM benchmark the lift was evaluated against.
+             */
+            benchmark_code?: string | null;
+            /**
+             * Evaluated At
+             * Format: date-time
+             * @description The instant evidence eligibility was evaluated (UTC).
+             */
+            evaluated_at: string;
+            /**
+             * Evidence Performed At
+             * @description When the selected evidence (recommended) or the deterministic explanatory evidence (no_qualifying_evidence) was performed, if known (UTC).
+             */
+            evidence_performed_at?: string | null;
+            /**
+             * Reason
+             * @description Set only when status is no_qualifying_evidence.
+             */
+            reason?: ("stale" | "missing_performance_date" | "estimate_not_used" | "set_not_qualifying" | "no_evidence" | "not_qualifying") | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "recommended" | "no_qualifying_evidence" | "not_supported";
+        };
         /** MacrocycleCreate */
         MacrocycleCreate: {
             /** Objective Id */
@@ -2085,14 +2205,10 @@ export interface components {
              * @default 3
              */
             available_days_per_week: number;
-            /** Bench 1Rm Kg */
-            bench_1rm_kg?: number | null;
             /** Bodyweight Kg */
             bodyweight_kg?: number | null;
             /** Date Of Birth */
             date_of_birth?: string | null;
-            /** Deadlift 1Rm Kg */
-            deadlift_1rm_kg?: number | null;
             /** Display Name */
             display_name?: string | null;
             /** Equipment */
@@ -2121,8 +2237,8 @@ export interface components {
              * @default 60
              */
             session_duration_minutes: number;
-            /** Squat 1Rm Kg */
-            squat_1rm_kg?: number | null;
+            /** Strength */
+            strength?: components["schemas"]["OnboardStrengthReport"][];
         };
         /** OnboardResponse */
         OnboardResponse: {
@@ -2137,6 +2253,52 @@ export interface components {
             profile_id: number;
             /** User Id */
             user_id: number;
+        };
+        /**
+         * OnboardStrengthReport
+         * @description A strength report given during onboarding (S2 decision 3).
+         *
+         *     The same characterization semantics as Assess — onboarding gets no weaker rules. It adds
+         *     one input requirement: a tested max or a set must carry the date it was performed, so a
+         *     fact asked for at signup is not recorded as undated. An estimate needs no date; it never
+         *     sizes a load either way.
+         */
+        OnboardStrengthReport: {
+            /**
+             * Benchmark Code
+             * @description The e1RM benchmark code of a canonical lift.
+             */
+            benchmark_code: string;
+            /**
+             * Load Kg
+             * @description rep_set: the set's load in kg.
+             */
+            load_kg?: number | null;
+            /**
+             * Method
+             * @description tested_max: a 1-rep max the athlete performed. rep_set: a set the athlete performed, described by load_kg and reps (plus effort when known). estimate: the athlete's estimate, retained as reported information and never a prescription basis.
+             * @enum {string}
+             */
+            method: "tested_max" | "rep_set" | "estimate";
+            /**
+             * Performed At
+             * @description When the lift was performed. Omitted means unknown: the observation is recorded but never sizes a prescribed load.
+             */
+            performed_at?: string | null;
+            /**
+             * Reps
+             * @description rep_set: repetitions completed.
+             */
+            reps?: number | null;
+            /** Rir */
+            rir?: number | null;
+            /** Rpe */
+            rpe?: number | null;
+            /**
+             * Value Kg
+             * @description tested_max / estimate: the weight in kg.
+             */
+            value_kg?: number | null;
         };
         /** OnboardingStateResponse */
         OnboardingStateResponse: {
@@ -2313,6 +2475,11 @@ export interface components {
             confidence?: components["schemas"]["PrescriptionConfidence"] | null;
             /** @description Whether low confidence made this session more cautious. NULL when load was never resolved for this prescription (no lift with a current e1RM). */
             conservatism?: components["schemas"]["ConservatismSummary"] | null;
+            /**
+             * Constraint Details
+             * @description ``constraints_applied`` with athlete-facing labels, one entry per code in the same order. Empty for prescriptions stored before labels existed.
+             */
+            constraint_details?: components["schemas"]["AppliedConstraint"][];
             /** Constraints Applied */
             constraints_applied?: string[];
             /**
@@ -2392,6 +2559,8 @@ export interface components {
             display_name: string | null;
             /** Equipment */
             equipment: string[];
+            /** Equipment Preference */
+            equipment_preference?: string[];
             /** Experience Level */
             experience_level: string;
             /** Experience Years */
@@ -2419,24 +2588,23 @@ export interface components {
          * ProfileUpdate
          * @description Partial update — only fields present in the request body are written.
          *
-         *     Nullable fields (lifts, biometrics) accept an explicit ``null`` to clear a
-         *     previously stored value; omitting a field leaves it untouched.
+         *     Nullable fields (biometrics) accept an explicit ``null`` to clear a previously stored
+         *     value; omitting a field leaves it untouched. Squat, bench and deadlift are refused:
+         *     they are characterized strength evidence, not profile numbers (S2).
          */
         ProfileUpdate: {
             /** Available Days Per Week */
             available_days_per_week?: number | null;
-            /** Bench 1Rm Kg */
-            bench_1rm_kg?: number | null;
             /** Bodyweight Kg */
             bodyweight_kg?: number | null;
             /** Date Of Birth */
             date_of_birth?: string | null;
-            /** Deadlift 1Rm Kg */
-            deadlift_1rm_kg?: number | null;
             /** Display Name */
             display_name?: string | null;
             /** Equipment */
             equipment?: string[] | null;
+            /** Equipment Preference */
+            equipment_preference?: string[] | null;
             /** Experience Level */
             experience_level?: string | null;
             /** Experience Years */
@@ -2455,8 +2623,6 @@ export interface components {
             run_5k_seconds?: number | null;
             /** Session Duration Minutes */
             session_duration_minutes?: number | null;
-            /** Squat 1Rm Kg */
-            squat_1rm_kg?: number | null;
             /** Untracked Wellness Signals */
             untracked_wellness_signals?: string[] | null;
         };
@@ -2959,6 +3125,53 @@ export interface components {
              */
             timestamp: string;
             tissue_t?: components["schemas"]["TissueState"];
+        };
+        /**
+         * StrengthEvidenceCreate
+         * @description A strength report submitted on its own — from Assess, or a Settings strength edit.
+         */
+        StrengthEvidenceCreate: {
+            /**
+             * Benchmark Code
+             * @description The e1RM benchmark code of a canonical lift.
+             */
+            benchmark_code: string;
+            /**
+             * Collection Mode
+             * @default retest
+             * @enum {string}
+             */
+            collection_mode: "onboarding_onramp" | "retest";
+            /**
+             * Load Kg
+             * @description rep_set: the set's load in kg.
+             */
+            load_kg?: number | null;
+            /**
+             * Method
+             * @description tested_max: a 1-rep max the athlete performed. rep_set: a set the athlete performed, described by load_kg and reps (plus effort when known). estimate: the athlete's estimate, retained as reported information and never a prescription basis.
+             * @enum {string}
+             */
+            method: "tested_max" | "rep_set" | "estimate";
+            /**
+             * Performed At
+             * @description When the lift was performed. Omitted means unknown: the observation is recorded but never sizes a prescribed load.
+             */
+            performed_at?: string | null;
+            /**
+             * Reps
+             * @description rep_set: repetitions completed.
+             */
+            reps?: number | null;
+            /** Rir */
+            rir?: number | null;
+            /** Rpe */
+            rpe?: number | null;
+            /**
+             * Value Kg
+             * @description tested_max / estimate: the weight in kg.
+             */
+            value_kg?: number | null;
         };
         /** StrengthSession */
         StrengthSession: {
@@ -3994,6 +4207,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecomputeDerivedResponse"];
+                };
+            };
+        };
+    };
+    post_strength_evidence_v1_benchmarks_strength_evidence_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrengthEvidenceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BenchmarkObservationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

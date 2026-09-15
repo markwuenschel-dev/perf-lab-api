@@ -13,6 +13,19 @@ export const distLabel = (units: string) => (isImperial(units) ? "mi" : "km");
 export const weightLabel = (units: string) => (isImperial(units) ? "lbs" : "kg");
 export const paceLabel = (units: string) => (isImperial(units) ? "min/mi" : "min/km");
 
+const UNIT_LABELS: Record<string, string> = {
+  seconds: "s",
+  ml_kg_min: "ml/kg/min",
+  pace_min_per_km: "min/km",
+  percent: "%",
+  calories: "cal",
+  x_bodyweight: "× bodyweight",
+};
+
+/** A backend unit identifier as a reader sees it (`ml_kg_min` → "ml/kg/min"). Units without a
+ *  label of their own keep their words, never vanish. */
+export const unitLabel = (unit: string): string => UNIT_LABELS[unit] ?? unit.replace(/_/g, " ");
+
 /** Format a backend pace value (seconds per mile) into a min:ss string in the user's unit. */
 export const fmtPace = (secPerMile: number, units: string): string => {
   const spu = isImperial(units) ? secPerMile : Math.round(secPerMile / KM_PER_MI);

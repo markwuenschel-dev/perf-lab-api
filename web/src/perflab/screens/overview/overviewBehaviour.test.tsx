@@ -14,6 +14,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let token: string | null = null;
+let todayResponse: unknown = { session: null, prescription: null };
 const openCheckin = vi.fn();
 const openAuth = vi.fn();
 const openLog = vi.fn();
@@ -52,7 +53,7 @@ vi.mock("@/api/perfLabClient", () => ({
   getStateHistory: () => Promise.resolve([]),
   listWorkouts: () => Promise.resolve([]),
   getDashboardOverview: () => Promise.resolve({ training_load: { acwr: null, status: "insufficient", sweet_spot_low: 0.8, sweet_spot_high: 1.3 }, adherence: { pct: null, streak_days: 0, window_days: 28 } }),
-  getTodayPlannedSession: () => Promise.resolve({ session: null, prescription: null }),
+  getTodayPlannedSession: () => Promise.resolve(todayResponse),
   listObjectives: () => Promise.resolve([]),
   listMacrocycles: () => Promise.resolve([]),
 }));
@@ -120,5 +121,38 @@ describe("the guest Overview labels itself as sample data (#185)", () => {
     render(<GuestOverviewPreview />);
     expect(screen.getAllByText(/Sample data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Preview — sample athlete/i)).toBeTruthy();
+  });
+});
+
+describe("Overview insights show plan adjustments in words (S-A)", () => {
+  it("lists visible labels, hides bookkeeping, and never prints an engine code", async () => {
+    token = "real-token";
+    todayResponse = {
+      session: null,
+      prescription: {
+        type: "Strength",
+        focus: "Back Squat + Bench Press",
+        rationale: "Accumulation week.",
+        duration_min: 60,
+        exercises: [],
+        why: {
+          constraints_applied: ["block:benchmark", "static_with_safety_caps:arm"],
+          constraint_details: [
+            { code: "block:benchmark", label: "Benchmark session in your plan.", group: "block", athlete_visible: true },
+            { code: "static_with_safety_caps:arm", label: "Fixed-template experiment arm.", group: "internal", athlete_visible: false },
+          ],
+          warnings: [],
+        },
+      },
+    };
+    try {
+      const { AuthedOverview } = await import("./AuthedOverview");
+      render(<AuthedOverview />);
+      expect(await screen.findByText("Benchmark session in your plan.")).toBeTruthy();
+      expect(screen.queryByText("Fixed-template experiment arm.")).toBeNull();
+      expect(screen.queryByText(/block:benchmark/)).toBeNull();
+    } finally {
+      todayResponse = { session: null, prescription: null };
+    }
   });
 });

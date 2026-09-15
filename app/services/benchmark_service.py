@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -186,7 +187,10 @@ async def list_observations(
 
 
 def _resolve_authority(
-    body: BenchmarkObservationCreate, definition: BenchmarkDefinition
+    body: BenchmarkObservationCreate,
+    definition: BenchmarkDefinition,
+    *,
+    provenance_operation: str = oa.OP_LIVE_WRITE,
 ) -> dict[str, object]:
     """Derive the full five-dimension provenance + policy capacity authority (ADR-0058).
 
@@ -242,7 +246,7 @@ def _resolve_authority(
         "source_type": source_type,
         "collection_mode": collection_mode,
         "actor_type": actor_type,
-        "provenance_operation": oa.OP_LIVE_WRITE,
+        "provenance_operation": provenance_operation,
         "evidence_type": evidence_type,
         "value_semantics": value_semantics,
         "observation_model": observation_model,
@@ -301,11 +305,78 @@ async def _verify_log_fk_ownership(
             raise HTTPException(status_code=404, detail="Set log not found")
 
 
+async def _current_or_staged_baseline(db: AsyncSession, user_id: int) -> UnifiedStateVector:
+    """The athlete's current state, or a baseline staged in this transaction when none exists.
+
+    ``state_service.load_or_init_current_state``'s policy for a missing row, without its
+    commit, so an observation and the baseline it seeds commit together. Composed here from
+    the reviewed loaders rather than added as a new public current-state loader (AUD-C17,
+    tests/test_state_loader_policies.py).
+    """
+    current = await state_service.load_current_state(db, user_id)
+    if current is None:
+        current = await state_service.stage_baseline_state(db, user_id)
+    return current
+
+
+@dataclass(frozen=True)
+class StagedObservation:
+    """An observation and its state consequences, staged in the caller's open transaction.
+
+    Produced by :func:`stage_observation`. Once the caller has committed,
+    :func:`complete_observation` runs what must follow a durable observation — the shadow
+    captures and the derived-KPI recompute — and returns the read model.
+    """
+
+    observation: BenchmarkObservation
+    benchmark_code: str
+    floor_shadow_candidate: tuple[UnifiedStateVector, UnifiedStateVector] | None
+    ekf_specs: list[Any]
+    score01: float | None
+    observation_time: datetime
+
+
 async def create_observation(
     db: AsyncSession,
     user_id: int,
     body: BenchmarkObservationCreate,
+    *,
+    performed_at: datetime | None = None,
 ) -> BenchmarkObservationRead:
+    """Record a benchmark observation, apply its resolved capacity authority, and commit.
+
+    A complete command that owns its transaction (pinned by test_observation_durability.py).
+    A writer that must commit more than the observation atomically — a strength report with
+    the profile value derived from it, or onboarding — composes :func:`stage_observation` and
+    :func:`complete_observation` around its own single commit instead.
+    """
+    staged = await stage_observation(db, user_id, body, performed_at=performed_at)
+    await db.commit()
+    return await complete_observation(db, user_id, staged)
+
+
+async def stage_observation(
+    db: AsyncSession,
+    user_id: int,
+    body: BenchmarkObservationCreate,
+    *,
+    performed_at: datetime | None = None,
+    provenance_operation: str = oa.OP_LIVE_WRITE,
+) -> StagedObservation:
+    """Stage an observation and its state consequences in the caller's transaction.
+
+    Does not commit, and nothing it calls commits: a baseline created for an athlete with no
+    state is staged as well. The caller commits, then calls :func:`complete_observation`.
+
+    ``performed_at`` is when the performance happened, and it is what prescription freshness
+    reads (S2). Workout extraction passes the workout's own time; the strength-report service
+    passes the date the athlete reported. Omitted means unknown, stored as NULL, and never
+    filled from the submission time.
+
+    ``provenance_operation`` names the server-side operation writing the row. It is a
+    parameter of this function, never a field of the request body, so a client cannot claim
+    another writer's provenance.
+    """
     r = await db.execute(
         select(BenchmarkDefinition)
         .options(selectinload(BenchmarkDefinition.observation_mappings))
@@ -317,8 +388,8 @@ async def create_observation(
     if definition.is_derived_only:
         raise ValueError("Observations cannot target derived-only benchmark definitions")
 
-    # Ownership gate (INT-A7) — before the db.add/flush below, and well before the
-    # commit at the end of this function, which nothing downstream can roll back.
+    # Ownership gate (INT-A7) — before the db.add/flush below: nothing is written for a log
+    # row the caller does not own.
     await _verify_log_fk_ownership(db, user_id, body)
 
     # Backend-owned normalization (ADR-0034): derive a [0,1] score from the
@@ -329,11 +400,16 @@ async def create_observation(
     if normalized_value is None and score01 is not None:
         normalized_value = round(score01 * 100.0, 2)
 
-    authority = _resolve_authority(body, definition)
+    authority = _resolve_authority(body, definition, provenance_operation=provenance_operation)
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
         observed_at=body.observed_at or datetime.now(UTC).replace(tzinfo=None),
+        performed_at=(
+            performed_at.astimezone(UTC).replace(tzinfo=None)
+            if performed_at is not None and performed_at.tzinfo is not None
+            else performed_at
+        ),
         raw_value=body.raw_value,
         secondary_value=body.secondary_value,
         normalized_value=normalized_value,
@@ -401,7 +477,7 @@ async def create_observation(
     # AFTER the commit, so a capture failure cannot abort the observation it describes.
     floor_shadow_candidate: tuple[UnifiedStateVector, UnifiedStateVector] | None = None
     if apply_state:
-        current = await state_service.load_or_init_current_state(db, user_id)
+        current = await _current_or_staged_baseline(db, user_id)
 
         new_state = apply_benchmark_observation(
             current,
@@ -452,7 +528,7 @@ async def create_observation(
         # to a live mutation. Record the candidate — proposed floor, projected uplift,
         # application-policy version, not-applied reason — as shadow evidence, separate
         # from any applied transition. Canonical capacity is untouched.
-        current = await state_service.load_or_init_current_state(db, user_id)
+        current = await _current_or_staged_baseline(db, user_id)
         candidate = apply_benchmark_observation(
             current,
             raw_value=body.raw_value,
@@ -473,31 +549,46 @@ async def create_observation(
             db, user_id, definition, normalized_value, obs.id
         )
 
-    await db.commit()
+    return StagedObservation(
+        observation=obs,
+        benchmark_code=body.benchmark_code,
+        floor_shadow_candidate=floor_shadow_candidate,
+        ekf_specs=ekf_specs,
+        score01=score01,
+        observation_time=observation_time,
+    )
+
+
+async def complete_observation(
+    db: AsyncSession, user_id: int, staged: StagedObservation
+) -> BenchmarkObservationRead:
+    """What follows a committed observation: shadow captures, the derived-KPI recompute, and
+    the read model. Call only after the transaction holding ``staged`` has committed."""
+    obs = staged.observation
 
     # Deferred floor-ratchet candidate (ADR-0058). Written here, after the observation is
     # durable, and in its own best-effort transaction: db.add() stages in memory and does
-    # no I/O, so while this rode the live transaction a bad row surfaced at the commit
-    # above and failed the primary write.
-    if floor_shadow_candidate is not None:
-        prior_state, floored_state = floor_shadow_candidate
+    # no I/O, so while this rode the live transaction a bad row surfaced at the
+    # observation's commit and failed the primary write.
+    if staged.floor_shadow_candidate is not None:
+        prior_state, floored_state = staged.floor_shadow_candidate
         await capacity_floor_shadow_service.record_floor_candidate(
-            db, user_id, observation=obs, benchmark_code=body.benchmark_code,
+            db, user_id, observation=obs, benchmark_code=staged.benchmark_code,
             prior=prior_state, floored=floored_state,
         )
 
     # Shadow EKF (ADR-0041): assimilate this benchmark into the parallel full-covariance
     # belief. Best-effort and capture-only — never affects the returned observation.
-    if ekf_specs:
+    if staged.ekf_specs:
         from app.services import ekf_shadow_service
 
         await ekf_shadow_service.record_ekf_update(
             db,
             user_id,
-            benchmark_code=body.benchmark_code,
-            mapping_specs=ekf_specs,
-            score01=score01,
-            observed_at=observation_time,
+            benchmark_code=staged.benchmark_code,
+            mapping_specs=staged.ekf_specs,
+            score01=staged.score01,
+            observed_at=staged.observation_time,
         )
 
     # Auto-recompute derived KPI metrics so the dashboard is immediately fresh
@@ -510,8 +601,8 @@ async def create_observation(
         # Roll back first — a recompute that failed mid-statement leaves the
         # transaction aborted, and the db.refresh(obs) below would then raise
         # InFailedSQLTransactionError, turning the already-committed write into a
-        # 500. The observation was committed above (:476), so this only discards
-        # the failed recompute's partial work, not the observation.
+        # 500. The observation committed before this function was called, so this
+        # only discards the failed recompute's partial work, not the observation.
         await db.rollback()
         logger.warning(
             "derived-KPI recompute failed for user %s after benchmark write",
@@ -522,7 +613,7 @@ async def create_observation(
         id=obs.id,
         user_id=obs.user_id,
         benchmark_definition_id=obs.benchmark_definition_id,
-        benchmark_code=body.benchmark_code,
+        benchmark_code=staged.benchmark_code,
         observed_at=obs.observed_at,
         raw_value=obs.raw_value,
         secondary_value=obs.secondary_value,

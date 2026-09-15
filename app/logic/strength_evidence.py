@@ -36,6 +36,10 @@ EV_PROTOCOL_GRADE_ESTIMATE = "protocol_grade_estimate"
 EV_ESTIMATED_FROM_TRAINING_SET = "estimated_from_training_set"
 EV_LOWER_BOUND = "lower_bound"
 EV_LEGACY_UNKNOWN = "legacy_unknown"
+# An athlete's own estimate of a strength level, with no performed set behind it (S2).
+# Retained as reported information; never a prescription basis, and — being estimated —
+# capped by observation_authority at an upward floor like any other non-measurement.
+EV_REPORTED_ESTIMATE = "reported_estimate"
 
 CAPACITY_AUTHORITATIVE_EVIDENCE: frozenset[str] = frozenset(
     {EV_DIRECT_MEASUREMENT, EV_PROTOCOL_GRADE_ESTIMATE}

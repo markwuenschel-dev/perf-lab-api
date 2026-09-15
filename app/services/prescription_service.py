@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,17 +18,24 @@ from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.exercise_slot import CatalogExercise
 from app.logic.planning import periodization_envelope
 from app.logic.prescriber import recommend_next_session
+from app.logic.prescription_evidence import (
+    EXPLAIN_NO_EVIDENCE,
+    BasisSelection,
+    explain_missing_basis,
+)
 from app.logic.workout_history import recent_workout_summaries
 from app.models.benchmark_definition import BenchmarkDefinition
-from app.models.benchmark_observation import BenchmarkObservation
 from app.models.exercise import Exercise
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession
 from app.models.weak_point import WeakPoint
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
-from app.repositories.benchmark_observation_repository import (
-    prescription_basis_filter,
+from app.repositories.benchmark_observation_repository import select_prescription_basis
+from app.schemas.prescription import (
+    ConservatismSummary,
+    LoadExplanation,
+    LoadExplanationReason,
+    WorkoutPrescription,
 )
-from app.schemas.prescription import ConservatismSummary, WorkoutPrescription
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.schemas.wellness import ReadinessScore
@@ -196,34 +204,100 @@ async def _enrich_exercises_with_weak_point_tags(
 
 
 async def _current_e1rm_values(
-    db: AsyncSession, user_id: int, codes: set[str]
-) -> dict[str, float]:
-    """Latest valid e1RM raw_value per benchmark code for this athlete."""
+    db: AsyncSession, user_id: int, codes: set[str], *, as_of: datetime
+) -> tuple[dict[str, float], dict[str, BasisSelection]]:
+    """The e1RM that may size a load at ``as_of``, per benchmark code (S2), and the
+    selection behind every requested code.
+
+    Selected by ``select_prescription_basis`` — the selection
+    ``state_service.prelog_e1rm_denominators`` also uses — so for the same evidence and the
+    same ``as_of`` the prescribed load and the dose-intensity denominator resolve the same
+    e1RM (ADR-0056). Codes with no qualifying evidence are absent from the values; their
+    selections still say why, which is what the athlete is told beside the exercise (N1).
+    """
     if not codes:
+        return {}, {}
+    selections = await select_prescription_basis(db, user_id, codes, as_of=as_of)
+    values = {
+        code: float(selection.selected.raw_value)
+        for code, selection in selections.items()
+        if selection.selected is not None and selection.selected.raw_value is not None
+    }
+    return values, selections
+
+
+async def _load_types_for_names(db: AsyncSession, names: list[str]) -> dict[str, str]:
+    """Catalog lookup: exercise name → its ``load_type``."""
+    if not names:
         return {}
     res = await db.execute(
-        select(
-            BenchmarkDefinition.code,
-            BenchmarkObservation.raw_value,
-        )
-        .join(
-            BenchmarkObservation,
-            BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id,
-        )
-        .where(
-            BenchmarkObservation.user_id == user_id,
-            BenchmarkDefinition.code.in_(codes),
-            # ADR-0056: the same predicate `prelog_e1rm_denominators` uses, so the
-            # prescribed load and the dose-intensity denominator cannot disagree.
-            prescription_basis_filter(),
-        )
-        .order_by(BenchmarkObservation.observed_at.desc())
+        select(Exercise.name, Exercise.load_type).where(Exercise.name.in_(names))
     )
-    latest: dict[str, float] = {}
-    for code, raw in res.all():
-        if code not in latest and raw is not None:
-            latest[code] = float(raw)
-    return latest
+    return dict(res.tuples().all())
+
+
+def _utc_aware(moment: datetime) -> datetime:
+    """Stored timestamps are naive UTC; the published contract carries aware UTC."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def _explanation_for(
+    code: str, selection: BasisSelection | None, evaluated_at: datetime
+) -> LoadExplanation:
+    """The explanation for a lift that has an e1RM benchmark."""
+    if selection is not None and selection.selected is not None:
+        performed = selection.selected.performed_at
+        return LoadExplanation(
+            status="recommended",
+            benchmark_code=code,
+            evaluated_at=evaluated_at,
+            evidence_performed_at=_utc_aware(performed) if performed is not None else None,
+        )
+    explanatory = selection.explanatory if selection is not None else None
+    reason = explain_missing_basis(selection) if selection is not None else EXPLAIN_NO_EVIDENCE
+    return LoadExplanation(
+        status="no_qualifying_evidence",
+        reason=cast(LoadExplanationReason, reason),
+        benchmark_code=code,
+        evaluated_at=evaluated_at,
+        evidence_performed_at=(
+            _utc_aware(explanatory.performed_at)
+            if explanatory is not None and explanatory.performed_at is not None
+            else None
+        ),
+    )
+
+
+async def _explain_loads(
+    db: AsyncSession,
+    rx: WorkoutPrescription,
+    code_by_name: dict[str, str],
+    selections: dict[str, BasisSelection],
+    *,
+    evaluated_at: datetime,
+) -> None:
+    """N1: say, beside every prescribed exercise, whether it carries a suggested weight.
+
+    A lift with an e1RM benchmark is ``recommended`` or ``no_qualifying_evidence`` (with the
+    selector's category). An externally loaded exercise with no benchmark is
+    ``not_supported`` — no athlete report could size it, which is a different thing to tell
+    the athlete than "your evidence does not qualify". Everything else (bodyweight, time,
+    distance, or not in the catalog) has nothing to explain and stays ``None``.
+
+    Mutates ``rx.exercises`` in place. Read-only against the database.
+    """
+    load_types = await _load_types_for_names(
+        db, [ex.name for ex in rx.exercises if ex.name not in code_by_name]
+    )
+    at = _utc_aware(evaluated_at)
+    for ex in rx.exercises:
+        code = code_by_name.get(ex.name)
+        if code is not None:
+            ex.load_explanation = _explanation_for(code, selections.get(code), at)
+        elif sc.is_loaded(load_types.get(ex.name)):
+            ex.load_explanation = LoadExplanation(status="not_supported", evaluated_at=at)
+        else:
+            ex.load_explanation = None
 
 
 async def _standardization_rules_for_codes(
@@ -244,17 +318,27 @@ async def _enrich_exercises_with_load(
     user_id: int,
     rx: WorkoutPrescription,
     block_context: BlockContext,
+    *,
+    as_of: datetime | None = None,
 ) -> list[strength_decline_service.StrengthDeclineShadowPayload]:
-    """ADR-0045: resolve %e1RM → suggested kg for prescribed lifts with a current e1RM.
+    """ADR-0045: resolve %e1RM → suggested kg for prescribed lifts with a qualifying e1RM.
 
-    Mutates ``rx.exercises`` in place. Lifts without a mapped e1RM benchmark or without
-    a logged e1RM keep RPE-only autoregulation (the existing ``load_note``).
+    Mutates ``rx.exercises`` in place. Lifts without a mapped e1RM benchmark, or without
+    evidence that qualifies at ``as_of`` (S2: permitted, characterized, and performed
+    within the freshness window), keep RPE-only autoregulation (the existing
+    ``load_note``). ``as_of`` defaults to now; a caller that must agree with another
+    e1RM reader passes the same instant.
 
     INT-02 (ADR-0066): the e1RM basis is the candidate-aware basis when
     ``DECLINE_CANDIDATE_PRESCRIPTION_BASIS`` is ``on`` (canonical current capacity
-    capped by an active decline-candidate ceiling — the latest raw observation is no
+    capped by an active decline-candidate ceiling — the selected observation is no
     longer authority); ``shadow`` records both bases but still prescribes off legacy;
-    ``off`` is byte-identical to the pre-INT-02 latest-raw behaviour.
+    ``off`` prescribes off the S2-selected observation (passed to the resolver as
+    ``latest_raw``, a name that predates S2).
+
+    N1: every exercise also gets its ``load_explanation`` (see :func:`_explain_loads`),
+    evaluated at the same instant as the selection, and set before any early return — a
+    lift with no qualifying evidence is exactly the one the athlete needs told about.
 
     Returns the shadow payloads the caller must persist **after** the prescription
     commits. This function performs no shadow I/O itself: it runs inside the
@@ -264,10 +348,12 @@ async def _enrich_exercises_with_load(
     shadow_payloads: list[strength_decline_service.StrengthDeclineShadowPayload] = []
     if not rx.exercises:
         return shadow_payloads
+    reference = as_of or datetime.now(UTC)
     code_by_name = await _e1rm_codes_for_names(db, [ex.name for ex in rx.exercises])
-    if not code_by_name:
-        return shadow_payloads
-    e1rm_by_code = await _current_e1rm_values(db, user_id, set(code_by_name.values()))
+    e1rm_by_code, selections = await _current_e1rm_values(
+        db, user_id, set(code_by_name.values()), as_of=reference
+    )
+    await _explain_loads(db, rx, code_by_name, selections, evaluated_at=reference)
     if not e1rm_by_code:
         return shadow_payloads
 
@@ -358,6 +444,8 @@ class _PrescriptionContext:
     kpi_summary: dict[str, float]
     active_weak_points: list[str]
     equipment: list[str] | None
+    #: A tie-break among movements the athlete can do (S-C); [] = no preference.
+    equipment_preference: list[str]
     #: Catalog snapshot the slot resolver selects from (ADR-0016). Loaded once per
     #: prescription so the pure logic layer never touches the database.
     catalog: list[CatalogExercise]
@@ -515,6 +603,7 @@ async def _gather_prescription_context(
         kpi_summary=kpi_summary,
         active_weak_points=active_weak_points,
         equipment=(profile.equipment if profile else None),
+        equipment_preference=(list(profile.equipment_preference or []) if profile else []),
         catalog=await _load_exercise_catalog(db),
         # candidate_log_out captures the full ranked pool for decision telemetry
         # (Workstream B). It starts empty; the scorer only fills it, never reads it.
@@ -541,6 +630,7 @@ def _score_prescription(
         candidate_log_out=ctx.candidate_log,
         readiness_override=ctx.readiness_override,
         catalog=ctx.catalog,
+        equipment_preference=ctx.equipment_preference or None,
     )
 
 

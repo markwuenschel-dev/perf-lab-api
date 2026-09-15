@@ -25,6 +25,7 @@ import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, resourceData, type AuthedResource } from "../resource";
 import { Card, MetricBar, Pill, ReadinessRing, SectionLabel, SyncChip, WeakPointTags } from "../ui";
 import { WhyThisSession } from "../prescription/WhyThisSession";
+import { LoadExplanation } from "../prescription/LoadExplanation";
 import { Chart, Line, Marker, useVizTheme } from "../viz";
 import { meanFatigue, relativeTime } from "../stateVector";
 import { CapacityView } from "./twin/CapacityView";
@@ -452,7 +453,7 @@ function nextSessionView(resource: AuthedResource<WorkoutPrescription>): {
 // fall back to a hint instead of fabricating a session.
 function NextSessionCard() {
   const { token } = useAuth();
-  const { state } = usePerfLab();
+  const { state, actions } = usePerfLab();
   const goal = state.settings.goal;
   const rxRes = useAuthedResource<WorkoutPrescription>((t) => api.getNextSession(goal, t), [goal]);
   const { summary, body } = nextSessionView(rxRes);
@@ -506,6 +507,11 @@ function NextSessionCard() {
                       <span className="text-[13px] font-semibold leading-none text-soft">{ex.name}</span>
                       {detail && <span className="font-mono text-[12px] leading-none text-faint">{detail}</span>}
                     </div>
+                    <LoadExplanation
+                      explanation={ex.load_explanation}
+                      exerciseName={ex.name}
+                      onOpenAssess={() => actions.setScreen("assess")}
+                    />
                     <WeakPointTags tags={tags} />
                   </div>
                 );

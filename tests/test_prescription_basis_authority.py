@@ -1,25 +1,17 @@
-"""An observation marked unfit to prescribe from must not size the bar.
+"""Which observation sizes the bar — pinned against the ATHLETE-VISIBLE OUTCOME.
 
-``affects_prescription`` was written by three paths and read by none, so
-``state_service._extract_e1rm_observations``'s promise - "a below-watermark set is
-history only - not even a prescription basis" - was not enforced anywhere. The e1RM
-basis query filtered on ``validity_status`` alone and took the latest observation,
-whatever the flag said.
+``affects_prescription`` is an explicit permission: toggling only that flag True -> False
+must leave the next prescription exactly as it was before the observation existed, with
+the positive control beside it so a selector that rejects everything cannot pass.
 
-The invariant these tests pin is stronger than "False rows are filtered", because that
-phrasing can be satisfied by the one query that happens to be patched. It is stated
-against the ATHLETE-VISIBLE OUTCOME instead:
-
-    Given two otherwise identical observations, toggling only affects_prescription
-    True -> False must leave the next prescription exactly as it was before that
-    observation existed.
-
-and paired with the positive control, so a filter that rejects everything cannot pass.
-``test_dose_denominator_agrees_with_prescribed_load`` extends it across the ADR-0056
-pairing: both e1RM readers must reach the same number, which is what stops a future
-reader from bypassing the predicate and quietly reintroducing the divergence.
+S2 adds two dimensions the original suite could not express. Evidence must be FRESH by
+performance time (28 days, provisional), and the two e1RM readers — the prescribed load
+and the dose-intensity denominator — agree only for identical evidence AND an identical
+``as_of``. A prescription and a later or backdated workout log can straddle an expiry;
+these tests pin both the agreement and the straddle, rather than asserting a guarantee
+the time inputs do not support.
 """
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -39,8 +31,8 @@ pytestmark = pytest.mark.asyncio
 _CODE = "pl_e1rm_squat"
 _RULES = {"floor": 40.0, "cap": 250.0}
 _BLOCK = {"week_number": 1, "duration_weeks": 4}
-#: Every observation is stamped relative to this, so "newer" is unambiguous.
-_T0 = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+#: Every prescription and denominator in this file is evaluated as of this instant.
+AS_OF = datetime(2026, 9, 14, 12, 0, 0)
 
 
 async def _setup(db, email: str) -> User:
@@ -61,29 +53,36 @@ async def _setup(db, email: str) -> User:
     return user
 
 
-async def _observe(db, user_id: int, raw: float, *, days: int, affects: bool) -> None:
-    """Record an e1RM observation through the service, as every real writer does."""
+async def _observe(
+    db, user_id: int, raw: float, *, performed_days_ago: float | None, affects: bool = True
+) -> None:
+    """A characterized tested max, recorded through the service as every real writer does.
+
+    ``performed_days_ago=None`` records it with no performance date.
+    """
+    performed_at = None if performed_days_ago is None else AS_OF - timedelta(days=performed_days_ago)
     await benchmark_service.create_observation(
         db, user_id,
         BenchmarkObservationCreate(
             benchmark_code=_CODE, raw_value=raw, source="benchmark_test",
-            observed_at=_T0 + timedelta(days=days), affects_prescription=affects,
+            value_semantics="measured", affects_prescription=affects,
         ),
+        performed_at=performed_at,
     )
 
 
-async def _observe_without_stating_the_flag(db, user_id: int, raw: float, *, days: int) -> None:
-    """Write an observation the way the corpus-ingest scripts used to: flag omitted.
+async def _observe_without_stating_the_flag(db, user_id: int, raw: float, *, performed_days_ago: float) -> None:
+    """A row whose writer never stated the prescription flag: a genuine SQL NULL.
 
-    Deliberately bypasses ``create_observation`` (which defaults the flag to True) to
-    produce a genuine SQL NULL - the "nobody ever said" case.
+    Deliberately bypasses ``create_observation`` (which defaults the flag to True).
     """
     def_id = (await db.execute(
         select(BenchmarkDefinition.id).where(BenchmarkDefinition.code == _CODE)
     )).scalar_one()
     db.add(BenchmarkObservation(
         user_id=user_id, benchmark_definition_id=def_id, raw_value=raw,
-        source="synthetic:strength_standards", observed_at=_T0 + timedelta(days=days),
+        source="benchmark_test", source_type="athlete_entry", value_semantics="measured",
+        performed_at=AS_OF - timedelta(days=performed_days_ago),
     ))
     await db.commit()
 
@@ -97,39 +96,37 @@ def _squat_rx() -> WorkoutPrescription:
     )
 
 
-async def _prescribe(db, user_id: int) -> ExercisePrescription:
-    """The squat as it would actually be prescribed to this athlete right now."""
+async def _prescribe(db, user_id: int, as_of: datetime = AS_OF) -> ExercisePrescription:
+    """The squat as it would be prescribed to this athlete at ``as_of``."""
     rx = _squat_rx()
-    await _enrich_exercises_with_load(db, user_id, rx, _BLOCK)
+    await _enrich_exercises_with_load(db, user_id, rx, _BLOCK, as_of=as_of)
     return rx.exercises[0]
 
 
+# ── explicit permission ──────────────────────────────────────────────────────────
+
 async def test_rejected_observation_leaves_the_prescription_exactly_as_it_was(async_db):
     user = await _setup(async_db, "basis-reject@test.com")
-    await _observe(async_db, user.id, 140.0, days=0, affects=True)
+    await _observe(async_db, user.id, 140.0, performed_days_ago=2)
     before = await _prescribe(async_db, user.id)
 
-    # A newer, heavier observation the athlete explicitly marked unfit to prescribe from.
-    await _observe(async_db, user.id, 180.0, days=1, affects=False)
+    # A fresher, heavier observation the athlete explicitly marked unfit to prescribe from.
+    await _observe(async_db, user.id, 180.0, performed_days_ago=1, affects=False)
     after = await _prescribe(async_db, user.id)
 
     assert before.e1rm_basis_kg == 140.0, "precondition: the accepted observation is the basis"
-    assert after.e1rm_basis_kg == before.e1rm_basis_kg, (
-        "a rejected observation must not become the prescription basis"
-    )
-    assert after.prescribed_load_kg == before.prescribed_load_kg, (
-        "and must not move the prescribed load"
-    )
+    assert after.e1rm_basis_kg == before.e1rm_basis_kg
+    assert after.prescribed_load_kg == before.prescribed_load_kg
     assert after.percent_e1rm == before.percent_e1rm
 
 
 async def test_the_same_observation_accepted_does_move_the_prescription(async_db):
-    """Positive control: a filter that rejects everything must not pass the test above."""
+    """Positive control: a selector that rejects everything must not pass the test above."""
     user = await _setup(async_db, "basis-accept@test.com")
-    await _observe(async_db, user.id, 140.0, days=0, affects=True)
+    await _observe(async_db, user.id, 140.0, performed_days_ago=2)
     before = await _prescribe(async_db, user.id)
 
-    await _observe(async_db, user.id, 180.0, days=1, affects=True)
+    await _observe(async_db, user.id, 180.0, performed_days_ago=1)
     after = await _prescribe(async_db, user.id)
 
     assert after.e1rm_basis_kg == 180.0
@@ -140,31 +137,108 @@ async def test_the_same_observation_accepted_does_move_the_prescription(async_db
 async def test_an_observation_that_never_stated_the_flag_is_not_a_basis(async_db):
     """NULL is "nobody said", and absence of a statement is not permission."""
     user = await _setup(async_db, "basis-null@test.com")
-    await _observe(async_db, user.id, 140.0, days=0, affects=True)
+    await _observe(async_db, user.id, 140.0, performed_days_ago=2)
     before = await _prescribe(async_db, user.id)
 
-    await _observe_without_stating_the_flag(async_db, user.id, 180.0, days=1)
+    await _observe_without_stating_the_flag(async_db, user.id, 180.0, performed_days_ago=1)
     after = await _prescribe(async_db, user.id)
 
     assert after.e1rm_basis_kg == before.e1rm_basis_kg == 140.0
     assert after.prescribed_load_kg == before.prescribed_load_kg
 
 
-async def test_dose_denominator_agrees_with_prescribed_load(async_db):
-    """ADR-0056 across the seam: both e1RM readers must resolve the same number.
+# ── freshness by performance time ────────────────────────────────────────────────
 
-    ``prelog_e1rm_denominators`` sizes dose intensity (I = load / e1RM_pre) and
-    ``_current_e1rm_values`` sizes the prescribed load. If only one honoured the flag,
-    an athlete would be prescribed against 140 and scored against 180.
-    """
+async def test_undated_evidence_never_sizes_a_load(async_db):
+    user = await _setup(async_db, "basis-undated@test.com")
+    await _observe(async_db, user.id, 140.0, performed_days_ago=None)
+
+    rx = await _prescribe(async_db, user.id)
+
+    assert rx.prescribed_load_kg is None
+    assert rx.e1rm_basis_kg is None
+    assert rx.load_note == "Autoregulate by RPE"
+
+
+async def test_submission_time_never_becomes_performance_time(async_db):
+    """observed_at still defaults for the record; performed_at stays unknown."""
+    user = await _setup(async_db, "basis-submitted@test.com")
+    await _observe(async_db, user.id, 140.0, performed_days_ago=None)
+
+    row = (await async_db.execute(
+        select(BenchmarkObservation).where(BenchmarkObservation.user_id == user.id)
+    )).scalar_one()
+    assert row.observed_at is not None
+    assert row.performed_at is None
+
+
+async def test_stale_evidence_stops_sizing_a_load_without_touching_the_row(async_db):
+    """Expiry is evaluated at selection time: the observation itself is not invalidated
+    and its flags are not flipped."""
+    user = await _setup(async_db, "basis-stale@test.com")
+    await _observe(async_db, user.id, 140.0, performed_days_ago=10)
+
+    fresh = await _prescribe(async_db, user.id)
+    expired = await _prescribe(async_db, user.id, as_of=AS_OF + timedelta(days=19))
+
+    assert fresh.e1rm_basis_kg == 140.0
+    assert expired.prescribed_load_kg is None and expired.e1rm_basis_kg is None
+    row = (await async_db.execute(
+        select(BenchmarkObservation).where(BenchmarkObservation.user_id == user.id)
+    )).scalar_one()
+    assert (row.validity_status, row.affects_prescription) == ("valid", True)
+
+
+# ── the two readers ──────────────────────────────────────────────────────────────
+
+async def test_readers_agree_on_identical_evidence_and_reference_time(async_db):
+    """ADR-0056 across the seam, stated with its precondition: same evidence, same as_of."""
     user = await _setup(async_db, "basis-pairing@test.com")
-    await _observe(async_db, user.id, 140.0, days=0, affects=True)
-    await _observe(async_db, user.id, 180.0, days=1, affects=False)
+    await _observe(async_db, user.id, 140.0, performed_days_ago=5)
+    await _observe(async_db, user.id, 180.0, performed_days_ago=4, affects=False)
+    await _observe(async_db, user.id, 150.0, performed_days_ago=40)  # stale
 
     prescribed = await _prescribe(async_db, user.id)
-    denominators = await prelog_e1rm_denominators(async_db, user.id, {_CODE})
+    denominators = await prelog_e1rm_denominators(async_db, user.id, {_CODE}, as_of=AS_OF)
 
     assert denominators[_CODE]["value"] == 140.0
-    assert prescribed.e1rm_basis_kg == denominators[_CODE]["value"], (
-        "dose intensity and prescribed load must resolve the same e1RM"
+    assert prescribed.e1rm_basis_kg == denominators[_CODE]["value"]
+
+
+async def test_readers_agree_that_nothing_qualifies(async_db):
+    user = await _setup(async_db, "basis-pairing-empty@test.com")
+    await _observe(async_db, user.id, 140.0, performed_days_ago=30)
+
+    prescribed = await _prescribe(async_db, user.id)
+    denominators = await prelog_e1rm_denominators(async_db, user.id, {_CODE}, as_of=AS_OF)
+
+    assert prescribed.e1rm_basis_kg is None
+    assert _CODE not in denominators
+
+
+async def test_a_prescription_and_a_later_log_can_straddle_expiry(async_db):
+    """Agreement is per reference time. Evidence performed 27 days before the prescription
+    sizes that prescription; a workout logged two days later is scored without it."""
+    user = await _setup(async_db, "basis-straddle@test.com")
+    await _observe(async_db, user.id, 140.0, performed_days_ago=27)
+
+    prescribed = await _prescribe(async_db, user.id, as_of=AS_OF)
+    logged_later = await prelog_e1rm_denominators(
+        async_db, user.id, {_CODE}, as_of=AS_OF + timedelta(days=2)
     )
+
+    assert prescribed.e1rm_basis_kg == 140.0
+    assert _CODE not in logged_later
+
+
+async def test_a_backdated_log_ignores_evidence_performed_after_it(async_db):
+    """The dose reference time is the workout's own time: a lift performed after the
+    session being logged cannot be that session's pre-log denominator."""
+    user = await _setup(async_db, "basis-backdated@test.com")
+    await _observe(async_db, user.id, 140.0, performed_days_ago=6)
+    await _observe(async_db, user.id, 160.0, performed_days_ago=1)
+
+    backdated_session = AS_OF - timedelta(days=3)
+    denominators = await prelog_e1rm_denominators(async_db, user.id, {_CODE}, as_of=backdated_session)
+
+    assert denominators[_CODE]["value"] == 140.0

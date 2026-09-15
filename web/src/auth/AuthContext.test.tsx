@@ -22,13 +22,14 @@ import type { AuthContextValue } from "./perfLabAuthContext";
 
 const fetchMe = vi.fn();
 const getProfile = vi.fn();
+const onboard = vi.fn();
 
 vi.mock("@/api/perfLabClient", () => ({
   fetchMe: (...args: unknown[]) => fetchMe(...args),
   getProfile: (...args: unknown[]) => getProfile(...args),
   login: vi.fn(),
   register: vi.fn(),
-  onboard: vi.fn(),
+  onboard: (...args: unknown[]) => onboard(...args),
 }));
 
 const TOKEN_KEY = "perf_lab_access_token";
@@ -94,6 +95,7 @@ beforeEach(() => {
   fetchMe.mockReset();
   getProfile.mockReset();
   getProfile.mockResolvedValue(null);
+  onboard.mockReset();
 });
 
 afterEach(cleanup);
@@ -264,5 +266,55 @@ describe("the healthy path is unchanged", () => {
     expect(storedToken()).toBeNull();
     expect(sessionStorage.getItem(EMAIL_KEY)).toBeNull();
     expect(screen.getByTestId("authed").textContent).toBe("false");
+  });
+});
+
+describe("completeOnboarding sends the athlete's facts with their session", () => {
+  const REQ = {
+    goal: "Strength",
+    strength: [
+      {
+        benchmark_code: "pl_e1rm_squat",
+        method: "tested_max" as const,
+        value_kg: 140,
+        performed_at: "2026-09-10T00:00:00.000Z",
+      },
+    ],
+  };
+
+  it("forwards the stored bearer token to POST /v1/onboard", async () => {
+    fetchMe.mockResolvedValue(SESSION_USER);
+    onboard.mockResolvedValue({});
+    renderWithStoredSession();
+    await waitFor(() =>
+      expect(screen.getByTestId("user").textContent).toBe("athlete@example.com"),
+    );
+
+    await act(async () => {
+      await latest!.completeOnboarding(REQ);
+    });
+
+    expect(onboard).toHaveBeenCalledTimes(1);
+    expect(onboard).toHaveBeenCalledWith(REQ, TOKEN);
+  });
+
+  it("lets a refused onboarding reach the screen instead of reporting success", async () => {
+    fetchMe.mockResolvedValue(SESSION_USER);
+    onboard.mockRejectedValue(apiError(422));
+    renderWithStoredSession();
+    await waitFor(() =>
+      expect(screen.getByTestId("user").textContent).toBe("athlete@example.com"),
+    );
+
+    let caught: unknown = null;
+    await act(async () => {
+      await latest!.completeOnboarding(REQ).catch((e: unknown) => {
+        caught = e;
+      });
+    });
+
+    expect(caught).toEqual(apiError(422));
+    // A refusal is not a session failure: the athlete keeps the session to retry with.
+    expect(storedToken()).toBe(TOKEN);
   });
 });

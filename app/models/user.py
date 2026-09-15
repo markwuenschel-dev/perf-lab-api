@@ -97,7 +97,14 @@ class AthleteProfile(Base):
     available_days_per_week: Mapped[int] = mapped_column(Integer, default=3)
     session_duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
 
+    # Equipment the athlete has — a hard filter on exercise selection. [] = not set (nothing is
+    # filtered); ["bodyweight"] = bodyweight only; otherwise the equipment tags they own.
     equipment: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    # A tie-break among movements the athlete can do (S-C): barbell | dumbbell | machine, where
+    # machines include cables. [] = no preference. Never limits or widens selection.
+    equipment_preference: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, nullable=False
+    )
     squat_1rm: Mapped[float | None] = mapped_column(Float, nullable=True)
     deadlift_1rm: Mapped[float | None] = mapped_column(Float, nullable=True)
     bench_1rm: Mapped[float | None] = mapped_column(Float, nullable=True)

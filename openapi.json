@@ -136,6 +136,52 @@
         "title": "AnchorObservationOut",
         "type": "object"
       },
+      "AppliedConstraint": {
+        "description": "One ``constraints_applied`` code with the words an athlete reads for it.\n\nBuilt by ``app.logic.constraint_labels.describe_constraints`` from the same list, so the\ncode and its label cannot drift apart. A code the labeller does not recognise gets an\nhonest fallback label rather than a guess made from its punctuation.",
+        "properties": {
+          "athlete_visible": {
+            "description": "False for engine bookkeeping that did not shape the session.",
+            "title": "Athlete Visible",
+            "type": "boolean"
+          },
+          "code": {
+            "description": "The engine code, exactly as in constraints_applied.",
+            "title": "Code",
+            "type": "string"
+          },
+          "group": {
+            "description": "Where the entry belongs when grouped.",
+            "enum": [
+              "safety",
+              "plan_rule",
+              "block",
+              "objective",
+              "adherence",
+              "weak_point",
+              "state",
+              "equipment",
+              "advisory",
+              "internal",
+              "other"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "label": {
+            "description": "What the athlete reads.",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "group",
+          "athlete_visible"
+        ],
+        "title": "AppliedConstraint",
+        "type": "object"
+      },
       "AssessmentBenchmarkCard": {
         "properties": {
           "code": {
@@ -157,6 +203,17 @@
               }
             ],
             "title": "Confidence Status"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "domain": {
             "title": "Domain",
@@ -230,6 +287,11 @@
             "title": "Recommended",
             "type": "boolean"
           },
+          "strength_evidence_entry": {
+            "default": false,
+            "title": "Strength Evidence Entry",
+            "type": "boolean"
+          },
           "unit": {
             "title": "Unit",
             "type": "string"
@@ -251,6 +313,7 @@
           "domain_lenses_source",
           "metric_type",
           "unit",
+          "description",
           "protocol_summary",
           "measures_axes",
           "confidence_status",
@@ -407,6 +470,17 @@
             "title": "Code",
             "type": "string"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "domain": {
             "title": "Domain",
             "type": "string"
@@ -507,6 +581,7 @@
           "is_primary_anchor",
           "is_derived_only",
           "is_validator_only",
+          "description",
           "protocol_summary",
           "better_direction",
           "observation_weight",
@@ -1977,6 +2052,17 @@
             "description": "The current e1RM the suggestion was resolved against.",
             "title": "E1Rm Basis Kg"
           },
+          "load_explanation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoadExplanation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this exercise does or does not carry a suggested weight."
+          },
           "load_note": {
             "anyOf": [
               {
@@ -2451,6 +2537,77 @@
           "can_affect_prescriber_rules"
         ],
         "title": "KPIValueOut",
+        "type": "object"
+      },
+      "LoadExplanation": {
+        "description": "Whether this exercise carries a suggested weight, and if not, why (S2, N1).\n\n* ``recommended`` \u2014 a qualifying e1RM sized the load.\n* ``no_qualifying_evidence`` \u2014 the lift supports a weight, but nothing qualified at\n  ``evaluated_at``; ``reason`` says which kind of evidence came closest.\n* ``not_supported`` \u2014 an externally loaded exercise with no e1RM benchmark, so no\n  athlete evidence could size it.\n\nUnloaded, uncatalogued exercises carry no explanation at all. It is persisted with the\nserved prescription, so what the athlete was shown can be read back later.",
+        "properties": {
+          "benchmark_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The e1RM benchmark the lift was evaluated against.",
+            "title": "Benchmark Code"
+          },
+          "evaluated_at": {
+            "description": "The instant evidence eligibility was evaluated (UTC).",
+            "format": "date-time",
+            "title": "Evaluated At",
+            "type": "string"
+          },
+          "evidence_performed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the selected evidence (recommended) or the deterministic explanatory evidence (no_qualifying_evidence) was performed, if known (UTC).",
+            "title": "Evidence Performed At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "stale",
+                  "missing_performance_date",
+                  "estimate_not_used",
+                  "set_not_qualifying",
+                  "no_evidence",
+                  "not_qualifying"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only when status is no_qualifying_evidence.",
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "recommended",
+              "no_qualifying_evidence",
+              "not_supported"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "evaluated_at"
+        ],
+        "title": "LoadExplanation",
         "type": "object"
       },
       "MacrocycleCreate": {
@@ -3008,18 +3165,6 @@
             "title": "Available Days Per Week",
             "type": "integer"
           },
-          "bench_1rm_kg": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bench 1Rm Kg"
-          },
           "bodyweight_kg": {
             "anyOf": [
               {
@@ -3043,18 +3188,6 @@
               }
             ],
             "title": "Date Of Birth"
-          },
-          "deadlift_1rm_kg": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deadlift 1Rm Kg"
           },
           "display_name": {
             "anyOf": [
@@ -3114,17 +3247,12 @@
             "title": "Session Duration Minutes",
             "type": "integer"
           },
-          "squat_1rm_kg": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Squat 1Rm Kg"
+          "strength": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardStrengthReport"
+            },
+            "title": "Strength",
+            "type": "array"
           }
         },
         "title": "OnboardRequest",
@@ -3156,6 +3284,111 @@
           "message"
         ],
         "title": "OnboardResponse",
+        "type": "object"
+      },
+      "OnboardStrengthReport": {
+        "additionalProperties": false,
+        "description": "A strength report given during onboarding (S2 decision 3).\n\nThe same characterization semantics as Assess \u2014 onboarding gets no weaker rules. It adds\none input requirement: a tested max or a set must carry the date it was performed, so a\nfact asked for at signup is not recorded as undated. An estimate needs no date; it never\nsizes a load either way.",
+        "properties": {
+          "benchmark_code": {
+            "description": "The e1RM benchmark code of a canonical lift.",
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "load_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rep_set: the set's load in kg.",
+            "title": "Load Kg"
+          },
+          "method": {
+            "description": "tested_max: a 1-rep max the athlete performed. rep_set: a set the athlete performed, described by load_kg and reps (plus effort when known). estimate: the athlete's estimate, retained as reported information and never a prescription basis.",
+            "enum": [
+              "tested_max",
+              "rep_set",
+              "estimate"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "performed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the lift was performed. Omitted means unknown: the observation is recorded but never sizes a prescribed load.",
+            "title": "Performed At"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rep_set: repetitions completed.",
+            "title": "Reps"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "value_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "tested_max / estimate: the weight in kg.",
+            "title": "Value Kg"
+          }
+        },
+        "required": [
+          "benchmark_code",
+          "method"
+        ],
+        "title": "OnboardStrengthReport",
         "type": "object"
       },
       "OnboardingStateResponse": {
@@ -3568,6 +3801,14 @@
             ],
             "description": "Whether low confidence made this session more cautious. NULL when load was never resolved for this prescription (no lift with a current e1RM)."
           },
+          "constraint_details": {
+            "description": "``constraints_applied`` with athlete-facing labels, one entry per code in the same order. Empty for prescriptions stored before labels existed.",
+            "items": {
+              "$ref": "#/components/schemas/AppliedConstraint"
+            },
+            "title": "Constraint Details",
+            "type": "array"
+          },
           "constraints_applied": {
             "items": {
               "type": "string"
@@ -3777,6 +4018,13 @@
             "title": "Equipment",
             "type": "array"
           },
+          "equipment_preference": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Equipment Preference",
+            "type": "array"
+          },
           "experience_level": {
             "title": "Experience Level",
             "type": "string"
@@ -3896,7 +4144,7 @@
         "type": "object"
       },
       "ProfileUpdate": {
-        "description": "Partial update \u2014 only fields present in the request body are written.\n\nNullable fields (lifts, biometrics) accept an explicit ``null`` to clear a\npreviously stored value; omitting a field leaves it untouched.",
+        "description": "Partial update \u2014 only fields present in the request body are written.\n\nNullable fields (biometrics) accept an explicit ``null`` to clear a previously stored\nvalue; omitting a field leaves it untouched. Squat, bench and deadlift are refused:\nthey are characterized strength evidence, not profile numbers (S2).",
         "properties": {
           "available_days_per_week": {
             "anyOf": [
@@ -3910,18 +4158,6 @@
               }
             ],
             "title": "Available Days Per Week"
-          },
-          "bench_1rm_kg": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bench 1Rm Kg"
           },
           "bodyweight_kg": {
             "anyOf": [
@@ -3947,18 +4183,6 @@
             ],
             "title": "Date Of Birth"
           },
-          "deadlift_1rm_kg": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deadlift 1Rm Kg"
-          },
           "display_name": {
             "anyOf": [
               {
@@ -3983,6 +4207,20 @@
               }
             ],
             "title": "Equipment"
+          },
+          "equipment_preference": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment Preference"
           },
           "experience_level": {
             "anyOf": [
@@ -4089,18 +4327,6 @@
               }
             ],
             "title": "Session Duration Minutes"
-          },
-          "squat_1rm_kg": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Squat 1Rm Kg"
           },
           "untracked_wellness_signals": {
             "anyOf": [
@@ -5109,6 +5335,120 @@
           "confidence_presentation_policy_version"
         ],
         "title": "StateHistorySnapshotRead",
+        "type": "object"
+      },
+      "StrengthEvidenceCreate": {
+        "additionalProperties": false,
+        "description": "A strength report submitted on its own \u2014 from Assess, or a Settings strength edit.",
+        "properties": {
+          "benchmark_code": {
+            "description": "The e1RM benchmark code of a canonical lift.",
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "collection_mode": {
+            "default": "retest",
+            "enum": [
+              "onboarding_onramp",
+              "retest"
+            ],
+            "title": "Collection Mode",
+            "type": "string"
+          },
+          "load_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rep_set: the set's load in kg.",
+            "title": "Load Kg"
+          },
+          "method": {
+            "description": "tested_max: a 1-rep max the athlete performed. rep_set: a set the athlete performed, described by load_kg and reps (plus effort when known). estimate: the athlete's estimate, retained as reported information and never a prescription basis.",
+            "enum": [
+              "tested_max",
+              "rep_set",
+              "estimate"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "performed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the lift was performed. Omitted means unknown: the observation is recorded but never sizes a prescribed load.",
+            "title": "Performed At"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rep_set: repetitions completed.",
+            "title": "Reps"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "value_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "tested_max / estimate: the weight in kg.",
+            "title": "Value Kg"
+          }
+        },
+        "required": [
+          "benchmark_code",
+          "method"
+        ],
+        "title": "StrengthEvidenceCreate",
         "type": "object"
       },
       "StrengthSession": {
@@ -7209,6 +7549,53 @@
         ]
       }
     },
+    "/v1/benchmarks/strength-evidence": {
+      "post": {
+        "description": "Record an athlete-reported strength observation for a canonical lift (S2).\n\nEvidence only: no workout is created and no training dose is applied. The server\nderives the value semantics, the estimate for a reported set, and whether the\nobservation may ever size a prescribed load.",
+        "operationId": "post_strength_evidence_v1_benchmarks_strength_evidence_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrengthEvidenceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkObservationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Post Strength Evidence",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
     "/v1/dashboard/domain-summary": {
       "get": {
         "operationId": "get_domain_summary_v1_dashboard_domain_summary_get",
@@ -8245,6 +8632,7 @@
     },
     "/v1/onboard": {
       "post": {
+        "description": "Profile basics, self-reported weak points, the baseline state, and strength reports.\n\n**One transaction.** Everything below commits together, or nothing does.\n\n**Retry-safe.** The server cannot tell a retry whose first attempt committed (and whose\nresponse was lost) from the same submission sent twice, so both are treated alike: the\nbaseline state is seeded only for an athlete with no state; a weak point the athlete has\nalready self-reported and not resolved is not added again; a report identical to one\nonboarding already recorded is not recorded again. Profile fields take the submitted values.\nConcurrent submissions for one athlete are serialized on the user row, so the second finds\nthe first's writes once it commits.",
         "operationId": "onboard_athlete_v1_onboard_post",
         "requestBody": {
           "content": {

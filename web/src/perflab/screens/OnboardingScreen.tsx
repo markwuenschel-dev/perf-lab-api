@@ -3,9 +3,19 @@ import { useState } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { isImperial, kgToLbs, lbsToKg, parseMMSS, weightLabel } from "@/lib/units";
 import { computeMetrics, createObjective } from "@/api/perfLabClient";
+import type { ApiError, OnboardStrengthReport } from "@/types";
 import { isRunningGoal, isStrengthGoal, TRAINING_GOALS, usePerfLab } from "../store";
 import { getGoalLoadDefinition } from "../goalLoadDefinitions";
 import { DOMAIN_OPTIONS, domainLabel } from "../domains";
+import { CANONICAL_LIFTS } from "./canonicalLifts";
+import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import {
+  EMPTY_STRENGTH_FORM,
+  isBlankStrengthForm,
+  strengthReport,
+  type StrengthForm,
+  type WeightUnit,
+} from "./strengthEvidenceBody";
 
 const labelCls = "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-[#9aa0ab]";
 const inputCls = "mt-[9px] w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[14px] text-ink";
@@ -125,24 +135,38 @@ export function OnboardingScreen() {
 
   // Step 3 — strength / general seed
   const [bodyweight, setBodyweight] = useState("");
-  const [squat, setSquat] = useState("");
-  const [bench, setBench] = useState("");
-  const [deadlift, setDeadlift] = useState("");
+  // Squat / bench / deadlift are characterized strength reports (S2): how the number was
+  // obtained, the weight or the set, and the date — never bare numbers. Typed in the selected
+  // unit; strengthReport converts to kilograms for the request.
+  const [strength, setStrength] = useState<Record<string, StrengthForm>>(() =>
+    Object.fromEntries(CANONICAL_LIFTS.map((lift) => [lift.code, EMPTY_STRENGTH_FORM])),
+  );
+  const [finishError, setFinishError] = useState<string | null>(null);
   const [run5k, setRun5k] = useState("");
 
   const wUnit = weightLabel(units);
+  const unit: WeightUnit = imperial ? "lb" : "kg";
 
-  // When user toggles units, convert any entered weight values
+  // When user toggles units, convert every entered weight — bodyweight, and each lift's
+  // weight and set load — so the digits on screen keep describing the same mass.
   function handleUnitsChange(v: string) {
+    // Seg also reports a click on the option already selected; converting then would turn a
+    // kilogram figure into its pound figure while the unit stayed kilograms.
+    if (v === units) return;
     actions.setSetting("units", v);
     const toImperial = v === "Imperial (mi)";
     const convert = toImperial
       ? (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : kgToLbs(n).toFixed(0); }
       : (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : lbsToKg(n).toFixed(1); };
     if (bodyweight) setBodyweight(convert(bodyweight));
-    if (squat) setSquat(convert(squat));
-    if (bench) setBench(convert(bench));
-    if (deadlift) setDeadlift(convert(deadlift));
+    setStrength((cur) =>
+      Object.fromEntries(
+        Object.entries(cur).map(([code, f]) => [
+          code,
+          { ...f, weight: f.weight ? convert(f.weight) : f.weight, load: f.load ? convert(f.load) : f.load },
+        ]),
+      ),
+    );
     // running volume km ↔ mi
     const vol = parseFloat(weeklyVol);
     if (!isNaN(vol)) {
@@ -152,7 +176,24 @@ export function OnboardingScreen() {
 
   async function finish() {
     if (seeding) return;
+    // Build the strength reports before sending anything: an incomplete or impossible report
+    // is caught on this step, where the athlete can fix it.
+    const reports: OnboardStrengthReport[] = [];
+    if (isStrengthGoal(goal)) {
+      for (const lift of CANONICAL_LIFTS) {
+        const liftForm = strength[lift.code];
+        if (isBlankStrengthForm(liftForm)) continue;
+        const built = strengthReport(lift.code, liftForm, { requireDate: true, unit });
+        if (!built.ok) {
+          setFinishError(`${lift.label}: ${built.error}`);
+          return;
+        }
+        reports.push(built.report);
+      }
+    }
+    setFinishError(null);
     setSeeding(true);
+    let saved = false;
     try {
       const req: Record<string, unknown> = { goal };
 
@@ -175,12 +216,11 @@ export function OnboardingScreen() {
       };
 
       if (bodyweight) req.bodyweight_kg = parseWeight(bodyweight);
-      if (squat) req.squat_1rm_kg = parseWeight(squat);
-      if (bench) req.bench_1rm_kg = parseWeight(bench);
-      if (deadlift) req.deadlift_1rm_kg = parseWeight(deadlift);
+      if (reports.length) req.strength = reports;
       if (run5k) { const s = parseMMSS(run5k); if (s) req.run_5k_seconds = s; }
 
       await completeOnboarding(req);
+      saved = true;
 
       // Each picked domain becomes an Objective (drives plan emphasis + the Assess
       // filter). Best-effort + only for a signed-in user; a failure never blocks entry.
@@ -192,9 +232,13 @@ export function OnboardingScreen() {
           ),
         );
       }
+    } catch (e) {
+      // Nothing was saved: say so and stay on this step, where the athlete can retry.
+      const msg = (e as ApiError)?.message;
+      setFinishError(typeof msg === "string" ? msg : "Couldn't save your baseline — try again.");
     } finally {
       setSeeding(false);
-      goOverview();
+      if (saved) goOverview();
     }
   }
 
@@ -335,11 +379,22 @@ export function OnboardingScreen() {
             )}
 
             {isStrengthGoal(goal) && (
-              <div className="grid grid-cols-2 gap-4">
-                <Field label={`Bodyweight (${wUnit})`}><input value={bodyweight} onChange={(e) => setBodyweight(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
-                <Field label={`Squat 1RM (${wUnit})`}><input value={squat} onChange={(e) => setSquat(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
-                <Field label={`Bench 1RM (${wUnit})`}><input value={bench} onChange={(e) => setBench(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
-                <Field label={`Deadlift 1RM (${wUnit})`}><input value={deadlift} onChange={(e) => setDeadlift(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+              <div className="flex flex-col gap-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label={`Bodyweight (${wUnit})`}><input value={bodyweight} onChange={(e) => setBodyweight(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
+                </div>
+                {CANONICAL_LIFTS.map((lift) => (
+                  <div key={lift.code} className="flex flex-col gap-2">
+                    <span className={labelCls}>{lift.label}</span>
+                    <StrengthEvidenceFields
+                      form={strength[lift.code]}
+                      onChange={(next) => setStrength((cur) => ({ ...cur, [lift.code]: next }))}
+                      liftLabel={lift.label}
+                      dateRequired
+                      unit={unit}
+                    />
+                  </div>
+                ))}
               </div>
             )}
 
@@ -351,6 +406,10 @@ export function OnboardingScreen() {
             )}
 
             <GoalAnchorCard goal={goal} />
+
+            {finishError && (
+              <div role="alert" className="mt-5 text-[12px] font-medium leading-[1.5] text-hot">{finishError}</div>
+            )}
 
             <div className="mt-[30px] flex justify-between">
               <button onClick={actions.obBack} className={btnBack}>← Back</button>
