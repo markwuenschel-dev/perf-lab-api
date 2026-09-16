@@ -37,6 +37,10 @@ EQUIPMENT_FALLBACK_BODYWEIGHT = "equipment:fallback_bodyweight"
 EQUIPMENT_ACCESSORIES_SKIPPED_PREFIX = "equipment:accessories_skipped="
 EQUIPMENT_PREFERENCE_PREFIX = "equipment:preference="
 
+#: Today's planned session was prescribed, or something took precedence over it.
+PLAN_FOLLOWED_PREFIX = "plan:session_followed="
+PLAN_REPLACED_PREFIX = "plan:session_replaced="
+
 SAFETY_OVERRIDE_PREFIX = "safety:override="
 
 _EXACT: dict[str, tuple[str, AppliedConstraintGroup, bool]] = {
@@ -222,6 +226,8 @@ _PLAN_CONSTRAINT = re.compile(
     r"^(?P<family>constraint|constraint_soft):(?P<kind>[a-z_]+)(?:=(?P<target>[^:]*))?:(?P<reason>.+)$"
 )
 _SAFETY_OVERRIDE = re.compile(r"^safety:override=(?P<branch>[a-z_]+)$")
+_PLAN_FOLLOWED = re.compile(r"^plan:session_followed=(?P<branch>[a-z_]+)$")
+_PLAN_REPLACED = re.compile(r"^plan:session_replaced=(?P<slug>[a-z_]+)\((?P<reason>[a-z_]+)\)$")
 _ACCESSORIES_SKIPPED = re.compile(r"^equipment:accessories_skipped=(?P<count>\d+)$")
 _PREFERENCE = re.compile(r"^equipment:preference=(?P<values>[a-z,]+)\(changed=(?P<count>\d+)\)$")
 _TISSUE_MESSAGE = re.compile(
@@ -248,6 +254,8 @@ CODE_FAMILIES: tuple[str, ...] = (
     "adherence:recent_skips=",
     "adherence:recent_modifications=",
     "safety:override=",
+    PLAN_FOLLOWED_PREFIX,
+    PLAN_REPLACED_PREFIX,
     EQUIPMENT_UNCONFIGURED,
     EQUIPMENT_FILTERED,
     EQUIPMENT_BODYWEIGHT_ONLY,
@@ -404,6 +412,67 @@ def _equipment(code: str) -> _Labelled | None:
     return None
 
 
+#: Why the planned session was not the session prescribed. Each reason names something that
+#: takes precedence over the plan — never a claim that the plan was wrong.
+_PLAN_REPLACED_REASONS: dict[str, str] = {
+    "safety": "a safety override took precedence",
+    "constraints": "your plan's constraints ruled out every option",
+    "readiness": "today's readiness called for different work",
+    "validation": "it did not pass this session's safety checks",
+    "unavailable": "it isn't available for you today",
+    "arm": "an experiment arm selected the session",
+}
+
+#: Planned slots in the athlete's words, keyed by the slug the prescriber emits.
+_PLAN_SLOTS: dict[str, str] = {
+    "strength_max": "max strength day",
+    "strength_volume": "strength volume day",
+    "strength_accessory": "accessory day",
+    "hypertrophy_upper": "upper-body day",
+    "hypertrophy_lower": "lower-body day",
+    "hypertrophy_accessory": "accessory and isolation day",
+    "hypertrophy_high_volume": "high-volume day",
+    "running_base": "aerobic base run",
+    "running_threshold": "threshold run",
+    "power_development": "power day",
+    "power_neural_priming": "neural priming day",
+    "powerlifting_sbd": "squat, bench and deadlift day",
+    "powerlifting_accessory": "accessory day",
+    "weightlifting_technique": "technique day",
+    "mixed_metcon": "conditioning day",
+    "mixed_modal": "mixed-modal day",
+    "mixed_engine": "engine day",
+    "mixed_strength_endurance": "strength-endurance day",
+    "calisthenics_skill": "skill day",
+    "calisthenics_strength": "bodyweight strength day",
+    "calisthenics_conditioning": "conditioning day",
+    "gymnastics_skill": "skill day",
+    "grip_support": "grip day",
+    "general_gpp": "full-body day",
+    "general_recovery": "active recovery day",
+    "general_aerobic_strength": "aerobic and strength day",
+    "general_strength_preservation": "strength preservation day",
+    "general_conditioning": "conditioning day",
+    "conditioning_metcon": "conditioning day",
+}
+
+
+def _plan_session(code: str) -> _Labelled | None:
+    if _PLAN_FOLLOWED.match(code):
+        return "This is the session your plan plans for today.", "plan_rule", True
+    if m := _PLAN_REPLACED.match(code):
+        slot = _PLAN_SLOTS.get(m["slug"])
+        reason = _PLAN_REPLACED_REASONS.get(m["reason"])
+        if slot is None or reason is None:
+            return None
+        return (
+            f"Your plan's {slot} was not prescribed: {reason}.",
+            "plan_rule",
+            True,
+        )
+    return None
+
+
 def _safety(code: str) -> _Labelled | None:
     m = _SAFETY_OVERRIDE.match(code)
     if m is None:
@@ -419,6 +488,7 @@ _PATTERN_LABELLERS: tuple[Callable[[str], _Labelled | None], ...] = (
     _plan_rule,
     _equipment,
     _safety,
+    _plan_session,
 )
 
 

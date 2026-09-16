@@ -52,6 +52,7 @@ from app.logic.exercise_slot import (
     preferred_load_types,
     resolve_slots,
 )
+from app.logic.planned_session_slots import SlotBinding, binding_for
 from app.logic.planning import periodization_envelope
 from app.logic.planning_constraints import (
     ConstraintApplication,
@@ -801,6 +802,28 @@ def _focus_from_exercises(exercises: list[ExercisePrescription]) -> str:
     return f"{head} + {extra} more" if extra > 0 else head
 
 
+def _plan_outcome_code(
+    planned: SlotBinding | None,
+    rx: WorkoutPrescription,
+    *,
+    replaced_reason: str,
+) -> str | None:
+    """Whether today's planned session is the one prescribed — judged by the outcome.
+
+    The plan can be set aside by a safety override, a hard constraint, a readiness redirect or
+    the session validator, and the athlete is owed which of those happened. Read from the
+    finalized prescription's branch rather than the intent before finalize, so the statement
+    stays true when a later stage swapped the session. ``None`` when the slot bound nothing:
+    silence, not a claim that the plan was followed.
+    """
+    if planned is None:
+        return None
+    branch = rx.why.prescription_branch if rx.why is not None else None
+    if branch is not None and branch in planned.branch_ids:
+        return f"plan:session_followed={branch}"
+    return f"plan:session_replaced={planned.slug}({replaced_reason})"
+
+
 def _infeasible_prescription(
     application: ConstraintApplication,
     state: UnifiedStateVector,
@@ -902,8 +925,11 @@ def _recommend_next_session(
     These are soft signals: state vectors are the primary controller.
 
     `active_weak_points` biases candidate scoring toward sessions that address
-    flagged limitations. `block_context` applies a +0.15 bias to candidates
-    whose type matches the planned session category.
+    flagged limitations. When `block_context` names today's planned session and that slot
+    binds candidate templates (`app.logic.planned_session_slots`), the pool is narrowed to
+    them — unless a readiness redirect is competing — so the week the athlete was shown is the
+    session they get. Either way the outcome is reported, as `plan:session_followed` or
+    `plan:session_replaced`.
 
     `block_context["objective_taper"]` (bool) and `["objective_domain"]`
     (str | None) carry the athlete's nearest/top active Objective signals
@@ -913,6 +939,9 @@ def _recommend_next_session(
     kpi = kpi_summary or {}
     weak_points = active_weak_points or []
     block = block_context or {}
+    # Today's planned slot, resolved to the templates that can satisfy it — `None` when the
+    # slot binds nothing. Resolved here so every return path below can report the outcome.
+    planned = binding_for(_candidate_domain(str(goal)), block.get("session_category"))
 
     # --- 1. Hard safety overrides (always override scoring) ---
     safety = _safety_candidates(state)
@@ -924,6 +953,8 @@ def _recommend_next_session(
             # The override replaced whatever the goal would have prescribed. That is an applied
             # adjustment the athlete is owed in words, not only as a branch id.
             rx.why.constraints_applied.append(f"safety:override={safety[0].branch_id}")
+            if (code := _plan_outcome_code(planned, rx, replaced_reason="safety")) is not None:
+                rx.why.constraints_applied.append(code)
         return rx
 
     # --- Deload need (shadow/Level 1: explanation only) ---
@@ -955,7 +986,24 @@ def _recommend_next_session(
         # forbade (ADR-0064:67 — "never bypass a safety constraint to fill the calendar").
         # A conservative recovery session, clearly labelled with the reasons, is the only
         # honest output, and the excluded pool is still logged for telemetry.
-        return _infeasible_prescription(constraint_application, state, goal, recent_sessions)
+        infeasible = _infeasible_prescription(
+            constraint_application, state, goal, recent_sessions
+        )
+        if infeasible.why is not None and (
+            code := _plan_outcome_code(planned, infeasible, replaced_reason="constraints")
+        ):
+            infeasible.why.constraints_applied.append(code)
+        return infeasible
+
+    # --- 2c. The session the plan says today is ---
+    # When today's slot binds templates and one is still in the pool, prescribe from those: a
+    # plan the engine ignores is a plan the athlete cannot follow. Deliberately skipped while a
+    # readiness redirect is competing — redirects exist to pull work *down* on a bad day, and
+    # the plan must not talk over them. Nothing here can add a candidate the pool lacked.
+    if planned is not None and not redirects:
+        planned_candidates = [c for c in all_candidates if c.branch_id in planned.branch_ids]
+        if planned_candidates:
+            all_candidates = planned_candidates
 
     # --- 3. Score and sort ---
     recent_skips = int(block.get("recent_skips", 0) or 0)
@@ -966,9 +1014,9 @@ def _recommend_next_session(
 
     def _score_with_context(c: SessionCandidate) -> float:
         base = _score_candidate(c)
-        # Boost candidates whose type matches the planned session category
-        if block.get("session_category") and c.type == block["session_category"]:
-            base += 0.15
+        # The planned session is handled by pool membership above, not by a bias here: the
+        # retired +0.15 compared a slot's category against a template's type — strings from two
+        # vocabularies that are never equal, so it never once fired.
         # Objective domain-emphasis (Phase 4a): boost candidates whose domain
         # matches the top active objective's domain.
         if objective_domain and c.domain and c.domain == objective_domain:
@@ -1004,6 +1052,8 @@ def _recommend_next_session(
             rx = _finalize(chosen, state, goal, recent_sessions)
             if rx.why:
                 rx.why.constraints_applied.append("static_with_safety_caps:arm")
+                if (code := _plan_outcome_code(planned, rx, replaced_reason="arm")) is not None:
+                    rx.why.constraints_applied.append(code)
             if candidate_log_out is not None:
                 candidate_log_out.clear()
                 candidate_log_out.extend(static_candidates)
@@ -1018,6 +1068,19 @@ def _recommend_next_session(
 
     # --- 4. Return best candidate (finalize adds explainability + hard-constraint override) ---
     rx = _finalize(scored[0], state, goal, recent_sessions)
+
+    # Did the athlete get the session their plan showed? The reason, when they did not, names
+    # what took precedence: the validator swapped a planned winner, a readiness redirect
+    # outranked it, or no template that satisfies the slot was eligible today.
+    if planned is not None and rx.why is not None:
+        if scored[0].branch_id in planned.branch_ids:
+            replaced_reason = "validation"
+        elif redirects:
+            replaced_reason = "readiness"
+        else:
+            replaced_reason = "unavailable"
+        if (code := _plan_outcome_code(planned, rx, replaced_reason=replaced_reason)) is not None:
+            rx.why.constraints_applied.append(code)
 
     # Level 1: surface deload assessment as explanation only (never blocks)
     if rx.why and deload_need.tier != "none":
