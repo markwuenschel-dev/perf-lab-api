@@ -51,6 +51,8 @@ EXAMPLES: dict[str, str] = {
     "adherence:recent_skips=": "adherence:recent_skips=3",
     "adherence:recent_modifications=": "adherence:recent_modifications=2",
     "safety:override=": "safety:override=safety_regional_tissue",
+    cl.PLAN_FOLLOWED_PREFIX: "plan:session_followed=hyp_upper_split",
+    cl.PLAN_REPLACED_PREFIX: "plan:session_replaced=hypertrophy_upper(readiness)",
     cl.EQUIPMENT_UNCONFIGURED: cl.EQUIPMENT_UNCONFIGURED,
     cl.EQUIPMENT_FILTERED: cl.EQUIPMENT_FILTERED,
     cl.EQUIPMENT_BODYWEIGHT_ONLY: cl.EQUIPMENT_BODYWEIGHT_ONLY,
