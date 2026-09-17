@@ -124,6 +124,15 @@ async function handleResponse<T>(
     throw error;
   }
 
+  // 204 No Content is the ONLY empty success body this client accepts. FastAPI builds a 204
+  // with its default JSON response class, so the reply still carries `content-type:
+  // application/json` while the body is empty (starlette drops the body, not the header) —
+  // parsing it threw "Unexpected end of JSON input" on every DELETE. Narrow by status, not by
+  // emptiness: an empty or malformed 200 where a payload is expected stays a contract failure.
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+
   if (isJson) {
     return res.json() as Promise<T>;
   }
