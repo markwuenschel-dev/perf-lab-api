@@ -14,7 +14,7 @@ from datetime import timedelta
 
 from app.engine.simulate import Step, run_schedule, session_log_from_intent
 from app.logic.constraint_engine.candidate import SessionCandidate
-from app.logic.dose_engine_v1 import calculate_stress_dose
+from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.mpc.candidate_dose import candidate_to_log, modality_for_domain
 from app.logic.mpc.objective import MpcWeights, ObjectiveBreakdown, score_trajectory
 from app.logic.state_update_v0 import update_athlete_state

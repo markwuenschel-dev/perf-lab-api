@@ -46,6 +46,8 @@ from app.logic.dose_engine_v0 import (
 from app.logic.dose_engine_v0 import (
     exercise_base_bundle as _exercise_base_bundle,
 )
+from app.logic.dose_model import NOT_MODELLED as _NOT_MODELLED
+from app.logic.dose_model import DensityMeasurement
 from app.schemas.workouts import (
     ExerciseEntry,
     ExternalIntensity,
@@ -56,10 +58,11 @@ from app.schemas.workouts import (
 #: Engine identity, recorded wherever a dose is persisted or compared.
 DOSE_ENGINE_VERSION = "dose_engine_v1"
 
-#: Density when elapsed time is zero or unknown. Neutral by construction: an unknown pace
-#: must neither inflate nor suppress the dose, and it is named so callers can tell "we did not
-#: know" from "the athlete trained at exactly the reference pace".
-DENSITY_WHEN_TIME_UNKNOWN = 1.0
+#: Density is NOT MODELLED for this session. The dose law then uses the multiplicative
+#: identity, which is not the same statement as "average density" or "the reference pace" —
+#: those would be observations, and this is their absence. The basis travels with the value so
+#: no future reader can mistake 1.0 for a measurement.
+NOT_MODELLED = _NOT_MODELLED
 
 #: Assumed working time per set when an exercise reports rest but not its own duration. Used
 #: ONLY inside the explicitly-named proxy below.
@@ -85,32 +88,34 @@ SET_COUNTED_MODALITIES = frozenset({"Strength", "Hypertrophy", "Power"})
 
 def session_density_from_parts(
     duration_minutes: float, sets: float, p: EngineParameters
-) -> float:
+) -> DensityMeasurement:
     """Working sets per minute, relative to the reference pace. Pure arithmetic."""
     if duration_minutes <= 0.0 or sets <= 0.0:
-        return DENSITY_WHEN_TIME_UNKNOWN
-    return _clamped((sets / duration_minutes) / reference_sets_per_minute(p), p)
+        return NOT_MODELLED
+    value = _clamped((sets / duration_minutes) / reference_sets_per_minute(p), p)
+    return DensityMeasurement(value=value, basis="sets_per_elapsed_minute")
 
 
-def session_density(log: WorkoutLog, sets: float, p: EngineParameters) -> float:
+def session_density(log: WorkoutLog, sets: float, p: EngineParameters) -> DensityMeasurement:
     """Session density, or an explicit neutral when sets are not this session's unit of work.
 
     Three cases, all deliberate:
 
     * **Sets reported, set-counted modality** → sets per minute, relative to reference.
-    * **Sets not reported** → neutral. v0 substituted ``max(3, duration/12)``; treating that
+    * **Sets not reported** → not modelled. v0 substituted ``max(3, duration/12)``; treating that
       invention as measured work would make density a statement about the fallback.
-    * **Running / Mixed** → neutral, because a continuous effort's work is distance and pace,
-      not sets. Density for those domains needs a real endurance target (phase 5), and the
-      honest value until then is "not known", not a number derived from a proxy.
+    * **Running / Mixed** → not modelled, because a continuous effort's work is distance and
+      pace, not sets. Density for those domains needs a real endurance target (phase 5,
+      ``structured_endurance_work``), and the honest answer until then is that we do not
+      model it — not a number derived from a proxy.
 
-    ``DENSITY_WHEN_TIME_UNKNOWN`` is 1.0, so a neutral density contributes exactly 1 to the
-    dose product and the other terms carry the session.
+    A not-modelled measurement contributes the multiplicative identity to the dose product,
+    and carries ``basis="not_applicable"`` so it can never be read back as an observation.
     """
     if log.modality not in SET_COUNTED_MODALITIES:
-        return DENSITY_WHEN_TIME_UNKNOWN
+        return NOT_MODELLED
     if log.estimated_sets is None:
-        return DENSITY_WHEN_TIME_UNKNOWN
+        return NOT_MODELLED
     return session_density_from_parts(log.duration_minutes, float(log.estimated_sets), p)
 
 
@@ -141,7 +146,7 @@ def estimated_exercise_elapsed_minutes(entry: ExerciseEntry) -> float | None:
     return elapsed if elapsed > 0.0 else None
 
 
-def exercise_density_proxy(entry: ExerciseEntry, p: EngineParameters) -> float:
+def exercise_density_proxy(entry: ExerciseEntry, p: EngineParameters) -> DensityMeasurement:
     """Working sets per estimated elapsed minute for one exercise, relative to reference.
 
     A proxy, not a measurement: see ``estimated_exercise_elapsed_minutes``. It moves in the
@@ -151,13 +156,15 @@ def exercise_density_proxy(entry: ExerciseEntry, p: EngineParameters) -> float:
     sets = entry.sets or 0.0
     elapsed = estimated_exercise_elapsed_minutes(entry)
     if elapsed is None or sets <= 0.0:
-        return DENSITY_WHEN_TIME_UNKNOWN
-    return _clamped((sets / elapsed) / reference_sets_per_minute(p), p)
+        return NOT_MODELLED
+    value = _clamped((sets / elapsed) / reference_sets_per_minute(p), p)
+    return DensityMeasurement(value=value, basis="sets_per_elapsed_minute")
 
 
 #: The corrected density variable, injected into the shared dose law.
 WORK_PER_TIME_DENSITY = DensityModel(
     name="v1_work_per_elapsed_time",
+    version="v1",
     session=session_density,
     entry=exercise_density_proxy,
 )

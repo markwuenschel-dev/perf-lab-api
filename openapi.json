@@ -5646,6 +5646,28 @@
             "title": "D Struct Signal",
             "type": "number"
           },
+          "density_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Density Basis"
+          },
+          "dose_model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose Model Version"
+          },
           "dose_six": {
             "$ref": "#/components/schemas/StressDoseSix"
           },

@@ -12,7 +12,7 @@ from datetime import datetime
 from app.engine.simulate import session_log_from_intent
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.domain_vocab import canonical_domain
-from app.logic.dose_engine_v1 import calculate_stress_dose
+from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.schemas.workouts import StressDose, WorkoutLog
 
 # Canonical domain → projection modality (keys of projection_service._BASE_SESSION).

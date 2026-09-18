@@ -22,6 +22,7 @@ from app.domain.vectors import AdaptationContribution, StressDoseSix
 from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.logic import strength_calibration as sc
+from app.logic.dose_model import DensityMeasurement
 from app.logic.strength_calibration import CalibrationResult
 from app.schemas.workouts import (
     ExerciseEntry,
@@ -498,7 +499,8 @@ def calculate_stress_dose(
 
     intensity_u = log.session_rpe / 10.0
     density = density_model or LEGACY_DENSITY
-    Delta = density.session(log, sets, p)
+    density_measurement = density.session(log, sets, p)
+    Delta = density_measurement.factor
     N = max(p.dose_novelty_floor, log.novelty)
     if log.avg_rir is not None:
         F = max(0.15, min(1.0, (10.0 - log.avg_rir) / 10.0))
@@ -568,6 +570,8 @@ def calculate_stress_dose(
         d_struct_signal=max(0.0, d_struct_signal),
         external_intensity=ext,
         human_factor_gain=hf,
+        dose_model_version=density.version,
+        density_basis=density_measurement.basis,
     )
 
 
@@ -580,8 +584,15 @@ class DensityModel:
     """
 
     name: str
-    session: Callable[[float, float, EngineParameters], float]
-    entry: Callable[[ExerciseEntry, EngineParameters], float]
+    #: Recorded on every dose this model produces, so a stored state can always say which
+    #: density variable it was computed with. v0 and v1 are not interchangeable.
+    version: str
+    #: (log, resolved_sets, params) -> DensityMeasurement. The log is passed whole so a model
+    #: can tell a REPORTED set count from v0's fabricated fallback, which matters once density
+    #: means work per unit time. A measurement may be "not modelled", and the law then uses
+    #: the multiplicative identity.
+    session: Callable[[WorkoutLog, float, EngineParameters], DensityMeasurement]
+    entry: Callable[[ExerciseEntry, EngineParameters], DensityMeasurement]
 
 
 # ---------------------------------------------------------------------------
@@ -602,26 +613,32 @@ class DensityModel:
 
 def session_legacy_minutes_per_set(
     log: WorkoutLog, sets: float, p: EngineParameters
-) -> float:
+) -> DensityMeasurement:
     """v0 session Δ: elapsed minutes per set, clamped. Higher = MORE time per set."""
     raw = min(
         p.dose_delta_cap,
         log.duration_minutes / max(p.dose_delta_min_divisor, sets * p.dose_delta_sets_multiplier),
     )
-    return max(p.dose_delta_floor, raw)
+    return DensityMeasurement(
+        value=max(p.dose_delta_floor, raw), basis="legacy_minutes_per_set"
+    )
 
 
-def entry_legacy_sets_per_rest_minute(entry: ExerciseEntry, p: EngineParameters) -> float:
+def entry_legacy_sets_per_rest_minute(
+    entry: ExerciseEntry, p: EngineParameters
+) -> DensityMeasurement:
     """v0 per-exercise Δ: sets per minute of REST, clamped. Higher = less rest."""
-    return max(
+    value = max(
         p.dose_delta_floor,
         min(p.dose_delta_cap, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)),
     )
+    return DensityMeasurement(value=value, basis="legacy_minutes_per_set")
 
 
 #: The frozen v0 density variable. Historical states were produced with this.
 LEGACY_DENSITY = DensityModel(
     name="v0_legacy_minutes_per_set",
+    version="v0",
     session=session_legacy_minutes_per_set,
     entry=entry_legacy_sets_per_rest_minute,
 )
@@ -652,7 +669,7 @@ def exercise_base_bundle(
     fp = _entry_failure_proximity(entry, log.session_rpe)
 
     N = max(p.dose_novelty_floor, log.novelty)
-    Delta = (density_model or LEGACY_DENSITY).entry(entry, p)
+    Delta = (density_model or LEGACY_DENSITY).entry(entry, p).factor
     w_phi = max(
         p.dose_w_phi_floor,
         sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])),

@@ -3256,6 +3256,10 @@ export interface components {
              * @default 0
              */
             d_struct_signal: number;
+            /** Density Basis */
+            density_basis?: string | null;
+            /** Dose Model Version */
+            dose_model_version?: string | null;
             dose_six?: components["schemas"]["StressDoseSix"];
             external_intensity?: components["schemas"]["ExternalIntensity"] | null;
             human_factor_gain?: components["schemas"]["HumanFactorGain"] | null;

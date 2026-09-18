@@ -72,8 +72,8 @@ def _entry(sets: float, rest_seconds: float, duration_seconds: float | None = No
     extra=st.floats(min_value=1.0, max_value=120.0),
 )
 def test_same_work_more_time_lowers_density(sets: float, duration: float, extra: float) -> None:
-    tighter = v1.session_density_from_parts(duration, sets, P)
-    looser = v1.session_density_from_parts(duration + extra, sets, P)
+    tighter = v1.session_density_from_parts(duration, sets, P).factor
+    looser = v1.session_density_from_parts(duration + extra, sets, P).factor
     # Only meaningful where the clamp is not already binding at both ends.
     assume(tighter < P.dose_delta_cap or looser < P.dose_delta_cap)
     assume(tighter > P.dose_delta_floor or looser > P.dose_delta_floor)
@@ -87,8 +87,8 @@ def test_same_work_more_time_lowers_density(sets: float, duration: float, extra:
     shrink=st.floats(min_value=0.2, max_value=0.9),
 )
 def test_same_work_less_time_raises_density(sets: float, duration: float, shrink: float) -> None:
-    slower = v1.session_density_from_parts(duration, sets, P)
-    faster = v1.session_density_from_parts(duration * shrink, sets, P)
+    slower = v1.session_density_from_parts(duration, sets, P).factor
+    faster = v1.session_density_from_parts(duration * shrink, sets, P).factor
     assume(slower > P.dose_delta_floor or faster > P.dose_delta_floor)
 
     assert faster >= slower
@@ -100,8 +100,8 @@ def test_same_work_less_time_raises_density(sets: float, duration: float, shrink
     more=st.floats(min_value=1.0, max_value=20.0),
 )
 def test_same_time_more_work_raises_density(duration: float, sets: float, more: float) -> None:
-    fewer = v1.session_density_from_parts(duration, sets, P)
-    extra = v1.session_density_from_parts(duration, sets + more, P)
+    fewer = v1.session_density_from_parts(duration, sets, P).factor
+    extra = v1.session_density_from_parts(duration, sets + more, P).factor
     assume(fewer < P.dose_delta_cap or extra < P.dose_delta_cap)
 
     assert extra >= fewer
@@ -120,10 +120,10 @@ def test_unknown_time_is_an_explicit_neutral_not_a_nan(
     label: str, duration: float, sets: float
 ) -> None:
     """Missing information must be declared, not improvised."""
-    density = v1.session_density_from_parts(duration, sets, P)
+    density = v1.session_density_from_parts(duration, sets, P).factor
 
     assert math.isfinite(density), label
-    assert density == v1.DENSITY_WHEN_TIME_UNKNOWN, label
+    assert density == v1.NOT_MODELLED.factor, label
 
 
 @given(
@@ -133,11 +133,11 @@ def test_unknown_time_is_an_explicit_neutral_not_a_nan(
 def test_session_density_is_always_finite_and_within_the_declared_band(
     sets: float, duration: float
 ) -> None:
-    density = v1.session_density_from_parts(duration, sets, P)
+    density = v1.session_density_from_parts(duration, sets, P).factor
 
     assert math.isfinite(density)
     assert P.dose_delta_floor <= density <= P.dose_delta_cap or (
-        density == v1.DENSITY_WHEN_TIME_UNKNOWN
+        density == v1.NOT_MODELLED.factor
     )
 
 
@@ -150,8 +150,8 @@ def test_session_density_is_always_finite_and_within_the_declared_band(
 )
 def test_more_rest_lowers_exercise_density(sets: float, rest: float, extra_rest: float) -> None:
     """The direction v0 got right at the exercise level — kept, and now agreeing with sessions."""
-    tight = v1.exercise_density_proxy(_entry(sets, rest), P)
-    rested = v1.exercise_density_proxy(_entry(sets, rest + extra_rest), P)
+    tight = v1.exercise_density_proxy(_entry(sets, rest), P).factor
+    rested = v1.exercise_density_proxy(_entry(sets, rest + extra_rest), P).factor
     assume(tight > P.dose_delta_floor or rested > P.dose_delta_floor)
 
     assert rested <= tight
@@ -166,14 +166,14 @@ def test_the_exercise_proxy_counts_work_as_well_as_rest() -> None:
     quick = _entry(5, rest_seconds=90.0, duration_seconds=100.0)
     slow = _entry(5, rest_seconds=90.0, duration_seconds=400.0)
 
-    assert v1.exercise_density_proxy(quick, P) > v1.exercise_density_proxy(slow, P)
+    assert v1.exercise_density_proxy(quick, P).factor > v1.exercise_density_proxy(slow, P).factor
 
 
 def test_an_exercise_with_no_timing_falls_back_explicitly() -> None:
     bare = ExerciseEntry(exercise_name="Back Squat", sets=4, reps=5)
 
     assert v1.estimated_exercise_elapsed_minutes(bare) is None
-    assert v1.exercise_density_proxy(bare, P) == v1.DENSITY_WHEN_TIME_UNKNOWN
+    assert v1.exercise_density_proxy(bare, P).value is None
 
 
 # ── the consistency claim that started this ───────────────────────────────────
@@ -197,12 +197,12 @@ def test_compressing_every_exercise_moves_both_levels_the_same_way() -> None:
     assert relaxed_minutes is not None and compressed_minutes is not None
     assert compressed_minutes < relaxed_minutes, "precondition: the session really is shorter"
 
-    relaxed_exercise = v1.exercise_density_proxy(relaxed_entry, P)
-    compressed_exercise = v1.exercise_density_proxy(compressed_entry, P)
-    relaxed_session = v1.session_density_from_parts(relaxed_minutes * exercises_in_session, total_sets, P)
+    relaxed_exercise = v1.exercise_density_proxy(relaxed_entry, P).factor
+    compressed_exercise = v1.exercise_density_proxy(compressed_entry, P).factor
+    relaxed_session = v1.session_density_from_parts(relaxed_minutes * exercises_in_session, total_sets, P).factor
     compressed_session = v1.session_density_from_parts(
         compressed_minutes * exercises_in_session, total_sets, P
-    )
+    ).factor
 
     assert compressed_exercise > relaxed_exercise, "exercise density must rise"
     assert compressed_session > relaxed_session, "session density must rise with it"
@@ -225,12 +225,12 @@ def test_the_two_levels_never_disagree_about_compression(
     compressed_minutes = v1.estimated_exercise_elapsed_minutes(compressed)
     assert relaxed_minutes is not None and compressed_minutes is not None
 
-    exercise_delta = v1.exercise_density_proxy(compressed, P) - v1.exercise_density_proxy(
+    exercise_delta = v1.exercise_density_proxy(compressed, P).factor - v1.exercise_density_proxy(
         relaxed, P
-    )
-    session_delta = v1.session_density_from_parts(compressed_minutes, sets, P) - v1.session_density_from_parts(
+    ).factor
+    session_delta = v1.session_density_from_parts(compressed_minutes, sets, P).factor - v1.session_density_from_parts(
         relaxed_minutes, sets, P
-    )
+    ).factor
 
     assert exercise_delta * session_delta >= 0.0, (
         f"levels disagreed: exercise {exercise_delta:+.4f} vs session {session_delta:+.4f}"
@@ -276,21 +276,21 @@ def test_a_continuous_run_does_not_get_a_density_derived_from_fabricated_sets() 
     """
     run = _log(modality="Running", duration_minutes=60.0, estimated_sets=None)
 
-    assert v1.session_density(run, 5.0, P) == v1.DENSITY_WHEN_TIME_UNKNOWN
+    assert v1.session_density(run, 5.0, P).value is None
 
 
 def test_a_strength_session_without_reported_sets_is_also_neutral() -> None:
     """Same principle, same modality: a fallback set count is not measured work."""
     unreported = _log(modality="Strength", duration_minutes=60.0, estimated_sets=None)
 
-    assert v1.session_density(unreported, 12.0, P) == v1.DENSITY_WHEN_TIME_UNKNOWN
+    assert v1.session_density(unreported, 12.0, P).value is None
 
 
 def test_a_strength_session_with_reported_sets_uses_them() -> None:
     reported = _log(modality="Strength", duration_minutes=40.0, estimated_sets=20.0)
     slower = _log(modality="Strength", duration_minutes=90.0, estimated_sets=20.0)
 
-    assert v1.session_density(reported, 20.0, P) > v1.session_density(slower, 20.0, P)
+    assert v1.session_density(reported, 20.0, P).factor > v1.session_density(slower, 20.0, P).factor
 
 
 @pytest.mark.parametrize("modality", ["Strength", "Hypertrophy", "Power"])
@@ -298,7 +298,7 @@ def test_set_counted_modalities_are_the_ones_that_report_sets(modality: str) -> 
     dense = _log(modality=modality, duration_minutes=30.0, estimated_sets=18.0)
     sparse = _log(modality=modality, duration_minutes=110.0, estimated_sets=18.0)
 
-    assert v1.session_density(dense, 18.0, P) > v1.session_density(sparse, 18.0, P)
+    assert v1.session_density(dense, 18.0, P).factor > v1.session_density(sparse, 18.0, P).factor
 
 
 @pytest.mark.parametrize("modality", ["Running", "Mixed"])
@@ -306,5 +306,5 @@ def test_non_set_counted_modalities_stay_neutral_whatever_the_timing(modality: s
     quick = _log(modality=modality, duration_minutes=20.0, estimated_sets=10.0)
     long = _log(modality=modality, duration_minutes=120.0, estimated_sets=10.0)
 
-    assert v1.session_density(quick, 10.0, P) == v1.DENSITY_WHEN_TIME_UNKNOWN
-    assert v1.session_density(long, 10.0, P) == v1.DENSITY_WHEN_TIME_UNKNOWN
+    assert v1.session_density(quick, 10.0, P).value is None
+    assert v1.session_density(long, 10.0, P).value is None
