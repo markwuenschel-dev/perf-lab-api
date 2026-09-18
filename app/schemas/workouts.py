@@ -102,12 +102,16 @@ class WorkoutLog(BaseModel):
     timestamp: datetime
     modality: Literal["Running", "Strength", "Hypertrophy", "Power", "Mixed"]
 
-    duration_minutes: float
+    # Physical quantities: a session cannot last or cover a negative amount. Unbounded
+    # before, which let nonsense reach the dose law and fail there instead of here — a
+    # negative duration made ``log1p(V)`` raise a domain error mid-computation (a 500 on a
+    # request that should be a 422).
+    duration_minutes: float = Field(..., ge=0.0)
     session_rpe: float = Field(..., ge=1, le=10)
 
-    avg_rir: float | None = None
-    distance_meters: float | None = 0.0
-    total_volume_load: float | None = 0.0
+    avg_rir: float | None = Field(default=None, ge=0.0, le=10.0)
+    distance_meters: float | None = Field(default=0.0, ge=0.0)
+    total_volume_load: float | None = Field(default=0.0, ge=0.0)
 
     # Optional execution hints for dose law
     dominant_movement_pattern: str | None = Field(
@@ -214,7 +218,11 @@ class ExternalIntensity(BaseModel):
     accessory partially inherits the session's intensity).
     """
 
-    value: float = 1.0
+    # Load relative to capacity. Non-negative by construction, and the dose law raises it to
+    # a FRACTIONAL exponent (``dose_alpha``) — a negative base there yields a complex number,
+    # not a dose, which surfaced as a pydantic error while building StressDoseSix rather than
+    # as a rejected input. 0.0 is permitted (no external load); negative is not a quantity.
+    value: float = Field(default=1.0, ge=0.0)
     source: str = "neutral_missing"
     model_version: str = ""
     confidence: float = 0.0

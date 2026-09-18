@@ -2253,6 +2253,7 @@
           },
           "value": {
             "default": 1.0,
+            "minimum": 0.0,
             "title": "Value",
             "type": "number"
           }
@@ -6713,6 +6714,8 @@
           "avg_rir": {
             "anyOf": [
               {
+                "maximum": 10.0,
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -6737,6 +6740,7 @@
           "distance_meters": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -6759,6 +6763,7 @@
             "title": "Dominant Movement Pattern"
           },
           "duration_minutes": {
+            "minimum": 0.0,
             "title": "Duration Minutes",
             "type": "number"
           },
@@ -6869,6 +6874,7 @@
           "total_volume_load": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
