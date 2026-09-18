@@ -23,6 +23,8 @@ from datetime import datetime
 from app.domain.vectors import FatigueState, TissueState
 from app.engine import simulate
 from app.logic import dose_routing as dr
+
+# Pinned to dose engine v0 on purpose: calibrates the v0 routing split; re-derived in phase 8.
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.state_update_v0 import (
     fatigue_impulse_from_dose,

@@ -14,6 +14,7 @@ This is the preferred implementation. The older dict-based version lives in
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -444,6 +445,8 @@ def calculate_stress_dose(
     log: WorkoutLog,
     params: EngineParameters | None = None,
     external_intensity: ExternalIntensity | None = None,
+    *,
+    density_model: DensityModel | None = None,
 ) -> StressDose:
     """
     Compute session stress dose from a WorkoutLog.
@@ -472,7 +475,7 @@ def calculate_stress_dose(
     # Resolve phi pack: exercise-aware or modality fallback
     # ------------------------------------------------------------------
     if log.exercises:
-        exercise_doses = _build_exercise_doses(log, p)
+        exercise_doses = _build_exercise_doses(log, p, density_model)
         phi_adapt, phi_fatigue, phi_tissue, energy_mix = _aggregate_phi(exercise_doses)
     else:
         phi_pack = default_phi_for_row(
@@ -494,12 +497,8 @@ def calculate_stress_dose(
     V = vw["duration"] * log.duration_minutes + vw["volume_load"] * vol_load + vw["sets"] * sets
 
     intensity_u = log.session_rpe / 10.0
-    density_raw = min(
-        p.dose_delta_cap,
-        log.duration_minutes
-        / max(p.dose_delta_min_divisor, sets * p.dose_delta_sets_multiplier),
-    )
-    Delta = max(p.dose_delta_floor, density_raw)
+    density = density_model or LEGACY_DENSITY
+    Delta = density.session(log, sets, p)
     N = max(p.dose_novelty_floor, log.novelty)
     if log.avg_rir is not None:
         F = max(0.15, min(1.0, (10.0 - log.avg_rir) / 10.0))
@@ -572,12 +571,72 @@ def calculate_stress_dose(
     )
 
 
+@dataclass(frozen=True)
+class DensityModel:
+    """How Δ is computed. The ONLY thing that differs between dose engine v0 and v1.
+
+    Injected rather than forked so both versions share one dose law: a bug fixed in the law
+    is fixed for replay too, while the density VARIABLE stays pinned per version.
+    """
+
+    name: str
+    session: Callable[[float, float, EngineParameters], float]
+    entry: Callable[[ExerciseEntry, EngineParameters], float]
+
+
+# ---------------------------------------------------------------------------
+# Legacy density (FROZEN — v0 semantics)
+# ---------------------------------------------------------------------------
+#
+# These two functions are named for what they actually compute, which is NOT what the dose
+# law calls them. v0's session "density" is MINUTES PER SET and its per-exercise "density" is
+# SETS PER MINUTE OF REST — reciprocal quantities feeding the same ``dose_beta`` exponent. A
+# longer session at identical work therefore scored as *denser* at the session level and
+# *sparser* at the exercise level.
+#
+# They are kept, unchanged, so historical states stay reproducible under the engine that
+# produced them (see app/logic/dose_engine_v1.py for the corrected variable). Do not "fix"
+# them here: replaying stored history through corrected maths would rewrite what athletes
+# were actually shown.
+
+
+def session_legacy_minutes_per_set(
+    log: WorkoutLog, sets: float, p: EngineParameters
+) -> float:
+    """v0 session Δ: elapsed minutes per set, clamped. Higher = MORE time per set."""
+    raw = min(
+        p.dose_delta_cap,
+        log.duration_minutes / max(p.dose_delta_min_divisor, sets * p.dose_delta_sets_multiplier),
+    )
+    return max(p.dose_delta_floor, raw)
+
+
+def entry_legacy_sets_per_rest_minute(entry: ExerciseEntry, p: EngineParameters) -> float:
+    """v0 per-exercise Δ: sets per minute of REST, clamped. Higher = less rest."""
+    return max(
+        p.dose_delta_floor,
+        min(p.dose_delta_cap, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)),
+    )
+
+
+#: The frozen v0 density variable. Historical states were produced with this.
+LEGACY_DENSITY = DensityModel(
+    name="v0_legacy_minutes_per_set",
+    session=session_legacy_minutes_per_set,
+    entry=entry_legacy_sets_per_rest_minute,
+)
+
+
 # ---------------------------------------------------------------------------
 # Exercise-level dose building
 # ---------------------------------------------------------------------------
 
 def exercise_base_bundle(
-    entry: ExerciseEntry, log: WorkoutLog, p: EngineParameters
+    entry: ExerciseEntry,
+    log: WorkoutLog,
+    p: EngineParameters,
+    *,
+    density_model: DensityModel | None = None,
 ) -> tuple[float, dict[str, Any], float]:
     """The one intensity-free per-exercise base, its φ pack, and its volume proxy.
 
@@ -593,10 +652,7 @@ def exercise_base_bundle(
     fp = _entry_failure_proximity(entry, log.session_rpe)
 
     N = max(p.dose_novelty_floor, log.novelty)
-    Delta = max(
-        p.dose_delta_floor,
-        min(p.dose_delta_cap, (entry.sets or 3) / max(1.0, (entry.rest_seconds or 120) / 60)),
-    )
+    Delta = (density_model or LEGACY_DENSITY).entry(entry, p)
     w_phi = max(
         p.dose_w_phi_floor,
         sum(phi_pack["phi_fatigue"].values()) / max(1, len(phi_pack["phi_fatigue"])),
@@ -611,11 +667,15 @@ def exercise_base_bundle(
     return base, phi_pack, vol_proxy
 
 
-def _build_exercise_doses(log: WorkoutLog, p: EngineParameters) -> list[_ExerciseDose]:
+def _build_exercise_doses(
+    log: WorkoutLog, p: EngineParameters, density_model: DensityModel | None = None
+) -> list[_ExerciseDose]:
     """Build per-exercise dose bundles, then return for aggregation."""
     doses: list[_ExerciseDose] = []
     for entry in log.exercises:
-        base, phi_pack, vol_proxy = exercise_base_bundle(entry, log, p)
+        base, phi_pack, vol_proxy = exercise_base_bundle(
+            entry, log, p, density_model=density_model
+        )
         doses.append(
             _ExerciseDose(
                 base=base,

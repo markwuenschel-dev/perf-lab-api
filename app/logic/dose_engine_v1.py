@@ -1,0 +1,182 @@
+"""Dose engine v1 — density means work completed per unit elapsed time.
+
+v0 called two reciprocal quantities "density": the session law computed elapsed MINUTES PER
+SET (so a longer session at identical work scored as *denser*) and the per-exercise law
+computed SETS PER MINUTE OF REST. Both were raised to the same ``dose_beta``.
+
+**The ruling this module implements (2026-09-18).** Density means work completed per unit
+elapsed time:
+
+* fixed work, more elapsed time or rest → **lower** density
+* fixed work, less elapsed time or rest → **higher** density
+* fixed elapsed time, more work → **higher** density
+
+This matches how the training literature uses the term: density is temporal compression —
+accomplishing more work in a given time, or equal work in less time.
+
+**Work is counted in WORKING SETS, not in kg·reps.** A cross-domain "work" unit such as
+kg·reps per minute would make a 200 kg deadlift session numerically incomparable with
+bodyweight work, running or rowing. Density describes temporal compression only; the
+``volume`` and ``intensity`` terms of the dose law already describe how much and how hard.
+
+**The variable is dimensionless.** Raw sets-per-minute would be ~0.2–0.5 for real sessions,
+which is not comparable with v0's ~0.35–2.5 and would silently rescale every dose. It is
+therefore expressed RELATIVE to a reference pace of one set per
+``dose_delta_sets_multiplier`` minutes — the same constant v0 used, read as a reference
+rather than as a formula — so a session trained at the reference pace has density 1.0 and the
+existing floor/cap keep their meaning.
+
+**The fitted parameters do NOT carry over.** ``dose_beta`` was set against ``minutes_per_set``;
+replacing ``x`` with ``1/x`` is not a sign flip, it changes the response surface nonlinearly.
+The exponent and every density-dependent coefficient must be re-fit (phase 8), and
+``app/engine/parameter_overrides.py`` refuses to apply a v0-fitted dose artifact here.
+
+**v0 is not deleted.** It stays frozen so historical states remain reproducible under the
+engine that produced them; only new dose computations use this module.
+"""
+from __future__ import annotations
+
+from app.engine.parameters import EngineParameters, default_parameters
+from app.logic.dose_engine_v0 import (
+    DensityModel,
+)
+from app.logic.dose_engine_v0 import (
+    calculate_stress_dose as _calculate_stress_dose,
+)
+from app.logic.dose_engine_v0 import (
+    exercise_base_bundle as _exercise_base_bundle,
+)
+from app.schemas.workouts import (
+    ExerciseEntry,
+    ExternalIntensity,
+    StressDose,
+    WorkoutLog,
+)
+
+#: Engine identity, recorded wherever a dose is persisted or compared.
+DOSE_ENGINE_VERSION = "dose_engine_v1"
+
+#: Density when elapsed time is zero or unknown. Neutral by construction: an unknown pace
+#: must neither inflate nor suppress the dose, and it is named so callers can tell "we did not
+#: know" from "the athlete trained at exactly the reference pace".
+DENSITY_WHEN_TIME_UNKNOWN = 1.0
+
+#: Assumed working time per set when an exercise reports rest but not its own duration. Used
+#: ONLY inside the explicitly-named proxy below.
+ASSUMED_WORK_SECONDS_PER_SET = 30.0
+
+
+def reference_sets_per_minute(p: EngineParameters) -> float:
+    """The pace that reads as density 1.0: one set per ``dose_delta_sets_multiplier`` minutes."""
+    return 1.0 / max(1e-6, p.dose_delta_sets_multiplier)
+
+
+def _clamped(relative: float, p: EngineParameters) -> float:
+    return max(p.dose_delta_floor, min(p.dose_delta_cap, relative))
+
+
+#: Modalities whose work is counted in SETS. Everything else — continuous running above all —
+#: performs work the set count cannot describe, and v0's ``max(3, duration/12)`` fallback
+#: fabricates one. Measuring sets-per-minute against a fabricated set count would report a
+#: 60-minute run as an almost empty session, which is how the first draft of this module made
+#: a running plan LOSE aerobic capacity.
+SET_COUNTED_MODALITIES = frozenset({"Strength", "Hypertrophy", "Power"})
+
+
+def session_density_from_parts(
+    duration_minutes: float, sets: float, p: EngineParameters
+) -> float:
+    """Working sets per minute, relative to the reference pace. Pure arithmetic."""
+    if duration_minutes <= 0.0 or sets <= 0.0:
+        return DENSITY_WHEN_TIME_UNKNOWN
+    return _clamped((sets / duration_minutes) / reference_sets_per_minute(p), p)
+
+
+def session_density(log: WorkoutLog, sets: float, p: EngineParameters) -> float:
+    """Session density, or an explicit neutral when sets are not this session's unit of work.
+
+    Three cases, all deliberate:
+
+    * **Sets reported, set-counted modality** → sets per minute, relative to reference.
+    * **Sets not reported** → neutral. v0 substituted ``max(3, duration/12)``; treating that
+      invention as measured work would make density a statement about the fallback.
+    * **Running / Mixed** → neutral, because a continuous effort's work is distance and pace,
+      not sets. Density for those domains needs a real endurance target (phase 5), and the
+      honest value until then is "not known", not a number derived from a proxy.
+
+    ``DENSITY_WHEN_TIME_UNKNOWN`` is 1.0, so a neutral density contributes exactly 1 to the
+    dose product and the other terms carry the session.
+    """
+    if log.modality not in SET_COUNTED_MODALITIES:
+        return DENSITY_WHEN_TIME_UNKNOWN
+    if log.estimated_sets is None:
+        return DENSITY_WHEN_TIME_UNKNOWN
+    return session_density_from_parts(log.duration_minutes, float(log.estimated_sets), p)
+
+
+def estimated_exercise_elapsed_minutes(entry: ExerciseEntry) -> float | None:
+    """How long an exercise plausibly occupied, work AND inter-set recovery included.
+
+    Returns ``None`` when there is nothing to estimate from, so the caller can fall back
+    explicitly rather than inventing a number.
+
+    This is an APPROXIMATION and is named as one: ``rest_seconds`` is per-set rest, and when
+    the entry does not carry its own duration the working time is assumed
+    (``ASSUMED_WORK_SECONDS_PER_SET``). ``sets / rest`` alone is NOT the physical quantity —
+    it ignores the work itself — which is why v0's per-exercise Δ was never density either.
+    """
+    sets = entry.sets or 0.0
+    if sets <= 0.0:
+        return None
+
+    if entry.duration_seconds:
+        work_seconds = float(entry.duration_seconds)
+    elif entry.rest_seconds is not None:
+        work_seconds = sets * ASSUMED_WORK_SECONDS_PER_SET
+    else:
+        return None
+
+    rest_seconds = float(entry.rest_seconds or 0.0) * max(0.0, sets - 1.0)
+    elapsed = (work_seconds + rest_seconds) / 60.0
+    return elapsed if elapsed > 0.0 else None
+
+
+def exercise_density_proxy(entry: ExerciseEntry, p: EngineParameters) -> float:
+    """Working sets per estimated elapsed minute for one exercise, relative to reference.
+
+    A proxy, not a measurement: see ``estimated_exercise_elapsed_minutes``. It moves in the
+    same direction as ``session_density`` — that agreement is the point, and is pinned by
+    tests/properties/test_density_semantics.py.
+    """
+    sets = entry.sets or 0.0
+    elapsed = estimated_exercise_elapsed_minutes(entry)
+    if elapsed is None or sets <= 0.0:
+        return DENSITY_WHEN_TIME_UNKNOWN
+    return _clamped((sets / elapsed) / reference_sets_per_minute(p), p)
+
+
+#: The corrected density variable, injected into the shared dose law.
+WORK_PER_TIME_DENSITY = DensityModel(
+    name="v1_work_per_elapsed_time",
+    session=session_density,
+    entry=exercise_density_proxy,
+)
+
+
+def calculate_stress_dose(
+    log: WorkoutLog,
+    params: EngineParameters | None = None,
+    external_intensity: ExternalIntensity | None = None,
+) -> StressDose:
+    """The v0 dose law with the v1 density variable. Same law, corrected input."""
+    return _calculate_stress_dose(
+        log,
+        params or default_parameters(),
+        external_intensity,
+        density_model=WORK_PER_TIME_DENSITY,
+    )
+
+
+def exercise_base_bundle(entry: ExerciseEntry, log: WorkoutLog, p: EngineParameters):
+    """Per-exercise base under v1 density (shape identical to the v0 helper)."""
+    return _exercise_base_bundle(entry, log, p, density_model=WORK_PER_TIME_DENSITY)

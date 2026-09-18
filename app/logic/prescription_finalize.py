@@ -310,7 +310,7 @@ def _derive_expected_outcomes(
     forward model raises, the session is still returned with no expected outcomes rather
     than a fabricated one.
     """
-    from app.logic.dose_engine_v0 import calculate_stress_dose
+    from app.logic.dose_engine_v1 import calculate_stress_dose
     from app.logic.mpc.candidate_dose import candidate_to_log
     from app.logic.state_update_v0 import update_athlete_state
 

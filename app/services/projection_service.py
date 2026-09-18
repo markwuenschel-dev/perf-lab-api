@@ -28,7 +28,7 @@ from app.engine.simulate import (
     session_log_from_intent,
 )
 from app.logic.constraint_engine import mean_fatigue, overall_readiness
-from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.logic.dose_engine_v1 import calculate_stress_dose
 from app.logic.planning import periodization_envelope
 from app.logic.state_update_v0 import update_athlete_state
 from app.schemas.projection import (
