@@ -13,6 +13,10 @@ class WeeklyTemplateSlot(BaseModel):
     day_of_week: int = Field(..., ge=1, le=7)
     category: str
     modality: str
+    # The canonical domain this slot came from. `modality` is a display label and is lossy
+    # (powerlifting and strength both read "Strength"), so the domain travels separately and
+    # is what the prescriber keys on. None = fall back to the block goal.
+    domain: str | None = None
 
 
 class BlockCreateRequest(BaseModel):
@@ -22,6 +26,9 @@ class BlockCreateRequest(BaseModel):
     sessions_per_week: int = Field(3, ge=1, le=7)
     weekly_template: list[WeeklyTemplateSlot] = Field(default_factory=lambda: [])
     modality_mix: dict[str, float] = Field(default_factory=dict)
+    # Workload preference for the whole block; omitted/None means medium. It shifts targets
+    # inside the periodization envelope and never loosens a safety limit.
+    intensity: Literal["easy", "medium", "hard"] | None = None
     rationale: str | None = None
     deload_every_n_weeks: int = Field(4, ge=1, le=12)
     deload_volume_factor: float = Field(0.6, gt=0.1, le=1.0)
@@ -53,6 +60,7 @@ class BlockRead(BaseModel):
     sessions_per_week: int
     weekly_template: list[dict[str, Any]]
     modality_mix: dict[str, Any]
+    intensity: str | None = None
     rationale: str | None
     deload_every_n_weeks: int
     deload_volume_factor: float
@@ -74,6 +82,9 @@ class PlannedSessionRead(BaseModel):
     day_of_week: int
     category: str
     modality: str
+    # The canonical domain this day was planned as (a045). `modality` is a lossy display
+    # label, so the domain is what says which style the day belongs to.
+    domain: str | None = None
     status: SessionStatus
     is_deload: bool
     is_benchmark: bool

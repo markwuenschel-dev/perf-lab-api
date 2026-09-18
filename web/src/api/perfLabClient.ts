@@ -42,6 +42,7 @@ import type {
   WearableConnectionOut,
   SessionFeedbackIn,
   SessionFeedbackOut,
+  WeeklyTemplateSlot,
   WellnessSampleIn,
   WellnessSampleOut,
   WorkoutLog,
@@ -402,6 +403,21 @@ export async function createPlanningBlock(
     body: JSON.stringify(body),
   });
   return handleResponse<BlockRead>(res, { sessionOn401: true });
+}
+
+/** Planning: the week a block request WOULD generate. Persists nothing — the create screen
+ *  shows the server's own allocation instead of reimplementing it here and drifting. */
+export async function previewPlanningBlock(
+  body: BlockCreateRequest,
+  token: string,
+): Promise<WeeklyTemplateSlot[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/planning/blocks/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<WeeklyTemplateSlot[]>(res, { sessionOn401: true });
 }
 
 export async function listPlanningBlocks(token: string): Promise<BlockRead[]> {

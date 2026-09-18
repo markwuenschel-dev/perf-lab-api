@@ -6,97 +6,36 @@
 // modal exposes the fields the backend needs to generate a real weekly
 // template, including the Phase 3a per-block session preferences (target
 // session length + accessory emphasis/focus).
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
-import { createPlanningBlock } from "@/api/perfLabClient";
-import type { ApiError, BlockCreateRequest, BlockGoal } from "@/types";
+import { createPlanningBlock, previewPlanningBlock } from "@/api/perfLabClient";
+import type { ApiError, BlockGoal, WeeklyTemplateSlot } from "@/types";
 import { usePerfLab } from "../store";
 import { CloseBtn } from "./LogWorkoutModal";
 
-// BlockGoal is a smaller, block-scoped enum — NOT the 14-value athlete
-// TRAINING_GOALS in store.tsx. Kept in sync with the `BlockGoal` schema
-// (types.gen.ts); if the backend adds a value, add it here too.
-const BLOCK_GOALS: { value: BlockGoal; label: string }[] = [
-  { value: "General", label: "General" },
-  { value: "Strength", label: "Strength" },
-  { value: "Hypertrophy", label: "Hypertrophy" },
-  { value: "Power", label: "Power" },
-  { value: "Hyrox", label: "Hyrox" },
-  { value: "CrossFit", label: "CrossFit" },
-  { value: "Running", label: "Running" },
-  { value: "Calisthenics", label: "Calisthenics" },
-  { value: "Recomp", label: "Recomp" },
-];
+import {
+  BLOCK_GOALS,
+  buildBlockCreateRequest,
+  EMPHASIS,
+  FOCUS_TAGS,
+  GOAL_DOMAIN,
+  initialForm,
+  INTENSITIES,
+  SECONDARY_STYLES,
+  type BlockForm,
+} from "./blockCreateBody";
 
-type Emphasis = "minimal" | "balanced" | "high";
-const EMPHASIS: { value: Emphasis; label: string }[] = [
-  { value: "minimal", label: "Minimal" },
-  { value: "balanced", label: "Balanced" },
-  { value: "high", label: "High" },
-];
-
-// Accessory focus tags the backend understands (`_ACCESSORY_BY_TAG`).
-const FOCUS_TAGS: { value: string; label: string }[] = [
-  { value: "posterior_chain", label: "Posterior chain" },
-  { value: "push", label: "Push" },
-  { value: "pull", label: "Pull" },
-  { value: "core", label: "Core" },
-  { value: "single_leg", label: "Single-leg" },
-];
-
-const todayIso = (): string => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const DAY_LABELS: Record<number, string> = {
+  1: "Monday",
+  2: "Tuesday",
+  3: "Wednesday",
+  4: "Thursday",
+  5: "Friday",
+  6: "Saturday",
+  7: "Sunday",
 };
 
-const clamp = (n: number, min: number, max: number): number => (Number.isNaN(n) ? min : Math.min(max, Math.max(min, n)));
-
-interface BlockForm {
-  goal: BlockGoal;
-  startDate: string;
-  // Numeric fields are held as raw input text so they tolerate a transient blank
-  // while retyping; they're parsed + clamped (with defaults) at submit time.
-  durationWeeks: string;
-  sessionsPerWeek: string;
-  targetMinutes: string; // raw input text; "" → omit/null
-  emphasis: Emphasis;
-  focus: string[];
-}
-
-function initialForm(): BlockForm {
-  return {
-    goal: "General",
-    startDate: todayIso(),
-    durationWeeks: "8",
-    sessionsPerWeek: "3",
-    targetMinutes: "",
-    emphasis: "balanced",
-    focus: [],
-  };
-}
-
-/** Build the backend BlockCreateRequest from the form. Leaves weekly_template
- *  empty and modality_mix empty — the backend derives the template from goal
- *  + modality_mix (defaulted server-side when empty). */
-function buildBlockCreateRequest(f: BlockForm): BlockCreateRequest {
-  const trimmed = f.targetMinutes.trim();
-  const minutes = trimmed === "" ? null : clamp(Number(trimmed), 20, 180);
-  return {
-    goal: f.goal,
-    start_date: f.startDate,
-    duration_weeks: clamp(Number(f.durationWeeks.trim() || "8"), 1, 24),
-    sessions_per_week: clamp(Number(f.sessionsPerWeek.trim() || "3"), 1, 7),
-    weekly_template: [],
-    modality_mix: {},
-    target_session_minutes: minutes,
-    accessory_emphasis: f.emphasis,
-    accessory_focus: f.focus.length > 0 ? f.focus : null,
-    deload_every_n_weeks: 4,
-    deload_volume_factor: 0.6,
-    benchmark_every_n_weeks: 4,
-  } satisfies BlockCreateRequest;
-}
 
 const inputCls = "mt-2 w-full rounded-[11px] border border-white/10 bg-panel px-[13px] py-[11px] text-[14px] text-ink";
 const segCls = (active: boolean) =>
@@ -116,10 +55,49 @@ export function BlockCreateModal() {
   const [form, setForm] = useState<BlockForm>(initialForm);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // The week the SERVER would generate. Fetched rather than computed here: a style that ends
+  // up with zero sessions is a fact the athlete should see before creating the block, and a
+  // second largest-remainder implementation in TypeScript would eventually disagree.
+  const [preview, setPreview] = useState<WeeklyTemplateSlot[] | null>(null);
+  const [previewError, setPreviewError] = useState(false);
+
+  const open = state.blockCreateOpen;
+  const token = auth.token;
+  const previewKey = open
+    ? JSON.stringify({ g: form.goal, s: form.secondary, n: form.sessionsPerWeek })
+    : null;
+
+  useEffect(() => {
+    if (!open || !token || previewKey === null) return;
+    let cancelled = false;
+    setPreviewError(false);
+    previewPlanningBlock(buildBlockCreateRequest(form), token)
+      .then((slots) => {
+        if (!cancelled) setPreview(slots);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPreview(null);
+          setPreviewError(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `previewKey` names every input the generated week depends on; `form` is read inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, token, previewKey]);
 
   if (!state.blockCreateOpen) return null;
 
   const set = <K extends keyof BlockForm>(key: K, value: BlockForm[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const toggleSecondary = (domain: string) =>
+    setForm((f) => ({
+      ...f,
+      secondary: f.secondary.includes(domain)
+        ? f.secondary.filter((d) => d !== domain)
+        : [...f.secondary, domain],
+    }));
   const toggleFocus = (tag: string) =>
     setForm((f) => ({ ...f, focus: f.focus.includes(tag) ? f.focus.filter((t) => t !== tag) : [...f.focus, tag] }));
 
@@ -172,6 +150,65 @@ export function BlockCreateModal() {
             </select>
           </label>
 
+          <div>
+            <span className="text-[12px] font-medium leading-none text-mute">Also train (optional)</span>
+            <p className="mb-1 mt-[6px] text-[11px] font-medium leading-[1.45] text-faint">
+              Secondary styles share the week with your main style. Shares are SESSIONS, not time —
+              with few sessions a week a style can end up with none, and the preview shows that.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {SECONDARY_STYLES.filter((o) => o.domain !== GOAL_DOMAIN[form.goal]).map((o) => (
+                <div
+                  key={o.domain}
+                  onClick={() => toggleSecondary(o.domain)}
+                  className={chipCls(form.secondary.includes(o.domain))}
+                >
+                  {o.label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <span className="text-[12px] font-medium leading-none text-mute">This week</span>
+            <div className="mt-2 rounded-[11px] border border-white/[0.08] bg-white/[0.02] px-[13px] py-[11px]">
+              {previewError ? (
+                <span className="text-[11.5px] font-medium leading-[1.45] text-dim">
+                  Couldn’t load the preview — the block will still be generated from these settings.
+                </span>
+              ) : preview === null ? (
+                <span className="text-[11.5px] font-medium leading-[1.45] text-dim">Loading…</span>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-[6px]">
+                    {preview.map((slot, i) => (
+                      <div key={`${slot.day_of_week}-${i}`} className="flex items-center justify-between">
+                        <span className="text-[12px] font-medium leading-none text-soft">
+                          {DAY_LABELS[slot.day_of_week] ?? `Day ${slot.day_of_week}`}
+                        </span>
+                        <span className="font-mono text-[11px] leading-none text-mute">{slot.category}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {(() => {
+                    const planned = new Set(preview.map((s) => s.domain).filter(Boolean));
+                    const missed = form.secondary.filter((d) => !planned.has(d));
+                    if (missed.length === 0) return null;
+                    const labels = missed
+                      .map((d) => SECONDARY_STYLES.find((o) => o.domain === d)?.label ?? d)
+                      .join(", ");
+                    return (
+                      <p className="mt-[10px] text-[11px] font-medium leading-[1.45] text-hot">
+                        No sessions for {labels} at {form.sessionsPerWeek} per week — add sessions or
+                        drop a style.
+                      </p>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-[14px]">
             <label className="block">
               <span className="text-[12px] font-medium leading-none text-mute">Start date</span>
@@ -189,6 +226,21 @@ export function BlockCreateModal() {
               <span className="text-[12px] font-medium leading-none text-mute">Target session length (min)</span>
               <input type="number" min={20} max={180} placeholder="Optional" value={form.targetMinutes} onChange={(e) => set("targetMinutes", e.target.value)} className={inputCls} />
             </label>
+          </div>
+
+          <div>
+            <span className="text-[12px] font-medium leading-none text-mute">Workload</span>
+            <div className="mt-2 flex gap-2">
+              {INTENSITIES.map((o) => (
+                <div key={o.value} onClick={() => set("intensity", o.value)} className={segCls(form.intensity === o.value)}>{o.label}</div>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] font-medium leading-[1.45] text-faint">
+              {INTENSITIES.find((o) => o.value === form.intensity)?.help}
+            </p>
+            <p className="mt-1 text-[11px] font-medium leading-[1.45] text-dim">
+              Currently adjusts strength-type sessions only.
+            </p>
           </div>
 
           <div>

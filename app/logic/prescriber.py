@@ -53,7 +53,12 @@ from app.logic.exercise_slot import (
     resolve_slots,
 )
 from app.logic.planned_session_slots import SlotBinding, binding_for
-from app.logic.planning import periodization_envelope
+from app.logic.planning import (
+    INTENSITY_MEDIUM,
+    intensity_set_delta,
+    normalize_intensity,
+    periodization_envelope,
+)
 from app.logic.planning_constraints import (
     ConstraintApplication,
     ResolvedPlanningConstraint,
@@ -382,6 +387,7 @@ def _generate_candidates(
     kpi: dict[str, float],
     recent: list[dict[str, Any]] | None,
     readiness_override: float | None = None,
+    domain_override: str | None = None,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
@@ -394,7 +400,11 @@ def _generate_candidates(
     modeled-only ``overall_readiness`` is used. This is the score channel only — confidence
     never enters here.
     """
-    domain = _candidate_domain(goal)
+    # ``domain_override`` is today's planned slot speaking for itself (ADR-0030 concurrent
+    # blocks): a Strength block with a running day builds that day from running templates.
+    # Without it the pool always came from the block goal, so a modality mix could only
+    # relabel days.
+    domain = domain_override or _candidate_domain(goal)
     r = readiness_override if readiness_override is not None else _readiness(state)
     templates = get_templates(domain, kpi, goal=str(goal), state=state)
     return [score_template(t, state, kpi, readiness=r) for t in templates]
@@ -446,6 +456,62 @@ def _gen_mixed_candidates(
 # ---------------------------------------------------------------------------
 # Primary entry point
 # ---------------------------------------------------------------------------
+
+# Domains whose prescriptions carry countable working sets, so a workload preference has
+# something honest to move. Endurance, conditioning and GPP sessions express work as duration
+# and free-text targets; adding a "set" to a Zone-2 run would be noise dressed as a setting.
+# Widening this set means giving those domains a real target first (see ADR-0062's AU ledger).
+INTENSITY_SET_DOMAINS: frozenset[str] = frozenset(
+    {"strength", "powerlifting", "hypertrophy", "power", "weightlifting"}
+)
+
+
+def _is_recovery_week(block: dict[str, Any], week_n: int, weeks_total: int) -> bool:
+    """A flagged deload, or the taper week the envelope reserves at the end of a block."""
+    if block.get("is_deload"):
+        return True
+    return bool(week_n and weeks_total and week_n >= weeks_total and weeks_total >= 3)
+
+
+def _apply_intensity_sets(
+    rx: WorkoutPrescription,
+    intensity: str,
+    domain: str,
+    *,
+    is_recovery_week: bool,
+) -> None:
+    """Move working sets by the block's workload preference, and always say what happened.
+
+    Every no-op is reported with its reason. A preference that silently does nothing is the
+    defect this whole slice exists to avoid: the athlete chose "hard" and is owed either more
+    work or the reason there isn't any.
+    """
+    if intensity == INTENSITY_MEDIUM:
+        return
+    reason: str | None = None
+    if is_recovery_week:
+        reason = "recovery-week"
+    elif domain not in INTENSITY_SET_DOMAINS:
+        reason = f"no-set-targets:{domain}"
+
+    if reason is None:
+        delta = intensity_set_delta(intensity)
+        moved = 0
+        for ex in rx.exercises:
+            if ex.sets is None:
+                continue
+            adjusted = max(1, ex.sets + delta)
+            if adjusted != ex.sets:
+                ex.sets = adjusted
+                moved += 1
+        reason = None if moved else "sets-at-floor"
+
+    if rx.why is None:
+        return
+    rx.why.constraints_applied.append(
+        f"block:intensity={intensity}" if reason is None else f"block:intensity={intensity}(no-op:{reason})"
+    )
+
 
 def _finalize(
     candidate: SessionCandidate,
@@ -941,7 +1007,12 @@ def _recommend_next_session(
     block = block_context or {}
     # Today's planned slot, resolved to the templates that can satisfy it — `None` when the
     # slot binds nothing. Resolved here so every return path below can report the outcome.
-    planned = binding_for(_candidate_domain(str(goal)), block.get("session_category"))
+    # The slot's OWN canonical domain when the planner recorded one (a multi-style block's
+    # running day is a running day), falling back to the block goal for every session planned
+    # before that was recorded. `modality` is not a substitute — it is lossy (see the a045
+    # migration).
+    session_domain = str(block.get("session_domain") or "") or None
+    planned = binding_for(session_domain or _candidate_domain(str(goal)), block.get("session_category"))
 
     # --- 1. Hard safety overrides (always override scoring) ---
     safety = _safety_candidates(state)
@@ -961,7 +1032,9 @@ def _recommend_next_session(
     deload_need = compute_deload_need(state)
 
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
-    goal_candidates = _generate_candidates(state, goal, kpi, recent_sessions, readiness_override)
+    goal_candidates = _generate_candidates(
+        state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain
+    )
     # Readiness redirects stay modeled-only: acute wellness has no honest per-axis mapping,
     # so it enters via the score channel above, not here (ADR-0052).
     redirects = _readiness_redirect(state, goal, kpi)
@@ -1102,9 +1175,10 @@ def _recommend_next_session(
     # week_number shapes the prescription within an envelope; state pulls down, not up.
     week_n = int(block.get("week_number") or 0)
     weeks_total = int(block.get("duration_weeks") or 0)
+    intensity = normalize_intensity(block.get("intensity"))
     if week_n and weeks_total:
         env = periodization_envelope(
-            weeks_total, week_n, int(block.get("deload_every_n_weeks") or 4)
+            weeks_total, week_n, int(block.get("deload_every_n_weeks") or 4), intensity=intensity
         )
         vol = env.volume_modifier
         phase = env.phase
@@ -1263,6 +1337,17 @@ def _recommend_next_session(
             rx.duration_min = max(1, round(rx.duration_min * OBJECTIVE_TAPER_FACTOR))
         if rx.why:
             rx.why.constraints_applied.append(f"objective:taper(×{OBJECTIVE_TAPER_FACTOR:.2f})")
+
+    # Workload preference (E): applied LAST, once this session's exercises and accessories are
+    # attached — before that there are no sets to move. Deliberately NOT applied through the
+    # envelope's volume modifier, which scales `duration_min` alone and would make a session
+    # merely look longer without asking for more work.
+    _apply_intensity_sets(
+        rx,
+        intensity,
+        session_domain or _candidate_domain(str(goal)),
+        is_recovery_week=_is_recovery_week(block, week_n, weeks_total),
+    )
 
     if rx.why:
         rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))

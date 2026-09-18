@@ -525,10 +525,49 @@ class PhaseEnvelope:
     rpe_high: float
 
 
+# --- Workload preference (E) ------------------------------------------------------
+#
+# An explicit athlete choice, asked once per block: how much work this block should ask for.
+# PROVISIONAL PRODUCT SETTINGS — the numbers below are a starting point, not a calibrated
+# result, and they live in one table so changing them is one edit with one test to update.
+#
+# What it does NOT do: it never loosens a safety override, a readiness redirect or the hard
+# validator, and it never raises the deload or taper envelope. Those are about tissue, not
+# preference. Uncertainty conservatism can still lower the resulting cap.
+INTENSITY_EASY = "easy"
+INTENSITY_MEDIUM = "medium"
+INTENSITY_HARD = "hard"
+INTENSITY_CHOICES: tuple[str, ...] = (INTENSITY_EASY, INTENSITY_MEDIUM, INTENSITY_HARD)
+
+# intensity → (working-set delta, RPE shift). The set delta is applied to the winning
+# template's working sets and bounded by the caller; the RPE shift moves the envelope's
+# target band, which is what sizes load.
+_INTENSITY_ADJUSTMENT: dict[str, tuple[int, float]] = {
+    INTENSITY_EASY: (-1, -0.5),
+    INTENSITY_MEDIUM: (0, 0.0),
+    INTENSITY_HARD: (1, 0.5),
+}
+
+# No prescription may be pushed past this by a preference, whatever the phase says.
+INTENSITY_RPE_CEILING = 9.5
+
+
+def normalize_intensity(value: str | None) -> str:
+    """An unset or unrecognized workload preference is medium — today's behaviour."""
+    text = (value or "").strip().lower()
+    return text if text in INTENSITY_CHOICES else INTENSITY_MEDIUM
+
+
+def intensity_set_delta(intensity: str | None) -> int:
+    """Working sets to add or remove for this preference (0 for medium)."""
+    return _INTENSITY_ADJUSTMENT[normalize_intensity(intensity)][0]
+
+
 def periodization_envelope(
     duration_weeks: int,
     week_number: int,
     deload_every_n_weeks: int = 4,
+    intensity: str | None = None,
 ) -> PhaseEnvelope:
     """Resolve a block week to its periodization envelope (ADR-0029).
 
@@ -541,6 +580,8 @@ def periodization_envelope(
     wk = max(1, int(week_number))
     deload_n = max(0, int(deload_every_n_weeks))
 
+    # Recovery weeks ignore the preference entirely: a deload the athlete can talk their way
+    # out of is not a deload, and a taper exists to arrive fresh.
     if wk >= weeks and weeks >= 3:
         return PhaseEnvelope("taper", 0.55, 6.0, 8.0)
     if deload_n and wk % deload_n == 0:
@@ -548,7 +589,28 @@ def periodization_envelope(
 
     frac = wk / weeks
     if frac <= 0.4:
-        return PhaseEnvelope("accumulation", 1.15, 6.5, 7.5)
-    if frac <= 0.75:
-        return PhaseEnvelope("intensification", 0.9, 7.5, 8.5)
-    return PhaseEnvelope("peak", 0.7, 8.5, 9.5)
+        base = PhaseEnvelope("accumulation", 1.15, 6.5, 7.5)
+    elif frac <= 0.75:
+        base = PhaseEnvelope("intensification", 0.9, 7.5, 8.5)
+    else:
+        base = PhaseEnvelope("peak", 0.7, 8.5, 9.5)
+    return _with_intensity(base, intensity)
+
+
+def _with_intensity(envelope: PhaseEnvelope, intensity: str | None) -> PhaseEnvelope:
+    """Shift a working phase's RPE band by the block's workload preference.
+
+    Only the band moves here. ``volume_modifier`` is deliberately untouched: the prescriber
+    applies it to ``duration_min`` alone (app/logic/prescriber.py), so raising it would make a
+    session look longer without asking for one more set — the preference is applied to working
+    sets directly instead (``intensity_set_delta``).
+    """
+    _, rpe_shift = _INTENSITY_ADJUSTMENT[normalize_intensity(intensity)]
+    if rpe_shift == 0.0:
+        return envelope
+    return PhaseEnvelope(
+        envelope.phase,
+        envelope.volume_modifier,
+        max(1.0, min(INTENSITY_RPE_CEILING, envelope.rpe_low + rpe_shift)),
+        max(1.0, min(INTENSITY_RPE_CEILING, envelope.rpe_high + rpe_shift)),
+    )
