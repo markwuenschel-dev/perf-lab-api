@@ -36,6 +36,8 @@ from app.engine.parameters import EngineParameters, default_parameters
 from app.engine.phi_table import default_phi_for_row
 from app.logic import strength_calibration as sc
 from app.logic.domain_vocab import PHI_ADAPT_TO_CAPACITY
+
+# Pinned to dose engine v0 on purpose: ADR-0054 shadow routing comparison, calibrated against v0 bases.
 from app.logic.dose_engine_v0 import exercise_base_bundle, infer_movement_pattern
 from app.schemas.workouts import ExerciseEntry, ExternalIntensity, WorkoutLog
 

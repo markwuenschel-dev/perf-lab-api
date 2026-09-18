@@ -307,3 +307,14 @@ class StressDose(BaseModel):
     # "no check-in" is auditable rather than laundered into a midpoint. None only on
     # legacy dose_snapshot dumps written before this field existed.
     human_factor_gain: HumanFactorGain | None = None
+
+    # WHICH DOSE MODEL produced this. v0 and v1 compute a different density variable, so a
+    # dose is only interpretable against the model that made it — and stored states must
+    # never silently mix the two. Persisted with every dose via workout_logs.dose_snapshot.
+    # None only on snapshots written before this field existed (those are v0 by construction).
+    dose_model_version: str | None = None
+    # What density was measured from: sets_per_elapsed_minute | structured_endurance_work |
+    # not_applicable | legacy_minutes_per_set. "not_applicable" means density was NOT MODELLED
+    # for this session — the dose law used the multiplicative identity — which is a different
+    # statement from an observed density that happened to equal 1.0.
+    density_basis: str | None = None

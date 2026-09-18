@@ -39,6 +39,8 @@ from app.logic.benchmark_validity import (
     effective_variance,
     get_validity_profile,
 )
+
+# Pinned to dose engine v0 on purpose: replays STORED history — must reproduce the dose the athlete actually received.
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.logic.ekf.belief import EkfBelief
 from app.logic.ekf.observation import MappingSpec, build_observation, update

@@ -33,6 +33,8 @@ import numpy as np
 import pandas as pd
 
 from app.engine.parameters import EngineParameters, default_parameters
+
+# Pinned to dose engine v0 on purpose: the fitted artifact is v0-fitted; phase 8 re-fits against v1 (the density variable changed).
 from app.logic.dose_engine_v0 import calculate_stress_dose
 from app.ml.common.splits import grouped_time_split as _grouped_time_split
 from app.schemas.workouts import WorkoutLog
