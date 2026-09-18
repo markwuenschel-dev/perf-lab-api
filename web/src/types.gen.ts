@@ -555,7 +555,9 @@ export interface paths {
          *     response was lost) from the same submission sent twice, so both are treated alike: the
          *     baseline state is seeded only for an athlete with no state; a weak point the athlete has
          *     already self-reported and not resolved is not added again; a report identical to one
-         *     onboarding already recorded is not recorded again. Profile fields take the submitted values.
+         *     onboarding already recorded is not recorded again. A profile field takes the submitted
+         *     value when one was sent, and otherwise keeps what is stored — an omitted field is "not
+         *     answered", never "clear it", so a resubmission cannot erase an earlier answer.
          *     Concurrent submissions for one athlete are serialized on the user row, so the second finds
          *     the first's writes once it commits.
          */
@@ -2198,13 +2200,20 @@ export interface components {
             /** Target Value */
             target_value?: number | null;
         };
-        /** OnboardRequest */
+        /**
+         * OnboardRequest
+         * @description What the athlete submitted — NOT what the profile ends up holding.
+         *
+         *     Every optional field means "not answered", never "clear this". The route resolves each
+         *     one to a single effective value (submitted → stored → documented default) and uses that
+         *     for both the profile write and the baseline seed. That is why these carry no eager
+         *     defaults: an omitted field used to be written as the schema default, so re-submitting
+         *     onboarding wiped a stored date of birth, bodyweight or 5K, and silently re-labelled the
+         *     athlete ``intermediate`` (the model's own default is ``beginner``).
+         */
         OnboardRequest: {
-            /**
-             * Available Days Per Week
-             * @default 3
-             */
-            available_days_per_week: number;
+            /** Available Days Per Week */
+            available_days_per_week?: number | null;
             /** Bodyweight Kg */
             bodyweight_kg?: number | null;
             /** Date Of Birth */
@@ -2212,31 +2221,27 @@ export interface components {
             /** Display Name */
             display_name?: string | null;
             /** Equipment */
-            equipment?: string[];
-            /**
-             * Experience Level
-             * @default intermediate
-             */
-            experience_level: string;
-            /**
-             * Experience Years
-             * @default 0
-             */
-            experience_years: number;
-            /**
-             * Goal
-             * @default Strength
-             */
-            goal: string;
+            equipment?: string[] | null;
+            /** Experience Level */
+            experience_level?: string | null;
+            /** Experience Years */
+            experience_years?: number | null;
+            /** Goal */
+            goal?: string | null;
+            /** Height Cm */
+            height_cm?: number | null;
+            /** Overhead 1Rm Kg */
+            overhead_1rm_kg?: number | null;
+            /** Pullup Max Reps */
+            pullup_max_reps?: number | null;
+            /** Run 1P5Mi Seconds */
+            run_1p5mi_seconds?: number | null;
             /** Run 5K Seconds */
             run_5k_seconds?: number | null;
             /** Self Reported Weak Points */
             self_reported_weak_points?: string[];
-            /**
-             * Session Duration Minutes
-             * @default 60
-             */
-            session_duration_minutes: number;
+            /** Session Duration Minutes */
+            session_duration_minutes?: number | null;
             /** Strength */
             strength?: components["schemas"]["OnboardStrengthReport"][];
         };

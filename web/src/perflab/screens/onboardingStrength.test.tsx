@@ -121,6 +121,12 @@ describe("an imperial athlete's lifts reach the API in kilograms", () => {
     await waitFor(() => expect(completeOnboarding).toHaveBeenCalledTimes(1));
     expect(completeOnboarding).toHaveBeenCalledWith({
       goal: "Strength",
+      // The training context the screen collected on step 2 now travels with the request —
+      // these are its untouched defaults here. onboardingContext.test.tsx owns that contract;
+      // they appear in this exact-payload assertion so it keeps proving nothing ELSE is sent.
+      equipment: [],
+      available_days_per_week: 4,
+      session_duration_minutes: 60,
       strength: [
         {
           benchmark_code: "pl_e1rm_squat",

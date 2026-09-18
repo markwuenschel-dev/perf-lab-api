@@ -3157,13 +3157,20 @@
         "type": "object"
       },
       "OnboardRequest": {
+        "description": "What the athlete submitted \u2014 NOT what the profile ends up holding.\n\nEvery optional field means \"not answered\", never \"clear this\". The route resolves each\none to a single effective value (submitted \u2192 stored \u2192 documented default) and uses that\nfor both the profile write and the baseline seed. That is why these carry no eager\ndefaults: an omitted field used to be written as the schema default, so re-submitting\nonboarding wiped a stored date of birth, bodyweight or 5K, and silently re-labelled the\nathlete ``intermediate`` (the model's own default is ``beginner``).",
         "properties": {
           "available_days_per_week": {
-            "default": 3,
-            "maximum": 7.0,
-            "minimum": 1.0,
-            "title": "Available Days Per Week",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 7.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Days Per Week"
           },
           "bodyweight_kg": {
             "anyOf": [
@@ -3201,27 +3208,100 @@
             "title": "Display Name"
           },
           "equipment": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Equipment",
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equipment"
           },
           "experience_level": {
-            "default": "intermediate",
-            "title": "Experience Level",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Level"
           },
           "experience_years": {
-            "default": 0.0,
-            "minimum": 0.0,
-            "title": "Experience Years",
-            "type": "number"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Years"
           },
           "goal": {
-            "default": "Strength",
-            "title": "Goal",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          },
+          "height_cm": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Cm"
+          },
+          "overhead_1rm_kg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overhead 1Rm Kg"
+          },
+          "pullup_max_reps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pullup Max Reps"
+          },
+          "run_1p5mi_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run 1P5Mi Seconds"
           },
           "run_5k_seconds": {
             "anyOf": [
@@ -3243,9 +3323,16 @@
             "type": "array"
           },
           "session_duration_minutes": {
-            "default": 60,
-            "title": "Session Duration Minutes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Duration Minutes"
           },
           "strength": {
             "items": {
@@ -8632,7 +8719,7 @@
     },
     "/v1/onboard": {
       "post": {
-        "description": "Profile basics, self-reported weak points, the baseline state, and strength reports.\n\n**One transaction.** Everything below commits together, or nothing does.\n\n**Retry-safe.** The server cannot tell a retry whose first attempt committed (and whose\nresponse was lost) from the same submission sent twice, so both are treated alike: the\nbaseline state is seeded only for an athlete with no state; a weak point the athlete has\nalready self-reported and not resolved is not added again; a report identical to one\nonboarding already recorded is not recorded again. Profile fields take the submitted values.\nConcurrent submissions for one athlete are serialized on the user row, so the second finds\nthe first's writes once it commits.",
+        "description": "Profile basics, self-reported weak points, the baseline state, and strength reports.\n\n**One transaction.** Everything below commits together, or nothing does.\n\n**Retry-safe.** The server cannot tell a retry whose first attempt committed (and whose\nresponse was lost) from the same submission sent twice, so both are treated alike: the\nbaseline state is seeded only for an athlete with no state; a weak point the athlete has\nalready self-reported and not resolved is not added again; a report identical to one\nonboarding already recorded is not recorded again. A profile field takes the submitted\nvalue when one was sent, and otherwise keeps what is stored \u2014 an omitted field is \"not\nanswered\", never \"clear it\", so a resubmission cannot erase an earlier answer.\nConcurrent submissions for one athlete are serialized on the user row, so the second finds\nthe first's writes once it commits.",
         "operationId": "onboard_athlete_v1_onboard_post",
         "requestBody": {
           "content": {
