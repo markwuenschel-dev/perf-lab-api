@@ -124,6 +124,11 @@ class MesocycleBlock(Base):
     # the athlete wants extra accessory work on. Missing/None means no
     # specific focus — the prescriber falls back to active weak-point tags.
     accessory_focus: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    # Workload preference for this block: "easy" | "medium" | "hard"; NULL is medium.
+    # It shifts targets INSIDE the periodization envelope (working sets and the RPE cap) and
+    # never loosens a safety override, a readiness redirect or the hard validator — those are
+    # calibrated for tissue, not taste.
+    intensity: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Deload configuration
     deload_every_n_weeks: Mapped[int] = mapped_column(Integer, default=4)
@@ -191,6 +196,11 @@ class PlannedSession(Base):
         String, nullable=False, comment="e.g. 'Heavy Lower', 'Conditioning'"
     )
     modality: Mapped[str] = mapped_column(String, nullable=False)
+    # The canonical domain this slot was generated from (ADR-0038). NOT derivable from
+    # ``modality``: _DOMAIN_SLOT maps powerlifting→Strength, weightlifting→Power and
+    # gymnastics→Calisthenics, so the label is lossy. NULL = no recorded domain, and the
+    # prescriber falls back to the block goal exactly as it did before this column existed.
+    domain: Mapped[str | None] = mapped_column(String, nullable=True)
 
     status: Mapped[SessionStatus] = mapped_column(
         SAEnum(SessionStatus, values_callable=_enum_values),

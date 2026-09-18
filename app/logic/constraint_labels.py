@@ -217,6 +217,11 @@ _BLOCK_RPE = re.compile(rf"^block:rpe_target=(?P<low>{_NUMBER})-(?P<high>{_NUMBE
 _BLOCK_DELOAD = re.compile(rf"^block:deload\(×(?P<factor>{_NUMBER})\)$")
 _BLOCK_ACCESSORIES = re.compile(r"^block:accessories=(?P<emphasis>[a-z_]+)\(\+(?P<count>\d+)\)$")
 _BLOCK_TARGET_DURATION = re.compile(r"^block:target_duration=(?P<minutes>\d+)$")
+# The block's workload preference, and — when it changed nothing — why. A preference that
+# silently does nothing is exactly what this label exists to prevent.
+_BLOCK_INTENSITY = re.compile(
+    r"^block:intensity=(?P<intensity>easy|medium|hard)(?:\(no-op:(?P<reason>[^)]+)\))?$"
+)
 _OBJECTIVE_TAPER = re.compile(rf"^objective:taper\(×(?P<factor>{_NUMBER})\)$")
 _OBJECTIVE_DOMAIN = re.compile(r"^objective:domain_emphasis=(?P<domain>[a-z_]+)$")
 _WEAK_POINT = re.compile(r"^weak_point:(?P<tag>[a-z_]+)$")
@@ -251,6 +256,7 @@ CODE_FAMILIES: tuple[str, ...] = (
     "block:benchmark",
     "block:accessories=",
     "block:target_duration=",
+    "block:intensity=",
     "adherence:recent_skips=",
     "adherence:recent_modifications=",
     "safety:override=",
@@ -309,6 +315,39 @@ def _block(code: str) -> _Labelled | None:
         )
     if m := _BLOCK_TARGET_DURATION.match(code):
         return f"Session length set to {m['minutes']} min by your block.", "block", True
+    if m := _BLOCK_INTENSITY.match(code):
+        intensity = m["intensity"]
+        reason = m["reason"]
+        if reason is None:
+            moved = "fewer" if intensity == "easy" else "more"
+            return (
+                f"Your block's {intensity} workload: {moved} working sets, "
+                f"and the effort target moved with it.",
+                "block",
+                True,
+            )
+        if reason == "recovery-week":
+            return (
+                f"Your {intensity} workload does not apply this week — recovery weeks are "
+                f"left as planned.",
+                "block",
+                True,
+            )
+        if reason.startswith("no-set-targets:"):
+            return (
+                f"Your {intensity} workload adjusts strength-type sessions; this session has "
+                f"no set targets to move.",
+                "block",
+                True,
+            )
+        if reason == "sets-at-floor":
+            return (
+                f"Your {intensity} workload could not lower this session further — "
+                f"it is already at one set per exercise.",
+                "block",
+                True,
+            )
+        return None
     return None
 
 

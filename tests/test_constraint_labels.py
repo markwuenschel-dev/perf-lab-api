@@ -48,6 +48,7 @@ EXAMPLES: dict[str, str] = {
     "block:benchmark": "block:benchmark",
     "block:accessories=": "block:accessories=balanced(+2)",
     "block:target_duration=": "block:target_duration=45",
+    "block:intensity=": "block:intensity=hard",
     "adherence:recent_skips=": "adherence:recent_skips=3",
     "adherence:recent_modifications=": "adherence:recent_modifications=2",
     "safety:override=": "safety:override=safety_regional_tissue",
@@ -212,3 +213,19 @@ def test_a_safety_override_is_shown_as_an_applied_adjustment(catalog_snapshot) -
     assert "safety:override=safety_regional_tissue" in codes
     # The same state fails the universal tissue rule, which replaced the session too — shown.
     assert any("replaced" in d.label for d in safety if d.code.startswith("tissue stress"))
+
+
+def test_the_workload_preference_says_what_it_did_and_what_it_did_not() -> None:
+    """Every no-op form is labelled: a preference that quietly did nothing is the failure mode."""
+    applied = describe_constraint("block:intensity=hard")
+    assert applied.athlete_visible and applied.group == "block"
+    assert "working sets" in applied.label
+
+    for code, expected in (
+        ("block:intensity=hard(no-op:recovery-week)", "recovery weeks"),
+        ("block:intensity=hard(no-op:no-set-targets:running)", "no set targets"),
+        ("block:intensity=easy(no-op:sets-at-floor)", "one set per exercise"),
+    ):
+        entry = describe_constraint(code)
+        assert entry.label != UNKNOWN_LABEL, code
+        assert expected in entry.label, (code, entry.label)

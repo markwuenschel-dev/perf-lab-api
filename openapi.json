@@ -1107,6 +1107,22 @@
           "goal": {
             "$ref": "#/components/schemas/BlockGoal"
           },
+          "intensity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity"
+          },
           "modality_mix": {
             "additionalProperties": {
               "type": "number"
@@ -1242,6 +1258,17 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "intensity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity"
           },
           "modality_mix": {
             "additionalProperties": true,
@@ -3686,6 +3713,17 @@
           "day_of_week": {
             "title": "Day Of Week",
             "type": "integer"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
           },
           "id": {
             "title": "Id",
@@ -6303,6 +6341,17 @@
             "title": "Day Of Week",
             "type": "integer"
           },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
           "modality": {
             "title": "Modality",
             "type": "string"
@@ -8907,6 +8956,57 @@
           }
         ],
         "summary": "Create Block",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/blocks/preview": {
+      "post": {
+        "description": "The week this request WOULD generate. Persists nothing.\n\nThe create screen shows a style mix's real allocation with it, so \"I asked for three\nstyles and one got no sessions\" is visible before the block exists rather than after.",
+        "operationId": "preview_block_template_v1_planning_blocks_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WeeklyTemplateSlot"
+                  },
+                  "title": "Response Preview Block Template V1 Planning Blocks Preview Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Preview Block Template",
         "tags": [
           "Planning"
         ]

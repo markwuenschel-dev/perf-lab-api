@@ -629,6 +629,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/planning/blocks/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Block Template
+         * @description The week this request WOULD generate. Persists nothing.
+         *
+         *     The create screen shows a style mix's real allocation with it, so "I asked for three
+         *     styles and one got no sessions" is visible before the block exists rather than after.
+         */
+        post: operations["preview_block_template_v1_planning_blocks_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/planning/blocks/{block_id}": {
         parameters: {
             query?: never;
@@ -1306,6 +1329,8 @@ export interface components {
              */
             duration_weeks: number;
             goal: components["schemas"]["BlockGoal"];
+            /** Intensity */
+            intensity?: ("easy" | "medium" | "hard") | null;
             /** Modality Mix */
             modality_mix?: {
                 [key: string]: number;
@@ -1354,6 +1379,8 @@ export interface components {
             goal: components["schemas"]["BlockGoal"];
             /** Id */
             id: number;
+            /** Intensity */
+            intensity?: string | null;
             /** Modality Mix */
             modality_mix: {
                 [key: string]: unknown;
@@ -2404,6 +2431,8 @@ export interface components {
             completed_at?: string | null;
             /** Day Of Week */
             day_of_week: number;
+            /** Domain */
+            domain?: string | null;
             /** Id */
             id: number;
             /** Is Benchmark */
@@ -3569,6 +3598,8 @@ export interface components {
             category: string;
             /** Day Of Week */
             day_of_week: number;
+            /** Domain */
+            domain?: string | null;
             /** Modality */
             modality: string;
         };
@@ -5030,6 +5061,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BlockRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_block_template_v1_planning_blocks_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeeklyTemplateSlot"][];
                 };
             };
             /** @description Validation Error */

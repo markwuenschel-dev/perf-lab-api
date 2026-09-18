@@ -140,6 +140,9 @@ def _template_from_modality_mix(
                     day_of_week=_WEEK_DAY_ORDER[day_i % len(_WEEK_DAY_ORDER)],
                     category=category,
                     modality=modality,
+                    # The domain the weight was asked for, carried explicitly: `modality` is
+                    # shared by several domains and cannot be turned back into this.
+                    domain=dom,
                 )
             )
             day_i += 1
@@ -172,16 +175,27 @@ def select_block_macrocycle_id(
     return matches[0] if len(matches) == 1 else None
 
 
+def preview_weekly_template(req: BlockCreateRequest) -> list[WeeklyTemplateSlot]:
+    """The week a block WOULD be generated with — the same resolution `create` performs.
+
+    Exists so the create screen can show the real allocation before committing, without
+    reimplementing largest-remainder in TypeScript: a style that ends up with zero sessions is
+    a fact the athlete should see, and a second implementation would eventually disagree with
+    this one. Pure and persists nothing.
+    """
+    return (
+        req.weekly_template
+        or _template_from_modality_mix(req.modality_mix, req.sessions_per_week)
+        or _default_template_for_goal(req.goal, req.sessions_per_week)
+    )
+
+
 async def create_block_with_sessions(
     db: AsyncSession,
     user_id: int,
     req: BlockCreateRequest,
 ) -> MesocycleBlock:
-    weekly_template = (
-        req.weekly_template
-        or _template_from_modality_mix(req.modality_mix, req.sessions_per_week)
-        or _default_template_for_goal(req.goal, req.sessions_per_week)
-    )
+    weekly_template = preview_weekly_template(req)
     end_date = req.start_date + timedelta(days=req.duration_weeks * 7 - 1)
 
     # Auto-associate the new block with the user's macrocycle "spine" (Phase 5).
@@ -211,6 +225,7 @@ async def create_block_with_sessions(
         start_date=req.start_date,
         end_date=end_date,
         modality_mix=req.modality_mix,
+        intensity=req.intensity,
         weekly_template=[s.model_dump() for s in weekly_template],
         rationale=req.rationale,
         deload_every_n_weeks=req.deload_every_n_weeks,
@@ -237,6 +252,7 @@ async def create_block_with_sessions(
                 day_of_week=slot.day_of_week,
                 category="Benchmark Session" if is_benchmark else slot.category,
                 modality=slot.modality,
+                domain=slot.domain,
                 status=SessionStatus.PENDING,
                 is_deload=is_deload,
                 is_benchmark=is_benchmark,

@@ -53,6 +53,12 @@ from app.services.state_service import (
 class BlockContext(TypedDict, total=False):
     block_goal: str
     session_category: str | None
+    # The planned slot's OWN canonical domain (a045). None for a session planned before the
+    # column existed, or one whose template recorded no domain — the prescriber then falls
+    # back to the block goal, exactly as before.
+    session_domain: str | None
+    # The block's workload preference: easy | medium | hard (None = medium).
+    intensity: str | None
     is_deload: bool
     is_benchmark: bool
     week_number: int | None
@@ -141,12 +147,20 @@ def _first_int(value: str | None) -> int | None:
 
 
 def _envelope_rpe_cap(block_context: BlockContext) -> float:
-    """RPE cap for working sets from the ADR-0029 envelope, else a neutral 8.0."""
+    """RPE cap for working sets from the ADR-0029 envelope, else a neutral 8.0.
+
+    The block's workload preference shifts the envelope's band (and only on working weeks —
+    deload and taper ignore it), which is what makes "hard" reach the prescribed load rather
+    than stopping at the session's shape. Uncertainty conservatism may still lower the result.
+    """
     wk = block_context.get("week_number")
     dur = block_context.get("duration_weeks")
     if wk and dur:
         env = periodization_envelope(
-            int(dur), int(wk), int(block_context.get("deload_every_n_weeks") or 4)
+            int(dur),
+            int(wk),
+            int(block_context.get("deload_every_n_weeks") or 4),
+            intensity=block_context.get("intensity"),
         )
         return env.rpe_high
     return 8.0
@@ -556,6 +570,8 @@ async def _gather_prescription_context(
         block_context.update(
             block_goal=active_block.goal.value,
             session_category=target_session.category,
+            session_domain=target_session.domain,
+            intensity=active_block.intensity,
             is_deload=target_session.is_deload,
             is_benchmark=target_session.is_benchmark,
             week_number=target_session.week_number,
