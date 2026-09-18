@@ -134,6 +134,21 @@ TEST_DATABASE_URL = _worker_database_url()
 _DB_UNAVAILABLE = (OSError, ConnectionError, OperationalError, InterfaceError)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """``--golden-update`` rewrites characterization corpora instead of asserting on them.
+
+    Used by tests/test_prescription_goldens.py: a prescribed-work change is either intended —
+    rewrite the golden, read the diff, put the before/after in the PR — or it is the defect
+    the corpus exists to catch.
+    """
+    parser.addoption(
+        "--golden-update",
+        action="store_true",
+        default=False,
+        help="rewrite golden/characterization corpora rather than comparing against them",
+    )
+
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",

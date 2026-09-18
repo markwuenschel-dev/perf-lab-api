@@ -1,0 +1,968 @@
+{
+  "calisthenics/cal_conditioning": {
+    "duration_min": 35,
+    "focus": "Push-up / Pull-up / Step-Up Circuit \u2014 high-rep bodyweight conditioning",
+    "goal_alignment": 0.8,
+    "scoring": {
+      "fatigue_axis": "metabolic",
+      "fatigue_weight": 0.6,
+      "tissue_axes": [
+        "shoulder",
+        "elbow"
+      ],
+      "tissue_weight": 0.4
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "12-15",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "8-10",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "12 each side",
+        "requirements": [],
+        "sets": "5"
+      }
+    ],
+    "tags": [],
+    "type": "Calisthenics Conditioning"
+  },
+  "calisthenics/cal_strength": {
+    "duration_min": 50,
+    "focus": "Pull-ups / Dips / Push-up Variations + Skill Progressions",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "6-10",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "8-12",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "10-15",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "pull_vertical",
+      "push_vertical"
+    ],
+    "type": "Bodyweight Strength"
+  },
+  "calisthenics/gym_skill": {
+    "duration_min": 55,
+    "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "gymnastics_skill",
+      "overhead_stability"
+    ],
+    "type": "Gymnastics Skill"
+  },
+  "general/gpp_balanced": {
+    "duration_min": 45,
+    "focus": "Full-Body Circuit @ RPE 6\u20137 \u2014 Squat / Pull / Push / Carry",
+    "goal_alignment": 0.9,
+    "scoring": null,
+    "slot_count": 4,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "10",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "8",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "12",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "40m",
+        "requirements": [],
+        "sets": "2"
+      }
+    ],
+    "tags": [],
+    "type": "General Physical Prep"
+  },
+  "general/gpp_conditioning": {
+    "duration_min": 40,
+    "focus": "Bike Intervals + Row Intervals + Plank Circuit \u2014 mixed aerobic engine work",
+    "goal_alignment": 0.85,
+    "scoring": {
+      "fatigue_axis": "metabolic",
+      "fatigue_weight": 0.6,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "15-20 min steady",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "10 min steady",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "30-45s",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "aerobic_base"
+    ],
+    "type": "General Conditioning"
+  },
+  "general/gpp_mobility": {
+    "duration_min": 30,
+    "focus": "Hip Mobility Flow + Single-Leg Control + Calf/Ankle Work",
+    "goal_alignment": 0.65,
+    "scoring": {
+      "fatigue_axis": "structural",
+      "fatigue_weight": 0.3,
+      "tissue_axes": [
+        "ankle",
+        "hip"
+      ],
+      "tissue_weight": 0.5
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "8-10 each side",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "30-45s each side",
+        "requirements": [],
+        "sets": "2"
+      },
+      {
+        "load_note": null,
+        "reps": "12-15 each side",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "ankle_mobility",
+      "hip_mobility"
+    ],
+    "type": "General Mobility & Movement Quality"
+  },
+  "general/gpp_strength_foundation": {
+    "duration_min": 50,
+    "focus": "Back Squat 3\u00d75 + Romanian Deadlift 3\u00d75 + Bench Press 3\u00d75 \u2014 loaded basics",
+    "goal_alignment": 0.85,
+    "scoring": {
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.5,
+      "tissue_axes": [
+        "lumbar",
+        "knee"
+      ],
+      "tissue_weight": 0.4
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "5",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "5",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "5",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "hip_hinge",
+      "squat_pattern"
+    ],
+    "type": "General Strength Foundation"
+  },
+  "grip/grip_crush_pinch": {
+    "duration_min": 30,
+    "focus": "Gripper Crush Work + Pinch Block Hold + Thick-Bar Deadlift \u2014 max grip strength",
+    "goal_alignment": 0.95,
+    "scoring": {
+      "fatigue_axis": "grip",
+      "fatigue_weight": 0.9,
+      "tissue_axes": [
+        "finger",
+        "elbow"
+      ],
+      "tissue_weight": 0.6
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "6-8",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "20-30s",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "4-6",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "grip"
+    ],
+    "type": "Grip Strength"
+  },
+  "grip/grip_main": {
+    "duration_min": 35,
+    "focus": "Farmer Carries + Dead Hangs + Pinch Block Hold + Crush Work @ RPE 7\u20138",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "40m",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "30-45s",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "grip"
+    ],
+    "type": "Grip & Support"
+  },
+  "grip/grip_recovery": {
+    "duration_min": 20,
+    "focus": "Light Wrist Mobility + Finger Flexor Rehab Circles",
+    "goal_alignment": 0.5,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [],
+    "type": "Grip Recovery"
+  },
+  "gymnastics/gym_skill": {
+    "duration_min": 55,
+    "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20-30s",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "20-30s",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "gymnastics_skill",
+      "overhead_stability"
+    ],
+    "type": "Gymnastics Skill"
+  },
+  "gymnastics/gym_strength": {
+    "duration_min": 55,
+    "focus": "Weighted Ring Dips + Chest-to-Bar Pull-Ups + Strict Toes-to-Bar",
+    "goal_alignment": 0.95,
+    "scoring": {
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "wrist",
+        "shoulder",
+        "elbow"
+      ],
+      "tissue_weight": 0.3333333333333333
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "5-8",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "6-10",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "8-10",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "gymnastics_skill",
+      "overhead_stability"
+    ],
+    "type": "Gymnastics Strength"
+  },
+  "hypertrophy/hyp_high_vol": {
+    "duration_min": 75,
+    "focus": "Leg Press 4\u00d712 + Hack Squat 3\u00d715 + Leg Curl 3\u00d712 near failure",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "12",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "15",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "12",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "anterior_chain",
+      "posterior_chain"
+    ],
+    "type": "High Volume Hypertrophy"
+  },
+  "hypertrophy/hyp_maintenance": {
+    "duration_min": 45,
+    "focus": "Machine Isolation 3\u00d710 @ RPE 7 \u2014 upper / lower split",
+    "goal_alignment": 0.7,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [],
+    "type": "Maintenance Volume"
+  },
+  "hypertrophy/hyp_upper_split": {
+    "duration_min": 60,
+    "focus": "Bench Press 4\u00d710 + Barbell Row 4\u00d710 + Dumbbell Shoulder Press 3\u00d712 near failure",
+    "goal_alignment": 0.9,
+    "scoring": {
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.6,
+      "tissue_axes": [
+        "shoulder",
+        "lumbar"
+      ],
+      "tissue_weight": 0.5
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "10",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "10",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "12",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [],
+    "type": "Upper Body Hypertrophy"
+  },
+  "mixed/metcon_engine": {
+    "duration_min": 45,
+    "focus": "Zone 2 Bike 20 min + Short Threshold Intervals (4\u00d72 min @ RPE 8)",
+    "goal_alignment": 0.8,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "aerobic_base",
+      "lactate_threshold"
+    ],
+    "type": "Engine Work"
+  },
+  "mixed/metcon_mixed_modal": {
+    "duration_min": 40,
+    "focus": "Row / Bike / KB Swings \u2014 AMRAP intervals @ sustainable pace",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "2 min @ sustainable pace",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "2 min @ sustainable pace",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "20 reps",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "work_capacity"
+    ],
+    "type": "Metabolic Conditioning"
+  },
+  "mixed/mixed_strength_endurance": {
+    "duration_min": 45,
+    "focus": "Compound lifts in circuit \u2014 moderate load, short rest (e.g. 5\u00d78 @ RPE 7)",
+    "goal_alignment": 0.9,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "max_strength",
+      "work_capacity"
+    ],
+    "type": "Strength Endurance"
+  },
+  "power/power_main": {
+    "duration_min": 50,
+    "focus": "Hang Power Clean 5\u00d73 @ RPE 6\u20137 + Box Jumps 4\u00d74 (full recovery)",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "3",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "4",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "hip_hinge"
+    ],
+    "type": "Power Development"
+  },
+  "power/power_neural_prime": {
+    "duration_min": 30,
+    "focus": "Jumps / Throws (Low Volume, Long Rest) @ RPE 6",
+    "goal_alignment": 0.7,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [],
+    "type": "Neural Priming"
+  },
+  "power/power_reactive": {
+    "duration_min": 40,
+    "focus": "Lateral Bounds + Broad Jumps + Rotational Med Ball Work \u2014 multi-directional plyometrics",
+    "goal_alignment": 0.85,
+    "scoring": {
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.8,
+      "tissue_axes": [
+        "knee",
+        "ankle",
+        "hip"
+      ],
+      "tissue_weight": 0.6
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "4 each side",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "4",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "8-10",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [],
+    "type": "Reactive Power"
+  },
+  "powerlifting/pl_accessory": {
+    "duration_min": 65,
+    "focus": "Paused Squat 3\u00d74 + Close-Grip Bench + Romanian Deadlift 3\u00d76",
+    "goal_alignment": 0.8,
+    "scoring": null,
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "4",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "6",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "6",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "hip_hinge",
+      "push_horizontal",
+      "squat_pattern"
+    ],
+    "type": "Accessory Focus"
+  },
+  "powerlifting/pl_sbd_main": {
+    "duration_min": 80,
+    "focus": "Squat / Bench / Deadlift \u2014 top sets + 3\u20134 back-off sets",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 4,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "3-5",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "3-5",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "3-5",
+        "requirements": [],
+        "sets": "2"
+      },
+      {
+        "load_note": null,
+        "reps": "6-8",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "hip_hinge",
+      "push_horizontal",
+      "squat_pattern"
+    ],
+    "type": "SBD Strength"
+  },
+  "powerlifting/pl_sbd_main_volume": {
+    "duration_min": 80,
+    "focus": "Squat / Bench / Deadlift \u2014 top sets + 3\u20134 back-off sets",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 4,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "3-5",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "3-5",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "3-5",
+        "requirements": [],
+        "sets": "2"
+      },
+      {
+        "load_note": null,
+        "reps": "6-8",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "hip_hinge",
+      "push_horizontal",
+      "squat_pattern"
+    ],
+    "type": "SBD Strength"
+  },
+  "running/run_threshold": {
+    "duration_min": 50,
+    "focus": "Tempo Run 20 min @ RPE 7\u20138 + Progression Miles",
+    "goal_alignment": 0.9,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "aerobic_base",
+      "lactate_threshold"
+    ],
+    "type": "Threshold Work"
+  },
+  "running/run_threshold_ff": {
+    "duration_min": 50,
+    "focus": "4\u00d75 min @ threshold pace (RPE 8) / 2 min easy recovery",
+    "goal_alignment": 0.9,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "aerobic_base",
+      "lactate_threshold"
+    ],
+    "type": "Threshold Work"
+  },
+  "running/run_z2_base": {
+    "duration_min": 45,
+    "focus": "Easy\u2013Moderate Run @ Zone 2 (conversational pace)",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 1,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "30-40 min conversational pace",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "running_economy"
+    ],
+    "type": "Aerobic Base"
+  },
+  "running/run_z2_base_threshold": {
+    "duration_min": 45,
+    "focus": "Easy\u2013Moderate Run @ Zone 2 (conversational pace)",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 1,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "30-40 min conversational pace",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "running_economy"
+    ],
+    "type": "Aerobic Base"
+  },
+  "sprinting/run_speed_endurance": {
+    "duration_min": 40,
+    "focus": "6\u00d7300m @ ~90% Effort (Full Recovery) + Bounding Drill Primer",
+    "goal_alignment": 0.9,
+    "scoring": {
+      "fatigue_axis": "metabolic",
+      "fatigue_weight": 0.8,
+      "tissue_axes": [
+        "ankle",
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20-30m build-up",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "300m @ ~90% effort, full recovery",
+        "requirements": [],
+        "sets": "6"
+      }
+    ],
+    "tags": [],
+    "type": "Speed Endurance"
+  },
+  "sprinting/run_sprint": {
+    "duration_min": 35,
+    "focus": "Acceleration 3\u00d730 m + Max-Velocity Flys 4\u00d720 m (full recovery)",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "30m",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": null,
+        "reps": "20m",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "running_economy"
+    ],
+    "type": "Speed"
+  },
+  "strength/strength_max": {
+    "duration_min": 65,
+    "focus": "Back Squat 5\u00d73 @ RPE 8 + Romanian Deadlift 3\u00d75",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "lumbar",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "3",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "5",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "hip_hinge",
+      "squat_pattern"
+    ],
+    "type": "Max Strength"
+  },
+  "strength/strength_skill_acq": {
+    "duration_min": 45,
+    "focus": "Goblet Squats 3\u00d78 (Tempo 3-1-1) + Box Squat Technique",
+    "goal_alignment": 0.75,
+    "scoring": {
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.5,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "barbell_technique",
+      "squat_pattern"
+    ],
+    "type": "Skill Acquisition"
+  },
+  "strength/strength_variety": {
+    "duration_min": 45,
+    "focus": "Box Squats + Trap Bar Deadlift + Medicine Ball Slams",
+    "goal_alignment": 0.7,
+    "scoring": {
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.5,
+      "tissue_axes": [
+        "lumbar"
+      ],
+      "tissue_weight": 0.5
+    },
+    "slot_count": 0,
+    "slots": [],
+    "tags": [],
+    "type": "Strength \u2014 Variety"
+  },
+  "strength/strength_volume": {
+    "duration_min": 55,
+    "focus": "Front Squat 4\u00d76 @ RPE 6\u20137 + Accessory Pull",
+    "goal_alignment": 0.8,
+    "scoring": {
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.7,
+      "tissue_axes": [
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 0,
+    "slots": [],
+    "tags": [],
+    "type": "Strength \u2014 Volume"
+  },
+  "weightlifting/wl_strength_pulls": {
+    "duration_min": 55,
+    "focus": "Snatch Pull + Deadlift from Deficit 4\u00d74 @ RPE 7",
+    "goal_alignment": 0.75,
+    "scoring": null,
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "hip_hinge",
+      "posterior_chain"
+    ],
+    "type": "Strength Pulls"
+  },
+  "weightlifting/wl_technique_cj": {
+    "duration_min": 65,
+    "focus": "Clean & Jerk Drills + Hang Variations @ RPE 6\u20137",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "2",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "3",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "olympic_lifting"
+    ],
+    "type": "Weightlifting Technique"
+  },
+  "weightlifting/wl_technique_snatch": {
+    "duration_min": 65,
+    "focus": "Snatch Complex + Power Snatch 5\u00d72 @ RPE 6\u20137",
+    "goal_alignment": 1.0,
+    "scoring": null,
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "2",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": null,
+        "reps": "2",
+        "requirements": [],
+        "sets": "5"
+      }
+    ],
+    "tags": [
+      "olympic_lifting"
+    ],
+    "type": "Weightlifting Technique"
+  }
+}
