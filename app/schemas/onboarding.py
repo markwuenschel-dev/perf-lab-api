@@ -32,15 +32,34 @@ class OnboardStrengthReport(StrengthReport):
 
 
 class OnboardRequest(BaseModel):
+    """What the athlete submitted — NOT what the profile ends up holding.
+
+    Every optional field means "not answered", never "clear this". The route resolves each
+    one to a single effective value (submitted → stored → documented default) and uses that
+    for both the profile write and the baseline seed. That is why these carry no eager
+    defaults: an omitted field used to be written as the schema default, so re-submitting
+    onboarding wiped a stored date of birth, bodyweight or 5K, and silently re-labelled the
+    athlete ``intermediate`` (the model's own default is ``beginner``).
+    """
+
     display_name: str | None = None
-    experience_years: float = Field(0.0, ge=0)
-    experience_level: str = "intermediate"
-    available_days_per_week: int = Field(3, ge=1, le=7)
-    session_duration_minutes: int = 60
-    equipment: list[str] = Field(default_factory=list)
+    experience_years: float | None = Field(None, ge=0)
+    experience_level: str | None = None
+    available_days_per_week: int | None = Field(None, ge=1, le=7)
+    session_duration_minutes: int | None = Field(None, ge=1)
+    # [] is an explicit answer ("nothing / bodyweight only" is expressed as ["bodyweight"]);
+    # omitted leaves whatever is stored. The hard gate reads the RESOLVED value.
+    equipment: list[str] | None = None
     self_reported_weak_points: list[str] = Field(default_factory=list)
-    goal: str = "Strength"
+    goal: str | None = None
     date_of_birth: date | None = None
+    # Context the profile already models; onboarding may now collect it instead of making the
+    # athlete find Settings afterwards. Nothing in the engine reads these four yet — they are
+    # stored, and the UI says so rather than implying they shape the plan.
+    height_cm: float | None = Field(None, gt=0)
+    overhead_1rm_kg: float | None = Field(None, gt=0)
+    pullup_max_reps: int | None = Field(None, ge=0)
+    run_1p5mi_seconds: float | None = Field(None, gt=0)
     # Squat / bench / deadlift, characterized (S2). Each report becomes strength evidence
     # through the same service Assess uses, and the profile's seed value for that lift is
     # derived from it — never written as a bare number.

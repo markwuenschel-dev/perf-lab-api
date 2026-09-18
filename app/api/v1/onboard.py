@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +25,16 @@ from app.services import (
 
 router = APIRouter(prefix="/v1", tags=["onboarding"])
 
+# Defaults for an athlete who has never answered — deliberately the SAME values the
+# AthleteProfile columns default to (app/models/user.py), so a profile created by onboarding
+# and one created empty by registration describe the same athlete. The old request-schema
+# defaults disagreed with the model on experience level (intermediate vs beginner), which is
+# how every web-onboarded athlete became "intermediate" without saying so.
+DEFAULT_GOAL = "Strength"
+DEFAULT_EXPERIENCE_LEVEL = "beginner"
+DEFAULT_DAYS_PER_WEEK = 3
+DEFAULT_SESSION_MINUTES = 60
+
 
 @router.post("/onboard", response_model=OnboardResponse)
 async def onboard_athlete(
@@ -38,7 +50,9 @@ async def onboard_athlete(
     response was lost) from the same submission sent twice, so both are treated alike: the
     baseline state is seeded only for an athlete with no state; a weak point the athlete has
     already self-reported and not resolved is not added again; a report identical to one
-    onboarding already recorded is not recorded again. Profile fields take the submitted values.
+    onboarding already recorded is not recorded again. A profile field takes the submitted
+    value when one was sent, and otherwise keeps what is stored — an omitted field is "not
+    answered", never "clear it", so a resubmission cannot erase an earlier answer.
     Concurrent submissions for one athlete are serialized on the user row, so the second finds
     the first's writes once it commits.
     """
@@ -61,17 +75,48 @@ async def onboard_athlete(
         profile = AthleteProfile(user_id=user_id)
         db.add(profile)
 
+    # One effective value per field: submitted → already stored → documented default. Resolved
+    # ONCE here and used for both the profile write and the baseline seed below, so the two can
+    # never disagree. An omitted field is "not answered", never "clear it" — writing the request
+    # value directly is what let a second onboarding submission wipe a stored DOB/bodyweight/5K
+    # and relabel the athlete with the schema's default experience level.
+    def _resolved(submitted: Any, stored: Any, default: Any = None) -> Any:
+        if submitted is not None:
+            return submitted
+        return stored if stored is not None else default
+
     if request.display_name is not None:
         profile.display_name = request.display_name
-    profile.primary_goal = request.goal
-    profile.date_of_birth = request.date_of_birth
-    profile.experience_years = request.experience_years
-    profile.experience_level = request.experience_level
-    profile.available_days_per_week = request.available_days_per_week
-    profile.session_duration_minutes = request.session_duration_minutes
-    profile.equipment = request.equipment
-    profile.bodyweight_kg = request.bodyweight_kg
-    profile.run_5k_seconds = request.run_5k_seconds
+    profile.primary_goal = _resolved(request.goal, profile.primary_goal, DEFAULT_GOAL)
+    profile.date_of_birth = _resolved(request.date_of_birth, profile.date_of_birth)
+    experience_years = _resolved(request.experience_years, profile.experience_years, 0.0)
+    profile.experience_years = experience_years
+    experience_level = _resolved(
+        request.experience_level, profile.experience_level, DEFAULT_EXPERIENCE_LEVEL
+    )
+    profile.experience_level = experience_level
+    profile.available_days_per_week = _resolved(
+        request.available_days_per_week, profile.available_days_per_week, DEFAULT_DAYS_PER_WEEK
+    )
+    profile.session_duration_minutes = _resolved(
+        request.session_duration_minutes,
+        profile.session_duration_minutes,
+        DEFAULT_SESSION_MINUTES,
+    )
+    # [] from the athlete IS an answer ("not set" — nothing is filtered); only an omitted
+    # field keeps what is stored.
+    profile.equipment = _resolved(request.equipment, profile.equipment, [])
+    bodyweight_kg = _resolved(request.bodyweight_kg, profile.bodyweight_kg)
+    profile.bodyweight_kg = bodyweight_kg
+    run_5k_seconds = _resolved(request.run_5k_seconds, profile.run_5k_seconds)
+    profile.run_5k_seconds = run_5k_seconds
+    # Stored context — no engine reads these yet (the UI says "saved to your profile").
+    profile.height_cm = _resolved(request.height_cm, profile.height_cm)
+    profile.overhead_1rm = _resolved(request.overhead_1rm_kg, profile.overhead_1rm)
+    profile.pullup_max_reps = _resolved(request.pullup_max_reps, profile.pullup_max_reps)
+    profile.run_1p5mi_seconds = _resolved(
+        request.run_1p5mi_seconds, profile.run_1p5mi_seconds
+    )
 
     # Advance the non-blocking state machine: basics submitted → in_progress (PDR-0010).
     await onboarding_service.mark_basics_submitted(db, profile)
@@ -107,14 +152,14 @@ async def onboard_athlete(
         await state_service.stage_baseline_state(
             db,
             user_id,
-            experience_level=request.experience_level,
+            experience_level=experience_level,
             squat_1rm_kg=seed.get(strength_evidence_service.SQUAT_E1RM_CODE),
             deadlift_1rm_kg=seed.get(strength_evidence_service.DEADLIFT_E1RM_CODE),
             bench_1rm_kg=seed.get(strength_evidence_service.BENCH_E1RM_CODE),
-            bodyweight_kg=request.bodyweight_kg,
-            run_5k_seconds=request.run_5k_seconds,
-            experience_years=request.experience_years,
-            goal=request.goal,
+            bodyweight_kg=bodyweight_kg,
+            run_5k_seconds=run_5k_seconds,
+            experience_years=experience_years,
+            goal=profile.primary_goal,
         )
 
     # Each report becomes characterized strength evidence through the one E1 path, which also

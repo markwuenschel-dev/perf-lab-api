@@ -9,6 +9,14 @@ import type { ApiError, ConnectionStatus, ObjectiveRead, ProfileRead, ProfileUpd
 import { TRAINING_GOALS, usePerfLab } from "../store";
 import type { Settings } from "../store";
 import { DOMAIN_OPTIONS } from "../domains";
+import {
+  BODYWEIGHT_ONLY_TAGS,
+  EQUIPMENT_TAGS,
+  equipmentModeOf,
+  MODE_OPTIONS,
+  PREFERENCE_OPTIONS,
+  type EquipmentMode,
+} from "../equipment";
 import { useAuthedResource } from "../useAuthedResource";
 import { CANONICAL_LIFTS } from "./canonicalLifts";
 import { goalChipsView } from "./goalChipsView";
@@ -172,6 +180,13 @@ type ProfileForm = {
   session_duration_minutes: string;
   bodyweight_kg: string;
   run_5k: string; // mm:ss
+  // Stored context the profile already modelled but no screen could edit. Nothing in the
+  // engine reads these yet — the card says so rather than implying they shape a session.
+  date_of_birth: string; // ISO "YYYY-MM-DD"
+  height_cm: string;
+  overhead_1rm_kg: string;
+  pullup_max_reps: string;
+  run_1p5mi: string; // mm:ss
 };
 
 const EMPTY_FORM: ProfileForm = {
@@ -182,6 +197,11 @@ const EMPTY_FORM: ProfileForm = {
   session_duration_minutes: "",
   bodyweight_kg: "",
   run_5k: "",
+  date_of_birth: "",
+  height_cm: "",
+  overhead_1rm_kg: "",
+  pullup_max_reps: "",
+  run_1p5mi: "",
 };
 
 const numStr = (n: number | null | undefined): string => (n == null ? "" : String(n));
@@ -220,6 +240,11 @@ function formFromProfile(p: ProfileRead): ProfileForm {
     session_duration_minutes: numStr(p.session_duration_minutes),
     bodyweight_kg: numStr(p.bodyweight_kg),
     run_5k: secToMMSS(p.run_5k_seconds),
+    date_of_birth: p.date_of_birth ?? "",
+    height_cm: numStr(p.height_cm),
+    overhead_1rm_kg: numStr(p.overhead_1rm_kg),
+    pullup_max_reps: numStr(p.pullup_max_reps),
+    run_1p5mi: secToMMSS(p.run_1p5mi_seconds),
   };
 }
 
@@ -230,6 +255,14 @@ function patchFromForm(f: ProfileForm): ProfileUpdate {
     display_name: f.display_name.trim() === "" ? null : f.display_name.trim(),
     bodyweight_kg: numOrNull(f.bodyweight_kg),
     run_5k_seconds: mmssToSec(f.run_5k),
+    date_of_birth: f.date_of_birth.trim() === "" ? null : f.date_of_birth.trim(),
+    height_cm: numOrNull(f.height_cm),
+    overhead_1rm_kg: numOrNull(f.overhead_1rm_kg),
+    pullup_max_reps: (() => {
+      const n = numOrNull(f.pullup_max_reps);
+      return n == null ? null : Math.round(n);
+    })(),
+    run_1p5mi_seconds: mmssToSec(f.run_1p5mi),
   };
   // Required-ish fields: only send when the input parses, so a blank doesn't
   // null out a non-nullable column.
@@ -478,11 +511,31 @@ function PerformanceProfileCard() {
           {numInput("bodyweight_kg", "Bodyweight (kg)", "e.g. 74.5")}
           {numInput("available_days_per_week", "Training days / week", "1–7")}
           {numInput("session_duration_minutes", "Session length (min)", "e.g. 60")}
+          <label className="block">
+            <span className="text-[12px] font-medium leading-none text-mute">Date of birth</span>
+            <input
+              type="date"
+              value={form.date_of_birth}
+              onChange={(e) => field("date_of_birth")(e.target.value)}
+              className={cn(inputCls, "font-mono")}
+              style={{ colorScheme: "dark" }}
+            />
+          </label>
+          {numInput("height_cm", "Height (cm)", "e.g. 178")}
         </div>
 
         {token && (
           <StrengthLiftsEditor token={token} values={lifts} onSaved={() => void reloadLifts()} />
         )}
+
+        <div className="grid grid-cols-2 gap-4">
+          {numInput("overhead_1rm_kg", "Overhead press 1RM (kg)", "e.g. 55")}
+          {numInput("pullup_max_reps", "Max pull-ups", "e.g. 12")}
+        </div>
+        <p className="text-[11.5px] font-medium leading-[1.5] text-faint">
+          Height, overhead press and pull-ups are saved to your profile. They are not used to build
+          your sessions yet.
+        </p>
 
         <label className="block max-w-[220px]">
           <span className="text-[12px] font-medium leading-none text-mute">5K time (mm:ss)</span>
@@ -490,6 +543,16 @@ function PerformanceProfileCard() {
             value={form.run_5k}
             onChange={(e) => field("run_5k")(e.target.value)}
             placeholder="e.g. 22:30"
+            className={`${inputCls} font-mono`}
+          />
+        </label>
+
+        <label className="block max-w-[220px]">
+          <span className="text-[12px] font-medium leading-none text-mute">1.5 mi time (mm:ss)</span>
+          <input
+            value={form.run_1p5mi}
+            onChange={(e) => field("run_1p5mi")(e.target.value)}
+            placeholder="e.g. 9:18"
             className={`${inputCls} font-mono`}
           />
         </label>
@@ -718,45 +781,7 @@ function WearableConnectCard() {
 // stored states: not set ([] — nothing is filtered), bodyweight only (["bodyweight"]), or a
 // list of equipment tags.
 
-/** Equipment tags the catalog actually requires (app/data/exercise_bulk.py, seed_exercises.py). */
-const EQUIPMENT_TAGS: { tag: string; label: string }[] = [
-  { tag: "barbell", label: "Barbell" },
-  { tag: "dumbbells", label: "Dumbbells" },
-  { tag: "kettlebell", label: "Kettlebells" },
-  { tag: "machine", label: "Machines" },
-  { tag: "cable", label: "Cable machine" },
-  { tag: "pullup_bar", label: "Pull-up bar" },
-  { tag: "box", label: "Plyo box" },
-  { tag: "rings", label: "Rings" },
-  { tag: "parallettes", label: "Parallettes" },
-  { tag: "jump_rope", label: "Jump rope" },
-  { tag: "rower", label: "Rower" },
-  { tag: "bike", label: "Bike" },
-  { tag: "sled", label: "Sled" },
-];
-
-const PREFERENCE_OPTIONS: { value: string; label: string }[] = [
-  { value: "barbell", label: "Barbells" },
-  { value: "dumbbell", label: "Dumbbells" },
-  { value: "machine", label: "Machines" },
-];
-
-type EquipmentMode = "unset" | "bodyweight" | "equipment";
-
-const BODYWEIGHT_ONLY_TAGS = new Set(["bodyweight", "none"]);
-
-function equipmentModeOf(list: string[]): EquipmentMode {
-  const tags = list.map((t) => t.trim().toLowerCase()).filter(Boolean);
-  if (tags.length === 0) return "unset";
-  if (tags.every((t) => BODYWEIGHT_ONLY_TAGS.has(t))) return "bodyweight";
-  return "equipment";
-}
-
-const MODE_OPTIONS: { mode: EquipmentMode; label: string; help: string }[] = [
-  { mode: "unset", label: "Not set", help: "Not set: any exercise may appear in your sessions." },
-  { mode: "bodyweight", label: "Bodyweight only", help: "Only exercises that need no equipment." },
-  { mode: "equipment", label: "I have equipment", help: "Only exercises you can do with what you select." },
-];
+// The list itself now lives in ../equipment so onboarding asks with exactly these options.
 
 const chipCls = (active: boolean) =>
   cn(
