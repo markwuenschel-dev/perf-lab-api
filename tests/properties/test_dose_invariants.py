@@ -119,36 +119,24 @@ def test_degenerate_sessions_do_not_produce_nan_or_inf(label: str, kwargs: dict)
     assert all(v >= 0.0 for v in axes.values()), f"{label}: {axes}"
 
 
-@pytest.mark.xfail(
-    reason="phase 1.1 input guards: duration_minutes/total_volume_load have no ge= "
-    "(app/schemas/workouts.py:105,110), so nonsense is accepted at the boundary and only "
-    "explodes later inside the dose law",
-    strict=True,
-)
 @pytest.mark.parametrize("field", ["duration_minutes", "total_volume_load"])
 def test_negative_session_inputs_are_refused_at_the_boundary(field: str) -> None:
     """Nonsense must be refused where it arrives, not deep in the engine.
 
-    This is about WHERE the failure happens. Today a negative duration is accepted by the
-    schema and then raises ``math domain error`` inside ``log1p(V)`` — a 500 on a request
-    that should have been a 422.
+    This is about WHERE the failure happens. Before the guard a negative duration was
+    accepted by the schema and raised ``math domain error`` inside ``log1p(V)`` — a 500 on a
+    request that should have been a 422.
     """
     with pytest.raises(PydanticValidationError):
         _log(**{field: -50.0})
 
 
-@pytest.mark.xfail(
-    reason="phase 1.1 input guards: ExternalIntensity.value is unconstrained "
-    "(app/schemas/workouts.py:217), so value ** dose_alpha yields a COMPLEX number and the "
-    "failure surfaces as a pydantic error while building StressDoseSix",
-    strict=True,
-)
 def test_negative_external_intensity_is_refused_at_the_boundary() -> None:
     """A negative load-relative-to-capacity is not a quiet dose — it is not a dose at all.
 
-    Verified today: ``value=-2.0`` makes every axis complex (e.g.
-    ``(-0.80-0.58j)``), which pydantic rejects when constructing the six-vector. The engine
-    should never have been asked to raise a negative base to a fractional exponent.
+    Before the guard, ``value=-2.0`` made every axis complex (e.g. ``(-0.80-0.58j)``), which
+    pydantic rejected when constructing the six-vector. The engine should never be asked to
+    raise a negative base to a fractional exponent.
     """
     with pytest.raises(PydanticValidationError):
         ExternalIntensity(value=-2.0)
