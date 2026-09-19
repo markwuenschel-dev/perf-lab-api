@@ -54,12 +54,6 @@ def test_the_multi_trigger_state_really_does_trip_several_rules() -> None:
     assert len(ids) >= 2
 
 
-@pytest.mark.xfail(
-    reason="phase 1.4 safety ranking: the winner is _safety_candidates()[0], i.e. source "
-    "order (prescriber.py:1022), so passive rest loses to a tissue substitution it was "
-    "written after",
-    strict=True,
-)
 def test_passive_rest_outranks_a_tissue_substitution() -> None:
     """Systemically overloaded ⇒ rest, even if a regional rule also fires."""
     rx = recommend_next_session(_systemically_fried_with_sore_knees(), goal=GOAL)
@@ -67,17 +61,11 @@ def test_passive_rest_outranks_a_tissue_substitution() -> None:
     assert "safety:override=safety_systemic_metabolic" in _codes(rx), _codes(rx)
 
 
-@pytest.mark.xfail(
-    reason="phase 1.4 safety ranking: severity is positional, so permuting the rule order "
-    "changes the prescription",
-    strict=True,
-)
 def test_the_chosen_override_is_independent_of_rule_evaluation_order() -> None:
     """The same state must yield the same instruction whatever order the rules are checked.
 
-    Simulated by ranking the emitted candidates by declared severity rather than by list
-    position: if the engine already had a ranking, the first candidate and the most severe
-    candidate would be the same object.
+    The engine ranks by ``SAFETY_SEVERITY``; this test ranks by its OWN table, written as a
+    clinical statement independent of the engine's, and requires the two to agree.
     """
     state = _systemically_fried_with_sore_knees()
     candidates = _safety_candidates(state)
@@ -94,12 +82,6 @@ def test_the_chosen_override_is_independent_of_rule_evaluation_order() -> None:
     assert candidates[0].branch_id == most_severe.branch_id
 
 
-@pytest.mark.xfail(
-    reason="phase 1.4 falsy-zero pun: passive rest is duration_min=0 and "
-    "prescription_finalize.py:405 reads `if rx.duration_min else 30`, so 'do not train' "
-    "becomes a 30-minute session whenever a hard constraint also fires",
-    strict=True,
-)
 def test_a_hard_override_is_never_replaced_by_something_less_restrictive() -> None:
     """The one-way ratchet: a later stage may restrict further, never relax.
 
@@ -139,3 +121,36 @@ def test_each_threshold_is_exclusive_at_its_boundary(label: str, kwargs: dict) -
 
     assert over, f"{label}: no override just above the threshold"
     assert not under, f"{label}: an override fired just below the threshold"
+
+
+def test_every_safety_branch_the_engine_emits_declares_a_severity() -> None:
+    """A new hard-stop rule without a declared severity would be ranked by accident again."""
+    import re as _re
+    from pathlib import Path
+
+    from app.logic.prescriber import SAFETY_SEVERITY
+
+    source = (Path(__file__).resolve().parents[1] / "app/logic/prescriber.py").read_text("utf-8")
+    emitted = set(_re.findall(r'branch_id="(safety_[a-z_]+)"', source))
+
+    assert emitted, "precondition: the scan found the safety branches"
+    assert emitted == set(SAFETY_SEVERITY), (
+        f"undeclared: {sorted(emitted - set(SAFETY_SEVERITY))}; "
+        f"declared but never emitted: {sorted(set(SAFETY_SEVERITY) - emitted)}"
+    )
+
+
+def test_complete_rest_is_the_most_restrictive_instruction() -> None:
+    from app.logic.prescriber import SAFETY_SEVERITY
+
+    assert SAFETY_SEVERITY["safety_systemic_metabolic"] == max(SAFETY_SEVERITY.values())
+
+
+def test_the_ordinary_constraint_fallback_is_unchanged_for_a_training_session() -> None:
+    """Boundary: only complete rest is protected from the fallback; a real session is still
+    capped at 35 minutes of easy movement when a hard constraint fires."""
+    state = _state(lumbar=88.0, knee=88.0)  # regional-tissue rule, 30-minute substitution
+    rx = recommend_next_session(state, goal=GOAL)
+
+    assert rx.duration_min > 0
+    assert rx.duration_min <= 35

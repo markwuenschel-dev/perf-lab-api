@@ -227,6 +227,22 @@ def _log_structural_safety_counterfactual(
 # Safety override candidates (always placed first; skip scoring)
 # ---------------------------------------------------------------------------
 
+#: Clinical severity of each hard-stop override, ranked by how much training it still PERMITS
+#: — lower permits less. The winner used to be whichever rule happened to be written first
+#: (``_safety_candidates(state)[0]``), so an athlete who was systemically overloaded AND had a
+#: sore knee was sent to swim/bike because the knee rule sat higher in the source file.
+#:
+#: Physiological assumption: systemic autonomic overload outranks a regional substitution —
+#: you can swim on a sore knee, you cannot swim your way out of systemic fatigue. Complete
+#: rest permits nothing, so it is the most restrictive instruction and wins whenever it fires.
+SAFETY_SEVERITY: dict[str, int] = {
+    "safety_systemic_metabolic": 4,  # passive rest — no training at all
+    "safety_structural_damage": 3,   # 20 min mobility / light movement
+    "safety_regional_tissue": 2,     # 30 min low-impact substitution
+    "safety_tendon_structural": 1,   # 35 min isometrics + blood-flow work
+}
+
+
 def _safety_candidates(state: UnifiedStateVector) -> list[SessionCandidate]:
     """Generate hard-stop recovery candidates. Return empty if no safety triggered."""
     overrides: list[SessionCandidate] = []
@@ -290,7 +306,9 @@ def _safety_candidates(state: UnifiedStateVector) -> list[SessionCandidate]:
             is_safety_override=True,
         ))
 
-    return overrides
+    # Ranked by declared severity, most restrictive first. Stable for equal severity, and
+    # independent of the order the rules above happen to be written or evaluated in.
+    return sorted(overrides, key=lambda c: SAFETY_SEVERITY[c.branch_id], reverse=True)
 
 
 def _readiness_redirect(
