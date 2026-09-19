@@ -313,17 +313,21 @@ def test_zero_elapsed_time_behaviour_is_unchanged_by_the_reordering() -> None:
             )
 
 
-@pytest.mark.xfail(
-    reason="phase 1.3 decay form: detraining is linear, cur*(1 - r*d), which does not compose "
-    "because (1 - r)^n != 1 - n*r; fixed in the next commit by first-order decay",
-    strict=True,
-)
+#: The model's intentional fatigue precision: ``_exp_decay`` snaps any value <= 0.01 (on a
+#: 0-100 scale) to exactly zero (app/logic/state_update_v0.py). Split steps cross that floor
+#: sooner than one long step, so fatigue agrees to within it — and no closer, by design.
+FATIGUE_SNAP_FLOOR = 0.01
+
+
 @pytest.mark.parametrize("pieces", [2, 7, 30])
 def test_splitting_inactivity_into_steps_agrees_with_one_step(pieces: int) -> None:
     """Sixty idle days as one update or as N smaller ones must describe the same athlete.
 
     Composability is a property of the decay FORM: first-order (exponential) decay composes
     exactly; linear decay ``cur·(1 − r·d)`` does not, because (1 − r)^n ≠ 1 − n·r.
+
+    Capacity must agree to floating-point precision. Fatigue agrees to within the model's
+    own snap-to-zero floor, which is the precision the model intentionally uses.
     """
     total_days = 60
     rest = _log(session_rpe=1.0)
@@ -341,8 +345,8 @@ def test_splitting_inactivity_into_steps_agrees_with_one_step(pieces: int) -> No
         ), f"{key}: {pieces} idle steps disagree with one {total_days}-day step"
     for key in once.fatigue_f.KEYS:
         assert getattr(stepped.fatigue_f, key) == pytest.approx(
-            getattr(once.fatigue_f, key), rel=1e-9, abs=1e-12
-        ), f"fatigue.{key}: split inactivity disagrees"
+            getattr(once.fatigue_f, key), rel=1e-9, abs=FATIGUE_SNAP_FLOOR
+        ), f"fatigue.{key}: split inactivity disagrees beyond the model's snap floor"
 
 
 def test_the_state_update_records_which_chronology_produced_it() -> None:
@@ -354,3 +358,59 @@ def test_the_state_update_records_which_chronology_produced_it() -> None:
     persisted = athlete_state_kwargs_from_unified(after)["engine_state"]
 
     assert persisted["state_update_model"] == STATE_UPDATE_MODEL_VERSION
+
+
+def _fatigued_state() -> UnifiedStateVector:
+    """Residual fatigue on every axis — the case the zero-fatigue split test cannot see."""
+    x = CapacityState(max_strength=50.0, aerobic=300.0, hypertrophy=50.0, work_capacity=50.0)
+    f = FatigueState(cns=40.0, muscular=40.0, metabolic=60.0, structural=30.0)
+    t = TissueState()
+    legacy = sync_legacy_from_vectors(x, f, t)
+    return UnifiedStateVector(
+        timestamp=_T0,
+        capacity_x=x,
+        fatigue_f=f,
+        tissue_t=t,
+        s_struct_signal=0.0,
+        habit_strength=0.5,
+        skill_state={},
+        **legacy,
+    )
+
+
+@pytest.mark.parametrize("pieces", [2, 7, 20])
+def test_inactivity_composes_even_while_fatigue_is_clearing(pieces: int) -> None:
+    """No training, no adaptation — however often the state happens to be updated.
+
+    The legacy metabolic cross-talk added a work-capacity gain on EVERY update, driven by
+    residual metabolic fatigue. Twenty idle updates therefore granted more work capacity than
+    one update covering the same twenty days (+0.0102 measured): an athlete gained capacity
+    from the state being recomputed, with no stimulus at all.
+    """
+    total_days = 20
+    rest = _log(session_rpe=1.0)
+
+    once = update_athlete_state(
+        _fatigued_state(), StressDose(), timedelta(days=total_days), rest
+    )
+    stepped = _fatigued_state()
+    for _ in range(pieces):
+        stepped = update_athlete_state(
+            stepped, StressDose(), timedelta(days=total_days / pieces), rest
+        )
+
+    for key in once.capacity_x.KEYS:
+        assert getattr(stepped.capacity_x, key) == pytest.approx(
+            getattr(once.capacity_x, key), rel=1e-9
+        ), f"{key}: idle updates adapted differently depending on how often they ran"
+
+
+def test_an_idle_update_never_raises_a_capacity() -> None:
+    """The plainest form of the same claim."""
+    before = _fatigued_state()
+    after = update_athlete_state(before, StressDose(), timedelta(days=1), _log(session_rpe=1.0))
+
+    for key in before.capacity_x.KEYS:
+        assert getattr(after.capacity_x, key) <= getattr(before.capacity_x, key) + 1e-12, (
+            f"{key} rose with no training"
+        )

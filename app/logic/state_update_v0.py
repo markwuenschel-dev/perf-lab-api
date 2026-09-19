@@ -532,22 +532,42 @@ def _apply_adaptation_gains(
 
 
 def _apply_detraining(s: UnifiedStateVector, hours: float, p: EngineParameters) -> None:
-    """Erode each capacity for the elapsed time. No elapsed time, no detraining."""
+    """Erode each capacity for the elapsed time. No elapsed time, no detraining.
+
+    First-order (exponential) decay: ``cur · exp(−rate · days)``.
+
+    Physiological assumption: detraining is a first-order process — the rate of loss is
+    proportional to what remains — which is the form the impulse-response family of models
+    (Banister & Morton 1992 onward) uses for the decay of both fitness and fatigue components.
+    Fatigue and tissue already decay this way here (``_exp_decay``); capacity was the odd one
+    out with a LINEAR form, ``cur · (1 − rate · days)``.
+
+    Why it matters beyond consistency: linear decay does not compose. Sixty daily updates gave
+    ``(1 − r)^60`` while one sixty-day update gave ``1 − 60r``, so the same inactivity
+    described a different athlete depending on how often the state happened to be updated.
+    First-order decay composes exactly: ``exp(−r·a) · exp(−r·b) = exp(−r·(a+b))``.
+
+    Before/after, 60 idle days at 0.0015/day: linear 0.9100, exponential 0.9139 — identical to
+    first order in ``rate · days``, diverging only over long layoffs, where exponential also
+    has the property that capacity can never decay through zero.
+    """
     days = hours / 24.0
     if days <= 0:
         return
     for key in s.capacity_x.KEYS:
         rate = p.capacity_decay_per_day.get(key, 0.001)
         cur = getattr(s.capacity_x, key)
-        setattr(s.capacity_x, key, max(0.0, cur - cur * rate * days))
+        setattr(s.capacity_x, key, max(0.0, cur * math.exp(-rate * days)))
 
 
 #: Which transition chronology produced a state. Persisted in ``engine_state`` beside the
 #: schema version (which it is deliberately NOT: the schema version gates a strict decoder,
 #: this records model behaviour). Calibration must never compare observations produced under
 #: two different orderings of decay and adaptation.
-#:   v0-chrono-1  detraining ran AFTER adaptation (a layoff decayed today's own gain)
-#:   v0-chrono-2  detraining runs with the other elapsed-time decay, BEFORE today's stimulus
+#:   v0-chrono-1  (implicit, every state before this field existed) detraining ran AFTER
+#:                adaptation, was linear in days, and idle updates earned metabolic cross-talk
+#:   v0-chrono-2  detraining runs with the other elapsed-time decay BEFORE today's stimulus,
+#:                is first-order (composes over split updates), and cross-talk needs a stimulus
 STATE_UPDATE_MODEL_VERSION = "v0-chrono-2"
 
 
@@ -633,8 +653,16 @@ def update_athlete_state(
     s = _apply_adaptation_gains(s, dose, p)
 
     # --- 6. Legacy metabolic cross-talk (preserved from v1) ---
-    wc_gain = p.crosstalk_metabolic_on_work_capacity * min(s.fatigue_f.metabolic * 0.015, 0.4)
-    s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_gain)
+    # Gated on a training STIMULUS (phase 1.3). It used to run on every update, driven by
+    # residual metabolic fatigue, so an idle update granted work capacity — and twenty idle
+    # updates granted more than one update covering the same twenty days. Adaptation needs a
+    # stimulus; recomputing the state is not one. With a stimulus the arithmetic is unchanged
+    # (residual + today's impulse, exactly as before), so every real session is unaffected.
+    # Whether residual fatigue should feed this term at all is a modelling question left to
+    # calibration (phase 8), not changed here.
+    if d_f.metabolic > 0.0:
+        wc_gain = p.crosstalk_metabolic_on_work_capacity * min(s.fatigue_f.metabolic * 0.015, 0.4)
+        s.capacity_x.work_capacity = min(100.0, s.capacity_x.work_capacity + wc_gain)
 
     # --- 7. Legacy mirrors ---
     legacy = sync_legacy_from_vectors(s.capacity_x, s.fatigue_f, s.tissue_t)
