@@ -29,9 +29,13 @@ class SessionCandidate:
     duration_min: int
     branch_id: str
 
-    # Scoring axes (0–1 each, higher = better)
-    goal_alignment: float = 1.0
-    state_fit: float = 1.0
+    # Scoring axes (0–1 each, higher = better). An unset axis is the ABSENCE of a claim, so
+    # every default is neutral (0.0). goal_alignment and state_fit used to default to 1.0 —
+    # the best possible value — so a candidate that set neither collected 0.55 of score for
+    # free. No scored candidate relies on these defaults today (every scorer sets both); the
+    # change removes the trap rather than moving any live score.
+    goal_alignment: float = 0.0
+    state_fit: float = 0.0
     fatigue_penalty: float = 0.0      # high value = worse
     tissue_penalty: float = 0.0       # high value = worse
     novelty_bonus: float = 0.0

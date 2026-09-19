@@ -66,31 +66,22 @@ def _every_template():
 
 # ── declared ranges ───────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(
-    reason="phase 1.5 scoring ranges: _score_from_spec divides the tissue-axis SUM by 100 "
-    "rather than 100*len(axes) (candidate_library.py:925), so a 3-axis template's penalty "
-    "reaches 1.8; the weightlifting scorer adds two /100 terms (:1026) reaching 2.0",
-    strict=True,
-)
 def test_a_summed_tissue_penalty_cannot_exceed_a_single_axis_penalty() -> None:
     """Listing more tissues must not multiply the penalty.
 
-    Worst case per template, computed from the declared scoring spec: an athlete with every
-    tissue axis at 100 must not produce a penalty above the declared 0–1 ceiling.
+    Measured on the engine, not recomputed here: an athlete with EVERY tissue axis at 100 is
+    scored against every template, and no penalty may exceed its declared 0-1 ceiling. (The
+    phase-0 version of this test re-derived the old summed formula in its own arithmetic,
+    which is the thing a test must not do — it would keep passing if the engine drifted.)
     """
-    offenders: list[str] = []
-    for template in _every_template():
-        spec = getattr(template, "scoring", None)
-        if spec is None or not getattr(spec, "tissue_axes", ()):
-            continue
-        worst = len(spec.tissue_axes) * 100.0 / 100.0 * spec.tissue_weight
-        if worst > 1.0:
-            offenders.append(
-                f"{template.branch_id}: {len(spec.tissue_axes)} axes × weight "
-                f"{spec.tissue_weight} → {worst:.2f}"
-            )
+    state = _athlete(0.0, 100.0, 0.5)
+    offenders = [
+        f"{template.branch_id}: {score_template(template, state, {}).tissue_penalty:.2f}"
+        for template in _every_template()
+        if score_template(template, state, {}).tissue_penalty > 1.0
+    ]
 
-    assert not offenders, "tissue penalties above the declared 0–1 range:\n" + "\n".join(offenders)
+    assert not offenders, "tissue penalties above the declared 0-1 range: " + "; ".join(offenders)
 
 
 @pytest.mark.parametrize("axis", NORMALIZED_AXES)
@@ -103,11 +94,6 @@ def test_the_weighted_score_stays_in_zero_one(axis: str) -> None:
 
 # ── omission invariance ───────────────────────────────────────────────────────
 
-@pytest.mark.xfail(
-    reason="phase 1.5 neutral defaults: goal_alignment and state_fit default to 1.0 "
-    "(candidate.py:32-33), so a candidate that sets neither collects 0.55 of score for free",
-    strict=True,
-)
 def test_omitting_an_axis_is_neutral_rather_than_maximal() -> None:
     """A candidate making no claim must not outscore one making a modest claim."""
     silent = _candidate()
@@ -118,11 +104,6 @@ def test_omitting_an_axis_is_neutral_rather_than_maximal() -> None:
     )
 
 
-@pytest.mark.xfail(
-    reason="phase 1.5 neutral defaults: same root cause — the unset default is the best "
-    "possible value, so omission changes the score",
-    strict=True,
-)
 def test_score_is_unchanged_by_fields_the_scorer_does_not_weight() -> None:
     """Setting an unweighted field must not move the score.
 
@@ -161,3 +142,73 @@ def test_every_weighted_axis_exists_on_the_candidate() -> None:
 
     for axis in DEFAULT_SCORE_WEIGHTS:
         assert hasattr(candidate, axis), f"weight table names unknown axis {axis!r}"
+
+
+# ── every template, every athlete state (phase 1.5) ──────────────────────────
+#
+# The declared-range claim is universal, so it is generated rather than sampled: every
+# template in the library, scored against athlete states spanning the full 0-100 fatigue and
+# tissue range. The per-template worst case above only covers spec-scored templates; the
+# branch-dispatched scorers (weightlifting, grip, ...) compute their own axes and are covered
+# only here.
+
+from hypothesis import given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
+
+from app.logic.candidate_library import score_template  # noqa: E402
+
+settings.register_profile("scoring_ci", deadline=None, max_examples=60, derandomize=True)
+
+_AXIS = st.floats(min_value=0.0, max_value=100.0, allow_nan=False)
+
+
+def _athlete(fatigue: float, tissue: float, habit: float):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_prescriber_candidates import _state
+
+    s = _state(
+        cns=fatigue, muscular=fatigue, metabolic=fatigue, structural=fatigue, tendon=fatigue,
+        lumbar=tissue, knee=tissue, habit=habit,
+    )
+    for axis in s.tissue_t.KEYS:
+        setattr(s.tissue_t, axis, tissue)
+    s.fatigue_f.grip = fatigue
+    return s
+
+
+@settings(settings.get_profile("scoring_ci"))
+@given(fatigue=_AXIS, tissue=_AXIS, habit=st.floats(min_value=0.0, max_value=1.0))
+def test_every_scored_axis_of_every_template_stays_in_its_declared_range(
+    fatigue: float, tissue: float, habit: float
+) -> None:
+    state = _athlete(fatigue, tissue, habit)
+    offenders: list[str] = []
+    for template in _every_template():
+        candidate = score_template(template, state, {})
+        for axis in NORMALIZED_AXES:
+            value = getattr(candidate, axis)
+            if not 0.0 <= value <= 1.0:
+                offenders.append(f"{template.branch_id}.{axis}={value:.3f}")
+
+    assert not offenders, "axes outside their declared 0-1 range: " + ", ".join(offenders[:12])
+
+
+def test_one_overloaded_tissue_is_not_diluted_by_healthy_ones() -> None:
+    """Weakest link: a knee at 90 must read as a 0.9-grade penalty whatever else is listed.
+
+    Averaging across axes would dilute it (90 with two healthy axes → 30); summing would
+    inflate it past 1. The penalty tracks the most-stressed tissue the template names.
+    """
+    state = _athlete(0.0, 0.0, 0.5)
+    state.tissue_t.knee = 90.0
+    for template in _every_template():
+        spec = getattr(template, "scoring", None)
+        if spec is None or "knee" not in spec.tissue_axes:
+            continue
+        candidate = score_template(template, state, {})
+        assert candidate.tissue_penalty == pytest.approx(0.9 * spec.tissue_weight, rel=1e-9), (
+            template.branch_id
+        )

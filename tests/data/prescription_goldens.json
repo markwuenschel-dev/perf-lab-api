@@ -344,7 +344,7 @@
         "shoulder",
         "elbow"
       ],
-      "tissue_weight": 0.3333333333333333
+      "tissue_weight": 1.0
     },
     "slot_count": 3,
     "slots": [

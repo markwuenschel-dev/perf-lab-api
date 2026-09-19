@@ -43,7 +43,8 @@ class ScoringSpec:
     a template's content, eligibility, and scoring all live in one place.
 
     fatigue_penalty = fatigue_f.<fatigue_axis> / 100 * fatigue_weight
-    tissue_penalty  = sum(tissue_t.<tissue_axes>) / 100 * tissue_weight
+    tissue_penalty  = max(tissue_t.<tissue_axes>) / 100 * tissue_weight
+                      (the MOST-STRESSED tissue — see _score_from_spec)
     habit_bonus     = habit_fixed, else habit_strength * habit_mult
     weak_point_coverage = _weak_point_coverage(tags) if covers_weak_points else 0
     """
@@ -646,7 +647,9 @@ GYMNASTICS_TEMPLATES: list[CandidateTemplate] = [
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
             fatigue_axis="cns",
             tissue_axes=("wrist", "shoulder", "elbow"),
-            tissue_weight=1.0 / 3.0,
+            # Was 1.0/3.0 — a hand-compensation for the old summed penalty, proof the
+            # convention was understood and unenforced. The max() aggregation needs none.
+            tissue_weight=1.0,
             covers_weak_points=True,
         ),
     ),
@@ -923,7 +926,14 @@ def _score_from_spec(
     assert spec is not None  # only called when scoring is set
     fatigue_penalty = getattr(state.fatigue_f, spec.fatigue_axis) / 100.0 * spec.fatigue_weight
     tissue_penalty = (
-        sum(getattr(state.tissue_t, a) for a in spec.tissue_axes) / 100.0 * spec.tissue_weight
+        # Weakest link: the most-stressed tissue the template names. The SUM used to be divided
+        # by 100 rather than 100·len(axes), so a three-axis template's "0-1" penalty reached
+        # 1.8 — listing more tissues multiplied the penalty. Averaging would fix the range but
+        # dilute a single overloaded tissue with healthy ones (a knee at 90 beside two axes at
+        # 0 would read as 30). The most-stressed tissue is what limits the session.
+        max((getattr(state.tissue_t, a) for a in spec.tissue_axes), default=0.0)
+        / 100.0
+        * spec.tissue_weight
     )
     habit_bonus = (
         spec.habit_fixed
@@ -1023,7 +1033,9 @@ def _score_weightlifting(
             goal_alignment=t.goal_alignment,
             state_fit=r * (1.0 - f.cns / 100.0),
             fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=state.tissue_t.wrist / 100.0 + state.tissue_t.shoulder / 100.0,
+            # Weakest link, like every spec-scored template. Was wrist/100 + shoulder/100,
+            # which reached 2.0 on a 0-1 axis (its siblings divide by 200).
+            tissue_penalty=max(state.tissue_t.wrist, state.tissue_t.shoulder) / 100.0,
             weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
             habit_bonus=habit,
         )
@@ -1243,7 +1255,9 @@ def _score_grip(
         type=t.type, focus=t.focus, rationale=t.rationale,
         duration_min=t.duration_min, branch_id=t.branch_id,
         goal_alignment=t.goal_alignment,
-        state_fit=1.0 - f.grip / 100.0 + 0.3,
+        # Clamped to the declared 0-1 range; the +0.3 recovery preference used to push it to
+        # 1.3 on a fresh grip, outscoring every correctly-bounded template.
+        state_fit=min(1.0, 1.0 - f.grip / 100.0 + 0.3),
         fatigue_penalty=0.0,
         tissue_penalty=0.0,
         habit_bonus=0.4,
