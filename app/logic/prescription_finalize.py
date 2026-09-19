@@ -395,15 +395,24 @@ def finalize_prescription(
     rationale_suffix = ""
 
     if hard_violations:
-        out_rx = WorkoutPrescription(
-            type="Recovery",
-            focus="Easy movement + mobility (constraint override)",
-            rationale=(
-                f"Hard domain constraints triggered: {', '.join(hard_violations[:6])}. "
-                "Defaulting to a low-risk session until state improves."
-            ),
-            duration_min=min(rx.duration_min, 35) if rx.duration_min else 30,
-        )
+        if rx.duration_min == 0:
+            # Already complete rest — the most restrictive prescription there is. The fallback
+            # below ("easy movement + mobility") would RELAX it. It used to: the old
+            # ``min(rx.duration_min, 35) if rx.duration_min else 30`` read a duration of 0 as
+            # falsy/missing and turned "do not train" into a 30-minute session. A later stage
+            # may restrict further, never relax: keep the rest, and still record the
+            # violations below.
+            out_rx = rx.model_copy(deep=True)
+        else:
+            out_rx = WorkoutPrescription(
+                type="Recovery",
+                focus="Easy movement + mobility (constraint override)",
+                rationale=(
+                    f"Hard domain constraints triggered: {', '.join(hard_violations[:6])}. "
+                    "Defaulting to a low-risk session until state improves."
+                ),
+                duration_min=min(rx.duration_min, 35),
+            )
         vsummary = ValidationSummary(
             passed=False,
             failed_checks=soft_warnings,
