@@ -182,6 +182,33 @@ CRITERIA: Final[dict[str, SubsystemCriteria]] = {
         rollback=_missing(_NO_ROLLBACK),
         recertification=_missing(_NO_RECERT),
     ),
+    "dose_model_shadow_service": SubsystemCriteria(
+        subsystem="Dose model v1 (density = work per elapsed time)",
+        service_module="app.services.dose_model_shadow_service",
+        adr="phase 8 of the engine-coherence plan (8A capture / 8B fit / 8C activate)",
+        calibration=_missing(
+            "phase 8B: v1's density variable changed meaning, so dose_beta and every "
+            "density-dependent coefficient must be re-fit against logged sessions this service "
+            "captures. The synthetic grid (app/scripts/compare_dose_models.py) shows where the "
+            "models diverge; it is not calibration and must not be fitted against"
+        ),
+        replay=_missing(
+            "v1 has no replay harness; stored states replay under v0 (ekf_replay pins v0), and "
+            "8C needs held-out longitudinal replay of v1 before activation"
+        ),
+        promotion_path=_done(
+            "app.logic.dose_model.select_production_dose_model",
+            "activation requires a calibration identifier in the DOSE_MODELS registry, and "
+            "every live caller resolves through it via app.logic.dose_engine — enforced by "
+            "tests/test_production_dose_pinning.py rather than by convention",
+        ),
+        canary=_missing(_NO_CANARY),
+        rollback=_missing(
+            "reverting PRODUCTION_DOSE_MODEL in app/logic/dose_model.py is a one-line manual "
+            "rollback; nothing automates it or detects the need for it"
+        ),
+        recertification=_missing(_NO_RECERT),
+    ),
     "dose_routing_shadow_service": SubsystemCriteria(
         subsystem="Dose routing (k_X constants)",
         service_module="app.services.dose_routing_shadow_service",

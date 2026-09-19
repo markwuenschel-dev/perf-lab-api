@@ -5657,6 +5657,17 @@
             ],
             "title": "Density Basis"
           },
+          "density_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Density Value"
+          },
           "dose_model_version": {
             "anyOf": [
               {

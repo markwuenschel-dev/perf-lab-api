@@ -1112,6 +1112,13 @@ async def process_new_workout(
     # intensity; every other path passes None → a labeled neutral I=1.0 in the engine.
     dose = calculate_stress_dose(log, external_intensity=session_external_intensity)
 
+    # Read for the dose-model shadow (8A) NOW: the commits below expire ORM objects, and the
+    # shadow runs after them. Plain values survive; attribute access on an expired row would not.
+    shadow_planned_domain = planned_session.domain if planned_session is not None else None
+    shadow_planned_category = planned_session.category if planned_session is not None else None
+    shadow_state_before = current_state.model_copy(deep=True)
+    shadow_n_set_rows = len(set_rows)
+
     # Persist raw workout event for replay/audit and planning linkage.
     workout_row = WorkoutLogORM(
         user_id=user_id,
@@ -1197,6 +1204,23 @@ async def process_new_workout(
     await dose_routing_shadow_service.record_dose_routing(
         db, user_id, log, workout_log_id,
         external_intensity=session_external_intensity, routed_at=log_ts,
+    )
+
+    # Phase 8A: dose model v1 computed beside production v0, for the calibration re-fit.
+    # Capture-only — the v0 dose above already drove the state being returned, and v1 is
+    # never applied. Passed the SAME v0 dose rather than recomputing it, so each row compares
+    # v1 against exactly what the athlete's state was built from.
+    from app.services import dose_model_shadow_service
+
+    await dose_model_shadow_service.record_dose_model_shadow(
+        db, user_id, log, workout_log_id,
+        v0_dose=dose,
+        state_before=shadow_state_before,
+        session_at=log_ts,
+        external_intensity=session_external_intensity,
+        planned_domain=shadow_planned_domain,
+        planned_category=shadow_planned_category,
+        n_set_rows=shadow_n_set_rows,
     )
 
     return result

@@ -3258,6 +3258,8 @@ export interface components {
             d_struct_signal: number;
             /** Density Basis */
             density_basis?: string | null;
+            /** Density Value */
+            density_value?: number | null;
             /** Dose Model Version */
             dose_model_version?: string | null;
             dose_six?: components["schemas"]["StressDoseSix"];
