@@ -21,7 +21,7 @@ from typing import Any, Literal
 
 from app.domain.vectors import CapacityState, FatigueState, TissueState
 from app.engine.state_bridge import build_unified_state_vector
-from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.logic.dose_engine import calculate_stress_dose
 from app.logic.state_update_v0 import apply_benchmark_observation, update_athlete_state
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
