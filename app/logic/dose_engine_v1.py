@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.dose_engine_v0 import (
-    DensityModel,
+    DoseVariables,
 )
 from app.logic.dose_engine_v0 import (
     calculate_stress_dose as _calculate_stress_dose,
@@ -162,7 +162,7 @@ def exercise_density_proxy(entry: ExerciseEntry, p: EngineParameters) -> Density
 
 
 #: The corrected density variable, injected into the shared dose law.
-WORK_PER_TIME_DENSITY = DensityModel(
+WORK_PER_TIME_DENSITY = DoseVariables(
     name="v1_work_per_elapsed_time",
     version="v1",
     session=session_density,
@@ -180,10 +180,10 @@ def calculate_stress_dose(
         log,
         params or default_parameters(),
         external_intensity,
-        density_model=WORK_PER_TIME_DENSITY,
+        dose_variables=WORK_PER_TIME_DENSITY,
     )
 
 
 def exercise_base_bundle(entry: ExerciseEntry, log: WorkoutLog, p: EngineParameters):
     """Per-exercise base under v1 density (shape identical to the v0 helper)."""
-    return _exercise_base_bundle(entry, log, p, density_model=WORK_PER_TIME_DENSITY)
+    return _exercise_base_bundle(entry, log, p, dose_variables=WORK_PER_TIME_DENSITY)
