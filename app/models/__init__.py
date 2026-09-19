@@ -12,6 +12,7 @@ from app.models.benchmark_observation import BenchmarkObservation  # noqa: F401
 from app.models.capacity_floor_shadow import CapacityFloorShadowLog  # noqa: F401
 from app.models.derived_metric_definition import DerivedMetricDefinition  # noqa: F401
 from app.models.derived_metric_snapshot import DerivedMetricSnapshot  # noqa: F401
+from app.models.dose_model_shadow import DoseModelShadowLog  # noqa: F401
 from app.models.dose_routing_shadow import DoseRoutingShadowLog  # noqa: F401
 from app.models.ekf_shadow import EkfShadowLog  # noqa: F401
 from app.models.exercise import Exercise  # noqa: F401

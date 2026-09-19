@@ -578,6 +578,7 @@ def calculate_stress_dose(
         human_factor_gain=hf,
         dose_model_version=density.version,
         density_basis=density_measurement.basis,
+        density_value=density_measurement.value,
         volume_sets_basis=volume_sets_basis,
     )
 
