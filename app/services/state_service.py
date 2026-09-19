@@ -24,14 +24,14 @@ from app.logic import seed_snapshot
 from app.logic import seed_variance as sv
 from app.logic import strength_calibration as sc
 from app.logic import strength_evidence as se
+
+# Live dose computation uses v1 (density = work per elapsed time). v0 stays imported above
+# only for the intensity helpers, which the density ruling did not touch.
+from app.logic.dose_engine import calculate_stress_dose
 from app.logic.dose_engine_v0 import (
     SetIntensitySample,
     build_session_external_intensity,
 )
-
-# Live dose computation uses v1 (density = work per elapsed time). v0 stays imported above
-# only for the intensity helpers, which the density ruling did not touch.
-from app.logic.dose_engine_v1 import calculate_stress_dose
 from app.logic.goal_seed_emphasis import apply_goal_emphasis
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
