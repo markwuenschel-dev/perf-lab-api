@@ -16,7 +16,7 @@ corrected chronology (recorded per row as ``state_update_model``).
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +68,12 @@ def build_shadow_row(
     return DoseModelShadowLog(
         user_id=user_id,
         workout_log_id=workout_log_id,
-        session_at=session_at.replace(tzinfo=None),
+        # The ingest path passes a naive UTC instant; store it as an explicit UTC instant.
+        session_at=(
+            session_at.replace(tzinfo=UTC)
+            if session_at.tzinfo is None
+            else session_at.astimezone(UTC)
+        ),
         v0_model_version=v0_dose.dose_model_version or "v0",
         v1_model_version=v1_dose.dose_model_version or "v1",
         state_update_model=STATE_UPDATE_MODEL_VERSION,

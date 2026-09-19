@@ -20,7 +20,7 @@ transition chronology produced the pre-session state, so observations made under
 orderings of decay and adaptation are never pooled by accident.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
@@ -40,11 +40,13 @@ class DoseModelShadowLog(Base):
     workout_log_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("workout_logs.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    # Timezone-aware from the start: a new table has no reason to join the naive-timestamp debt
+    # that INT-15 is migrating away from (tests/test_no_new_naive_utcnow.py).
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     # The workout event time the two doses are "as of".
-    session_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    session_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # --- versions: which models and which code produced this observation ---------------
     v0_model_version: Mapped[str] = mapped_column(String(40), nullable=False)
