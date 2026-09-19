@@ -495,10 +495,16 @@ def calculate_stress_dose(
     sets = log.estimated_sets or max(3.0, log.duration_minutes / 12.0)
     vol_load = log.total_volume_load or 0.0
     vw = p.dose_volume_weights
-    V = vw["duration"] * log.duration_minutes + vw["volume_load"] * vol_load + vw["sets"] * sets
+    variables = dose_variables or LEGACY_DENSITY
+    volume_sets, volume_sets_basis = variables.volume_sets(log, sets)
+    V = (
+        vw["duration"] * log.duration_minutes
+        + vw["volume_load"] * vol_load
+        + vw["sets"] * volume_sets
+    )
 
     intensity_u = log.session_rpe / 10.0
-    density = dose_variables or LEGACY_DENSITY
+    density = variables
     density_measurement = density.session(log, sets, p)
     Delta = density_measurement.factor
     N = max(p.dose_novelty_floor, log.novelty)
@@ -572,6 +578,7 @@ def calculate_stress_dose(
         human_factor_gain=hf,
         dose_model_version=density.version,
         density_basis=density_measurement.basis,
+        volume_sets_basis=volume_sets_basis,
     )
 
 
@@ -594,6 +601,10 @@ class DoseVariables:
     #: the multiplicative identity.
     session: Callable[[WorkoutLog, float, EngineParameters], DensityMeasurement]
     entry: Callable[[ExerciseEntry, EngineParameters], DensityMeasurement]
+    #: (log, resolved_sets) -> (set count entering the volume proxy V, its basis). v0 feeds its
+    #: own fabricated fallback (max(3, duration/12)) straight into V; v1 counts only sets that
+    #: were reported, in modalities where sets are the unit of work.
+    volume_sets: Callable[[WorkoutLog, float], tuple[float, str]]
 
 
 # ---------------------------------------------------------------------------
@@ -636,12 +647,19 @@ def entry_legacy_sets_per_rest_minute(
     return DensityMeasurement(value=value, basis="legacy_minutes_per_set")
 
 
+def legacy_volume_sets(log: WorkoutLog, sets: float) -> tuple[float, str]:
+    """v0: whatever set count was resolved, fabricated fallback included. Frozen."""
+    basis = "reported" if log.estimated_sets is not None else "fabricated_fallback"
+    return sets, basis
+
+
 #: The frozen v0 density variable. Historical states were produced with this.
 LEGACY_DENSITY = DoseVariables(
     name="v0_legacy_minutes_per_set",
     version="v0",
     session=session_legacy_minutes_per_set,
     entry=entry_legacy_sets_per_rest_minute,
+    volume_sets=legacy_volume_sets,
 )
 
 

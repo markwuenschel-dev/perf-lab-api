@@ -318,3 +318,7 @@ class StressDose(BaseModel):
     # for this session — the dose law used the multiplicative identity — which is a different
     # statement from an observed density that happened to equal 1.0.
     density_basis: str | None = None
+    # Where the volume proxy's set count came from: reported | fabricated_fallback |
+    # unreported | not_counted. "fabricated_fallback" marks a v0 dose whose volume includes the
+    # invented max(3, duration/12) set count — observations the phase-8 fit should exclude.
+    volume_sets_basis: str | None = None

@@ -5690,6 +5690,17 @@
                 "type": "null"
               }
             ]
+          },
+          "volume_sets_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Sets Basis"
           }
         },
         "title": "StressDose",

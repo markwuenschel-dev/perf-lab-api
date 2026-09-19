@@ -92,23 +92,17 @@ def test_an_endurance_sessions_density_ignores_whatever_set_count_is_attached(
     assert v1.session_density(attached, fabricated_sets, p).value is None
 
 
-@pytest.mark.xfail(
-    reason="phase 1.2b volume proxy: the fabricated set count ALSO feeds the volume proxy "
-    "V = w_dur*duration + w_vol*volume_load + w_sets*sets (dose_engine_v0.py:494), so an "
-    "endurance dose still moves when the fallback set logic changes. Density no longer does; "
-    "the volume term is a separate leak of implementation convenience into physiology",
-    strict=True,
-)
-# 5.0 is omitted deliberately: max(3, 60/12) == 5, so for a 60-minute session that value IS
-# the fallback and the dose is unchanged by construction — it would pass for the wrong reason.
-@pytest.mark.parametrize("fabricated_sets", [3.0, 12.0, 40.0])
+# Every value, including 5.0 — which equals max(3, 60/12) and so used to pass only by
+# coinciding with the fallback. Since phase 1.2b no set count reaches an endurance dose at all.
+@pytest.mark.parametrize("fabricated_sets", [3.0, 5.0, 12.0, 40.0])
 def test_an_endurance_session_ignores_whatever_set_count_is_attached(
     fabricated_sets: float,
 ) -> None:
     """Changing the fallback set logic must not move an endurance dose AT ALL.
 
-    v0 derives ``sets = max(3, duration/12)`` for a continuous run. While that invention can
-    move the dose, tuning an unrelated fallback silently re-weights every runner's history.
+    v0 derives ``sets = max(3, duration/12)`` for a continuous run and feeds it into both
+    density and the volume proxy. v1 stopped using it for density in phase 1.2 and for volume
+    in phase 1.2b, so tuning that fallback can no longer re-weight any runner's history.
     """
     baseline = _total(_log(modality="Running", estimated_sets=None, total_volume_load=0.0))
     with_sets = _total(
@@ -150,3 +144,40 @@ def test_model_version_travels_with_every_dose() -> None:
         dose = v1.calculate_stress_dose(_log(modality=modality))
         assert dose.dose_model_version == "v1", modality
         assert dose.density_basis in {"sets_per_elapsed_minute", "not_applicable"}, modality
+
+
+# ── the volume proxy's set count (phase 1.2b) ─────────────────────────────────
+
+@pytest.mark.parametrize(
+    ("modality", "sets", "expected_basis"),
+    [
+        ("Strength", 20.0, "reported"),
+        ("Strength", None, "unreported"),
+        ("Running", None, "not_counted"),
+        ("Running", 12.0, "not_counted"),
+        ("Mixed", 10.0, "not_counted"),
+    ],
+)
+def test_every_v1_dose_says_where_its_volume_set_count_came_from(
+    modality: str, sets: float | None, expected_basis: str
+) -> None:
+    """The shadow dataset must be able to tell measured sets from absent ones."""
+    dose = v1.calculate_stress_dose(_log(modality=modality, estimated_sets=sets))
+
+    assert dose.volume_sets_basis == expected_basis
+
+
+def test_v0_still_uses_and_labels_its_fabricated_set_count() -> None:
+    """v0 is frozen, not fixed — and its fallback is now LABELLED, so 8B can exclude it."""
+    from app.logic import dose_engine_v0 as v0
+
+    fabricated = v0.calculate_stress_dose(_log(modality="Running", estimated_sets=None))
+    reported = v0.calculate_stress_dose(_log(modality="Strength", estimated_sets=20.0))
+
+    assert fabricated.volume_sets_basis == "fabricated_fallback"
+    assert reported.volume_sets_basis == "reported"
+
+
+def test_reported_strength_sets_still_drive_v1_volume() -> None:
+    """The fix removes invented sets, not real ones."""
+    assert _total(_log(estimated_sets=30.0)) > _total(_log(estimated_sets=10.0))

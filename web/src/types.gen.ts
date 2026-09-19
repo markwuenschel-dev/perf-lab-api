@@ -3263,6 +3263,8 @@ export interface components {
             dose_six?: components["schemas"]["StressDoseSix"];
             external_intensity?: components["schemas"]["ExternalIntensity"] | null;
             human_factor_gain?: components["schemas"]["HumanFactorGain"] | null;
+            /** Volume Sets Basis */
+            volume_sets_basis?: string | null;
         };
         /**
          * StressDoseSix
