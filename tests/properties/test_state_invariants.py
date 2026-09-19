@@ -118,20 +118,19 @@ def test_sub_hour_gaps_do_not_erode_capacity_measurably(minutes: float) -> None:
 
 # ── the ordering defect ───────────────────────────────────────────────────────
 
-@pytest.mark.xfail(
-    reason="phase 1.3 decay order: detraining (state_update_v0.py:606-611) runs AFTER the "
-    "adaptation gains (:603), so a session's own new adaptation is decayed by the idle days "
-    "that preceded it",
-    strict=True,
-)
 @pytest.mark.parametrize("idle_days", [7, 14, 30])
 def test_a_session_after_idle_days_does_not_decay_its_own_adaptation(idle_days: int) -> None:
     """Return-from-layoff: the gain earned TODAY must not be eroded by days already past.
 
     Two athletes with identical state log the identical session. One trained yesterday, one
-    is back after ``idle_days`` off. The returner's capacities should be LOWER by the
-    detraining of the gap — but the gain from today's session, measured against each
-    athlete's own decayed starting point, must be the same.
+    is back after ``idle_days`` off. The returner's capacities are LOWER by the detraining of
+    the gap. Today's gain, measured against each athlete's own decayed starting point, may be
+    LARGER for the returner — residual fatigue has cleared, and skill adaptation is
+    suppressed by residual CNS fatigue (app/logic/interference.py) — but it must never be
+    SMALLER, because that would mean the gap was charged against today's adaptation.
+
+    Phase 0 stated this as equality, which only holds when adaptation ignores state. The
+    exact chronology is pinned by test_a_session_after_a_layoff_equals_the_layoff_then_the_session.
     """
     dose = _dose()
     fresh_before = _state()
@@ -155,19 +154,18 @@ def test_a_session_after_idle_days_does_not_decay_its_own_adaptation(idle_days: 
         idle_gain = getattr(idle_after.capacity_x, key) - getattr(decayed_only.capacity_x, key)
         if fresh_gain <= 1e-9:
             continue  # this axis gained nothing from the session; nothing to protect
-        assert idle_gain == pytest.approx(fresh_gain, rel=1e-6), (
+        assert idle_gain >= fresh_gain * (1.0 - 1e-9), (
             f"{key}: the returning athlete's own session gain was decayed by the gap "
             f"({idle_gain:.6f} vs {fresh_gain:.6f})"
         )
 
 
-@pytest.mark.xfail(
-    reason="phase 1.3 decay order: same root cause — the longer the layoff, the more of "
-    "today's adaptation is eaten by it",
-    strict=True,
-)
 def test_longer_layoffs_do_not_shrink_todays_gain() -> None:
-    """The gain from an identical session must not depend on how long the athlete was away."""
+    """An identical session's gain must never shrink as the preceding layoff grows.
+
+    It may grow — a fresher athlete adapts at least as well — but a layoff is not allowed to
+    tax the adaptation the session creates.
+    """
     dose = _dose()
     gains = []
     for days in (1, 14, 60):
@@ -177,8 +175,8 @@ def test_longer_layoffs_do_not_shrink_todays_gain() -> None:
         )
         gains.append(after.capacity_x.max_strength - baseline.capacity_x.max_strength)
 
-    assert gains[0] == pytest.approx(gains[1], rel=1e-6)
-    assert gains[0] == pytest.approx(gains[2], rel=1e-6)
+    assert gains[1] >= gains[0] * (1.0 - 1e-9)
+    assert gains[2] >= gains[1] * (1.0 - 1e-9)
 
 
 # ── decay precedes adaptation ─────────────────────────────────────────────────
@@ -247,3 +245,113 @@ def test_negative_elapsed_time_is_treated_as_zero_not_as_growth() -> None:
     assert {
         k: v for k, v in backward.model_dump().items() if k not in physiology
     } == {k: v for k, v in forward.model_dump().items() if k not in physiology}
+
+
+# ── chronology (phase 1.3) ────────────────────────────────────────────────────
+#
+# Required order, per the ruling:
+#
+#     old state -> elapsed-time decay/detraining -> today's fatigue/stress
+#               -> today's adaptation -> new state
+#
+# with today's response computed on the DECAYED pre-session state. The cleanest single
+# statement of that is a composition law: a session after d idle days must equal an idle
+# update of d days followed by the session at zero elapsed time.
+
+import json as _json
+from pathlib import Path as _Path
+
+_DT0_GOLDEN = _Path(__file__).parent.parent / "data" / "state_update_dt0_golden.json"
+
+
+@pytest.mark.parametrize("idle_days", [1, 7, 14, 30, 90])
+def test_a_session_after_a_layoff_equals_the_layoff_then_the_session(idle_days: int) -> None:
+    """The chronology as one equation: decay the gap, THEN train on what is left."""
+    dose = _dose()
+    rest = _log(session_rpe=1.0)
+
+    combined = update_athlete_state(_state(), dose, timedelta(days=idle_days), _log())
+    staged = update_athlete_state(
+        update_athlete_state(_state(), StressDose(), timedelta(days=idle_days), rest),
+        dose,
+        timedelta(0),
+        _log(),
+    )
+
+    for key in combined.capacity_x.KEYS:
+        assert getattr(combined.capacity_x, key) == pytest.approx(
+            getattr(staged.capacity_x, key), rel=1e-9
+        ), f"{key}: the layoff and today's session were not applied in order"
+
+
+def test_a_longer_layoff_may_lower_the_state_entering_the_session() -> None:
+    """The layoff is allowed to cost something — just not today's adaptation."""
+    rest = _log(session_rpe=1.0)
+    short = update_athlete_state(_state(), StressDose(), timedelta(days=3), rest)
+    long = update_athlete_state(_state(), StressDose(), timedelta(days=45), rest)
+
+    for key in short.capacity_x.KEYS:
+        assert getattr(long.capacity_x, key) <= getattr(short.capacity_x, key) + 1e-12, key
+
+
+def test_zero_elapsed_time_behaviour_is_unchanged_by_the_reordering() -> None:
+    """At Δt = 0 there is nothing to decay, so moving detraining must change nothing.
+
+    Compared against outputs captured from the engine BEFORE the chronology change
+    (tests/data/state_update_dt0_golden.json).
+    """
+    golden = _json.loads(_DT0_GOLDEN.read_text("utf-8"))
+    cases = {
+        "moderate": (_state(), _dose()),
+        "hard": (_state(), _dose(session_rpe=9.5)),
+        "fatigued": (_state(cns=60.0, muscular=55.0), _dose(session_rpe=9.0)),
+    }
+    for label, (state, dose) in cases.items():
+        after = update_athlete_state(state, dose, timedelta(0), _log())
+        for key, expected in golden[label].items():
+            assert getattr(after.capacity_x, key) == pytest.approx(expected, rel=1e-9), (
+                f"{label}/{key} changed at zero elapsed time"
+            )
+
+
+@pytest.mark.xfail(
+    reason="phase 1.3 decay form: detraining is linear, cur*(1 - r*d), which does not compose "
+    "because (1 - r)^n != 1 - n*r; fixed in the next commit by first-order decay",
+    strict=True,
+)
+@pytest.mark.parametrize("pieces", [2, 7, 30])
+def test_splitting_inactivity_into_steps_agrees_with_one_step(pieces: int) -> None:
+    """Sixty idle days as one update or as N smaller ones must describe the same athlete.
+
+    Composability is a property of the decay FORM: first-order (exponential) decay composes
+    exactly; linear decay ``cur·(1 − r·d)`` does not, because (1 − r)^n ≠ 1 − n·r.
+    """
+    total_days = 60
+    rest = _log(session_rpe=1.0)
+
+    once = update_athlete_state(_state(), StressDose(), timedelta(days=total_days), rest)
+    stepped = _state()
+    for _ in range(pieces):
+        stepped = update_athlete_state(
+            stepped, StressDose(), timedelta(days=total_days / pieces), rest
+        )
+
+    for key in once.capacity_x.KEYS:
+        assert getattr(stepped.capacity_x, key) == pytest.approx(
+            getattr(once.capacity_x, key), rel=1e-9
+        ), f"{key}: {pieces} idle steps disagree with one {total_days}-day step"
+    for key in once.fatigue_f.KEYS:
+        assert getattr(stepped.fatigue_f, key) == pytest.approx(
+            getattr(once.fatigue_f, key), rel=1e-9, abs=1e-12
+        ), f"fatigue.{key}: split inactivity disagrees"
+
+
+def test_the_state_update_records_which_chronology_produced_it() -> None:
+    """Calibration must never compare states produced under two transition orders."""
+    from app.engine.state_bridge import athlete_state_kwargs_from_unified
+    from app.logic.state_update_v0 import STATE_UPDATE_MODEL_VERSION
+
+    after = update_athlete_state(_state(), _dose(), timedelta(days=2), _log())
+    persisted = athlete_state_kwargs_from_unified(after)["engine_state"]
+
+    assert persisted["state_update_model"] == STATE_UPDATE_MODEL_VERSION

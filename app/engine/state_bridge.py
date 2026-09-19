@@ -276,8 +276,13 @@ def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
 
 def athlete_state_kwargs_from_unified(s: UnifiedStateVector) -> dict[str, Any]:
     """Keyword args for inserting AthleteState ORM row."""
+    from app.logic.state_update_v0 import STATE_UPDATE_MODEL_VERSION
+
     eng = {
         "version": ENGINE_STATE_SCHEMA_VERSION,
+        # Model behaviour, not payload shape — see STATE_UPDATE_MODEL_VERSION. The strict
+        # decoder (engine_state_codec) reads x/f/t/c by key and ignores this.
+        "state_update_model": STATE_UPDATE_MODEL_VERSION,
         "x": s.capacity_x.model_dump(),
         "f": s.fatigue_f.model_dump(),
         "t": s.tissue_t.model_dump(),
