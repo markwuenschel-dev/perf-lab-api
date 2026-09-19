@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.dose_engine_v0 import (
-    DensityModel,
+    DoseVariables,
 )
 from app.logic.dose_engine_v0 import (
     calculate_stress_dose as _calculate_stress_dose,
@@ -161,12 +161,30 @@ def exercise_density_proxy(entry: ExerciseEntry, p: EngineParameters) -> Density
     return DensityMeasurement(value=value, basis="sets_per_elapsed_minute")
 
 
+def reported_volume_sets(log: WorkoutLog, sets: float) -> tuple[float, str]:
+    """The set count that enters the volume proxy — only if it was REPORTED, and only where
+    sets are the unit of work.
+
+    v0 fed its fabricated fallback, ``max(3, duration/12)``, into ``V`` as though it were
+    measured. For a continuous run that meant tuning an unrelated fallback silently moved every
+    runner's dose. Here an unreported or non-set-counted session contributes nothing through
+    the sets term; its volume is carried by duration and load, which were actually measured.
+    The basis is returned so the shadow dataset can tell the three cases apart.
+    """
+    if log.modality not in SET_COUNTED_MODALITIES:
+        return 0.0, "not_counted"
+    if log.estimated_sets is None:
+        return 0.0, "unreported"
+    return float(log.estimated_sets), "reported"
+
+
 #: The corrected density variable, injected into the shared dose law.
-WORK_PER_TIME_DENSITY = DensityModel(
+WORK_PER_TIME_DENSITY = DoseVariables(
     name="v1_work_per_elapsed_time",
     version="v1",
     session=session_density,
     entry=exercise_density_proxy,
+    volume_sets=reported_volume_sets,
 )
 
 
@@ -180,10 +198,10 @@ def calculate_stress_dose(
         log,
         params or default_parameters(),
         external_intensity,
-        density_model=WORK_PER_TIME_DENSITY,
+        dose_variables=WORK_PER_TIME_DENSITY,
     )
 
 
 def exercise_base_bundle(entry: ExerciseEntry, log: WorkoutLog, p: EngineParameters):
     """Per-exercise base under v1 density (shape identical to the v0 helper)."""
-    return _exercise_base_bundle(entry, log, p, density_model=WORK_PER_TIME_DENSITY)
+    return _exercise_base_bundle(entry, log, p, dose_variables=WORK_PER_TIME_DENSITY)
