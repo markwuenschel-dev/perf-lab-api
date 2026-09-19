@@ -20,8 +20,10 @@ pinning specific magnitudes; this file pins the ordering and the boundaries.
 """
 from __future__ import annotations
 
+import json as _json
 import math
 from datetime import UTC, datetime, timedelta
+from pathlib import Path as _Path
 
 import pytest
 from hypothesis import given, settings
@@ -257,9 +259,6 @@ def test_negative_elapsed_time_is_treated_as_zero_not_as_growth() -> None:
 # with today's response computed on the DECAYED pre-session state. The cleanest single
 # statement of that is a composition law: a session after d idle days must equal an idle
 # update of d days followed by the session at zero elapsed time.
-
-import json as _json
-from pathlib import Path as _Path
 
 _DT0_GOLDEN = _Path(__file__).parent.parent / "data" / "state_update_dt0_golden.json"
 
