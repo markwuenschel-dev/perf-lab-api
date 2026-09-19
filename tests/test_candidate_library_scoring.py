@@ -39,8 +39,12 @@ def _by_branch(branch_id: str):
 
 
 # (branch_id, state_fit, fatigue_penalty, tissue_penalty, weak_point_coverage, habit_bonus)
+#
+# strength_max's tissue penalty moved 0.20 -> 0.12 in phase 1.5, deliberately: it was
+# lumbar 8 + knee 12 SUMMED (a "0-1" axis that grows with every tissue a template names), and
+# is now the most-stressed tissue, knee 12. The other rows name one tissue and do not move.
 _GOLDEN = [
-    ("strength_max",       0.63, 0.20, 0.20, 0.0, 0.5),
+    ("strength_max",       0.63, 0.20, 0.12, 0.0, 0.5),
     ("strength_skill_acq", 0.90, 0.10, 0.00, 0.0, 0.5),
     ("strength_variety",   0.70, 0.15, 0.04, 0.0, 0.8),
     ("strength_volume",    0.70, 0.21, 0.25, 0.0, 0.25),
