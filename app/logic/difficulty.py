@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.logic.planning import INTENSITY_CHOICES, intensity_set_delta, normalize_intensity
 from app.schemas.workout_structure import (
@@ -271,6 +271,125 @@ def violations(
         for dimension in sorted(dimensions_changed(before, after), key=lambda d: d.value)
         if policy.forbids(dimension)
     ]
+
+
+# --- constraints and validation (phase 3.3) -------------------------------------------
+#
+# A CONSTRAINED dimension may move, but only inside a bound the family states. A family that
+# has not stated one yet is treated as FORBIDDEN by the validator: "we have not decided how
+# far this may move" is not permission to move it any distance. That default is deliberately
+# conservative and disappears as bounds are written.
+
+
+class DimensionConstraint(Protocol):
+    """Whether a constrained dimension's movement stays inside the family's bound."""
+
+    description: str
+
+    def accepts(self, before: WorkoutStructure, after: WorkoutStructure) -> bool: ...
+
+
+@dataclass(frozen=True)
+class RestWithinFactor:
+    """Rest may move, but not so far that the session becomes a different kind of session.
+
+    Halving rest between heavy sets turns strength work into conditioning; doubling it turns a
+    hypertrophy session into a strength one. The bound says how far is still the same session.
+    """
+
+    lower: float
+    upper: float
+
+    @property
+    def description(self) -> str:
+        return f"rest stays within {self.lower:g}x-{self.upper:g}x of the authored value"
+
+    def accepts(self, before: WorkoutStructure, after: WorkoutStructure) -> bool:
+        for old, new in zip(before, after, strict=False):
+            if not isinstance(old, StrengthBlock) or not isinstance(new, StrengthBlock):
+                continue
+            if old.rest_sec is None or new.rest_sec is None:
+                if old.rest_sec != new.rest_sec:
+                    return False
+                continue
+            if old.rest_sec == 0:
+                return new.rest_sec == 0
+            ratio = new.rest_sec / old.rest_sec
+            if not self.lower <= ratio <= self.upper:
+                return False
+        return True
+
+
+#: (family, dimension) -> the bound. Absent means "not yet stated", which the validator reads
+#: as must-not-move rather than as unlimited licence.
+#: Cast for the same reason as the transform registry: ``dict`` is invariant, so a dict of a
+#: concrete constraint type is not assignable to a dict of the protocol.
+CONSTRAINTS: dict[tuple[str, DifficultyDimension], DimensionConstraint] = cast(
+    "dict[tuple[str, DifficultyDimension], DimensionConstraint]",
+    {
+        ("strength", DifficultyDimension.DENSITY): RestWithinFactor(0.75, 1.5),
+        ("hypertrophy", DifficultyDimension.DENSITY): RestWithinFactor(0.5, 1.5),
+    },
+)
+
+
+def constraint_for(
+    family: str, dimension: DifficultyDimension
+) -> DimensionConstraint | None:
+    return CONSTRAINTS.get((family, dimension))
+
+
+def validate_transform(
+    before: WorkoutStructure,
+    after: WorkoutStructure,
+    *,
+    family: str,
+    declared: frozenset[DifficultyDimension] | None = None,
+) -> list[str]:
+    """Every way this transformation is illegal, each named specifically.
+
+    Three independent checks, because they fail for different reasons and a caller needs to
+    know which:
+
+    * **Permission** — the family forbids this dimension outright.
+    * **Intent** — the transform moved something it did not declare. A volume-only transform
+      that also lowers the RIR target is not "slightly more than advertised"; it is two
+      prescription changes reported as one.
+    * **Bounds** — a constrained dimension moved further than the family allows, or moved at
+      all while the family has stated no bound.
+
+    Scalar dose ordering is deliberately NOT checked here. Whether a legitimate change
+    produces more modelled dose is a question about the dose law, not about the legality of
+    the prescription — and phase 3.2 measured a case (max strength, hard/easy = 1.02x in both
+    engines) where the law barely values a real intensity increase.
+    """
+    policy = POLICIES[family]
+    moved = dimensions_changed(before, after)
+    problems: list[str] = []
+
+    for dimension in sorted(moved, key=lambda d: d.value):
+        permission = policy.permission(dimension)
+        if permission is Permission.FORBIDDEN:
+            problems.append(f"{family} must not change {dimension.value}")
+            continue
+        if declared is not None and dimension not in declared:
+            problems.append(
+                f"{family} moved {dimension.value}, which this transform did not declare "
+                f"(declared: {', '.join(sorted(d.value for d in declared)) or 'nothing'})"
+            )
+            continue
+        if permission is Permission.CONSTRAINED:
+            bound = constraint_for(family, dimension)
+            if bound is None:
+                problems.append(
+                    f"{family} moved {dimension.value}, which is constrained with no stated "
+                    f"bound — decide the bound before moving it"
+                )
+            elif not bound.accepts(before, after):
+                problems.append(
+                    f"{family} moved {dimension.value} outside its bound ({bound.description})"
+                )
+    return problems
 
 
 # --- the only transform 3.1 implements ------------------------------------------------

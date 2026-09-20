@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from app.logic.difficulty import Difficulty, DifficultyTransform
+from app.logic.difficulty import Difficulty, DifficultyDimension, DifficultyTransform
 from app.logic.planning import INTENSITY_EASY, INTENSITY_HARD, normalize_intensity
 from app.schemas.workout_structure import (
     StrengthBlock,
@@ -89,6 +89,16 @@ class _VolumeAndEffortPolicy:
     easy_rir_delta: float
     hard_volume: float
     hard_rir_delta: float
+
+    @property
+    def declared_dimensions(self) -> frozenset[DifficultyDimension]:
+        """What this transform claims it may move — the intent the validator holds it to.
+
+        Declaring volume and effort means exactly that: a run that also nudged load or rest
+        would be two prescription changes reported as one, and ``validate_transform`` fails it
+        by name rather than shrugging at a generic policy violation.
+        """
+        return frozenset({DifficultyDimension.VOLUME, DifficultyDimension.EFFORT})
 
     def apply(
         self,

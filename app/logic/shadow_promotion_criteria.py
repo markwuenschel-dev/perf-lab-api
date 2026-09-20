@@ -190,7 +190,10 @@ CRITERIA: Final[dict[str, SubsystemCriteria]] = {
             "phase 8B: v1's density variable changed meaning, so dose_beta and every "
             "density-dependent coefficient must be re-fit against logged sessions this service "
             "captures. The synthetic grid (app/scripts/compare_dose_models.py) shows where the "
-            "models diverge; it is not calibration and must not be fitted against"
+            "models diverge; it is not calibration and must not be fitted against. The named "
+            "questions a fit must resolve are recorded in docs/calibration-backlog.md — C1 "
+            "intensity insensitivity (a heavier bar at fixed sets moves dose 1.02x in BOTH "
+            "engines), C2 density re-fit, C3 endurance has no density input yet"
         ),
         replay=_missing(
             "v1 has no replay harness; stored states replay under v0 (ekf_replay pins v0), and "
