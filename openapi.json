@@ -1672,6 +1672,7 @@
           "distance_m": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -1683,6 +1684,7 @@
           "duration_sec": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1737,6 +1739,18 @@
             ],
             "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
             "title": "Label"
+          },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
           }
         },
         "title": "ContinuousBlock",
@@ -1758,6 +1772,7 @@
           "duration_sec": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1783,6 +1798,18 @@
             ],
             "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
             "title": "Label"
+          },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
           }
         },
         "title": "CooldownBlock",
@@ -1840,6 +1867,28 @@
           "primary_anchors"
         ],
         "title": "DomainSummaryOut",
+        "type": "object"
+      },
+      "DurationEstimate": {
+        "description": "How much of a session's time is actually known.\n\n``known_seconds`` alone would be a lie by omission: a strength session with rests recorded\nbut no set execution time would report the rest as though it were the whole session. So\nthe unknown parts are named, and ``complete`` says whether the total can be trusted as a\nduration. An incomplete estimate is never rendered as a number of minutes.",
+        "properties": {
+          "known_seconds": {
+            "minimum": 0.0,
+            "title": "Known Seconds",
+            "type": "number"
+          },
+          "unknown_components": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unknown Components",
+            "type": "array"
+          }
+        },
+        "required": [
+          "known_seconds"
+        ],
+        "title": "DurationEstimate",
         "type": "object"
       },
       "ExerciseCatalogOut": {
@@ -2685,9 +2734,15 @@
             ],
             "title": "Quality Stop"
           },
+          "recovery_after_last_rep": {
+            "default": false,
+            "title": "Recovery After Last Rep",
+            "type": "boolean"
+          },
           "recovery_duration_sec": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -2717,6 +2772,7 @@
           "repetitions": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -2725,9 +2781,22 @@
             ],
             "title": "Repetitions"
           },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
+          },
           "work_distance_m": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "number"
               },
               {
@@ -2739,6 +2808,7 @@
           "work_duration_sec": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -5803,9 +5873,15 @@
             ],
             "title": "Reps"
           },
+          "rest_after_last_set": {
+            "default": false,
+            "title": "Rest After Last Set",
+            "type": "boolean"
+          },
           "rest_sec": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -5836,6 +5912,18 @@
             ],
             "title": "Rpe Target"
           },
+          "set_duration_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Duration Sec"
+          },
           "sets": {
             "anyOf": [
               {
@@ -5846,6 +5934,18 @@
               }
             ],
             "title": "Sets"
+          },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
           },
           "weak_point_tags": {
             "items": {
@@ -6577,6 +6677,7 @@
           "duration_sec": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -6602,6 +6703,18 @@
             ],
             "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
             "title": "Label"
+          },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
           }
         },
         "title": "WarmupBlock",
@@ -7442,6 +7555,31 @@
       "WorkoutPrescription": {
         "description": "Next-session recommendation. Legacy fields required; `why` optional for old clients.",
         "properties": {
+          "calculated_duration_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The structure's own duration in minutes, or None when anything is untimed.\n\nNone means \"not known\", never zero: a strength session whose rests are recorded but\nwhose set execution time is not has a real partial sum, and reporting that partial sum\nas the session length would understate it. The partial sum is still visible in\n``duration_estimate.known_seconds``, labelled with what is missing.",
+            "readOnly": true,
+            "title": "Calculated Duration Min"
+          },
+          "duration_estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DurationEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How much of this session's time the structure can actually account for (2.2).\n\nDESCRIPTIVE. It never rewrites ``duration_min``, which remains what the engine\nprescribed and what every existing client reads. Computed rather than stored so it\ncannot drift from the structure it describes.",
+            "readOnly": true
+          },
           "duration_min": {
             "title": "Duration Min",
             "type": "integer"
@@ -7526,7 +7664,9 @@
           "type",
           "focus",
           "rationale",
-          "duration_min"
+          "duration_min",
+          "duration_estimate",
+          "calculated_duration_min"
         ],
         "title": "WorkoutPrescription",
         "type": "object"

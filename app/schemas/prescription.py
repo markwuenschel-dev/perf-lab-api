@@ -2,14 +2,19 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 # Same source of truth the Twin's history view uses. Importing the policy rather than
 # restating its bands is deliberate: confidence_presentation.py owns the thresholds so
 # consumers cannot drift from them (schemas/state.py imports it for the same reason).
 from app.logic.confidence_presentation import ConfidenceStatus
 from app.schemas.load_explanation import LoadExplanation, LoadExplanationReason
-from app.schemas.workout_structure import StrengthBlock, WorkoutStructure
+from app.schemas.workout_structure import (
+    DurationEstimate,
+    StrengthBlock,
+    WorkoutStructure,
+    calculate_duration,
+)
 
 #: Re-exported for the modules that have always imported them from here.
 __all__ = ["LoadExplanation", "LoadExplanationReason"]
@@ -392,6 +397,30 @@ class WorkoutPrescription(BaseModel):
     # views disagree. Absent on legacy stored content, which reads back exactly as before.
     structure: "WorkoutStructure | None" = None
     why: PrescriptionExplanation | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def duration_estimate(self) -> DurationEstimate | None:
+        """How much of this session's time the structure can actually account for (2.2).
+
+        DESCRIPTIVE. It never rewrites ``duration_min``, which remains what the engine
+        prescribed and what every existing client reads. Computed rather than stored so it
+        cannot drift from the structure it describes.
+        """
+        return None if self.structure is None else calculate_duration(self.structure)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def calculated_duration_min(self) -> float | None:
+        """The structure's own duration in minutes, or None when anything is untimed.
+
+        None means "not known", never zero: a strength session whose rests are recorded but
+        whose set execution time is not has a real partial sum, and reporting that partial sum
+        as the session length would understate it. The partial sum is still visible in
+        ``duration_estimate.known_seconds``, labelled with what is missing.
+        """
+        estimate = self.duration_estimate
+        return None if estimate is None else estimate.minutes
 
     @model_validator(mode="after")
     def _structure_and_exercises_agree(self) -> "WorkoutPrescription":

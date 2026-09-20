@@ -29,6 +29,10 @@ const populated: TodaySessionResponse = {
     focus: "Heavy Lower",
     rationale: "Readiness is high and the block is in an accumulation week.",
     duration_min: 62,
+    // Phase 2.2: the server always sends these — they are computed from `structure`, so the
+    // generated type marks them required. Null here: this fixture carries no structure.
+    calculated_duration_min: null,
+    duration_estimate: null,
     model_version: "v0.3",
     exercises: [{ name: "Back Squat", sets: 4, reps: "5", weak_point_tags: [], prescribed_load_kg: 102.5 }],
     why: {

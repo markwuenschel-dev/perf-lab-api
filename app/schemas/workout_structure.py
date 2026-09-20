@@ -36,11 +36,18 @@ from app.schemas.load_explanation import LoadExplanation
 
 
 class _Block(BaseModel):
-    """Common to every block: what it is, and a human label for clients that show one."""
+    """Common to every block: what it is, a display label, and what follows it.
+
+    ``transition_sec`` is time spent GETTING to the next block — changing station, racking a
+    bar, walking to the track. Deliberately not folded into recovery: a HYROX station-to-run
+    transition is not prescribed recovery, and phase 6 needs to say so. It is counted once per
+    block, after the block's work.
+    """
 
     label: str | None = Field(
         default=None, description="Display name, e.g. 'Main lift' or 'Threshold intervals'."
     )
+    transition_sec: int | None = Field(default=None, ge=0)
 
 
 class StrengthBlock(_Block):
@@ -60,7 +67,15 @@ class StrengthBlock(_Block):
     percent_e1rm: float | None = None
     rpe_target: float | None = None
     rir_target: float | None = None
-    rest_sec: int | None = None
+    #: Prescribed rest BETWEEN sets.
+    rest_sec: int | None = Field(default=None, ge=0)
+    #: Does the prescribed rest follow the final set? Same ambiguity as an interval's last
+    #: recovery, and the same explicit default: no. A session ends when the work ends.
+    rest_after_last_set: bool = False
+    #: How long one set takes to execute. Almost never known today — templates author sets and
+    #: reps, not tempo — and that is exactly why duration for a strength block is reported as
+    #: INCOMPLETE rather than guessed from a rep-time assumption.
+    set_duration_sec: int | None = Field(default=None, ge=0)
     #: Carried through so the projection is LOSSLESS against today's ExercisePrescription.
     #: Without these the projection would quietly drop fields and the agreement validator
     #: would reject every real prescription — which is how the missing one was found.
@@ -81,15 +96,19 @@ class IntervalBlock(_Block):
     """
 
     kind: Literal["interval"] = "interval"
-    repetitions: int | None = None
-    work_duration_sec: int | None = None
-    work_distance_m: float | None = None
+    repetitions: int | None = Field(default=None, ge=0)
+    work_duration_sec: int | None = Field(default=None, ge=0)
+    work_distance_m: float | None = Field(default=None, ge=0)
     #: The target and the scale it is expressed on, kept apart: 4.0 means nothing until
     #: ``intensity_basis`` says whether it is a pace, a power, a heart-rate zone or an RPE.
     intensity_target: float | None = None
     intensity_basis: Literal["pace_s_per_km", "watts", "hr_bpm", "zone", "rpe", "percent_e1rm"] | None = None
-    recovery_duration_sec: int | None = None
+    recovery_duration_sec: int | None = Field(default=None, ge=0)
     recovery_type: Literal["passive", "easy", "walk", "jog", "active"] | None = None
+    #: Does recovery follow the FINAL repetition? 6 × (3 min work / 2 min recovery) is 28
+    #: minutes if it does and 26 if it does not, and a session that cannot say which cannot be
+    #: timed. Default false: the work is the session, the last recovery is going home.
+    recovery_after_last_rep: bool = False
     #: The condition that ends the session early — e.g. "stop when pace drops 5%". A quality
     #: stop is a prescription, not a note: the athlete needs to know when to stop.
     quality_stop: str | None = None
@@ -99,8 +118,8 @@ class ContinuousBlock(_Block):
     """One unbroken effort: a steady run, a row, a ruck."""
 
     kind: Literal["continuous"] = "continuous"
-    duration_sec: int | None = None
-    distance_m: float | None = None
+    duration_sec: int | None = Field(default=None, ge=0)
+    distance_m: float | None = Field(default=None, ge=0)
     intensity_target: float | None = None
     intensity_basis: Literal["pace_s_per_km", "watts", "hr_bpm", "zone", "rpe"] | None = None
 
@@ -109,13 +128,13 @@ class WarmupBlock(_Block):
     """Preparation. Carries its own time so calculated duration (2.2) can include it."""
 
     kind: Literal["warmup"] = "warmup"
-    duration_sec: int | None = None
+    duration_sec: int | None = Field(default=None, ge=0)
     description: str | None = None
 
 
 class CooldownBlock(_Block):
     kind: Literal["cooldown"] = "cooldown"
-    duration_sec: int | None = None
+    duration_sec: int | None = Field(default=None, ge=0)
     description: str | None = None
 
 
@@ -126,3 +145,107 @@ WorkoutBlock = Annotated[
 
 #: A session, in order.
 WorkoutStructure = list[WorkoutBlock]
+
+
+# ---------------------------------------------------------------------------
+# Timing (phase 2.2) — DESCRIPTIVE ONLY
+# ---------------------------------------------------------------------------
+#
+# Calculated duration explains a workout; it does not prescribe one. Nothing here rewrites
+# ``duration_min``, changes selection, or moves a dose: those stay exactly as they were until
+# authorship flips in 2.3. What 2.2 buys is the ability to SAY how long a session is, and —
+# just as important — to say when we do not know.
+
+
+class DurationEstimate(BaseModel):
+    """How much of a session's time is actually known.
+
+    ``known_seconds`` alone would be a lie by omission: a strength session with rests recorded
+    but no set execution time would report the rest as though it were the whole session. So
+    the unknown parts are named, and ``complete`` says whether the total can be trusted as a
+    duration. An incomplete estimate is never rendered as a number of minutes.
+    """
+
+    known_seconds: float = Field(ge=0.0)
+    #: What could not be timed, in words, e.g. "Back Squat: set execution time unknown".
+    unknown_components: list[str] = Field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        return not self.unknown_components
+
+    @property
+    def minutes(self) -> float | None:
+        """The duration in minutes, or None when something is unknown — never a partial sum."""
+        return round(self.known_seconds / 60.0, 2) if self.complete else None
+
+
+def _describe(block: WorkoutBlock, missing: str) -> str:
+    name = getattr(block, "exercise", None) or block.label or block.kind
+    return f"{name}: {missing}"
+
+
+def calculate_duration(structure: WorkoutStructure) -> DurationEstimate:
+    """Total prescribed time for a structure, and whatever could not be timed.
+
+    The rules, each chosen because the alternative invents data:
+
+    * **Strength** — rest is counted between sets (and after the last only if the block says
+      so). Execution time counts only when ``set_duration_sec`` is given; otherwise the block
+      is marked unknown rather than assigned an assumed seconds-per-rep.
+    * **Interval** — ``repetitions × work_duration_sec``, plus recovery for every gap
+      (``repetitions - 1``, or every repetition when ``recovery_after_last_rep``).
+    * **Distance-only work is NOT a time quantity.** 5 × 1 km has no duration until a pace
+      target can resolve one, which is phase 5's job. Marked unknown here.
+    * **Transitions** are counted once per block, separately from recovery.
+    """
+    known = 0.0
+    unknown: list[str] = []
+
+    for block in structure:
+        if isinstance(block, WarmupBlock | CooldownBlock):
+            if block.duration_sec is None:
+                unknown.append(_describe(block, "no duration given"))
+            else:
+                known += block.duration_sec
+
+        elif isinstance(block, ContinuousBlock):
+            if block.duration_sec is not None:
+                known += block.duration_sec
+            elif block.distance_m is not None:
+                unknown.append(_describe(block, "distance-only, no pace target to time it"))
+            else:
+                unknown.append(_describe(block, "neither duration nor distance"))
+
+        elif isinstance(block, IntervalBlock):
+            reps = block.repetitions
+            if reps is None:
+                unknown.append(_describe(block, "repetitions not given"))
+                continue
+            if block.work_duration_sec is not None:
+                known += reps * block.work_duration_sec
+            elif block.work_distance_m is not None:
+                unknown.append(_describe(block, "distance-only work, no pace target to time it"))
+            else:
+                unknown.append(_describe(block, "no work duration or distance"))
+            if block.recovery_duration_sec is not None and reps > 0:
+                gaps = reps if block.recovery_after_last_rep else reps - 1
+                known += max(0, gaps) * block.recovery_duration_sec
+
+        elif isinstance(block, StrengthBlock):
+            sets = block.sets
+            if sets is None:
+                unknown.append(_describe(block, "set count not given"))
+                continue
+            if block.set_duration_sec is not None:
+                known += sets * block.set_duration_sec
+            else:
+                unknown.append(_describe(block, "set execution time unknown"))
+            if block.rest_sec is not None and sets > 0:
+                gaps = sets if block.rest_after_last_set else sets - 1
+                known += max(0, gaps) * block.rest_sec
+
+        if block.transition_sec is not None:
+            known += block.transition_sec
+
+    return DurationEstimate(known_seconds=known, unknown_components=unknown)
