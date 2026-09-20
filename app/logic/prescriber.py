@@ -44,6 +44,7 @@ from app.logic.constraint_labels import (
     describe_constraints,
 )
 from app.logic.deload_need import compute_deload_need
+from app.logic.difficulty import LEGACY_TRANSFORM
 from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
 from app.logic.exercise_slot import (
     CatalogExercise,
@@ -55,7 +56,6 @@ from app.logic.exercise_slot import (
 from app.logic.planned_session_slots import SlotBinding, binding_for
 from app.logic.planning import (
     INTENSITY_MEDIUM,
-    intensity_set_delta,
     normalize_intensity,
     periodization_envelope,
 )
@@ -73,7 +73,6 @@ from app.schemas.prescription import (
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.schemas.workout_structure import adjust_strength_sets
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -522,9 +521,12 @@ def _apply_intensity_sets(
         # Phase 2.3 authorship flip: the workload preference edits the STRUCTURE, and the
         # exercise list is re-projected from it. Nothing downstream mutates `exercises`
         # directly any more — structure is the workout, the list is a view of it.
-        delta = intensity_set_delta(intensity)
+        # Phase 3.1: the workload change goes through the difficulty CONTRACT rather than
+        # editing sets inline. LEGACY_TRANSFORM reproduces today's rule exactly (±1 set), so
+        # this is behaviour-neutral; 3.2 swaps in real per-family policies, and none of them
+        # goes live until its effect under both dose engines has been measured.
         before = rx.structure or structure_from_exercises(rx.exercises)
-        after = adjust_strength_sets(before, delta)
+        after = LEGACY_TRANSFORM.apply(before, intensity)
         moved = sum(
             1
             for old_block, new_block in zip(before, after, strict=True)
