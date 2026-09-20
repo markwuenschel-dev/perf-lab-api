@@ -38,6 +38,7 @@ PINNED_IMPORTERS: dict[str, str] = {
     "app/ml/q10_confidence/ekf_replay.py": "replays STORED history under the engine that made it",
     "app/services/dose_model_shadow_service.py": "8A: computes v1 beside v0, never applied",
     "app/scripts/compare_dose_models.py": "offline v0/v1 comparison matrix",
+    "app/scripts/simulate_matrix.py": "offline phase-1 matrix; compares v0/v1 to explain a finding",
     # Helpers that are not dose semantics (external-intensity building, set samples).
     "app/services/state_service.py": "imports v0 intensity HELPERS only — never the dose law",
 }
