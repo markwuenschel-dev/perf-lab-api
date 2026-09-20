@@ -58,6 +58,10 @@ const RX: WorkoutPrescription = {
   focus: "Heavy Lower",
   rationale: "Readiness is high.",
   duration_min: 60,
+  // Phase 2.2: the server always sends these — they are computed from `structure`, so the
+  // generated type marks them required. Null here: this fixture carries no structure.
+  calculated_duration_min: null,
+  duration_estimate: null,
   model_version: "v0.3",
   exercises: [
     {

@@ -1626,6 +1626,8 @@ export interface components {
              * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
              */
             label?: string | null;
+            /** Transition Sec */
+            transition_sec?: number | null;
         };
         /** CooldownBlock */
         CooldownBlock: {
@@ -1643,6 +1645,8 @@ export interface components {
              * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
              */
             label?: string | null;
+            /** Transition Sec */
+            transition_sec?: number | null;
         };
         /**
          * DashboardBundleOut
@@ -1662,6 +1666,21 @@ export interface components {
             kpis: components["schemas"]["KPIValueOut"][];
             /** Primary Anchors */
             primary_anchors: components["schemas"]["AnchorObservationOut"][];
+        };
+        /**
+         * DurationEstimate
+         * @description How much of a session's time is actually known.
+         *
+         *     ``known_seconds`` alone would be a lie by omission: a strength session with rests recorded
+         *     but no set execution time would report the rest as though it were the whole session. So
+         *     the unknown parts are named, and ``complete`` says whether the total can be trusted as a
+         *     duration. An incomplete estimate is never rendered as a number of minutes.
+         */
+        DurationEstimate: {
+            /** Known Seconds */
+            known_seconds: number;
+            /** Unknown Components */
+            unknown_components?: string[];
         };
         /**
          * ExerciseCatalogOut
@@ -2043,12 +2062,19 @@ export interface components {
             label?: string | null;
             /** Quality Stop */
             quality_stop?: string | null;
+            /**
+             * Recovery After Last Rep
+             * @default false
+             */
+            recovery_after_last_rep: boolean;
             /** Recovery Duration Sec */
             recovery_duration_sec?: number | null;
             /** Recovery Type */
             recovery_type?: ("passive" | "easy" | "walk" | "jog" | "active") | null;
             /** Repetitions */
             repetitions?: number | null;
+            /** Transition Sec */
+            transition_sec?: number | null;
             /** Work Distance M */
             work_distance_m?: number | null;
             /** Work Duration Sec */
@@ -3268,14 +3294,23 @@ export interface components {
             percent_e1rm?: number | null;
             /** Reps */
             reps?: string | null;
+            /**
+             * Rest After Last Set
+             * @default false
+             */
+            rest_after_last_set: boolean;
             /** Rest Sec */
             rest_sec?: number | null;
             /** Rir Target */
             rir_target?: number | null;
             /** Rpe Target */
             rpe_target?: number | null;
+            /** Set Duration Sec */
+            set_duration_sec?: number | null;
             /** Sets */
             sets?: number | null;
+            /** Transition Sec */
+            transition_sec?: number | null;
             /** Weak Point Tags */
             weak_point_tags?: string[];
         };
@@ -3665,6 +3700,8 @@ export interface components {
              * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
              */
             label?: string | null;
+            /** Transition Sec */
+            transition_sec?: number | null;
         };
         /** WeakPointOut */
         WeakPointOut: {
@@ -3979,6 +4016,24 @@ export interface components {
          * @description Next-session recommendation. Legacy fields required; `why` optional for old clients.
          */
         WorkoutPrescription: {
+            /**
+             * Calculated Duration Min
+             * @description The structure's own duration in minutes, or None when anything is untimed.
+             *
+             *     None means "not known", never zero: a strength session whose rests are recorded but
+             *     whose set execution time is not has a real partial sum, and reporting that partial sum
+             *     as the session length would understate it. The partial sum is still visible in
+             *     ``duration_estimate.known_seconds``, labelled with what is missing.
+             */
+            readonly calculated_duration_min: number | null;
+            /**
+             * @description How much of this session's time the structure can actually account for (2.2).
+             *
+             *     DESCRIPTIVE. It never rewrites ``duration_min``, which remains what the engine
+             *     prescribed and what every existing client reads. Computed rather than stored so it
+             *     cannot drift from the structure it describes.
+             */
+            readonly duration_estimate: components["schemas"]["DurationEstimate"] | null;
             /** Duration Min */
             duration_min: number;
             /** Exercises */

@@ -54,8 +54,9 @@ def _explained_rx() -> WorkoutPrescription:
 def test_to_prescribed_content_matches_the_json_mode_hand_written_dict():
     """The method must reproduce the dict the two call sites hand-wrote, in JSON mode.
 
-    Phase 2.1 added ``structure`` — additive, and None here because this prescription was
-    built directly rather than through the pipeline that attaches one.
+    Phase 2.1 added ``structure`` and 2.2 the computed timing fields — all additive, and all
+    None here because this prescription was built directly rather than through the pipeline
+    that attaches a structure.
     """
     rx = _explained_rx()
     legacy = {
@@ -66,6 +67,10 @@ def test_to_prescribed_content_matches_the_json_mode_hand_written_dict():
         "model_version": rx.model_version,
         "exercises": [e.model_dump(mode="json") for e in rx.exercises],
         "structure": None,
+        # Phase 2.2 computed fields: always serialized, derived from `structure`, so they
+        # cannot drift from it. None here because this prescription carries no structure.
+        "duration_estimate": None,
+        "calculated_duration_min": None,
         "why": rx.why.model_dump(mode="json") if rx.why else None,
     }
     assert rx.to_prescribed_content() == legacy
