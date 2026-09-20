@@ -1604,6 +1604,47 @@ export interface components {
             reason: string;
         };
         /**
+         * ContinuousBlock
+         * @description One unbroken effort: a steady run, a row, a ruck.
+         */
+        ContinuousBlock: {
+            /** Distance M */
+            distance_m?: number | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Intensity Basis */
+            intensity_basis?: ("pace_s_per_km" | "watts" | "hr_bpm" | "zone" | "rpe") | null;
+            /** Intensity Target */
+            intensity_target?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "continuous";
+            /**
+             * Label
+             * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
+             */
+            label?: string | null;
+        };
+        /** CooldownBlock */
+        CooldownBlock: {
+            /** Description */
+            description?: string | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "cooldown";
+            /**
+             * Label
+             * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
+             */
+            label?: string | null;
+        };
+        /**
          * DashboardBundleOut
          * @description Latest primary-anchor observations plus derived KPI snapshots.
          */
@@ -1976,6 +2017,42 @@ export interface components {
              * @default 0
              */
             weight: number;
+        };
+        /**
+         * IntervalBlock
+         * @description Repeated efforts with prescribed recovery — the shape running and HYROX need.
+         *
+         *     Emitted by nothing in 2.1. Declared now so phase 5 extends behaviour rather than schema:
+         *     a threshold session is ``repetitions=4, work_duration_sec=300, recovery_duration_sec=120``,
+         *     not the sentence "4×5 min @ threshold pace / 2 min easy recovery".
+         */
+        IntervalBlock: {
+            /** Intensity Basis */
+            intensity_basis?: ("pace_s_per_km" | "watts" | "hr_bpm" | "zone" | "rpe" | "percent_e1rm") | null;
+            /** Intensity Target */
+            intensity_target?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "interval";
+            /**
+             * Label
+             * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
+             */
+            label?: string | null;
+            /** Quality Stop */
+            quality_stop?: string | null;
+            /** Recovery Duration Sec */
+            recovery_duration_sec?: number | null;
+            /** Recovery Type */
+            recovery_type?: ("passive" | "easy" | "walk" | "jog" | "active") | null;
+            /** Repetitions */
+            repetitions?: number | null;
+            /** Work Distance M */
+            work_distance_m?: number | null;
+            /** Work Duration Sec */
+            work_duration_sec?: number | null;
         };
         /** KPIValueOut */
         KPIValueOut: {
@@ -3161,6 +3238,48 @@ export interface components {
             tissue_t?: components["schemas"]["TissueState"];
         };
         /**
+         * StrengthBlock
+         * @description Sets of one exercise against a load or effort target.
+         *
+         *     The only block 2.1 emits: it is exactly what today's flat ``ExercisePrescription`` says,
+         *     with the fields named rather than implied.
+         */
+        StrengthBlock: {
+            /** E1Rm Basis Kg */
+            e1rm_basis_kg?: number | null;
+            /** Exercise */
+            exercise: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "strength";
+            /**
+             * Label
+             * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
+             */
+            label?: string | null;
+            load_explanation?: components["schemas"]["LoadExplanation"] | null;
+            /** Load Note */
+            load_note?: string | null;
+            /** Load Target Kg */
+            load_target_kg?: number | null;
+            /** Percent E1Rm */
+            percent_e1rm?: number | null;
+            /** Reps */
+            reps?: string | null;
+            /** Rest Sec */
+            rest_sec?: number | null;
+            /** Rir Target */
+            rir_target?: number | null;
+            /** Rpe Target */
+            rpe_target?: number | null;
+            /** Sets */
+            sets?: number | null;
+            /** Weak Point Tags */
+            weak_point_tags?: string[];
+        };
+        /**
          * StrengthEvidenceCreate
          * @description A strength report submitted on its own — from Assess, or a Settings strength edit.
          */
@@ -3527,6 +3646,26 @@ export interface components {
             /** Passed */
             passed: boolean;
         };
+        /**
+         * WarmupBlock
+         * @description Preparation. Carries its own time so calculated duration (2.2) can include it.
+         */
+        WarmupBlock: {
+            /** Description */
+            description?: string | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "warmup";
+            /**
+             * Label
+             * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
+             */
+            label?: string | null;
+        };
         /** WeakPointOut */
         WeakPointOut: {
             /** Confidence */
@@ -3854,6 +3993,8 @@ export interface components {
             model_version: string;
             /** Rationale */
             rationale: string;
+            /** Structure */
+            structure?: (components["schemas"]["StrengthBlock"] | components["schemas"]["IntervalBlock"] | components["schemas"]["ContinuousBlock"] | components["schemas"]["WarmupBlock"] | components["schemas"]["CooldownBlock"])[] | null;
             /** Type */
             type: string;
             why?: components["schemas"]["PrescriptionExplanation"] | null;

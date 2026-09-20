@@ -1666,6 +1666,128 @@
         "title": "ConservatismSummary",
         "type": "object"
       },
+      "ContinuousBlock": {
+        "description": "One unbroken effort: a steady run, a row, a ruck.",
+        "properties": {
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance M"
+          },
+          "duration_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Sec"
+          },
+          "intensity_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pace_s_per_km",
+                  "watts",
+                  "hr_bpm",
+                  "zone",
+                  "rpe"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity Basis"
+          },
+          "intensity_target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity Target"
+          },
+          "kind": {
+            "const": "continuous",
+            "default": "continuous",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
+            "title": "Label"
+          }
+        },
+        "title": "ContinuousBlock",
+        "type": "object"
+      },
+      "CooldownBlock": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "duration_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Sec"
+          },
+          "kind": {
+            "const": "cooldown",
+            "default": "cooldown",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
+            "title": "Label"
+          }
+        },
+        "title": "CooldownBlock",
+        "type": "object"
+      },
       "DashboardBundleOut": {
         "description": "Latest primary-anchor observations plus derived KPI snapshots.",
         "properties": {
@@ -2499,6 +2621,134 @@
           "source"
         ],
         "title": "IntensityContribution",
+        "type": "object"
+      },
+      "IntervalBlock": {
+        "description": "Repeated efforts with prescribed recovery \u2014 the shape running and HYROX need.\n\nEmitted by nothing in 2.1. Declared now so phase 5 extends behaviour rather than schema:\na threshold session is ``repetitions=4, work_duration_sec=300, recovery_duration_sec=120``,\nnot the sentence \"4\u00d75 min @ threshold pace / 2 min easy recovery\".",
+        "properties": {
+          "intensity_basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pace_s_per_km",
+                  "watts",
+                  "hr_bpm",
+                  "zone",
+                  "rpe",
+                  "percent_e1rm"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity Basis"
+          },
+          "intensity_target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intensity Target"
+          },
+          "kind": {
+            "const": "interval",
+            "default": "interval",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
+            "title": "Label"
+          },
+          "quality_stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Stop"
+          },
+          "recovery_duration_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Duration Sec"
+          },
+          "recovery_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "passive",
+                  "easy",
+                  "walk",
+                  "jog",
+                  "active"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Type"
+          },
+          "repetitions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repetitions"
+          },
+          "work_distance_m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Distance M"
+          },
+          "work_duration_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Duration Sec"
+          }
+        },
+        "title": "IntervalBlock",
         "type": "object"
       },
       "KPIValueOut": {
@@ -5463,6 +5713,154 @@
         "title": "StateHistorySnapshotRead",
         "type": "object"
       },
+      "StrengthBlock": {
+        "description": "Sets of one exercise against a load or effort target.\n\nThe only block 2.1 emits: it is exactly what today's flat ``ExercisePrescription`` says,\nwith the fields named rather than implied.",
+        "properties": {
+          "e1rm_basis_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Basis Kg"
+          },
+          "exercise": {
+            "title": "Exercise",
+            "type": "string"
+          },
+          "kind": {
+            "const": "strength",
+            "default": "strength",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
+            "title": "Label"
+          },
+          "load_explanation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoadExplanation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "load_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Note"
+          },
+          "load_target_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Target Kg"
+          },
+          "percent_e1rm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent E1Rm"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rest_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rest Sec"
+          },
+          "rir_target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir Target"
+          },
+          "rpe_target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe Target"
+          },
+          "sets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets"
+          },
+          "weak_point_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Weak Point Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "exercise"
+        ],
+        "title": "StrengthBlock",
+        "type": "object"
+      },
       "StrengthEvidenceCreate": {
         "additionalProperties": false,
         "description": "A strength report submitted on its own \u2014 from Assess, or a Settings strength edit.",
@@ -6160,6 +6558,53 @@
           "passed"
         ],
         "title": "ValidationSummary",
+        "type": "object"
+      },
+      "WarmupBlock": {
+        "description": "Preparation. Carries its own time so calculated duration (2.2) can include it.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "duration_sec": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Sec"
+          },
+          "kind": {
+            "const": "warmup",
+            "default": "warmup",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
+            "title": "Label"
+          }
+        },
+        "title": "WarmupBlock",
         "type": "object"
       },
       "WeakPointOut": {
@@ -7021,6 +7466,46 @@
           "rationale": {
             "title": "Rationale",
             "type": "string"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "items": {
+                  "discriminator": {
+                    "mapping": {
+                      "continuous": "#/components/schemas/ContinuousBlock",
+                      "cooldown": "#/components/schemas/CooldownBlock",
+                      "interval": "#/components/schemas/IntervalBlock",
+                      "strength": "#/components/schemas/StrengthBlock",
+                      "warmup": "#/components/schemas/WarmupBlock"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/StrengthBlock"
+                    },
+                    {
+                      "$ref": "#/components/schemas/IntervalBlock"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ContinuousBlock"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WarmupBlock"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CooldownBlock"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structure"
           },
           "type": {
             "title": "Type",

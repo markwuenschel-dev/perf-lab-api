@@ -474,4 +474,8 @@ def finalize_prescription(
     if rationale_suffix and not hard_violations:
         out_rx.rationale = (out_rx.rationale + rationale_suffix).strip()
 
-    return out_rx
+    # Phase 2.1: attach the typed structure for the paths that RETURN from here — the safety
+    # override and the hard-constraint replacement, neither of which goes on to select
+    # exercises. The scoring path attaches its own at the end of _score_prescription, after
+    # exercise selection has run.
+    return out_rx.with_structure()

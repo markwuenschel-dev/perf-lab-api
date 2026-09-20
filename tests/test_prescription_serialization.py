@@ -52,7 +52,11 @@ def _explained_rx() -> WorkoutPrescription:
 
 
 def test_to_prescribed_content_matches_the_json_mode_hand_written_dict():
-    """The method must reproduce the dict the two call sites hand-wrote, in JSON mode."""
+    """The method must reproduce the dict the two call sites hand-wrote, in JSON mode.
+
+    Phase 2.1 added ``structure`` — additive, and None here because this prescription was
+    built directly rather than through the pipeline that attaches one.
+    """
     rx = _explained_rx()
     legacy = {
         "type": rx.type,
@@ -61,9 +65,20 @@ def test_to_prescribed_content_matches_the_json_mode_hand_written_dict():
         "duration_min": rx.duration_min,
         "model_version": rx.model_version,
         "exercises": [e.model_dump(mode="json") for e in rx.exercises],
+        "structure": None,
         "why": rx.why.model_dump(mode="json") if rx.why else None,
     }
     assert rx.to_prescribed_content() == legacy
+
+
+def test_a_structured_prescription_still_reads_back_by_the_legacy_keys():
+    """Old readers index ``exercises`` by key (ADR-0031); structure must not disturb them."""
+    rx = _explained_rx().with_structure()
+    content = json.loads(json.dumps(rx.to_prescribed_content()))
+
+    assert content["structure"], "structure is present for a pipeline-built prescription"
+    assert [e["name"] for e in content["exercises"]] == [b["exercise"] for b in content["structure"]]
+    assert content["exercises"][0]["load_explanation"]["status"] == "no_qualifying_evidence"
 
 
 def test_an_explained_prescription_survives_the_jsonb_write_path():
