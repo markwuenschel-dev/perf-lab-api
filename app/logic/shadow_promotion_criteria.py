@@ -205,7 +205,12 @@ CRITERIA: Final[dict[str, SubsystemCriteria]] = {
         canary=_missing(_NO_CANARY),
         rollback=_missing(
             "reverting PRODUCTION_DOSE_MODEL in app/logic/dose_model.py is a one-line manual "
-            "rollback; nothing automates it or detects the need for it"
+            "rollback; nothing automates it or detects the need for it. NOTE: one activation "
+            "gate is already implemented and permanent — workload monotonicity, "
+            "tests/properties/test_v1_directional_ordering.py: for otherwise-identical "
+            "generated strength sessions, more prescribed sets must carry more dose. v0 fails "
+            "it (2.89/2.01/1.55, docs/simulations/phase-1.md); v1 must keep passing it to be "
+            "activated"
         ),
         recertification=_missing(_NO_RECERT),
     ),

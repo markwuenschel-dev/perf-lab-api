@@ -181,3 +181,93 @@ def test_v0_still_uses_and_labels_its_fabricated_set_count() -> None:
 def test_reported_strength_sets_still_drive_v1_volume() -> None:
     """The fix removes invented sets, not real ones."""
     assert _total(_log(estimated_sets=30.0)) > _total(_log(estimated_sets=10.0))
+
+
+# ── ACTIVATION GATE: workload monotonicity (phase 8C) ────────────────────────
+#
+# A permanent criterion for activating v1 in production, added after the phase-1 simulation
+# matrix found the live model inverted: for otherwise-identical generated STRENGTH sessions
+# where only the set count changes,
+#
+#     easy sets < medium sets < hard sets   =>   dose(easy) < dose(medium) < dose(hard)
+#
+# and projected adaptation must not reverse solely because more work was packed into the same
+# session duration. v0 fails this (2.89 / 2.01 / 1.55 — see docs/simulations/phase-1.md); v1
+# must pass it before it can take production authority.
+#
+# Deliberately NOT a universal law: once difficulty is multidimensional, a low-volume maximal
+# session can legitimately out-dose a high-volume hypertrophy one. The claim here is narrow —
+# ONE controlled transformation, set count, everything else held.
+
+_STRENGTH_WEEK = {
+    "block_goal": "Strength",
+    "session_category": "Max Strength",
+    "session_domain": "strength",
+    "week_number": 2,
+    "duration_weeks": 8,
+    "deload_every_n_weeks": 4,
+}
+
+
+def _prescribed(workload: str):
+    """The session the engine generates for this workload, and its dose under v1."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from test_prescriber_candidates import _state
+
+    from app.logic.prescriber import recommend_next_session
+
+    rx = recommend_next_session(
+        _state(max_strength=50.0), goal="Strength",
+        block_context=dict(_STRENGTH_WEEK, intensity=workload),
+    )
+    sets = sum(e.sets or 0 for e in rx.exercises)
+    dose = v1.calculate_stress_dose(
+        _log(
+            modality="Strength",
+            duration_minutes=max(1.0, float(rx.duration_min)),
+            estimated_sets=float(sets) if sets else None,
+        )
+    )
+    return sets, float(sum(dose.dose_six.model_dump().values()))
+
+
+def test_workload_sets_increase_easy_to_hard() -> None:
+    """Precondition for the gate: the preference really does change the prescribed work."""
+    easy, medium, hard = (_prescribed(w)[0] for w in ("easy", "medium", "hard"))
+
+    assert easy < medium < hard, f"sets were {easy}/{medium}/{hard}"
+
+
+def test_more_prescribed_work_in_the_same_session_carries_more_dose() -> None:
+    """THE ACTIVATION GATE. v0 inverts this; v1 must not.
+
+    If this ever fails for v1, v1 must not be activated (phase 8C) — an athlete choosing a
+    harder week would train more while the model recorded less.
+    """
+    (_e_sets, easy), (_m_sets, medium), (_h_sets, hard) = (
+        _prescribed(w) for w in ("easy", "medium", "hard")
+    )
+
+    assert easy < medium < hard, (
+        f"v1 dose is not monotonic in prescribed work: {easy:.2f} / {medium:.2f} / {hard:.2f}"
+    )
+
+
+def test_the_inversion_this_gate_exists_for_is_real_in_production() -> None:
+    """Pins the defect the gate guards against, so the gate cannot be mistaken for theory.
+
+    Same fixed session, only the set count differing, under the PRODUCTION engine.
+    """
+    from app.logic import dose_engine_v0 as v0
+
+    def total(engine, sets: int) -> float:
+        dose = engine.calculate_stress_dose(
+            _log(modality="Strength", duration_minutes=75.0, estimated_sets=float(sets))
+        )
+        return float(sum(dose.dose_six.model_dump().values()))
+
+    assert total(v0, 8) > total(v0, 14), "v0 no longer inverts — re-read this gate's premise"
+    assert total(v1, 8) < total(v1, 14), "v1 must order more work as more dose"
