@@ -31,6 +31,7 @@ Proximity to failure is a distinct programming variable, not a synonym for volum
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from app.logic.difficulty import Difficulty, DifficultyTransform
 from app.logic.planning import INTENSITY_EASY, INTENSITY_HARD, normalize_intensity
@@ -138,8 +139,15 @@ MAX_STRENGTH = _VolumeAndEffortPolicy(
 )
 
 #: Candidates, not production. The live path still uses LEGACY_TRANSFORM; promotion is 3.4.
-CANDIDATE_TRANSFORMS: dict[str, DifficultyTransform] = {
-    GENERAL_STRENGTH.family: GENERAL_STRENGTH,
-    HYPERTROPHY.family: HYPERTROPHY,
-    MAX_STRENGTH.family: MAX_STRENGTH,
-}
+#:
+#: Cast because ``dict`` is invariant: the policies satisfy ``DifficultyTransform`` structurally,
+#: but ``dict[str, _VolumeAndEffortPolicy]`` is not assignable to ``dict[str, DifficultyTransform]``
+#: without it. The cast asserts the protocol, which the tests then exercise for real.
+CANDIDATE_TRANSFORMS: dict[str, DifficultyTransform] = cast(
+    "dict[str, DifficultyTransform]",
+    {
+        GENERAL_STRENGTH.family: GENERAL_STRENGTH,
+        HYPERTROPHY.family: HYPERTROPHY,
+        MAX_STRENGTH.family: MAX_STRENGTH,
+    },
+)
