@@ -1370,4 +1370,7 @@ def _recommend_next_session(
     if rx.why:
         rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))
 
-    return rx
+    # Phase 2.1: attach the typed structure LAST. Exercise selection, accessory appends and
+    # the workload set adjustment all mutate `exercises` after finalize_prescription ran, so
+    # deriving it any earlier captured an empty session.
+    return rx.with_structure()

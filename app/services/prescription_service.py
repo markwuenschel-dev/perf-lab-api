@@ -35,6 +35,7 @@ from app.schemas.prescription import (
     LoadExplanation,
     LoadExplanationReason,
     WorkoutPrescription,
+    structure_from_exercises,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
@@ -741,6 +742,10 @@ async def prescribe_for_athlete(
     # Phase 4 — ADR-0045: strength prescriptions speak in load — resolve %e1RM →
     # suggested kg (+ RPE cap) before persisting. Resolves shadow payloads; no writes.
     shadow_payloads = await _enrich_exercises_with_load(db, user_id, rx, ctx.block_context)
+    # Loads were just written onto the exercises, so the structure attached in finalize is
+    # stale. Re-derive it here rather than editing both views — the model validator refuses a
+    # prescription whose structure and exercises disagree, which is what keeps them one thing.
+    rx.structure = structure_from_exercises(rx.exercises)
     # Explanation #4: which of the athlete's own flagged deficits this session addresses.
     await _enrich_exercises_with_weak_point_tags(db, rx, ctx.active_weak_points)
 

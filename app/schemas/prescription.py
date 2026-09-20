@@ -1,14 +1,18 @@
 """Workout prescription + structured explainability (backward compatible)."""
 
-from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Same source of truth the Twin's history view uses. Importing the policy rather than
 # restating its bands is deliberate: confidence_presentation.py owns the thresholds so
 # consumers cannot drift from them (schemas/state.py imports it for the same reason).
 from app.logic.confidence_presentation import ConfidenceStatus
+from app.schemas.load_explanation import LoadExplanation, LoadExplanationReason
+from app.schemas.workout_structure import StrengthBlock, WorkoutStructure
+
+#: Re-exported for the modules that have always imported them from here.
+__all__ = ["LoadExplanation", "LoadExplanationReason"]
 
 #: Version of the prescription engine, published on every prescription.
 #:
@@ -283,48 +287,6 @@ class PrescriptionExplanation(BaseModel):
 #: ``app.logic.prescription_evidence.EXPLAIN_*`` (pinned equal by
 #: ``tests/test_load_explanation.py``); they describe prescription ELIGIBILITY, never a
 #: verdict that the athlete became weaker.
-LoadExplanationReason = Literal[
-    "stale",
-    "missing_performance_date",
-    "estimate_not_used",
-    "set_not_qualifying",
-    "no_evidence",
-    "not_qualifying",
-]
-
-
-class LoadExplanation(BaseModel):
-    """Whether this exercise carries a suggested weight, and if not, why (S2, N1).
-
-    * ``recommended`` — a qualifying e1RM sized the load.
-    * ``no_qualifying_evidence`` — the lift supports a weight, but nothing qualified at
-      ``evaluated_at``; ``reason`` says which kind of evidence came closest.
-    * ``not_supported`` — an externally loaded exercise with no e1RM benchmark, so no
-      athlete evidence could size it.
-
-    Unloaded, uncatalogued exercises carry no explanation at all. It is persisted with the
-    served prescription, so what the athlete was shown can be read back later.
-    """
-
-    status: Literal["recommended", "no_qualifying_evidence", "not_supported"]
-    reason: LoadExplanationReason | None = Field(
-        default=None, description="Set only when status is no_qualifying_evidence."
-    )
-    benchmark_code: str | None = Field(
-        default=None, description="The e1RM benchmark the lift was evaluated against."
-    )
-    evaluated_at: datetime = Field(
-        description="The instant evidence eligibility was evaluated (UTC)."
-    )
-    evidence_performed_at: datetime | None = Field(
-        default=None,
-        description=(
-            "When the selected evidence (recommended) or the deterministic explanatory "
-            "evidence (no_qualifying_evidence) was performed, if known (UTC)."
-        ),
-    )
-
-
 class ExercisePrescription(BaseModel):
     """A single prescribed exercise within a session."""
     name: str
@@ -355,6 +317,62 @@ class ExercisePrescription(BaseModel):
     )
 
 
+def project_exercises(structure: "WorkoutStructure") -> list[ExercisePrescription]:
+    """The flat ``exercises[]`` a structure means — the ONE place the two are related.
+
+    Only strength blocks project to exercises today, which is exactly what 2.1 emits. When
+    phase 5 starts emitting interval and continuous blocks, this function decides how (or
+    whether) they appear in the legacy list, and every client keeps working.
+    """
+    out: list[ExercisePrescription] = []
+    for block in structure:
+        if not isinstance(block, StrengthBlock):
+            continue
+        out.append(
+            ExercisePrescription(
+                name=block.exercise,
+                sets=block.sets,
+                reps=block.reps,
+                load_note=block.load_note,
+                weak_point_tags=list(block.weak_point_tags),
+                prescribed_load_kg=block.load_target_kg,
+                percent_e1rm=block.percent_e1rm,
+                rpe_cap=block.rpe_target,
+                e1rm_basis_kg=block.e1rm_basis_kg,
+                load_explanation=block.load_explanation,
+            )
+        )
+    return out
+
+
+def structure_from_exercises(
+    exercises: list[ExercisePrescription],
+) -> "WorkoutStructure":
+    """Lift today's authored exercises into blocks, losslessly.
+
+    2.1 derives structure from the exercises the templates author; authorship flips in 2.3.
+    Lossless: every field ``ExercisePrescription`` carries has a home on the block, including
+    ``load_explanation``. A projection that dropped anything would make the two views disagree
+    by construction, which the agreement validator refuses.
+    """
+    return [
+        StrengthBlock(
+            exercise=ex.name,
+            sets=ex.sets,
+            reps=ex.reps,
+            load_target_kg=ex.prescribed_load_kg,
+            percent_e1rm=ex.percent_e1rm,
+            rpe_target=ex.rpe_cap,
+            rest_sec=None,
+            load_note=ex.load_note,
+            e1rm_basis_kg=ex.e1rm_basis_kg,
+            weak_point_tags=list(ex.weak_point_tags),
+            load_explanation=ex.load_explanation,
+        )
+        for ex in exercises
+    ]
+
+
 class WorkoutPrescription(BaseModel):
     """
     Next-session recommendation. Legacy fields required; `why` optional for old clients.
@@ -368,7 +386,37 @@ class WorkoutPrescription(BaseModel):
         default=PRESCRIPTION_ENGINE_VERSION, description="Prescription engine version"
     )
     exercises: list[ExercisePrescription] = Field(default_factory=lambda: [])
+    # Phase 2.1: what the session IS, as typed blocks. Optional on the wire so existing
+    # clients are untouched; `exercises` is a PROJECTION of it (project_exercises) and never
+    # an independent source of truth — the validator below refuses a prescription whose two
+    # views disagree. Absent on legacy stored content, which reads back exactly as before.
+    structure: "WorkoutStructure | None" = None
     why: PrescriptionExplanation | None = None
+
+    @model_validator(mode="after")
+    def _structure_and_exercises_agree(self) -> "WorkoutPrescription":
+        """One session, two views. They may never drift apart.
+
+        This is what makes ``structure`` canonical rather than a parallel copy: any code that
+        edits one and forgets the other fails here, at construction, instead of shipping a
+        session whose blocks say one thing and whose exercise list says another.
+        """
+        if self.structure is None:
+            return self
+        projected = project_exercises(self.structure)
+        if projected != self.exercises:
+            raise ValueError(
+                "structure and exercises disagree — exercises must be "
+                "project_exercises(structure); edit the structure, not the projection"
+            )
+        return self
+
+    def with_structure(self) -> "WorkoutPrescription":
+        """This prescription with its structure (re-)derived from its exercises.
+
+        The single seam through which 2.1 attaches structure, so there is exactly one writer.
+        """
+        return self.model_copy(update={"structure": structure_from_exercises(self.exercises)})
 
     def to_prescribed_content(self) -> dict[str, Any]:
         """Serialize for persistence into ``PlannedSession.prescribed_content``.
