@@ -249,3 +249,85 @@ def calculate_duration(structure: WorkoutStructure) -> DurationEstimate:
             known += block.transition_sec
 
     return DurationEstimate(known_seconds=known, unknown_components=unknown)
+
+
+# ---------------------------------------------------------------------------
+# Volume manipulation (phase 2.3)
+# ---------------------------------------------------------------------------
+
+
+def _scaled_count(count: int, modifier: float, *, floor: int = 1) -> int:
+    """Scale a countable quantity, never below ``floor``.
+
+    Rounds half away from zero, so 0.5 × 5 sets is 3 rather than 2: when a modifier lands
+    exactly between two integers, the athlete keeps the work. Python's ``round`` is
+    banker's rounding and would alternate, making the same modifier behave differently on
+    4 sets than on 5.
+    """
+    from decimal import ROUND_HALF_UP, Decimal
+
+    scaled = Decimal(str(count * modifier)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return max(floor, int(scaled))
+
+
+def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> WorkoutStructure:
+    """Scale the WORK a structure prescribes, leaving what kind of work it is alone.
+
+    Volume and intensity are separate prescription variables, so this moves volume only:
+
+    * **Strength** — working SETS change; reps, load, %e1RM, RPE/RIR and rest are untouched.
+      Changing reps would change the nature of the prescription: 5×3 to 5×8 is not "more
+      volume", it is a different session.
+    * **Interval** — repetitions change, not the work duration or the intensity target. The
+      interface exists now; nothing emits interval blocks until the running conversion, so
+      this path is dormant by design rather than untested.
+    * **Continuous** — accumulated work duration changes.
+    * **Warmup / cooldown** — never scaled. Preparation is not training volume.
+
+    ``modifier == 1.0`` returns the structure unchanged, exactly: same objects, same values.
+
+    NOT algebraically reversible. Sets are integers, so applying 0.5 and then 2.0 does not
+    promise the original: 5 → 3 → 6. Modifiers describe a prescription for one session, not a
+    group operation, and nothing may rely on round-tripping them.
+    """
+    if modifier == 1.0:
+        return list(structure)
+    if modifier < 0.0:
+        raise ValueError(f"volume modifier must be non-negative, got {modifier}")
+
+    out: WorkoutStructure = []
+    for block in structure:
+        if isinstance(block, StrengthBlock) and block.sets is not None:
+            out.append(block.model_copy(update={"sets": _scaled_count(block.sets, modifier)}))
+        elif isinstance(block, IntervalBlock) and block.repetitions is not None:
+            out.append(
+                block.model_copy(
+                    update={"repetitions": _scaled_count(block.repetitions, modifier)}
+                )
+            )
+        elif isinstance(block, ContinuousBlock) and block.duration_sec is not None:
+            out.append(
+                block.model_copy(
+                    update={"duration_sec": _scaled_count(block.duration_sec, modifier)}
+                )
+            )
+        else:
+            out.append(block)
+    return out
+
+
+def adjust_strength_sets(structure: WorkoutStructure, delta: int) -> WorkoutStructure:
+    """Add or remove working sets on every strength block, never below one.
+
+    The workload preference (easy/medium/hard) moves sets by a fixed step rather than a
+    ratio, so it is its own operation. Same rule as above: reps, load and effort targets are
+    left exactly as authored.
+    """
+    if delta == 0:
+        return list(structure)
+    return [
+        block.model_copy(update={"sets": max(1, block.sets + delta)})
+        if isinstance(block, StrengthBlock) and block.sets is not None
+        else block
+        for block in structure
+    ]

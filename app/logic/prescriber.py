@@ -65,9 +65,15 @@ from app.logic.planning_constraints import (
     apply_constraints,
 )
 from app.logic.prescription_finalize import finalize_prescription
-from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
+from app.schemas.prescription import (
+    ExercisePrescription,
+    WorkoutPrescription,
+    project_exercises,
+    structure_from_exercises,
+)
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
+from app.schemas.workout_structure import adjust_strength_sets
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -513,15 +519,20 @@ def _apply_intensity_sets(
         reason = f"no-set-targets:{domain}"
 
     if reason is None:
+        # Phase 2.3 authorship flip: the workload preference edits the STRUCTURE, and the
+        # exercise list is re-projected from it. Nothing downstream mutates `exercises`
+        # directly any more — structure is the workout, the list is a view of it.
         delta = intensity_set_delta(intensity)
-        moved = 0
-        for ex in rx.exercises:
-            if ex.sets is None:
-                continue
-            adjusted = max(1, ex.sets + delta)
-            if adjusted != ex.sets:
-                ex.sets = adjusted
-                moved += 1
+        before = rx.structure or structure_from_exercises(rx.exercises)
+        after = adjust_strength_sets(before, delta)
+        moved = sum(
+            1
+            for old_block, new_block in zip(before, after, strict=True)
+            if old_block != new_block
+        )
+        if moved:
+            rx.structure = after
+            rx.exercises = project_exercises(after)
         reason = None if moved else "sets-at-floor"
 
     if rx.why is None:
