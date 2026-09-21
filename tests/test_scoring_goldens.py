@@ -245,6 +245,22 @@ def test_every_eligibility_predicate_is_seen_both_ways() -> None:
     assert not unflipped, f"predicates the grid never flips: {unflipped}"
 
 
+def test_tissue_state_moves_only_the_tissue_penalty() -> None:
+    """Tissue load reaches a score through ``tissue_penalty`` alone — never eligibility or
+    any other component. So a change to how tissues are aggregated (phase 4.2b: mean → max)
+    can move only that component, the weighted total, and therefore the ranking.
+    """
+    loaded_tissues = STATES["multi_tissue"]
+    fresh_tissues = STATES["healthy_baseline"]  # same fatigue, capacity and habit
+    untouched = [c for c in COMPONENTS if c != "tissue_penalty"] + ["state_eligible"]
+    moved = []
+    for key, template in _templates():
+        loaded, fresh = _scored(template, loaded_tissues), _scored(template, fresh_tissues)
+        moved += [f"{key}.{c}" for c in untouched if loaded[c] != fresh[c]]
+
+    assert not moved, f"tissue state leaked into: {moved}"
+
+
 # ── the inventory, as executable facts ──────────────────────────────────────
 
 

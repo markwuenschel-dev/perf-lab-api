@@ -107,6 +107,31 @@ question, deliberately not addressed in the workout-family refactor (phase 4).
 
 ---
 
+## C4 · Tissue-penalty magnitude is a hand-set guess
+
+**The statement.** Every template's `tissue_penalty` is `max(named tissues) / 100 ·
+tissue_weight` (`app/logic/candidate_library.py`, `_score_from_spec`). Since phase 4.2b the
+`max` is uniform: the penalty reads the most-stressed tissue the session loads, for all 37
+templates. That settles WHICH tissue matters. It says nothing about HOW MUCH a loaded tissue
+should cost: `tissue_weight` (per template) and the global `tissue_penalty` score weight
+(`-0.08`, `app/logic/constraint_engine/candidate.py`, `DEFAULT_SCORE_WEIGHTS`) are fitted to
+nothing.
+
+**Why this is recorded rather than fixed.** 4.2b was a semantic consistency change — phase
+1.5 had already chosen weakest-link, and 13 hand-coded templates still averaged. It needed no
+outcome data because it claims no outcome: a knee at 90 beside a hip at 0 should read as 90,
+not a synthesized 45. Claiming the penalty's SIZE predicts injury, recovery or performance is
+a different claim, and it does need data.
+
+**Measured sensitivity (phase 4.2b, 2026-09-21).** Mean → max raised the penalty by up to
+0.375 on the characterization grid, moving a weighted total by at most 0.030 — enough to
+change the chosen session in close pools (3 of 84 grid rankings changed their top pick).
+
+**What a fit must resolve.** Per-template `tissue_weight` and the global weight, against
+logged sessions with a tissue outcome (pain reports, missed sessions, readiness drops).
+
+---
+
 ## C3 · Endurance has no density input at all
 
 **Observed (phase 1.2).** v1 reports `density_basis = not_applicable` for continuous and

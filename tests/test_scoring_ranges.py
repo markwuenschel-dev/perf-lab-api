@@ -201,15 +201,14 @@ def test_one_overloaded_tissue_is_not_diluted_by_healthy_ones() -> None:
     Averaging across axes would dilute it (90 with two healthy axes → 30); summing would
     inflate it past 1. The penalty tracks the most-stressed tissue the template names.
 
-    Holds for templates declaring ``tissue_aggregate="max"``. The 13 that still average were
-    migrated score-identically in 4.2; whether they move to "max" is decision 4.2b, and this
-    filter is the line that decision removes.
+    Every template, since phase 4.2b. Until then 13 hand-coded templates averaged, and this
+    test covered only the spec-scored ones.
     """
     state = _athlete(0.0, 0.0, 0.5)
     state.tissue_t.knee = 90.0
     for template in _every_template():
-        spec = getattr(template, "scoring", None)
-        if spec is None or spec.tissue_aggregate != "max" or "knee" not in spec.tissue_axes:
+        spec = template.scoring
+        if "knee" not in spec.tissue_axes:
             continue
         candidate = score_template(template, state, {})
         assert candidate.tissue_penalty == pytest.approx(0.9 * spec.tissue_weight, rel=1e-9), (

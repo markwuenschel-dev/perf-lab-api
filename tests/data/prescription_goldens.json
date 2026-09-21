@@ -7,7 +7,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.6,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "shoulder",
         "elbow"
@@ -55,7 +54,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "shoulder",
         "elbow"
@@ -97,7 +95,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "wrist",
         "shoulder",
@@ -146,7 +143,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.5,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "shoulder",
         "elbow",
@@ -197,7 +193,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.6,
-      "tissue_aggregate": "max",
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
@@ -235,7 +230,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "structural",
       "fatigue_weight": 0.3,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "ankle",
         "hip"
@@ -277,7 +271,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.5,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "lumbar",
         "knee"
@@ -319,7 +312,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "grip",
       "fatigue_weight": 0.9,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "finger",
         "elbow"
@@ -360,7 +352,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "grip",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "finger",
         "elbow"
@@ -395,7 +386,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
@@ -412,7 +402,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "wrist",
         "shoulder",
@@ -449,7 +438,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "wrist",
         "shoulder",
@@ -492,7 +480,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "knee",
         "hip"
@@ -534,7 +521,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.4,
-      "tissue_aggregate": "max",
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
@@ -551,7 +537,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.6,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "shoulder",
         "lumbar"
@@ -590,7 +575,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.8,
-      "tissue_aggregate": "max",
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
@@ -610,7 +594,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "knee"
       ],
@@ -651,7 +634,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.6,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "lumbar"
       ],
@@ -673,7 +655,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "knee",
         "ankle"
@@ -708,7 +689,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.5,
-      "tissue_aggregate": "max",
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
@@ -725,7 +705,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.8,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "knee",
         "ankle",
@@ -765,7 +744,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.6,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "lumbar"
       ],
@@ -816,7 +794,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "lumbar",
         "knee"
@@ -874,7 +851,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "lumbar",
         "knee"
@@ -932,7 +908,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "ankle",
         "knee"
@@ -964,7 +939,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "ankle",
         "knee"
@@ -996,7 +970,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "ankle",
         "knee"
@@ -1035,7 +1008,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "ankle",
         "knee"
@@ -1065,7 +1037,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.8,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "ankle",
         "hip"
@@ -1098,7 +1069,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "mean",
       "tissue_axes": [
         "ankle",
         "hip"
@@ -1133,7 +1103,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "lumbar",
         "knee"
@@ -1169,7 +1138,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.5,
-      "tissue_aggregate": "max",
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
@@ -1189,7 +1157,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.5,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "lumbar"
       ],
@@ -1208,7 +1175,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.7,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "hip"
       ],
@@ -1236,7 +1202,6 @@
       ],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "lumbar"
       ],
@@ -1258,7 +1223,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "wrist",
         "shoulder"
@@ -1293,7 +1257,6 @@
       "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
-      "tissue_aggregate": "max",
       "tissue_axes": [
         "wrist",
         "shoulder"

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
 
 from app.domain.vectors import FatigueState, TissueState
 from app.logic.constraint_engine.candidate import (
@@ -44,8 +43,8 @@ class ScoringSpec:
 
     fatigue_penalty = fatigue_f.<fatigue_axis> / 100 * fatigue_weight, or, when
                       ``fatigue_axes`` names several, their weighted MEAN / 100 * fatigue_weight
-    tissue_penalty  = aggregate(tissue_t.<tissue_axes>) / 100 * tissue_weight, where the
-                      aggregate is the MOST-STRESSED tissue ("max") or the "mean"
+    tissue_penalty  = max(tissue_t.<tissue_axes>) / 100 * tissue_weight
+                      (the MOST-STRESSED tissue — see _score_from_spec)
     habit_bonus     = habit_fixed, else habit_strength * habit_mult
     weak_point_coverage = _weak_point_coverage(tags) if covers_weak_points else 0
 
@@ -62,11 +61,9 @@ class ScoringSpec:
     #: ``(cns + 0.5·structural) / 150`` — the form the hand-coded scorers wrote out.
     fatigue_axes: tuple[tuple[str, float], ...] = ()
     tissue_axes: tuple[str, ...] = ()
+    #: UNCALIBRATED (phase 8, C4). ``max`` decides WHICH tissue the penalty reads; this
+    #: weight is a hand-set guess at how much that tissue's load should cost, fitted to nothing.
     tissue_weight: float = 1.0
-    #: "max" is the weakest-link rule (phase 1.5): one overloaded tissue is not diluted by
-    #: healthy ones. "mean" is what the hand-coded scorers did, preserved exactly by the 4.2
-    #: migration; whether those templates move to "max" is decided separately (4.2b).
-    tissue_aggregate: Literal["max", "mean"] = "max"
     habit_mult: float = 1.0
     habit_fixed: float | None = None
     covers_weak_points: bool = False
@@ -76,7 +73,7 @@ class ScoringSpec:
 ALL_FATIGUE_AXES: tuple[tuple[str, float], ...] = tuple(
     (axis, 1.0) for axis in FatigueState.KEYS
 )
-#: Every tissue axis — with the default "max", ``max_tissue_load`` expressed as a spec.
+#: Every tissue axis — ``max_tissue_load`` expressed as a spec.
 ALL_TISSUE_AXES: tuple[str, ...] = tuple(TissueState.KEYS)
 
 
@@ -270,7 +267,7 @@ HYPERTROPHY_TEMPLATES: list[CandidateTemplate] = [
         domain="hypertrophy",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.muscular / 100.0),
-            fatigue_axis="muscular", tissue_axes=("knee", "hip"), tissue_aggregate="mean",
+            fatigue_axis="muscular", tissue_axes=("knee", "hip"),
             covers_weak_points=True,
         ),
         exercise_slots=[
@@ -336,7 +333,7 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
         domain="power",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
-            tissue_axes=("knee", "ankle"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("knee", "ankle"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="5", reps="3", movement_pattern="hinge", modality="Power", load_type="barbell"),
@@ -470,7 +467,7 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
             fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
-            tissue_axes=("lumbar", "knee"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("lumbar", "knee"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
@@ -495,7 +492,7 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
             fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
-            tissue_axes=("lumbar", "knee"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("lumbar", "knee"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
@@ -606,7 +603,7 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("ankle", "knee"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
@@ -626,7 +623,7 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("ankle", "knee"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
@@ -646,7 +643,7 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * 0.9,
             fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), tissue_aggregate="mean", habit_mult=0.7,
+            tissue_axes=("ankle", "knee"), habit_mult=0.7,
             covers_weak_points=True,
         ),
         goal_eligible=lambda g: g in ("HalfMarathon", "FullMarathon"),
@@ -663,7 +660,7 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * 0.9,
             fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), tissue_aggregate="mean", habit_mult=0.7,
+            tissue_axes=("ankle", "knee"), habit_mult=0.7,
             covers_weak_points=True,
         ),
         kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
@@ -683,7 +680,7 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
         domain="running",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
-            tissue_axes=("ankle", "hip"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("ankle", "hip"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="3", reps="30m", movement_pattern="run", modality="Power"),
@@ -730,7 +727,7 @@ GYMNASTICS_TEMPLATES: list[CandidateTemplate] = [
         domain="gymnastics",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
-            tissue_axes=("wrist", "shoulder", "elbow"), tissue_aggregate="mean",
+            tissue_axes=("wrist", "shoulder", "elbow"),
             covers_weak_points=True,
         ),
         exercise_slots=[
@@ -781,7 +778,7 @@ CALISTHENICS_TEMPLATES: list[CandidateTemplate] = [
         domain="calisthenics",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
-            tissue_axes=("wrist", "shoulder", "elbow"), tissue_aggregate="mean",
+            tissue_axes=("wrist", "shoulder", "elbow"),
             covers_weak_points=True,
         ),
     ),
@@ -797,7 +794,7 @@ CALISTHENICS_TEMPLATES: list[CandidateTemplate] = [
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axes=(("cns", 1.0), ("grip", 0.5)),
-            tissue_axes=("shoulder", "elbow"), tissue_aggregate="mean", covers_weak_points=True,
+            tissue_axes=("shoulder", "elbow"), covers_weak_points=True,
         ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="6-10", movement_pattern="pull_vertical",
@@ -847,7 +844,7 @@ GRIP_TEMPLATES: list[CandidateTemplate] = [
         domain="grip",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.grip / 100.0),
-            fatigue_axis="grip", tissue_axes=("finger", "elbow"), tissue_aggregate="mean",
+            fatigue_axis="grip", tissue_axes=("finger", "elbow"),
             covers_weak_points=True,
         ),
         exercise_slots=[
@@ -1069,19 +1066,16 @@ def _score_from_spec(
     else:
         fatigue_load = getattr(state.fatigue_f, spec.fatigue_axis)
     fatigue_penalty = fatigue_load / 100.0 * spec.fatigue_weight
-    tissues = [getattr(state.tissue_t, a) for a in spec.tissue_axes]
-    # Weakest link ("max"): the most-stressed tissue the template names. The SUM used to be
-    # divided by 100 rather than 100·len(axes), so a three-axis template's "0-1" penalty
-    # reached 1.8 — listing more tissues multiplied the penalty. Averaging fixes the range but
-    # dilutes a single overloaded tissue with healthy ones (a knee at 90 beside two axes at 0
-    # reads as 30); the "mean" templates still do, pending 4.2b.
-    if not tissues:
-        tissue_load = 0.0
-    elif spec.tissue_aggregate == "mean":
-        tissue_load = sum(tissues) / len(tissues)
-    else:
-        tissue_load = max(tissues)
-    tissue_penalty = tissue_load / 100.0 * spec.tissue_weight
+    tissue_penalty = (
+        # Weakest link: the most-stressed tissue the template names. The SUM used to be divided
+        # by 100 rather than 100·len(axes), so a three-axis template's "0-1" penalty reached
+        # 1.8 — listing more tissues multiplied the penalty. Averaging fixes the range but
+        # dilutes a single overloaded tissue with healthy ones (a knee at 90 beside two axes at
+        # 0 reads as 30), which is what the 13 hand-coded templates did until phase 4.2b.
+        max((getattr(state.tissue_t, a) for a in spec.tissue_axes), default=0.0)
+        / 100.0
+        * spec.tissue_weight
+    )
     habit_bonus = (
         spec.habit_fixed
         if spec.habit_fixed is not None

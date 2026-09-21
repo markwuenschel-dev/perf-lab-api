@@ -45,7 +45,6 @@ def _scoring_shape(template) -> dict | None:
         "fatigue_axes": [list(a) for a in getattr(spec, "fatigue_axes", ()) or ()],
         "fatigue_weight": getattr(spec, "fatigue_weight", None),
         "tissue_axes": list(getattr(spec, "tissue_axes", ()) or ()),
-        "tissue_aggregate": getattr(spec, "tissue_aggregate", None),
         "tissue_weight": getattr(spec, "tissue_weight", None),
     }
 
