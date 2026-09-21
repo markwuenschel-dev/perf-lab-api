@@ -42,6 +42,7 @@ def _scoring_shape(template) -> dict | None:
         return None
     return {
         "fatigue_axis": getattr(spec, "fatigue_axis", None),
+        "fatigue_axes": [list(a) for a in getattr(spec, "fatigue_axes", ()) or ()],
         "fatigue_weight": getattr(spec, "fatigue_weight", None),
         "tissue_axes": list(getattr(spec, "tissue_axes", ()) or ()),
         "tissue_weight": getattr(spec, "tissue_weight", None),
@@ -96,8 +97,8 @@ def test_the_corpus_covers_every_domain_the_engine_prescribes_for() -> None:
 
 
 @pytest.mark.xfail(
-    reason="phases 4-6: 13 of 39 templates declare no exercise slots (e.g. run_threshold, "
-    "candidate_library.py:543), so the prescriber falls back to the generic equipment map — "
+    reason="phases 4-6: 12 of 37 templates declare no exercise slots (e.g. run_threshold, "
+    "candidate_library.py:544; the count is pinned by test_scoring_goldens.py), so the prescriber falls back to the generic equipment map — "
     "a Running/Threshold day prescribes Air Squat, Push-up, Lunges",
     strict=True,
 )

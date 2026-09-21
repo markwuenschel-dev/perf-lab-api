@@ -4,6 +4,7 @@
     "focus": "Push-up / Pull-up / Step-Up Circuit \u2014 high-rep bodyweight conditioning",
     "goal_alignment": 0.8,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.6,
       "tissue_axes": [
@@ -40,7 +41,25 @@
     "duration_min": 50,
     "focus": "Pull-ups / Dips / Push-up Variations + Skill Progressions",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "cns",
+          1.0
+        ],
+        [
+          "grip",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "shoulder",
+        "elbow"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 3,
     "slots": [
       {
@@ -72,7 +91,17 @@
     "duration_min": 55,
     "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "wrist",
+        "shoulder",
+        "elbow"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [
@@ -85,7 +114,47 @@
     "duration_min": 45,
     "focus": "Full-Body Circuit @ RPE 6\u20137 \u2014 Squat / Pull / Push / Carry",
     "goal_alignment": 0.9,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "cns",
+          1.0
+        ],
+        [
+          "muscular",
+          1.0
+        ],
+        [
+          "metabolic",
+          1.0
+        ],
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ],
+        [
+          "grip",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.5,
+      "tissue_axes": [
+        "shoulder",
+        "elbow",
+        "wrist",
+        "lumbar",
+        "hip",
+        "knee",
+        "ankle",
+        "finger"
+      ],
+      "tissue_weight": 0.3
+    },
     "slot_count": 4,
     "slots": [
       {
@@ -121,6 +190,7 @@
     "focus": "Bike Intervals + Row Intervals + Plank Circuit \u2014 mixed aerobic engine work",
     "goal_alignment": 0.85,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.6,
       "tissue_axes": [],
@@ -157,6 +227,7 @@
     "focus": "Hip Mobility Flow + Single-Leg Control + Calf/Ankle Work",
     "goal_alignment": 0.65,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "structural",
       "fatigue_weight": 0.3,
       "tissue_axes": [
@@ -197,6 +268,7 @@
     "focus": "Back Squat 3\u00d75 + Romanian Deadlift 3\u00d75 + Bench Press 3\u00d75 \u2014 loaded basics",
     "goal_alignment": 0.85,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.5,
       "tissue_axes": [
@@ -237,6 +309,7 @@
     "focus": "Gripper Crush Work + Pinch Block Hold + Thick-Bar Deadlift \u2014 max grip strength",
     "goal_alignment": 0.95,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "grip",
       "fatigue_weight": 0.9,
       "tissue_axes": [
@@ -275,7 +348,16 @@
     "duration_min": 35,
     "focus": "Farmer Carries + Dead Hangs + Pinch Block Hold + Crush Work @ RPE 7\u20138",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "grip",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "finger",
+        "elbow"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 2,
     "slots": [
       {
@@ -300,7 +382,13 @@
     "duration_min": 20,
     "focus": "Light Wrist Mobility + Finger Flexor Rehab Circles",
     "goal_alignment": 0.5,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.0,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [],
@@ -310,7 +398,17 @@
     "duration_min": 55,
     "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "wrist",
+        "shoulder",
+        "elbow"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 2,
     "slots": [
       {
@@ -337,6 +435,7 @@
     "focus": "Weighted Ring Dips + Chest-to-Bar Pull-Ups + Strict Toes-to-Bar",
     "goal_alignment": 0.95,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
       "tissue_axes": [
@@ -377,7 +476,16 @@
     "duration_min": 75,
     "focus": "Leg Press 4\u00d712 + Hack Squat 3\u00d715 + Leg Curl 3\u00d712 near failure",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 3,
     "slots": [
       {
@@ -409,7 +517,13 @@
     "duration_min": 45,
     "focus": "Machine Isolation 3\u00d710 @ RPE 7 \u2014 upper / lower split",
     "goal_alignment": 0.7,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.4,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [],
@@ -420,6 +534,7 @@
     "focus": "Bench Press 4\u00d710 + Barbell Row 4\u00d710 + Dumbbell Shoulder Press 3\u00d712 near failure",
     "goal_alignment": 0.9,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.6,
       "tissue_axes": [
@@ -456,7 +571,13 @@
     "duration_min": 45,
     "focus": "Zone 2 Bike 20 min + Short Threshold Intervals (4\u00d72 min @ RPE 8)",
     "goal_alignment": 0.8,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "metabolic",
+      "fatigue_weight": 0.8,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [
@@ -469,7 +590,15 @@
     "duration_min": 40,
     "focus": "Row / Bike / KB Swings \u2014 AMRAP intervals @ sustainable pace",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "metabolic",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee"
+      ],
+      "tissue_weight": 0.5
+    },
     "slot_count": 3,
     "slots": [
       {
@@ -501,7 +630,15 @@
     "duration_min": 45,
     "focus": "Compound lifts in circuit \u2014 moderate load, short rest (e.g. 5\u00d78 @ RPE 7)",
     "goal_alignment": 0.9,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.6,
+      "tissue_axes": [
+        "lumbar"
+      ],
+      "tissue_weight": 0.4
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [
@@ -514,7 +651,16 @@
     "duration_min": 50,
     "focus": "Hang Power Clean 5\u00d73 @ RPE 6\u20137 + Box Jumps 4\u00d74 (full recovery)",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "ankle"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 2,
     "slots": [
       {
@@ -539,7 +685,13 @@
     "duration_min": 30,
     "focus": "Jumps / Throws (Low Volume, Long Rest) @ RPE 6",
     "goal_alignment": 0.7,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.5,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [],
@@ -550,6 +702,7 @@
     "focus": "Lateral Bounds + Broad Jumps + Rotational Med Ball Work \u2014 multi-directional plyometrics",
     "goal_alignment": 0.85,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.8,
       "tissue_axes": [
@@ -587,7 +740,15 @@
     "duration_min": 65,
     "focus": "Paused Squat 3\u00d74 + Close-Grip Bench + Romanian Deadlift 3\u00d76",
     "goal_alignment": 0.8,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.6,
+      "tissue_axes": [
+        "lumbar"
+      ],
+      "tissue_weight": 0.5
+    },
     "slot_count": 3,
     "slots": [
       {
@@ -620,7 +781,25 @@
     "duration_min": 80,
     "focus": "Squat / Bench / Deadlift \u2014 top sets + 3\u20134 back-off sets",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "cns",
+          1.0
+        ],
+        [
+          "structural",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "lumbar",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 4,
     "slots": [
       {
@@ -659,7 +838,25 @@
     "duration_min": 80,
     "focus": "Squat / Bench / Deadlift \u2014 top sets + 3\u20134 back-off sets",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "cns",
+          1.0
+        ],
+        [
+          "structural",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "lumbar",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 4,
     "slots": [
       {
@@ -698,7 +895,25 @@
     "duration_min": 50,
     "focus": "Tempo Run 20 min @ RPE 7\u20138 + Progression Miles",
     "goal_alignment": 0.9,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "ankle",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [
@@ -711,7 +926,25 @@
     "duration_min": 50,
     "focus": "4\u00d75 min @ threshold pace (RPE 8) / 2 min easy recovery",
     "goal_alignment": 0.9,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "ankle",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [
@@ -724,7 +957,25 @@
     "duration_min": 45,
     "focus": "Easy\u2013Moderate Run @ Zone 2 (conversational pace)",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "ankle",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 1,
     "slots": [
       {
@@ -744,7 +995,25 @@
     "duration_min": 45,
     "focus": "Easy\u2013Moderate Run @ Zone 2 (conversational pace)",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "ankle",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 1,
     "slots": [
       {
@@ -765,6 +1034,7 @@
     "focus": "6\u00d7300m @ ~90% Effort (Full Recovery) + Bounding Drill Primer",
     "goal_alignment": 0.9,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "metabolic",
       "fatigue_weight": 0.8,
       "tissue_axes": [
@@ -795,7 +1065,16 @@
     "duration_min": 35,
     "focus": "Acceleration 3\u00d730 m + Max-Velocity Flys 4\u00d720 m (full recovery)",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "ankle",
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 2,
     "slots": [
       {
@@ -821,6 +1100,7 @@
     "focus": "Back Squat 5\u00d73 @ RPE 8 + Romanian Deadlift 3\u00d75",
     "goal_alignment": 1.0,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 1.0,
       "tissue_axes": [
@@ -855,6 +1135,7 @@
     "focus": "Goblet Squats 3\u00d78 (Tempo 3-1-1) + Box Squat Technique",
     "goal_alignment": 0.75,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "cns",
       "fatigue_weight": 0.5,
       "tissue_axes": [],
@@ -873,6 +1154,7 @@
     "focus": "Box Squats + Trap Bar Deadlift + Medicine Ball Slams",
     "goal_alignment": 0.7,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.5,
       "tissue_axes": [
@@ -890,6 +1172,7 @@
     "focus": "Front Squat 4\u00d76 @ RPE 6\u20137 + Accessory Pull",
     "goal_alignment": 0.8,
     "scoring": {
+      "fatigue_axes": [],
       "fatigue_axis": "muscular",
       "fatigue_weight": 0.7,
       "tissue_axes": [
@@ -906,7 +1189,24 @@
     "duration_min": 55,
     "focus": "Snatch Pull + Deadlift from Deficit 4\u00d74 @ RPE 7",
     "goal_alignment": 0.75,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "muscular",
+          1.0
+        ],
+        [
+          "cns",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "lumbar"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 0,
     "slots": [],
     "tags": [
@@ -919,7 +1219,16 @@
     "duration_min": 65,
     "focus": "Clean & Jerk Drills + Hang Variations @ RPE 6\u20137",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "wrist",
+        "shoulder"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 2,
     "slots": [
       {
@@ -944,7 +1253,16 @@
     "duration_min": 65,
     "focus": "Snatch Complex + Power Snatch 5\u00d72 @ RPE 6\u20137",
     "goal_alignment": 1.0,
-    "scoring": null,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "wrist",
+        "shoulder"
+      ],
+      "tissue_weight": 1.0
+    },
     "slot_count": 2,
     "slots": [
       {

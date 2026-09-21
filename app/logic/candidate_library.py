@@ -20,10 +20,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from app.domain.vectors import FatigueState, TissueState
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
-    max_tissue_load,
-    mean_fatigue,
     overall_readiness,
 )
 from app.logic.exercise_slot import ExerciseSlot
@@ -42,21 +41,40 @@ class ScoringSpec:
     mirrors the eligibility predicates already carried on CandidateTemplate, so
     a template's content, eligibility, and scoring all live in one place.
 
-    fatigue_penalty = fatigue_f.<fatigue_axis> / 100 * fatigue_weight
+    fatigue_penalty = fatigue_f.<fatigue_axis> / 100 * fatigue_weight, or, when
+                      ``fatigue_axes`` names several, their weighted MEAN / 100 * fatigue_weight
     tissue_penalty  = max(tissue_t.<tissue_axes>) / 100 * tissue_weight
                       (the MOST-STRESSED tissue — see _score_from_spec)
     habit_bonus     = habit_fixed, else habit_strength * habit_mult
     weak_point_coverage = _weak_point_coverage(tags) if covers_weak_points else 0
+
+    Every template carries one (phase 4.2). The per-domain scorers it replaced picked a formula
+    by matching ``branch_id`` strings and scored any unrecognised template with whichever
+    formula happened to be written last; a spec makes the formula part of the template.
     """
 
     state_fit: Callable[[UnifiedStateVector, float], float]
     fatigue_axis: str = "cns"
     fatigue_weight: float = 1.0
+    #: Several fatigue axes with relative weights; when set, replaces ``fatigue_axis``. The
+    #: weights are normalised, so ``(("cns", 1.0), ("structural", 0.5))`` is
+    #: ``(cns + 0.5·structural) / 150`` — the form the hand-coded scorers wrote out.
+    fatigue_axes: tuple[tuple[str, float], ...] = ()
     tissue_axes: tuple[str, ...] = ()
+    #: UNCALIBRATED (phase 8, C4). ``max`` decides WHICH tissue the penalty reads; this
+    #: weight is a hand-set guess at how much that tissue's load should cost, fitted to nothing.
     tissue_weight: float = 1.0
     habit_mult: float = 1.0
     habit_fixed: float | None = None
     covers_weak_points: bool = False
+
+
+#: Every fatigue axis at equal weight — ``mean_fatigue`` expressed as a spec.
+ALL_FATIGUE_AXES: tuple[tuple[str, float], ...] = tuple(
+    (axis, 1.0) for axis in FatigueState.KEYS
+)
+#: Every tissue axis — ``max_tissue_load`` expressed as a spec.
+ALL_TISSUE_AXES: tuple[str, ...] = tuple(TissueState.KEYS)
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +94,10 @@ class CandidateTemplate:
         Movement/capacity tags used by _weak_point_coverage to match against
         flagged athlete deficits.
     domain :
-        Used by score_template() to dispatch to the right per-domain scorer.
+        The canonical domain the template belongs to (see app.logic.domain_vocab).
+    scoring :
+        How the template scores against the current state. Required, and keyword-only, so a
+        template cannot exist without saying how it is scored.
     exercise_slots :
         What each movement in this session must BE, not which one it is
         (ADR-0016). Each slot states requirements — movement pattern, load
@@ -107,9 +128,8 @@ class CandidateTemplate:
     kpi_eligible: Callable[[dict[str, float]], bool] | None = None
     state_eligible: Callable[[UnifiedStateVector], bool] | None = None
     goal_eligible: Callable[[str], bool] | None = None
-    # Dynamic scoring. When set, score_template() uses this instead of the
-    # per-domain scorer dispatch. Domains are migrated onto it incrementally.
-    scoring: ScoringSpec | None = None
+    # Dynamic scoring — required. See ScoringSpec.
+    scoring: ScoringSpec = field(kw_only=True)
     # Requirement-based movement slots — see class docstring.
     exercise_slots: list[ExerciseSlot] = field(default_factory=lambda: [])
 
@@ -245,6 +265,11 @@ HYPERTROPHY_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["anterior_chain", "posterior_chain"],
         domain="hypertrophy",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.muscular / 100.0),
+            fatigue_axis="muscular", tissue_axes=("knee", "hip"),
+            covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="12", movement_pattern="squat", modality="Hypertrophy"),
             ExerciseSlot(sets="3", reps="15", movement_pattern="squat", modality="Hypertrophy"),
@@ -260,6 +285,10 @@ HYPERTROPHY_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.7,
         tags=[],
         domain="hypertrophy",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axis="muscular", fatigue_weight=0.4, habit_mult=0.5,
+        ),
     ),
     CandidateTemplate(
         type="Upper Body Hypertrophy",
@@ -302,6 +331,10 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["hip_hinge"],
         domain="power",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("knee", "ankle"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="5", reps="3", movement_pattern="hinge", modality="Power", load_type="barbell"),
             ExerciseSlot(sets="4", reps="4", movement_pattern="jump", modality="Power"),
@@ -316,6 +349,10 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.7,
         tags=[],
         domain="power",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: max(0.4, 1.0 - s.fatigue_f.cns / 100.0),
+            fatigue_weight=0.5, habit_mult=0.6,
+        ),
     ),
     CandidateTemplate(
         type="Reactive Power",
@@ -357,6 +394,10 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["olympic_lifting"],
         domain="weightlifting",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("wrist", "shoulder"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="5", reps="2", modality="Power", load_type="barbell",
                          movement_pattern="mixed", sport_domain="weightlifting",
@@ -379,6 +420,10 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["olympic_lifting"],
         domain="weightlifting",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("wrist", "shoulder"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="5", reps="2", modality="Power", load_type="barbell",
                          movement_pattern="mixed", sport_domain="weightlifting",
@@ -400,6 +445,11 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.75,
         tags=["hip_hinge", "posterior_chain"],
         domain="weightlifting",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axes=(("muscular", 1.0), ("cns", 0.5)), tissue_axes=("lumbar",),
+            habit_mult=0.5, covers_weak_points=True,
+        ),
     ),
 ]
 
@@ -414,6 +464,11 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["squat_pattern", "hip_hinge", "push_horizontal"],
         domain="powerlifting",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
+            fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
+            tissue_axes=("lumbar", "knee"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
             ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_bench"),
@@ -434,6 +489,11 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["squat_pattern", "hip_hinge", "push_horizontal"],
         domain="powerlifting",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
+            fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
+            tissue_axes=("lumbar", "knee"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
             ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_bench"),
@@ -454,6 +514,11 @@ POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.8,
         tags=["squat_pattern", "push_horizontal", "hip_hinge"],
         domain="powerlifting",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axis="muscular", fatigue_weight=0.6,
+            tissue_axes=("lumbar",), tissue_weight=0.5, habit_mult=0.7, covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="3", reps="4", movement_pattern="squat", load_type="barbell", modality="Strength"),
             ExerciseSlot(sets="3", reps="6", movement_pattern="push_horizontal", load_type="barbell"),
@@ -473,6 +538,11 @@ METCON_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["work_capacity", "aerobic_base"],
         domain="mixed",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axis="metabolic", tissue_axes=("knee",), tissue_weight=0.5,
+            covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="5", reps="2 min @ sustainable pace", movement_pattern="row",
                          modality="Conditioning"),
@@ -490,6 +560,11 @@ METCON_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.8,
         tags=["aerobic_base", "lactate_threshold"],
         domain="mixed",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: 1.0 - s.fatigue_f.metabolic / 100.0,
+            fatigue_axis="metabolic", fatigue_weight=0.8, habit_mult=0.6,
+            covers_weak_points=True,
+        ),
     ),
 ]
 
@@ -505,6 +580,11 @@ MIXED_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.9,
         tags=["work_capacity", "max_strength"],
         domain="mixed",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axis="muscular", fatigue_weight=0.6,
+            tissue_axes=("lumbar",), tissue_weight=0.4, habit_mult=0.7, covers_weak_points=True,
+        ),
     ),
 ]
 
@@ -520,6 +600,11 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["aerobic_base", "running_economy"],
         domain="running",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+            tissue_axes=("ankle", "knee"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
                          modality="Running"),
@@ -535,6 +620,11 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["aerobic_base", "running_economy"],
         domain="running",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+            tissue_axes=("ankle", "knee"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
                          modality="Running"),
@@ -550,6 +640,12 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.9,
         tags=["lactate_threshold", "aerobic_base"],
         domain="running",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * 0.9,
+            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+            tissue_axes=("ankle", "knee"), habit_mult=0.7,
+            covers_weak_points=True,
+        ),
         goal_eligible=lambda g: g in ("HalfMarathon", "FullMarathon"),
     ),
     CandidateTemplate(
@@ -561,6 +657,12 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.9,
         tags=["lactate_threshold", "aerobic_base"],
         domain="running",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * 0.9,
+            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+            tissue_axes=("ankle", "knee"), habit_mult=0.7,
+            covers_weak_points=True,
+        ),
         kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
         goal_eligible=lambda g: g not in ("HalfMarathon", "FullMarathon"),
     ),
@@ -576,6 +678,10 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["running_economy"],
         domain="running",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("ankle", "hip"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="3", reps="30m", movement_pattern="run", modality="Power"),
             ExerciseSlot(sets="4", reps="20m", movement_pattern="run", modality="Power"),
@@ -619,6 +725,11 @@ GYMNASTICS_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["gymnastics_skill", "overhead_stability"],
         domain="gymnastics",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("wrist", "shoulder", "elbow"),
+            covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="20-30s", movement_pattern="push_vertical",
                          modality="Calisthenics", load_type="time"),
@@ -665,6 +776,11 @@ CALISTHENICS_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["gymnastics_skill", "overhead_stability"],
         domain="calisthenics",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("wrist", "shoulder", "elbow"),
+            covers_weak_points=True,
+        ),
     ),
     CandidateTemplate(
         type="Bodyweight Strength",
@@ -675,6 +791,11 @@ CALISTHENICS_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["pull_vertical", "push_vertical"],
         domain="calisthenics",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axes=(("cns", 1.0), ("grip", 0.5)),
+            tissue_axes=("shoulder", "elbow"), covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="6-10", movement_pattern="pull_vertical",
                          modality="Calisthenics", skill_target=0.50),
@@ -721,6 +842,11 @@ GRIP_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=1.0,
         tags=["grip"],
         domain="grip",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.grip / 100.0),
+            fatigue_axis="grip", tissue_axes=("finger", "elbow"),
+            covers_weak_points=True,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="4", reps="40m", movement_pattern="carry", prefer_tags=("grip",)),
             ExerciseSlot(sets="4", reps="30-45s", movement_pattern="pull_vertical", load_type="time"),
@@ -735,6 +861,12 @@ GRIP_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.5,
         tags=[],
         domain="grip",
+        scoring=ScoringSpec(
+            # Clamped to the declared 0-1 range; the +0.3 recovery preference used to push
+            # it to 1.3 on a fresh grip, outscoring every correctly-bounded template.
+            state_fit=lambda s, r: min(1.0, 1.0 - s.fatigue_f.grip / 100.0 + 0.3),
+            fatigue_weight=0.0, habit_fixed=0.4,
+        ),
     ),
     CandidateTemplate(
         type="Grip Strength",
@@ -775,6 +907,11 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.9,
         tags=[],
         domain="general",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axes=ALL_FATIGUE_AXES, fatigue_weight=0.5,
+            tissue_axes=ALL_TISSUE_AXES, tissue_weight=0.3,
+        ),
         exercise_slots=[
             ExerciseSlot(sets="3", reps="10", movement_pattern="squat", max_skill_demand=0.45, skill_target=0.30),
             ExerciseSlot(sets="3", reps="8", movement_pattern="pull_vertical",
@@ -912,7 +1049,7 @@ def get_templates(
 
 
 # ---------------------------------------------------------------------------
-# Per-domain scoring functions
+# Scoring
 # ---------------------------------------------------------------------------
 
 def _score_from_spec(
@@ -921,16 +1058,20 @@ def _score_from_spec(
     kpi: dict[str, float],
     r: float,
 ) -> SessionCandidate:
-    """Generic scorer driven by the template's ScoringSpec (data-driven path)."""
+    """The one scorer: every template's formula is its ScoringSpec."""
     spec = t.scoring
-    assert spec is not None  # only called when scoring is set
-    fatigue_penalty = getattr(state.fatigue_f, spec.fatigue_axis) / 100.0 * spec.fatigue_weight
+    if spec.fatigue_axes:
+        weighted = sum(getattr(state.fatigue_f, a) * w for a, w in spec.fatigue_axes)
+        fatigue_load = weighted / sum(w for _, w in spec.fatigue_axes)
+    else:
+        fatigue_load = getattr(state.fatigue_f, spec.fatigue_axis)
+    fatigue_penalty = fatigue_load / 100.0 * spec.fatigue_weight
     tissue_penalty = (
         # Weakest link: the most-stressed tissue the template names. The SUM used to be divided
         # by 100 rather than 100·len(axes), so a three-axis template's "0-1" penalty reached
-        # 1.8 — listing more tissues multiplied the penalty. Averaging would fix the range but
-        # dilute a single overloaded tissue with healthy ones (a knee at 90 beside two axes at
-        # 0 would read as 30). The most-stressed tissue is what limits the session.
+        # 1.8 — listing more tissues multiplied the penalty. Averaging fixes the range but
+        # dilutes a single overloaded tissue with healthy ones (a knee at 90 beside two axes at
+        # 0 reads as 30), which is what the 13 hand-coded templates did until phase 4.2b.
         max((getattr(state.tissue_t, a) for a in spec.tissue_axes), default=0.0)
         / 100.0
         * spec.tissue_weight
@@ -953,356 +1094,6 @@ def _score_from_spec(
     )
 
 
-def _score_hypertrophy(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id == "hyp_high_vol":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (1.0 - f.muscular / 100.0),
-            fatigue_penalty=f.muscular / 100.0,
-            tissue_penalty=(state.tissue_t.knee + state.tissue_t.hip) / 200.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    # hyp_maintenance
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r,
-        fatigue_penalty=f.muscular / 100.0 * 0.4,
-        tissue_penalty=0.0,
-        habit_bonus=habit * 0.5,
-    )
-
-
-def _score_power(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id == "power_main":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=(state.tissue_t.knee + state.tissue_t.ankle) / 200.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    # power_neural_prime
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=max(0.4, 1.0 - f.cns / 100.0),
-        fatigue_penalty=f.cns / 100.0 * 0.5,
-        tissue_penalty=0.0,
-        habit_bonus=habit * 0.6,
-    )
-
-
-def _score_weightlifting(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id in ("wl_technique_snatch", "wl_technique_cj"):
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            # Weakest link, like every spec-scored template. Was wrist/100 + shoulder/100,
-            # which reached 2.0 on a 0-1 axis (its siblings divide by 200).
-            tissue_penalty=max(state.tissue_t.wrist, state.tissue_t.shoulder) / 100.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    # wl_strength_pulls
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r,
-        fatigue_penalty=(f.muscular + f.cns * 0.5) / 150.0,
-        tissue_penalty=state.tissue_t.lumbar / 100.0,
-        weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-        habit_bonus=habit * 0.5,
-    )
-
-
-def _score_powerlifting(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id in ("pl_sbd_main", "pl_sbd_main_volume"):
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (1.0 - f.cns / 100.0 * 0.5),
-            fatigue_penalty=(f.cns + f.structural * 0.5) / 150.0,
-            tissue_penalty=(state.tissue_t.lumbar + state.tissue_t.knee) / 200.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    # pl_accessory
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r,
-        fatigue_penalty=f.muscular / 100.0 * 0.6,
-        tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.5,
-        weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-        habit_bonus=habit * 0.7,
-    )
-
-
-def _score_mixed(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id == "metcon_mixed_modal":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r,
-            fatigue_penalty=f.metabolic / 100.0,
-            tissue_penalty=state.tissue_t.knee / 100.0 * 0.5,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    if t.branch_id == "metcon_engine":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=1.0 - f.metabolic / 100.0,
-            fatigue_penalty=f.metabolic / 100.0 * 0.8,
-            tissue_penalty=0.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit * 0.6,
-        )
-    # mixed_strength_endurance
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r,
-        fatigue_penalty=f.muscular / 100.0 * 0.6,
-        tissue_penalty=state.tissue_t.lumbar / 100.0 * 0.4,
-        weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-        habit_bonus=habit * 0.7,
-    )
-
-
-def _score_running(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id in ("run_z2_base", "run_z2_base_threshold"):
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r,
-            fatigue_penalty=f.structural / 100.0 * 0.5 + f.tendon / 100.0 * 0.5,
-            tissue_penalty=(state.tissue_t.ankle + state.tissue_t.knee) / 200.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    if t.branch_id in ("run_threshold", "run_threshold_ff"):
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * 0.9,
-            fatigue_penalty=(f.structural + f.tendon) / 200.0,
-            tissue_penalty=(state.tissue_t.ankle + state.tissue_t.knee) / 200.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit * 0.7,
-        )
-    # run_sprint
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r * (1.0 - f.cns / 100.0),
-        fatigue_penalty=f.cns / 100.0,
-        tissue_penalty=(state.tissue_t.ankle + state.tissue_t.hip) / 200.0,
-        weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-        habit_bonus=habit,
-    )
-
-
-def _score_gymnastics(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r * (1.0 - f.cns / 100.0),
-        fatigue_penalty=f.cns / 100.0,
-        tissue_penalty=(
-            state.tissue_t.wrist + state.tissue_t.shoulder + state.tissue_t.elbow
-        ) / 300.0,
-        weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-        habit_bonus=habit,
-    )
-
-
-def _score_calisthenics(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id == "gym_skill":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (1.0 - f.cns / 100.0),
-            fatigue_penalty=f.cns / 100.0,
-            tissue_penalty=(
-                state.tissue_t.wrist + state.tissue_t.shoulder + state.tissue_t.elbow
-            ) / 300.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    # cal_strength
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r,
-        fatigue_penalty=(f.cns + f.grip * 0.5) / 150.0,
-        tissue_penalty=(state.tissue_t.shoulder + state.tissue_t.elbow) / 200.0,
-        weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-        habit_bonus=habit,
-    )
-
-
-def _score_grip(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    f = state.fatigue_f
-    habit = state.habit_strength
-
-    if t.branch_id == "grip_main":
-        return SessionCandidate(
-            type=t.type, focus=t.focus, rationale=t.rationale,
-            duration_min=t.duration_min, branch_id=t.branch_id,
-            goal_alignment=t.goal_alignment,
-            state_fit=r * (1.0 - f.grip / 100.0),
-            fatigue_penalty=f.grip / 100.0,
-            tissue_penalty=(state.tissue_t.finger + state.tissue_t.elbow) / 200.0,
-            weak_point_coverage=_weak_point_coverage(t.tags, state, kpi),
-            habit_bonus=habit,
-        )
-    # grip_recovery
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        # Clamped to the declared 0-1 range; the +0.3 recovery preference used to push it to
-        # 1.3 on a fresh grip, outscoring every correctly-bounded template.
-        state_fit=min(1.0, 1.0 - f.grip / 100.0 + 0.3),
-        fatigue_penalty=0.0,
-        tissue_penalty=0.0,
-        habit_bonus=0.4,
-    )
-
-
-def _score_general(
-    t: CandidateTemplate,
-    state: UnifiedStateVector,
-    kpi: dict[str, float],
-    r: float,
-) -> SessionCandidate:
-    habit = state.habit_strength
-    return SessionCandidate(
-        type=t.type, focus=t.focus, rationale=t.rationale,
-        duration_min=t.duration_min, branch_id=t.branch_id,
-        goal_alignment=t.goal_alignment,
-        state_fit=r,
-        fatigue_penalty=mean_fatigue(state) / 100.0 * 0.5,
-        tissue_penalty=max_tissue_load(state) / 100.0 * 0.3,
-        habit_bonus=habit,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Scoring dispatch
-# ---------------------------------------------------------------------------
-
-_DOMAIN_SCORERS: dict[
-    str,
-    Callable[[CandidateTemplate, UnifiedStateVector, dict[str, float], float], SessionCandidate],
-] = {
-    "hypertrophy": _score_hypertrophy,
-    "power": _score_power,
-    "weightlifting": _score_weightlifting,
-    "powerlifting": _score_powerlifting,
-    "mixed": _score_mixed,
-    "running": _score_running,
-    "gymnastics": _score_gymnastics,
-    "calisthenics": _score_calisthenics,
-    "grip": _score_grip,
-    "general": _score_general,
-}
-
-
 def score_template(
     t: CandidateTemplate,
     state: UnifiedStateVector,
@@ -1316,15 +1107,11 @@ def score_template(
     overall_readiness value so it is not recomputed for each template.
 
     The template's ``exercise_slots`` are carried onto the resulting candidate
-    here (rather than in every per-domain scorer) so finalization can prefer
-    them over the equipment map without each scorer needing to know about it.
+    here, not by the scorer, so finalization can prefer them over the equipment
+    map without scoring needing to know about it.
     """
     r = readiness if readiness is not None else overall_readiness(state)
-    if t.scoring is not None:
-        candidate = _score_from_spec(t, state, kpi, r)
-    else:
-        scorer = _DOMAIN_SCORERS.get(t.domain, _score_general)
-        candidate = scorer(t, state, kpi, r)
+    candidate = _score_from_spec(t, state, kpi, r)
     candidate.exercise_slots = t.exercise_slots
     candidate.domain = t.domain
     return candidate
