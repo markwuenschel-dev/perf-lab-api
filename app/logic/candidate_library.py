@@ -135,6 +135,70 @@ class CandidateTemplate:
 
 
 # ---------------------------------------------------------------------------
+# WorkoutFamily — one session design, enumerated variants
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class FamilyVariant:
+    """One member of a family: its identity, why it exists, and when it applies.
+
+    ``branch_id`` is the variant's identity everywhere downstream — scoring, the planner's slot
+    bindings, the golden corpora — so expanding a family must reproduce it exactly.
+    """
+
+    branch_id: str
+    rationale: str
+    kpi_eligible: Callable[[dict[str, float]], bool] | None = None
+    state_eligible: Callable[[UnifiedStateVector], bool] | None = None
+    goal_eligible: Callable[[str], bool] | None = None
+
+
+@dataclass(frozen=True)
+class WorkoutFamily:
+    """A session design shared by several templates, which differ only in their variants.
+
+    ``expand()`` produces ordinary ``CandidateTemplate``s — the same dataclass, the same
+    ``branch_id`` identities, in variant order — so a family joins the one template pool rather
+    than forming a parallel one, and nothing downstream can tell a family member from a literal.
+
+    Variants are ENUMERATED, never a sweep over parameters: each one is a session someone
+    decided should exist.
+    """
+
+    family_id: str
+    domain: str
+    type: str
+    focus: str
+    duration_min: int
+    goal_alignment: float
+    tags: tuple[str, ...]
+    scoring: ScoringSpec
+    exercise_slots: tuple[ExerciseSlot, ...]
+    variants: tuple[FamilyVariant, ...]
+
+    def expand(self) -> list[CandidateTemplate]:
+        return [
+            CandidateTemplate(
+                type=self.type,
+                focus=self.focus,
+                rationale=v.rationale,
+                branch_id=v.branch_id,
+                duration_min=self.duration_min,
+                goal_alignment=self.goal_alignment,
+                tags=list(self.tags),
+                domain=self.domain,
+                kpi_eligible=v.kpi_eligible,
+                state_eligible=v.state_eligible,
+                goal_eligible=v.goal_eligible,
+                scoring=self.scoring,
+                # A fresh list per member: templates are mutable, families are not.
+                exercise_slots=list(self.exercise_slots),
+            )
+            for v in self.variants
+        ]
+
+
+# ---------------------------------------------------------------------------
 # Weak-point coverage (moved from prescriber.py)
 # ---------------------------------------------------------------------------
 
@@ -454,57 +518,49 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
 ]
 
 # Two SBD variants: volume-bias rationale when relative total is low.
+def _pl_total_below_3x(kpi: dict[str, float]) -> bool:
+    """Relative total under 3× bodyweight: the athlete still gains from volume at quality."""
+    return kpi.get("pl_relative_total") is not None and kpi["pl_relative_total"] < 3.0
+
+
+#: Competition squat / bench / deadlift, one session design. Which variant is eligible depends
+#: only on the relative total, and the two predicates are exact complements: every athlete gets
+#: exactly one.
+SBD_STRENGTH_FAMILY = WorkoutFamily(
+    family_id="pl_sbd",
+    domain="powerlifting",
+    type="SBD Strength",
+    focus="Squat / Bench / Deadlift — top sets + 3–4 back-off sets",
+    duration_min=80,
+    goal_alignment=1.0,
+    tags=("squat_pattern", "hip_hinge", "push_horizontal"),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
+        fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
+        tissue_axes=("lumbar", "knee"), covers_weak_points=True,
+    ),
+    exercise_slots=(
+        ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
+        ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_bench"),
+        ExerciseSlot(sets="2", reps="3-5", e1rm_code="pl_e1rm_deadlift"),
+        ExerciseSlot(sets="3", reps="6-8", e1rm_code="pl_e1rm_squat", allow_repeat=True),
+    ),
+    variants=(
+        FamilyVariant(
+            branch_id="pl_sbd_main_volume",
+            rationale="Quality reps before intensity ramp.",
+            kpi_eligible=_pl_total_below_3x,
+        ),
+        FamilyVariant(
+            branch_id="pl_sbd_main",
+            rationale="Competition lift specificity with managed autoregulation.",
+            kpi_eligible=lambda kpi: not _pl_total_below_3x(kpi),
+        ),
+    ),
+)
+
 POWERLIFTING_TEMPLATES: list[CandidateTemplate] = [
-    CandidateTemplate(
-        type="SBD Strength",
-        focus="Squat / Bench / Deadlift — top sets + 3–4 back-off sets",
-        rationale="Quality reps before intensity ramp.",
-        branch_id="pl_sbd_main_volume",
-        duration_min=80,
-        goal_alignment=1.0,
-        tags=["squat_pattern", "hip_hinge", "push_horizontal"],
-        domain="powerlifting",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
-            fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
-            tissue_axes=("lumbar", "knee"), covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
-            ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_bench"),
-            ExerciseSlot(sets="2", reps="3-5", e1rm_code="pl_e1rm_deadlift"),
-            ExerciseSlot(sets="3", reps="6-8", e1rm_code="pl_e1rm_squat", allow_repeat=True),
-        ],
-        kpi_eligible=lambda kpi: (
-            kpi.get("pl_relative_total") is not None
-            and kpi["pl_relative_total"] < 3.0
-        ),
-    ),
-    CandidateTemplate(
-        type="SBD Strength",
-        focus="Squat / Bench / Deadlift — top sets + 3–4 back-off sets",
-        rationale="Competition lift specificity with managed autoregulation.",
-        branch_id="pl_sbd_main",
-        duration_min=80,
-        goal_alignment=1.0,
-        tags=["squat_pattern", "hip_hinge", "push_horizontal"],
-        domain="powerlifting",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
-            fatigue_axes=(("cns", 1.0), ("structural", 0.5)),
-            tissue_axes=("lumbar", "knee"), covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_squat"),
-            ExerciseSlot(sets="4", reps="3-5", e1rm_code="pl_e1rm_bench"),
-            ExerciseSlot(sets="2", reps="3-5", e1rm_code="pl_e1rm_deadlift"),
-            ExerciseSlot(sets="3", reps="6-8", e1rm_code="pl_e1rm_squat", allow_repeat=True),
-        ],
-        kpi_eligible=lambda kpi: not (
-            kpi.get("pl_relative_total") is not None
-            and kpi["pl_relative_total"] < 3.0
-        ),
-    ),
+    *SBD_STRENGTH_FAMILY.expand(),
     CandidateTemplate(
         type="Accessory Focus",
         focus="Paused Squat 3×4 + Close-Grip Bench + Romanian Deadlift 3×6",
@@ -1005,6 +1061,9 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
 # ---------------------------------------------------------------------------
 # Library index
 # ---------------------------------------------------------------------------
+
+#: Every family whose members are in the pool. Pool = expanded families + remaining literals.
+WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (SBD_STRENGTH_FAMILY,)
 
 GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     "strength": STRENGTH_TEMPLATES,
