@@ -77,6 +77,36 @@ captured by the 8A shadow (`dose_model_shadow_log`), excluding rows flagged
 
 ---
 
+## C2b · Density-output coupling: the density AXIS still grows with duration at fixed work
+
+**The statement.** v1 correctly defines the density *input* as work per elapsed time. The
+density *output* — the `density` component of the six-axis dose — is not invariant to a
+duration change at fixed work, because it is scaled by the same session base as every other
+axis. Density-input semantics are fixed; density-axis semantics are not.
+
+**Why it happens.** Every axis is `base · m[axis] · …`, and the density axis is
+`base · m["density"] · Δ` (`app/logic/dose_engine_v0.py:754, :764, :773` — the law v1 shares).
+`base` carries `log1p(V)` (`:522-529`), and the volume proxy `V` includes `1.0·duration`
+(C1). So a longer session at identical work raises `base`, and with it the density axis, even
+as `Δ` falls or stays put.
+
+**Observed (phase 4.1, 2026-09-21).** Running the two density invariants in
+`tests/properties/test_dose_invariants.py` against `dose_engine_v1` instead of v0: both still
+fail. Falsifying example for "same work in less elapsed time is denser": 20 sets in 20 min vs
+40 min — v1 reports `density_value = 2.5` for both (Δ at its clamp) and a density axis of
+**1.436** for the faster session against **1.535** for the slower one. Not established:
+whether the inversion also occurs where Δ is unclamped, or only when Δ saturates.
+
+**Why it matters.** "v1 fixed density" is true of the input and false of the axis. Those two
+xfails will NOT clear when production activates v1 at 8C, and anyone reading the density axis
+as temporal compression will be misled.
+
+**What a fit (or redesign) must resolve.** Whether the density axis should be decoupled from
+`base`'s duration term, or the invariants restated against `density_value`. This is a dose-law
+question, deliberately not addressed in the workout-family refactor (phase 4).
+
+---
+
 ## C3 · Endurance has no density input at all
 
 **Observed (phase 1.2).** v1 reports `density_basis = not_applicable` for continuous and

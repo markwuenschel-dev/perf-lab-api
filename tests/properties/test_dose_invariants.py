@@ -145,8 +145,9 @@ def test_negative_external_intensity_is_refused_at_the_boundary() -> None:
 # ── density direction ─────────────────────────────────────────────────────────
 
 @pytest.mark.xfail(
-    reason="phase 1.2 density semantics: session density is duration/(sets*5) — MINUTES PER "
-    "SET — so a longer session at identical work scores as denser (dose_engine_v0.py:497)",
+    reason="C2b (docs/calibration-backlog.md): v0 reads density as MINUTES PER SET, and v1 — "
+    "whose density INPUT is correct — still scales the density AXIS by a base that grows with "
+    "duration, so this does not clear at 8C activation",
     strict=True,
 )
 @given(
@@ -166,8 +167,8 @@ def test_same_work_in_less_elapsed_time_is_denser(
 
 
 @pytest.mark.xfail(
-    reason="phase 1.2 density semantics: the session law has no rest term at all, so resting "
-    "longer within a fixed duration cannot lower density",
+    reason="C2b (docs/calibration-backlog.md): adding rest is stretching the session, and the "
+    "density axis grows with duration under v0 and v1 alike — does not clear at 8C activation",
     strict=True,
 )
 @given(
