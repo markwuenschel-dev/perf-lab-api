@@ -40,6 +40,7 @@ PINNED_IMPORTERS: dict[str, str] = {
     "app/scripts/compare_dose_models.py": "offline v0/v1 comparison matrix",
     "app/scripts/simulate_matrix.py": "offline phase-1 matrix; compares v0/v1 to explain a finding",
     "app/scripts/compare_difficulty_policies.py": "offline 3.2 evidence; reports candidate policies under both engines",
+    "app/scripts/compare_difficulty_live_path.py": "offline 3.4 evidence; candidate vs the live rule under both engines",
     # Helpers that are not dose semantics (external-intensity building, set samples).
     "app/services/state_service.py": "imports v0 intensity HELPERS only — never the dose law",
 }

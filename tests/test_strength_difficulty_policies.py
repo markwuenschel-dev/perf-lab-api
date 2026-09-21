@@ -1,8 +1,13 @@
 """Candidate strength difficulty policies (phase 3.2) — what they do, and that they are not live.
 
 Three families, three different meanings of "harder", none of them in the prescription path.
-The evidence for promotion is `docs/simulations/phase-3-2.md`; 3.4 decides. These tests pin
-the semantics the report describes, so the report cannot drift from the code that made it.
+These tests pin the semantics the reports describe, so a report cannot drift from the code
+that made it.
+
+**3.4 decided: none promoted** (`docs/simulations/phase-3-4.md`). The promotion evidence is
+that report, NOT `phase-3-2.md` — 3.2 compared each candidate against a bare baseline rather
+than against the live rule, which moves effort as well as sets. These tests describe what the
+candidates do; they take no position on whether the candidates should be live.
 """
 import pytest
 

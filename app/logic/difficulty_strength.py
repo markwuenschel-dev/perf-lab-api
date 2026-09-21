@@ -1,8 +1,15 @@
-"""Candidate strength-family difficulty policies (phase 3.2). NOT LIVE.
+"""Candidate strength-family difficulty policies (phase 3.2). NOT LIVE — dormant by decision.
 
 Three transforms replacing the global "±1 set and shift the RPE band" with per-family
-behaviour. They are registered as CANDIDATES and nothing calls them in the prescription path:
-3.2 produces prescriptions and their consequences, 3.4 decides what gets promoted.
+behaviour. They are registered as CANDIDATES and nothing calls them in the prescription path.
+
+**Phase 3.4 promoted none of them** (`docs/simulations/phase-3-4.md`). Measured against the
+rule production actually runs — which moves working sets AND shifts the envelope's RPE band,
+re-resolving load from it — general strength and hypertrophy reduce to half a point of RPE at
+representative set counts, and max strength trades three working reps for 2.5 kg on the bar, a
+trade neither dose engine can price (C1, `docs/calibration-backlog.md`). They stay registered,
+tested and dormant so a calibrated engine can be re-measured against them without rebuilding
+the contract.
 
 The families differ in what difficulty is allowed to mean, which is the whole point:
 
@@ -34,7 +41,12 @@ from dataclasses import dataclass
 from typing import cast
 
 from app.logic.difficulty import Difficulty, DifficultyDimension, DifficultyTransform
-from app.logic.planning import INTENSITY_EASY, INTENSITY_HARD, normalize_intensity
+from app.logic.planning import (
+    INTENSITY_EASY,
+    INTENSITY_HARD,
+    INTENSITY_RPE_CEILING,
+    normalize_intensity,
+)
 from app.schemas.workout_structure import (
     StrengthBlock,
     WorkoutStructure,
@@ -43,9 +55,19 @@ from app.schemas.workout_structure import (
 
 #: RPE and RIR are the same statement from opposite ends: RIR = 10 − RPE. A transform asks for
 #: a change in REPS IN RESERVE, and whichever field the block carries is moved accordingly.
+#:
+#: The ceiling is NOT a local constant. ``INTENSITY_RPE_CEILING`` already states what the
+#: system allows a workload *preference* to reach — "no prescription may be pushed past this
+#: by a preference, whatever the phase says" (``app/logic/planning.py``) — and a family
+#: difficulty transform is a preference-driven change by exactly that definition. Declaring a
+#: second, looser ceiling here would let a transform pass its own local validation while
+#: breaching the envelope's system-wide bound: at a peak-week cap of 9.5, a −1 RIR step
+#: clamped at 10.0 prescribes a maximal triple taken to failure. One source of truth instead.
 RPE_FLOOR = 1.0
-RPE_CEILING = 10.0
-RIR_FLOOR = 0.0
+RPE_CEILING = INTENSITY_RPE_CEILING
+#: The same bound seen from the RIR end, so a block carrying RIR cannot reach what a block
+#: carrying RPE is refused. RIR = 10 − RPE, so an RPE ceiling of 9.5 is an RIR floor of 0.5.
+RIR_FLOOR = 10.0 - INTENSITY_RPE_CEILING
 RIR_CEILING = 10.0
 
 
