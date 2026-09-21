@@ -3,7 +3,7 @@
 ``test_prescription_goldens.py`` pins what each template prescribes. It does not pin how the
 engine chooses between them, and that is what phase 4.2 rewrites: 24 templates are scored by
 hand-coded, ``branch_id``-keyed formulas (``candidate_library._DOMAIN_SCORERS``) and are about
-to move onto declarative ``ScoringSpec``s. This file is what lets 4.2 claim "same behaviour,
+to move onto declarative ``ScoringSpec``s. (Done in 4.2 against this file's golden, unchanged.) This file is what lets 4.2 claim "same behaviour,
 different representation" as a checked fact rather than an intention.
 
 **Characterization, not correction.** Nothing recorded here is claimed to be right. In
@@ -245,15 +245,6 @@ def test_every_eligibility_predicate_is_seen_both_ways() -> None:
     assert not unflipped, f"predicates the grid never flips: {unflipped}"
 
 
-def test_every_hand_coded_scorer_branch_is_exercised() -> None:
-    """Each spec-less template is scored at every state — the branch coverage 4.2 relies on."""
-    corpus = _corpus()["templates"]
-    domain_scored = [key for key, t in _templates() if t.scoring is None]
-
-    assert len(domain_scored) == 24
-    assert all(len(corpus[k]["by_state"]) == len(STATES) for k in domain_scored)
-
-
 # ── the inventory, as executable facts ──────────────────────────────────────
 
 
@@ -265,27 +256,24 @@ def test_the_template_inventory() -> None:
     assert len(templates) == 37
     assert sum(1 for t in templates if t.exercise_slots) == 25
     assert sum(1 for t in templates if not t.exercise_slots) == 12
-    assert sum(1 for t in templates if t.scoring is not None) == 13
+    # 13 before phase 4.2; the other 24 were scored by branch_id-keyed domain functions.
+    assert all(t.scoring is not None for t in templates)
     assert {branch for branch, n in ids.items() if n > 1} == {"gym_skill"}
     assert ids["gym_skill"] == 2
 
 
-# ── the catch-all 4.2 removes ───────────────────────────────────────────────
+# ── the catch-all 4.2 removed ───────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    reason="phase 4.2: a spec-less template is scored by its domain's catch-all formula — the "
-    "last return of the per-domain scorer, written for a different template "
-    "(candidate_library.py:1163 scores any new running template as run_sprint)",
-    strict=True,
-)
 def test_a_template_without_a_scoring_spec_is_refused_rather_than_guessed() -> None:
     """A new template must declare how it is scored, not inherit a neighbour's formula.
 
-    Refusal at construction or at scoring both count: either way no score is invented.
+    Before phase 4.2 this template was accepted and scored as ``run_sprint`` — the last return
+    of the running scorer. Refusal at construction or at scoring both count: either way no
+    score is invented.
     """
     with pytest.raises((TypeError, ValueError)):
-        newcomer = CandidateTemplate(
+        newcomer = CandidateTemplate(  # pyright: ignore[reportCallIssue] — the point of the test
             type="Hill Repeats", focus="8×60s uphill", rationale="new", branch_id="run_hills",
             duration_min=45, goal_alignment=0.8, domain="running",
         )

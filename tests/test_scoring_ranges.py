@@ -148,9 +148,8 @@ def test_every_weighted_axis_exists_on_the_candidate() -> None:
 #
 # The declared-range claim is universal, so it is generated rather than sampled: every
 # template in the library, scored against athlete states spanning the full 0-100 fatigue and
-# tissue range. The per-template worst case above only covers spec-scored templates; the
-# branch-dispatched scorers (weightlifting, grip, ...) compute their own axes and are covered
-# only here.
+# tissue range. Since phase 4.2 every template is spec-scored, so this and the per-template
+# worst case above cover the same library.
 
 from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
@@ -201,12 +200,16 @@ def test_one_overloaded_tissue_is_not_diluted_by_healthy_ones() -> None:
 
     Averaging across axes would dilute it (90 with two healthy axes → 30); summing would
     inflate it past 1. The penalty tracks the most-stressed tissue the template names.
+
+    Holds for templates declaring ``tissue_aggregate="max"``. The 13 that still average were
+    migrated score-identically in 4.2; whether they move to "max" is decision 4.2b, and this
+    filter is the line that decision removes.
     """
     state = _athlete(0.0, 0.0, 0.5)
     state.tissue_t.knee = 90.0
     for template in _every_template():
         spec = getattr(template, "scoring", None)
-        if spec is None or "knee" not in spec.tissue_axes:
+        if spec is None or spec.tissue_aggregate != "max" or "knee" not in spec.tissue_axes:
             continue
         candidate = score_template(template, state, {})
         assert candidate.tissue_penalty == pytest.approx(0.9 * spec.tissue_weight, rel=1e-9), (
