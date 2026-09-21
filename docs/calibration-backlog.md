@@ -10,12 +10,28 @@ This is not a list of bugs. A bug is wrong behaviour; these are places where the
 
 ---
 
-## C1 · Intensity sensitivity: a heavier bar at the same set count is nearly invisible
+## C1 · Load/intensity sensitivity: dose cannot price a volume-for-intensity trade
+
+**The statement.** With sets and session duration held constant, a materially higher resolved
+load (equivalently, a lower RIR) produces almost no change in modelled dose — in **v1** as
+well as v0. Until this is calibrated or the law is redesigned, **dose cannot reliably
+distinguish volume-for-intensity tradeoffs**, which is precisely the choice a max-strength
+session is made of.
 
 **Observed (phase 3.2, `docs/simulations/phase-3-2.md`).** Holding sets and session duration
 fixed and increasing resolved load by lowering the target RIR by one — RPE 8 → 9, which
 resolves to 120 kg → 125 kg on a 140 kg e1RM — changes total modelled dose by **1.02×**. In
 **both** engines.
+
+**Sharpened (phase 3.4, `docs/simulations/phase-3-4.md`).** Against the live rule rather than
+a bare baseline, the consequence is starker and it decided a promotion. Legacy `hard` for max
+strength gives `6×3 @ RPE 9 / 125 kg`; the candidate gives `5×3 @ RPE 9.5 / 127.5 kg` — three
+working reps and 338 kg of volume-load traded for 2.5 kg on the bar. v1 reads legacy hard at
+**0.64** against medium's 0.55, but reads the candidate at **0.56**: essentially identical to
+medium. The engine we are migrating TO is the one that cannot see the candidate's only lever.
+
+That is why phase 3.4 promoted nothing. Choosing `5×3 @ 127.5` over `6×3 @ 125` on the
+strength of the model would be choosing on a number the model does not compute.
 
 **Why it happens.** The session volume proxy is
 `V = 1.0·duration + 0.02·volume_load + 2.0·sets` (`app/engine/parameters.py`,
@@ -37,6 +53,11 @@ outcome to fit against.
 and asserts the *structural* claim (RIR falls, resolved load rises, rest and selection
 unchanged) without demanding a magnitude. There is no evidence for what the magnitude should
 be, and inventing a threshold would encode a guess as a requirement.
+
+**Promotion criterion.** No difficulty policy whose primary lever is load or proximity to
+failure should be promoted on modelled-dose evidence until this is resolved. Such a policy may
+still be promoted on prescription quality — but that argument has to be made and recorded on
+its own terms, not supported by a dose number that is flat by construction.
 
 ---
 
