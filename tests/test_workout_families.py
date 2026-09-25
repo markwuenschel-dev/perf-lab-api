@@ -28,9 +28,10 @@ from app.logic.candidate_library import (
 #: What a variant may set. Everything else a member carries comes from its family.
 VARIANT_FIELDS = {
     "branch_id", "rationale", "kpi_eligible", "state_eligible", "goal_eligible", "focus",
+    "exercise_slots",
 }
 #: Variant fields that override a family field when set; None inherits the family's value.
-OVERRIDES = {"focus"}
+OVERRIDES = {"focus", "exercise_slots"}
 
 
 def _pool_ids(domain: str) -> list[str]:

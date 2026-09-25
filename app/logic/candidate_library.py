@@ -154,6 +154,9 @@ class FamilyVariant:
     #: Overrides the family's focus when the variant is the same design written differently —
     #: a tempo run and threshold intervals are both threshold work. None inherits the family's.
     focus: str | None = None
+    #: Overrides the family's slots when the variant's work is shaped differently (one
+    #: continuous tempo vs four intervals). None inherits the family's.
+    exercise_slots: tuple[ExerciseSlot, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -195,7 +198,9 @@ class WorkoutFamily:
                 goal_eligible=v.goal_eligible,
                 scoring=self.scoring,
                 # A fresh list per member: templates are mutable, families are not.
-                exercise_slots=list(self.exercise_slots),
+                exercise_slots=list(
+                    self.exercise_slots if v.exercise_slots is None else v.exercise_slots
+                ),
             )
             for v in self.variants
         ]
@@ -708,7 +713,12 @@ RUN_THRESHOLD_FAMILY = WorkoutFamily(
         tissue_axes=("ankle", "knee"), habit_mult=0.7,
         covers_weak_points=True,
     ),
-    exercise_slots=(),
+    # One continuous tempo; the interval variant replaces it with repeats.
+    exercise_slots=(
+        ExerciseSlot(sets="1", reps="20 min @ RPE 7–8",
+                     movement_pattern="run", modality="Running",
+                     prefer_tags=("lactate_threshold",)),
+    ),
     variants=(
         FamilyVariant(
             branch_id="run_threshold",
@@ -719,6 +729,11 @@ RUN_THRESHOLD_FAMILY = WorkoutFamily(
             branch_id="run_threshold_ff",
             rationale="Threshold pace improves fractional utilization of VO2max.",
             focus="4×5 min @ threshold pace (RPE 8) / 2 min easy recovery",
+            exercise_slots=(
+                ExerciseSlot(sets="4", reps="5 min @ threshold pace (RPE 8) / 2 min easy",
+                             movement_pattern="run", modality="Running", skill_target=0.5,
+                             prefer_tags=("lactate_threshold",)),
+            ),
             kpi_eligible=_run_high_fatigue_factor,
             goal_eligible=lambda g: not _marathon_goal(g),
         ),
