@@ -168,3 +168,36 @@ async def test_a_sprinting_block_shows_speed_and_prescribes_sprints(
     assert (today.category, today.domain) == (SPEED_CATEGORY, "running")
     followed = [c for c in rx.why.constraints_applied if c.startswith("plan:")]  # type: ignore[union-attr]
     assert len(followed) == 1 and followed[0].split("=")[1] in SPRINT_IDS, followed
+
+
+# ── 6. sprint intent is a week, not "every session is Speed" ─────────────────
+
+
+@pytest.mark.parametrize(
+    ("sessions", "week"),
+    [
+        (1, ["Speed"]),
+        (2, ["Speed", "Speed"]),
+        (3, ["Speed", "Active Recovery", "Speed"]),
+        (4, ["Speed", "Active Recovery", "Speed", "Active Recovery"]),
+        (5, ["Speed", "Active Recovery", "Speed", "Active Recovery", "Speed"]),
+    ],
+)
+def test_a_sprint_week_alternates_speed_and_recovery(sessions: int, week: list[str]) -> None:
+    slots = _template_from_modality_mix({"sprinting": 1.0}, sessions)
+
+    assert slots is not None
+    assert [s.category for s in slots] == week
+    assert {s.domain for s in slots} == {"running"}
+    days = [s.day_of_week for s in slots]
+    assert days == sorted(days), "the pattern is applied in day order"
+
+
+def test_the_sprint_pattern_counts_only_the_sprint_sessions() -> None:
+    """Other styles' days sit between the sprint days without shifting the pattern."""
+    slots = _template_from_modality_mix({"sprinting": 0.6, "strength": 0.4}, 5)
+
+    assert slots is not None
+    sprint = [s.category for s in slots if s.domain == "running"]
+    assert sprint == ["Speed", "Active Recovery", "Speed"]
+    assert [s.category for s in slots if s.domain == "strength"] == ["Max Strength"] * 2

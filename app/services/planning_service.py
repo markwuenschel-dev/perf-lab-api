@@ -7,7 +7,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic.domain_vocab import block_goal_to_domain, canonical_domain
-from app.logic.planned_session_slots import SPEED_CATEGORY
+from app.logic.planned_session_slots import ACTIVE_RECOVERY_CATEGORY, SPEED_CATEGORY
 from app.models.mesocycle import (
     BlockGoal,
     BlockStatus,
@@ -110,6 +110,20 @@ def _mix_slot(key: str) -> tuple[str, str, str]:
     return (domain, *_DOMAIN_SLOT.get(domain, _DOMAIN_SLOT["general"]))
 
 
+def _sprint_week(sessions: int) -> list[str]:
+    """The categories of a sprint-intent week's running sessions, in day order.
+
+    Two sessions are both Speed. From three up they alternate Speed / Active Recovery,
+    starting and (for odd counts) ending on Speed, so quality sprint days are not stacked back
+    to back by default: intensive sprint work generally needs about 48 h (Haugen et al.).
+    This is a planner default, not sprint periodization. How acceleration and speed-endurance
+    work are split across a block is phase 7.
+    """
+    if sessions <= 2:
+        return [SPEED_CATEGORY] * sessions
+    return [SPEED_CATEGORY if i % 2 == 0 else ACTIVE_RECOVERY_CATEGORY for i in range(sessions)]
+
+
 def _template_from_modality_mix(
     modality_mix: dict[str, Any] | None,
     sessions_per_week: int,
@@ -165,6 +179,11 @@ def _template_from_modality_mix(
             )
             day_i += 1
     slots.sort(key=lambda s: s.day_of_week)
+    # A sprinting weight is sprint INTENT, not "every session is Speed": its sessions get the
+    # sprint-week pattern, in day order.
+    sprint = [i for i, s in enumerate(slots) if s.category == SPEED_CATEGORY]
+    for i, category in zip(sprint, _sprint_week(len(sprint)), strict=True):
+        slots[i] = slots[i].model_copy(update={"category": category})
     return slots[:sessions_per_week] or None
 
 

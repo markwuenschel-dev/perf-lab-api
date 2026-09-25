@@ -54,6 +54,20 @@ export const GOAL_DOMAIN: Record<BlockGoal, string> = {
 /** The main style's share of the week when secondary styles are added. */
 export const MAIN_SHARE = 0.6;
 
+// A Running block's focus. Sprint stays inside the running domain: it is sent as the mix key
+// "sprinting", which the planner turns into running Speed / Active Recovery days
+// (planning_service._sprint_week). There is no Sprinting block goal. The athlete's visible choice
+// is what gets submitted; the profile goal may only preselect it.
+export type RunningFocus = "distance" | "sprint";
+export const RUNNING_FOCUS: { value: RunningFocus; label: string; help: string }[] = [
+  { value: "distance", label: "Distance", help: "Aerobic base, threshold and recovery runs." },
+  {
+    value: "sprint",
+    label: "Sprint",
+    help: "Speed days with very easy runs between them, so sprint sessions are not back to back.",
+  },
+];
+
 export type Intensity = "easy" | "medium" | "hard";
 export const INTENSITIES: { value: Intensity; label: string; help: string }[] = [
   { value: "easy", label: "Easy", help: "Fewer working sets and a lower effort target." },
@@ -100,11 +114,16 @@ export interface BlockForm {
   targetMinutes: string; // raw input text; "" → omit/null
   emphasis: Emphasis;
   focus: string[];
+  runningFocus: RunningFocus; // read only when goal is Running
 }
 
-export function initialForm(): BlockForm {
+/** A fresh form. A Sprinting athlete (profile goal) starts on Running / Sprint: a visible,
+ *  editable preselect, never a hidden input to the planner. */
+export function initialForm(profileGoal?: string | null): BlockForm {
+  const sprinter = profileGoal === "Sprinting";
   return {
-    goal: "General",
+    goal: sprinter ? "Running" : "General",
+    runningFocus: sprinter ? "sprint" : "distance",
     secondary: [],
     intensity: "medium",
     startDate: todayIso(),
@@ -119,12 +138,19 @@ export function initialForm(): BlockForm {
 /** Build the backend BlockCreateRequest from the form. Leaves weekly_template
  *  empty and modality_mix empty — the backend derives the template from goal
  *  + modality_mix (defaulted server-side when empty). */
+/** The mix key for the main style: the goal's domain, except a Sprint-focus Running block. */
+export function mainStyleKey(f: Pick<BlockForm, "goal" | "runningFocus">): string {
+  return f.goal === "Running" && f.runningFocus === "sprint" ? "sprinting" : GOAL_DOMAIN[f.goal];
+}
+
 function buildModalityMix(f: BlockForm): Record<string, number> {
-  // No secondary styles → {} , which lets the backend use the goal's own default week.
+  const main = mainStyleKey(f);
   const others = f.secondary.filter((d) => d !== GOAL_DOMAIN[f.goal]);
-  if (others.length === 0) return {};
+  // No secondary styles → {}, which lets the backend use the goal's own default week. A
+  // Sprint focus is the exception: the goal default is a distance week, so it must be asked for.
+  if (others.length === 0) return main === GOAL_DOMAIN[f.goal] ? {} : { [main]: 1 };
   const share = (1 - MAIN_SHARE) / others.length;
-  const mix: Record<string, number> = { [GOAL_DOMAIN[f.goal]]: MAIN_SHARE };
+  const mix: Record<string, number> = { [main]: MAIN_SHARE };
   for (const domain of others) mix[domain] = share;
   return mix;
 }

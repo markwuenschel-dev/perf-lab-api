@@ -7,7 +7,7 @@
 // always in it. Shares are SESSION allocation — the server performs the allocation, and the
 // modal shows the server's answer rather than computing a second one (see previewPlanningBlock).
 import { describe, expect, it } from "vitest";
-import { buildBlockCreateRequest, GOAL_DOMAIN, MAIN_SHARE } from "./blockCreateBody";
+import { buildBlockCreateRequest, GOAL_DOMAIN, initialForm, MAIN_SHARE } from "./blockCreateBody";
 
 const base = {
   goal: "Strength" as const,
@@ -19,6 +19,7 @@ const base = {
   targetMinutes: "",
   emphasis: "balanced" as const,
   focus: [] as string[],
+  runningFocus: "distance" as const,
 };
 
 describe("modality_mix", () => {
@@ -69,5 +70,41 @@ describe("workload preference", () => {
 
   it("defaults to medium", () => {
     expect(buildBlockCreateRequest(base).intensity).toBe("medium");
+  });
+});
+
+// A Running block's Sprint focus: sprint INTENT, sent as the "sprinting" mix key. There is no
+// Sprinting block goal; the planner turns the key into running Speed / Active Recovery days.
+describe("running focus", () => {
+  const running = { ...base, goal: "Running" as const };
+
+  it("Distance keeps the goal's own default week", () => {
+    expect(buildBlockCreateRequest(running).modality_mix).toEqual({});
+  });
+
+  it("Sprint asks for a sprint week even with no secondary style", () => {
+    const req = buildBlockCreateRequest({ ...running, runningFocus: "sprint" });
+
+    expect(req.goal).toBe("Running");
+    expect(req.modality_mix).toEqual({ sprinting: 1 });
+  });
+
+  it("Sprint takes the main share when other styles are added", () => {
+    const mix = buildBlockCreateRequest({ ...running, runningFocus: "sprint", secondary: ["strength"] })
+      .modality_mix as Record<string, number>;
+
+    expect(mix).toEqual({ sprinting: MAIN_SHARE, strength: 1 - MAIN_SHARE });
+  });
+
+  it("is ignored for any other goal", () => {
+    const req = buildBlockCreateRequest({ ...base, runningFocus: "sprint" });
+
+    expect(req.modality_mix).toEqual({});
+  });
+
+  it("a Sprinting profile preselects Running / Sprint; nothing else changes the default", () => {
+    expect(initialForm("Sprinting")).toMatchObject({ goal: "Running", runningFocus: "sprint" });
+    expect(initialForm("Running")).toMatchObject({ goal: "General", runningFocus: "distance" });
+    expect(initialForm(null)).toMatchObject({ goal: "General", runningFocus: "distance" });
   });
 });
