@@ -37,8 +37,11 @@ cd /opt/stack/perf-lab-api
 git fetch -q origin
 $SYNC
 echo "deploying \$(git rev-parse --short HEAD): \$(git log -1 --format=%s)"
+# The built commit, baked into the image as APP_BUILD_SHA (Dockerfile) so shadow rows record it.
+BUILD_SHA=\$(git rev-parse HEAD)
 cd /opt/stack/infra
-sudo docker compose up -d --build perf-lab-api
+sudo docker compose build --build-arg APP_BUILD_SHA="\$BUILD_SHA" perf-lab-api
+sudo docker compose up -d perf-lab-api
 sudo docker compose logs --tail=$TAIL perf-lab-api || echo "(log tail failed - check manually; deploy itself already succeeded)"
 # Boot runs 'alembic upgrade head' before uvicorn; give it a moment, then prove the head landed.
 # (Checking too early can catch the OLD head mid-migration — a race, not a failure.)
