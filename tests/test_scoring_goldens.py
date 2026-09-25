@@ -274,8 +274,8 @@ def test_the_template_inventory() -> None:
     assert sum(1 for t in templates if not t.exercise_slots) == 12
     # 13 before phase 4.2; the other 24 were scored by branch_id-keyed domain functions.
     assert all(t.scoring is not None for t in templates)
-    assert {branch for branch, n in ids.items() if n > 1} == {"gym_skill"}
-    assert ids["gym_skill"] == 2
+    # Phase 4.4 renamed the calisthenics copy of gym_skill to cal_skill; no id is shared now.
+    assert not {branch for branch, n in ids.items() if n > 1}
 
 
 # ── the catch-all 4.2 removed ───────────────────────────────────────────────

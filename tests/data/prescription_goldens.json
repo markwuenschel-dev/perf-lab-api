@@ -37,6 +37,29 @@
     "tags": [],
     "type": "Calisthenics Conditioning"
   },
+  "calisthenics/cal_skill": {
+    "duration_min": 55,
+    "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "wrist",
+        "shoulder",
+        "elbow"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 0,
+    "slots": [],
+    "tags": [
+      "gymnastics_skill",
+      "overhead_stability"
+    ],
+    "type": "Gymnastics Skill"
+  },
   "calisthenics/cal_strength": {
     "duration_min": 50,
     "focus": "Pull-ups / Dips / Push-up Variations + Skill Progressions",
@@ -86,29 +109,6 @@
       "push_vertical"
     ],
     "type": "Bodyweight Strength"
-  },
-  "calisthenics/gym_skill": {
-    "duration_min": 55,
-    "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
-    "goal_alignment": 1.0,
-    "scoring": {
-      "fatigue_axes": [],
-      "fatigue_axis": "cns",
-      "fatigue_weight": 1.0,
-      "tissue_axes": [
-        "wrist",
-        "shoulder",
-        "elbow"
-      ],
-      "tissue_weight": 1.0
-    },
-    "slot_count": 0,
-    "slots": [],
-    "tags": [
-      "gymnastics_skill",
-      "overhead_stability"
-    ],
-    "type": "Gymnastics Skill"
   },
   "general/gpp_balanced": {
     "duration_min": 45,
