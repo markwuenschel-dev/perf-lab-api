@@ -7,6 +7,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic.domain_vocab import block_goal_to_domain, canonical_domain
+from app.logic.planned_session_slots import SPEED_CATEGORY
 from app.models.mesocycle import (
     BlockGoal,
     BlockStatus,
@@ -96,32 +97,50 @@ _DOMAIN_SLOT: dict[str, tuple[str, str]] = {
 _WEEK_DAY_ORDER = (1, 3, 5, 2, 4, 6, 7)
 
 
+def _mix_slot(key: str) -> tuple[str, str, str]:
+    """(canonical domain, category, modality) for one modality-mix key.
+
+    A "sprinting" key is a running day of Speed work (phase 5.6). Its domain is running
+    (ADR-0038), but canonicalizing FIRST would turn it into an Aerobic Base day and hand a
+    sprint athlete a distance runner's week.
+    """
+    domain = canonical_domain(key)
+    if key.strip().lower() == "sprinting":
+        return domain, SPEED_CATEGORY, "Running"
+    return (domain, *_DOMAIN_SLOT.get(domain, _DOMAIN_SLOT["general"]))
+
+
 def _template_from_modality_mix(
     modality_mix: dict[str, Any] | None,
     sessions_per_week: int,
 ) -> list[WeeklyTemplateSlot] | None:
     """Build a weekly template by distributing sessions across a domain mix (ADR-0030).
 
-    `modality_mix` is a ``canonical-domain → weight`` map; sessions are allocated by
+    `modality_mix` is a ``domain → weight`` map (``_mix_slot`` resolves each key); sessions are allocated by
     largest remainder and spread across the week. Returns None when no usable mix is
     given, so the caller falls back to the goal default. This makes `modality_mix` the
     driver of concurrent multi-domain blocks rather than inert metadata.
     """
     if not modality_mix:
         return None
-    weights = {canonical_domain(k): float(v) for k, v in modality_mix.items() if float(v) > 0}
+    # Keyed by the slot a weight becomes, not by domain alone: "running" and "sprinting" share
+    # a domain but are different days.
+    weights: dict[tuple[str, str, str], float] = {}
+    for k, v in modality_mix.items():
+        if float(v) > 0:
+            weights[_mix_slot(k)] = float(v)
     total = sum(weights.values())
     if total <= 0 or sessions_per_week <= 0:
         return None
 
-    alloc: dict[str, int] = {}
-    remainders: list[tuple[float, str]] = []
+    alloc: dict[tuple[str, str, str], int] = {}
+    remainders: list[tuple[float, tuple[str, str, str]]] = []
     assigned = 0
-    for dom, w in weights.items():
+    for slot_key, w in weights.items():
         exact = sessions_per_week * w / total
-        alloc[dom] = int(exact)
-        assigned += alloc[dom]
-        remainders.append((exact - int(exact), dom))
+        alloc[slot_key] = int(exact)
+        assigned += alloc[slot_key]
+        remainders.append((exact - int(exact), slot_key))
 
     remainders.sort(reverse=True)
     i = 0
@@ -132,8 +151,7 @@ def _template_from_modality_mix(
 
     slots: list[WeeklyTemplateSlot] = []
     day_i = 0
-    for dom, n in alloc.items():
-        category, modality = _DOMAIN_SLOT.get(dom, _DOMAIN_SLOT["general"])
+    for (dom, category, modality), n in alloc.items():
         for _ in range(n):
             slots.append(
                 WeeklyTemplateSlot(

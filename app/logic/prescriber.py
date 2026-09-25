@@ -413,6 +413,7 @@ def _generate_candidates(
     recent: list[dict[str, Any]] | None,
     readiness_override: float | None = None,
     domain_override: str | None = None,
+    session_category: str | None = None,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
@@ -431,7 +432,10 @@ def _generate_candidates(
     # relabel days.
     domain = domain_override or _candidate_domain(goal)
     r = readiness_override if readiness_override is not None else _readiness(state)
-    templates = get_templates(domain, kpi, goal=str(goal), state=state)
+    # A planned Speed day draws the sprint pool whatever the block goal (phase 5.6).
+    templates = get_templates(
+        domain, kpi, goal=str(goal), state=state, session_category=session_category
+    )
     return [score_template(t, state, kpi, readiness=r) for t in templates]
 
 
@@ -1089,7 +1093,8 @@ def _recommend_next_session(
 
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
     goal_candidates = _generate_candidates(
-        state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain
+        state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain,
+        session_category=block.get("session_category"),
     )
     # Readiness redirects stay modeled-only: acute wellness has no honest per-axis mapping,
     # so it enters via the score channel above, not here (ADR-0052).

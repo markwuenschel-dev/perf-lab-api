@@ -30,6 +30,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+#: A running day of sprint work (phase 5.6). Sprinting stays inside the running DOMAIN
+#: (ADR-0038); the planned category is what says the day is speed, and it is the only thing
+#: that may bring the sprint templates into a non-Sprinting goal's pool
+#: (``candidate_library.template_pool``).
+SPEED_CATEGORY = "Speed"
+
 
 @dataclass(frozen=True)
 class SlotBinding:
@@ -64,6 +70,9 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
     "running": {
         "Aerobic Base": SlotBinding("running_base", ("run_z2_base", "run_z2_base_threshold")),
         "Threshold Work": SlotBinding("running_threshold", ("run_threshold", "run_threshold_ff")),
+        # Acceleration / max velocity and speed endurance are different session qualities, so
+        # both stay separate candidates; which one a week needs is phase 7's call.
+        SPEED_CATEGORY: SlotBinding("running_speed", ("run_sprint", "run_speed_endurance")),
         # "Active Recovery" is deliberately unbound: the running pool has no recovery template.
     },
     "power": {

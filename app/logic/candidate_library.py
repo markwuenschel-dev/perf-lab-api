@@ -26,6 +26,7 @@ from app.logic.constraint_engine.candidate import (
     overall_readiness,
 )
 from app.logic.exercise_slot import ExerciseSlot
+from app.logic.planned_session_slots import SPEED_CATEGORY
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
 
@@ -1132,23 +1133,34 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 }
 
 
+def template_pool(
+    domain: str, goal: str = "", session_category: str | None = None
+) -> list[CandidateTemplate]:
+    """The templates a domain draws from, before any eligibility predicate.
+
+    Sprinting is a sub-domain of running with its own pool. Two things select it: the
+    Sprinting goal, and a planned Speed day (phase 5.6). Nothing else does, so an ordinary
+    running day can never be handed a sprint session.
+    """
+    if domain == "running" and (goal == "Sprinting" or session_category == SPEED_CATEGORY):
+        return SPRINTING_TEMPLATES
+    return GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
+
+
 def get_templates(
     domain: str,
     kpi: dict[str, float],
     goal: str = "",
     state: UnifiedStateVector | None = None,
+    session_category: str | None = None,
 ) -> list[CandidateTemplate]:
     """Return templates for the domain, filtered by all eligibility predicates.
 
-    Sprinting is a sub-domain of running and resolves to its own pool.
-    When ``state`` is None, state_eligible predicates are skipped (treated
-    as eligible), so callers that do not yet have state can still query the
+    The pool is ``template_pool``'s. When ``state`` is None, state_eligible predicates are
+    skipped (treated as eligible), so callers that do not yet have state can still query the
     static content.
     """
-    if domain == "running" and goal == "Sprinting":
-        pool = SPRINTING_TEMPLATES
-    else:
-        pool = GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
+    pool = template_pool(domain, goal, session_category)
 
     return [
         t for t in pool
