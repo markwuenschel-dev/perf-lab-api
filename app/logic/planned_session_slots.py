@@ -40,6 +40,10 @@ SPEED_CATEGORY = "Speed"
 #: very-low-load run, reachable on no other day.
 ACTIVE_RECOVERY_CATEGORY = "Active Recovery"
 
+#: A planned threshold day. Owns its pool (phase 5.7): the plan decides that today is
+#: threshold; the family and KPIs only decide which threshold session represents it.
+THRESHOLD_CATEGORY = "Threshold Work"
+
 #: The power block's contrast day (phase 5.6): a heavy squat before jumps. Owns its pool.
 STRENGTH_POTENTIATION_CATEGORY = "Strength Potentiation"
 
@@ -76,7 +80,9 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
     },
     "running": {
         "Aerobic Base": SlotBinding("running_base", ("run_z2_base", "run_z2_base_threshold")),
-        "Threshold Work": SlotBinding("running_threshold", ("run_threshold", "run_threshold_ff")),
+        THRESHOLD_CATEGORY: SlotBinding(
+            "running_threshold", ("run_threshold", "run_threshold_ff")
+        ),
         # Acceleration / max velocity and speed endurance are different session qualities, so
         # both stay separate candidates; which one a week needs is phase 7's call.
         SPEED_CATEGORY: SlotBinding("running_speed", ("run_sprint", "run_speed_endurance")),

@@ -28,6 +28,7 @@ from app.logic.exercise_slot import CatalogExercise
 from app.logic.planned_session_slots import (
     ACTIVE_RECOVERY_CATEGORY,
     STRENGTH_POTENTIATION_CATEGORY,
+    THRESHOLD_CATEGORY,
 )
 from app.logic.prescriber import recommend_next_session
 from app.schemas.prescription import WorkoutPrescription
@@ -229,3 +230,52 @@ async def test_a_power_blocks_potentiation_day_is_prescribed_the_contrast_sessio
 
     assert _plan_codes(rx) == ["plan:session_followed=power_potentiation"]
     assert [e.name for e in rx.exercises] == ["Back Squat", "Broad Jump"]
+
+
+# ── running / Threshold Work ─────────────────────────────────────────────────
+
+THRESHOLD_IDS = {"run_threshold", "run_threshold_ff"}
+
+
+@pytest.mark.parametrize(
+    ("goal", "kpi", "expected"),
+    [
+        ("HalfMarathon", "nokpi", "run_threshold"),
+        ("FullMarathon", "ff20", "run_threshold"),       # marathon goal wins over high ff
+        ("Running", "ff20", "run_threshold_ff"),
+        ("5K", "ff20", "run_threshold_ff"),
+        ("Running", "nokpi", "run_threshold"),           # no benchmark: still threshold work
+        ("5K", "ff10", "run_threshold"),
+        ("Sprinting", "nokpi", "run_threshold"),
+    ],
+)
+def test_a_threshold_day_always_gets_exactly_one_threshold_session(
+    catalog_snapshot: list[CatalogExercise], goal: str, kpi: str, expected: str
+) -> None:
+    """The plan decides today is threshold; the KPI heuristic only picks tempo or intervals.
+    A missing fatigue-factor KPI used to eliminate threshold work and substitute an Easy Run."""
+    rx, scored = _day(catalog_snapshot, goal, "running", THRESHOLD_CATEGORY, KPIS[kpi])
+
+    assert [c.branch_id for c in scored] == [expected]
+    assert _plan_codes(rx) == [f"plan:session_followed={expected}"]
+
+
+@pytest.mark.parametrize("goal", ["Running", "5K"])
+@pytest.mark.parametrize("category", ["Aerobic Base", ACTIVE_RECOVERY_CATEGORY, None])
+def test_threshold_eligibility_is_not_widened_on_any_other_day(
+    catalog_snapshot: list[CatalogExercise], goal: str, category: str | None
+) -> None:
+    """Without the benchmark, a non-marathon athlete is offered no threshold session off a
+    Threshold day, exactly as before: widening it everywhere would change ordinary days."""
+    _, scored = _day(catalog_snapshot, goal, "running", category)
+
+    assert not {c.branch_id for c in scored} & THRESHOLD_IDS
+
+
+def test_a_fatigued_threshold_day_still_yields_to_readiness(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    rx, scored = _day(catalog_snapshot, "Running", "running", THRESHOLD_CATEGORY, fatigued=True)
+
+    assert scored[0].branch_id not in THRESHOLD_IDS, [c.branch_id for c in scored]
+    assert _plan_codes(rx) == ["plan:session_replaced=running_threshold(readiness)"]

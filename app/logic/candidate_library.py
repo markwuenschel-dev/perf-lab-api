@@ -18,7 +18,7 @@ thin re-export alias is kept there for backwards compatibility if needed.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.domain.vectors import FatigueState, TissueState
 from app.logic.constraint_engine.candidate import (
@@ -30,6 +30,7 @@ from app.logic.planned_session_slots import (
     ACTIVE_RECOVERY_CATEGORY,
     SPEED_CATEGORY,
     STRENGTH_POTENTIATION_CATEGORY,
+    THRESHOLD_CATEGORY,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
@@ -745,7 +746,8 @@ RUN_AEROBIC_FAMILY = WorkoutFamily(
 
 #: Threshold work: a continuous tempo for a half/full-marathon goal, intervals otherwise when
 #: fatigue factor is high. NOT a partition — a non-marathon athlete with a low fatigue factor
-#: is offered neither, and gets aerobic base.
+#: is offered neither on an unplanned day, and gets aerobic base. A PLANNED Threshold day is
+#: exhaustive instead (``_threshold_day_pool``).
 RUN_THRESHOLD_FAMILY = WorkoutFamily(
     family_id="run_threshold",
     domain="running",
@@ -1210,6 +1212,35 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 }
 
 
+def _threshold_day_pool(goal: str) -> list[CandidateTemplate]:
+    """A planned Threshold day: exactly one threshold session is eligible, whatever the KPIs.
+
+    The family's own predicates are NOT a partition: a non-marathon athlete without a high
+    fatigue factor, including one who never logged the 400 m + 1 mile benchmarks it needs,
+    is offered neither template, and a planned Threshold day became an Easy Run. On the planned
+    day the choice becomes exhaustive:
+
+        marathon goal     -> run_threshold (continuous tempo)
+        high ff (> 14)    -> run_threshold_ff (intervals)
+        otherwise         -> run_threshold
+
+    The ff split stays as it was: an existing coaching heuristic, not a validated partition.
+    Only this day widens. On every other running day the family's predicates are unchanged,
+    so threshold work does not start competing with aerobic base on ordinary days (phase 5.7).
+    """
+    tempo, intervals = (
+        next(t for t in RUNNING_BASE_TEMPLATES if t.branch_id == bid)
+        for bid in ("run_threshold", "run_threshold_ff")
+    )
+    if _marathon_goal(goal):
+        return [replace(tempo, goal_eligible=None, kpi_eligible=None)]
+
+    def unless_intervals(kpi: dict[str, float]) -> bool:
+        return not _run_high_fatigue_factor(kpi)
+
+    return [replace(tempo, goal_eligible=None, kpi_eligible=unless_intervals), intervals]
+
+
 #: Planned categories that OWN their day (phase 5.6): on a day planned as one of these, the
 #: domain draws only this pool, and no other day can reach it. That keeps a template written
 #: for one planned day from competing on every other day of its domain. The value takes the
@@ -1217,6 +1248,7 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 _CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]] = {
     ("running", SPEED_CATEGORY): lambda goal: SPRINTING_TEMPLATES,
     ("running", ACTIVE_RECOVERY_CATEGORY): lambda goal: RUNNING_RECOVERY_TEMPLATES,
+    ("running", THRESHOLD_CATEGORY): _threshold_day_pool,
     ("power", STRENGTH_POTENTIATION_CATEGORY): lambda goal: POWER_POTENTIATION_TEMPLATES,
 }
 
