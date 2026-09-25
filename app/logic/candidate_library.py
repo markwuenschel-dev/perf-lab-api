@@ -151,6 +151,9 @@ class FamilyVariant:
     kpi_eligible: Callable[[dict[str, float]], bool] | None = None
     state_eligible: Callable[[UnifiedStateVector], bool] | None = None
     goal_eligible: Callable[[str], bool] | None = None
+    #: Overrides the family's focus when the variant is the same design written differently —
+    #: a tempo run and threshold intervals are both threshold work. None inherits the family's.
+    focus: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,7 +183,7 @@ class WorkoutFamily:
         return [
             CandidateTemplate(
                 type=self.type,
-                focus=self.focus,
+                focus=self.focus if v.focus is None else v.focus,
                 rationale=v.rationale,
                 branch_id=v.branch_id,
                 duration_min=self.duration_min,
@@ -644,84 +647,87 @@ MIXED_TEMPLATES: list[CandidateTemplate] = [
     ),
 ]
 
-# Running base templates: two aerobic-base variants (threshold vs standard)
-# and two threshold-work variants (marathon goal vs high fatigue-factor).
+# Running base: two families. Aerobic base splits on fatigue factor; threshold work splits on
+# the race goal and, off a marathon goal, on fatigue factor.
+def _run_high_fatigue_factor(kpi: dict[str, float]) -> bool:
+    """Fatigue factor above 14: pace falls off with distance, so durability work comes first."""
+    return (kpi.get("run_fatigue_factor") or 0.0) > 14.0
+
+
+def _marathon_goal(goal: str) -> bool:
+    return goal in ("HalfMarathon", "FullMarathon")
+
+
+#: Zone-2 aerobic base. The two variants are exact complements on fatigue factor: every
+#: athlete gets exactly one.
+RUN_AEROBIC_FAMILY = WorkoutFamily(
+    family_id="run_aerobic_base",
+    domain="running",
+    type="Aerobic Base",
+    focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
+    duration_min=45,
+    goal_alignment=1.0,
+    tags=("aerobic_base", "running_economy"),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r,
+        fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+        tissue_axes=("ankle", "knee"), covers_weak_points=True,
+    ),
+    exercise_slots=(
+        ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
+                     modality="Running"),
+    ),
+    variants=(
+        FamilyVariant(
+            branch_id="run_z2_base_threshold",
+            rationale="Threshold durability priority — moderate effort over pure easy volume.",
+            kpi_eligible=_run_high_fatigue_factor,
+        ),
+        FamilyVariant(
+            branch_id="run_z2_base",
+            rationale="Cardiac output and mitochondrial density via sustained easy effort.",
+            kpi_eligible=lambda kpi: not _run_high_fatigue_factor(kpi),
+        ),
+    ),
+)
+
+#: Threshold work: a continuous tempo for a half/full-marathon goal, intervals otherwise when
+#: fatigue factor is high. NOT a partition — a non-marathon athlete with a low fatigue factor
+#: is offered neither, and gets aerobic base.
+RUN_THRESHOLD_FAMILY = WorkoutFamily(
+    family_id="run_threshold",
+    domain="running",
+    type="Threshold Work",
+    focus="Tempo Run 20 min @ RPE 7–8 + Progression Miles",
+    duration_min=50,
+    goal_alignment=0.9,
+    tags=("lactate_threshold", "aerobic_base"),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * 0.9,
+        fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+        tissue_axes=("ankle", "knee"), habit_mult=0.7,
+        covers_weak_points=True,
+    ),
+    exercise_slots=(),
+    variants=(
+        FamilyVariant(
+            branch_id="run_threshold",
+            rationale="Threshold pace improves fractional utilization of VO2max.",
+            goal_eligible=_marathon_goal,
+        ),
+        FamilyVariant(
+            branch_id="run_threshold_ff",
+            rationale="Threshold pace improves fractional utilization of VO2max.",
+            focus="4×5 min @ threshold pace (RPE 8) / 2 min easy recovery",
+            kpi_eligible=_run_high_fatigue_factor,
+            goal_eligible=lambda g: not _marathon_goal(g),
+        ),
+    ),
+)
+
 RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
-    CandidateTemplate(
-        type="Aerobic Base",
-        focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
-        rationale="Threshold durability priority — moderate effort over pure easy volume.",
-        branch_id="run_z2_base_threshold",
-        duration_min=45,
-        goal_alignment=1.0,
-        tags=["aerobic_base", "running_economy"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
-                         modality="Running"),
-        ],
-        kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
-    ),
-    CandidateTemplate(
-        type="Aerobic Base",
-        focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
-        rationale="Cardiac output and mitochondrial density via sustained easy effort.",
-        branch_id="run_z2_base",
-        duration_min=45,
-        goal_alignment=1.0,
-        tags=["aerobic_base", "running_economy"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
-                         modality="Running"),
-        ],
-        kpi_eligible=lambda kpi: not ((kpi.get("run_fatigue_factor") or 0.0) > 14.0),
-    ),
-    CandidateTemplate(
-        type="Threshold Work",
-        focus="Tempo Run 20 min @ RPE 7–8 + Progression Miles",
-        rationale="Threshold pace improves fractional utilization of VO2max.",
-        branch_id="run_threshold",
-        duration_min=50,
-        goal_alignment=0.9,
-        tags=["lactate_threshold", "aerobic_base"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * 0.9,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), habit_mult=0.7,
-            covers_weak_points=True,
-        ),
-        goal_eligible=lambda g: g in ("HalfMarathon", "FullMarathon"),
-    ),
-    CandidateTemplate(
-        type="Threshold Work",
-        focus="4×5 min @ threshold pace (RPE 8) / 2 min easy recovery",
-        rationale="Threshold pace improves fractional utilization of VO2max.",
-        branch_id="run_threshold_ff",
-        duration_min=50,
-        goal_alignment=0.9,
-        tags=["lactate_threshold", "aerobic_base"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * 0.9,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), habit_mult=0.7,
-            covers_weak_points=True,
-        ),
-        kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
-        goal_eligible=lambda g: g not in ("HalfMarathon", "FullMarathon"),
-    ),
+    *RUN_AEROBIC_FAMILY.expand(),
+    *RUN_THRESHOLD_FAMILY.expand(),
 ]
 
 SPRINTING_TEMPLATES: list[CandidateTemplate] = [
@@ -1071,7 +1077,11 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
 # ---------------------------------------------------------------------------
 
 #: Every family whose members are in the pool. Pool = expanded families + remaining literals.
-WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (SBD_STRENGTH_FAMILY,)
+WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (
+    SBD_STRENGTH_FAMILY,
+    RUN_AEROBIC_FAMILY,
+    RUN_THRESHOLD_FAMILY,
+)
 
 GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     "strength": STRENGTH_TEMPLATES,
