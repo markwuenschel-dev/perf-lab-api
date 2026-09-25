@@ -27,6 +27,7 @@ from app.logic.constraint_engine.candidate import (
 )
 from app.logic.exercise_slot import ExerciseSlot
 from app.schemas.state import UnifiedStateVector
+from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
 
 # ---------------------------------------------------------------------------
 # ScoringSpec — per-template dynamic scoring, carried as data
@@ -679,8 +680,11 @@ RUN_AEROBIC_FAMILY = WorkoutFamily(
         tissue_axes=("ankle", "knee"), covers_weak_points=True,
     ),
     exercise_slots=(
+        # Zone 2 is the prescribed intensity. 30-40 min is a range, not a duration, so the
+        # block's duration stays unknown rather than a picked midpoint.
         ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
-                     modality="Running"),
+                     modality="Running",
+                     endurance=ContinuousBlock(intensity_basis="zone", intensity_target=2.0)),
     ),
     variants=(
         FamilyVariant(
@@ -715,9 +719,12 @@ RUN_THRESHOLD_FAMILY = WorkoutFamily(
     ),
     # One continuous tempo; the interval variant replaces it with repeats.
     exercise_slots=(
+        # 20 min is timed. RPE 7-8 is a band, so the basis is recorded and the target left
+        # unknown rather than collapsed to 7.5.
         ExerciseSlot(sets="1", reps="20 min @ RPE 7–8",
                      movement_pattern="run", modality="Running",
-                     prefer_tags=("lactate_threshold",)),
+                     prefer_tags=("lactate_threshold",),
+                     endurance=ContinuousBlock(duration_sec=1200, intensity_basis="rpe")),
     ),
     variants=(
         FamilyVariant(
@@ -732,7 +739,12 @@ RUN_THRESHOLD_FAMILY = WorkoutFamily(
             exercise_slots=(
                 ExerciseSlot(sets="4", reps="5 min @ threshold pace (RPE 8) / 2 min easy",
                              movement_pattern="run", modality="Running", skill_target=0.5,
-                             prefer_tags=("lactate_threshold",)),
+                             prefer_tags=("lactate_threshold",),
+                             endurance=IntervalBlock(
+                                 repetitions=4, work_duration_sec=300,
+                                 recovery_duration_sec=120, recovery_type="easy",
+                                 intensity_basis="rpe", intensity_target=8.0,
+                             )),
             ),
             kpi_eligible=_run_high_fatigue_factor,
             goal_eligible=lambda g: not _marathon_goal(g),
@@ -760,8 +772,11 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
             tissue_axes=("ankle", "hip"), covers_weak_points=True,
         ),
         exercise_slots=[
-            ExerciseSlot(sets="3", reps="30m", movement_pattern="run", modality="Power"),
-            ExerciseSlot(sets="4", reps="20m", movement_pattern="run", modality="Power"),
+            # Distance-only: no pace target times them, so their duration stays unknown.
+            ExerciseSlot(sets="3", reps="30m", movement_pattern="run", modality="Power",
+                         endurance=IntervalBlock(repetitions=3, work_distance_m=30.0)),
+            ExerciseSlot(sets="4", reps="20m", movement_pattern="run", modality="Power",
+                         endurance=IntervalBlock(repetitions=4, work_distance_m=20.0)),
         ],
     ),
     CandidateTemplate(
@@ -774,11 +789,14 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
         tags=[],
         domain="running",
         exercise_slots=[
+            # The build-up's 20-30 m is a range: its distance stays unknown.
             ExerciseSlot(sets="3", reps="20-30m build-up", movement_pattern="run", modality="Power",
-                         sport_domain="running", skill_target=0.55),
+                         sport_domain="running", skill_target=0.55,
+                         endurance=IntervalBlock(repetitions=3)),
             ExerciseSlot(sets="6", reps="300m @ ~90% effort, full recovery", movement_pattern="run",
                          modality="Running", skill_target=0.40,
-                         prefer_tags=("lactate_threshold", "running_economy")),
+                         prefer_tags=("lactate_threshold", "running_economy"),
+                         endurance=IntervalBlock(repetitions=6, work_distance_m=300.0)),
         ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (

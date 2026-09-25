@@ -68,11 +68,13 @@ from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import (
     ExercisePrescription,
     WorkoutPrescription,
+    endurance_block_for,
     project_exercises,
     structure_from_exercises,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
+from app.schemas.workout_structure import WorkoutStructure
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -525,7 +527,7 @@ def _apply_intensity_sets(
         # editing sets inline. LEGACY_TRANSFORM reproduces today's rule exactly (±1 set), so
         # this is behaviour-neutral; 3.2 swaps in real per-family policies, and none of them
         # goes live until its effect under both dose engines has been measured.
-        before = rx.structure or structure_from_exercises(rx.exercises)
+        before = structure_from_exercises(rx.exercises, rx.structure)
         after = LEGACY_TRANSFORM.apply(before, intensity)
         moved = sum(
             1
@@ -778,6 +780,9 @@ class _ExerciseSelection:
     #: with no preference. ``None`` when no preference was applied (none set, or the slot-less
     #: equipment-map path, which does not rank).
     preference_changes: int | None = None
+    #: The slot each exercise was chosen for, aligned with ``exercises`` — how an endurance
+    #: slot's work shape reaches the structure. None on the equipment-map path (no slots).
+    slots: tuple[ExerciseSlot, ...] | None = None
 
 
 def _map_selection(available_equipment: Sequence[str] | None) -> _ExerciseSelection:
@@ -844,9 +849,11 @@ def _select_exercises(
     )
 
     out: list[ExercisePrescription] = []
+    chosen_slots: list[ExerciseSlot] = []
     for res in resolutions:
         if res.chosen is None:
             continue
+        chosen_slots.append(res.slot)
         try:
             sets = int(res.slot.sets)
         except ValueError:
@@ -867,7 +874,10 @@ def _select_exercises(
         else None
     )
     return _ExerciseSelection(
-        out, [_CATALOG_EQUIPMENT_CODE[_equipment_state(available_equipment)]], changes
+        out,
+        [_CATALOG_EQUIPMENT_CODE[_equipment_state(available_equipment)]],
+        changes,
+        tuple(chosen_slots),
     )
 
 
@@ -883,6 +893,21 @@ def _exercise_list_for_candidate(
 
 #: How many resolved exercises the displayed session title names before "+N more".
 _FOCUS_NAMED_EXERCISES = 3
+
+
+def _structure_for_selection(selection: _ExerciseSelection) -> WorkoutStructure:
+    """The selected exercises as blocks: an endurance slot's work shape, else a strength block.
+
+    Phase 5.3: this is where a running session becomes an interval or continuous block. The
+    exercise list stays exactly what it was — it is the block's compatibility projection.
+    """
+    blocks = structure_from_exercises(selection.exercises)
+    for i, slot in enumerate(selection.slots or ()):
+        if slot.endurance is not None:
+            shaped = endurance_block_for(slot.endurance, selection.exercises[i])
+            if shaped is not None:
+                blocks[i] = shaped
+    return blocks
 
 
 def _focus_from_exercises(exercises: list[ExercisePrescription]) -> str:
@@ -1268,6 +1293,7 @@ def _recommend_next_session(
         equipment_preference=equipment_preference,
     )
     rx.exercises = selection.exercises
+    rx.structure = _structure_for_selection(selection)
     # A hard validator failure replaced the session with a recovery override; its title says so
     # and must not be rebuilt from the template's exercises.
     overridden = (

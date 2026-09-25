@@ -87,12 +87,37 @@ class StrengthBlock(_Block):
     load_explanation: LoadExplanation | None = None
 
 
-class IntervalBlock(_Block):
+class _EnduranceIdentity(BaseModel):
+    """What an endurance block is called, and how it reads in the legacy ``exercises[]`` view.
+
+    ``activity`` names the work — "Threshold Tempo Run" — in endurance vocabulary rather than a
+    strength block's ``exercise``. The ``display_*`` fields and the rest are the COMPATIBILITY
+    projection (phase 5.3): exactly the text and values ``exercises[]`` showed before running
+    became structured, so making the model honest changed nothing an athlete or a log prefill
+    sees. Changing that display is a deliberate UI decision, never a side effect of structure.
+
+    A block with no ``activity`` does not project, like a warmup.
+    """
+
+    activity: str | None = Field(default=None, description="What the work is, e.g. 'Tempo Run'.")
+    display_sets: int | None = Field(
+        default=None, description="Compatibility projection: the legacy exercise's set count."
+    )
+    display_reps: str | None = Field(
+        default=None, description="Compatibility projection: the legacy exercise's reps text."
+    )
+    load_note: str | None = None
+    weak_point_tags: list[str] = Field(default_factory=list)
+    rpe_cap: float | None = None
+    load_explanation: LoadExplanation | None = None
+
+
+class IntervalBlock(_EnduranceIdentity, _Block):
     """Repeated efforts with prescribed recovery — the shape running and HYROX need.
 
-    Emitted by nothing in 2.1. Declared now so phase 5 extends behaviour rather than schema:
-    a threshold session is ``repetitions=4, work_duration_sec=300, recovery_duration_sec=120``,
-    not the sentence "4×5 min @ threshold pace / 2 min easy recovery".
+    Emitted by running templates since phase 5.3: a threshold session is
+    ``repetitions=4, work_duration_sec=300, recovery_duration_sec=120``, not the sentence
+    "4×5 min @ threshold pace / 2 min easy recovery".
     """
 
     kind: Literal["interval"] = "interval"
@@ -114,7 +139,7 @@ class IntervalBlock(_Block):
     quality_stop: str | None = None
 
 
-class ContinuousBlock(_Block):
+class ContinuousBlock(_EnduranceIdentity, _Block):
     """One unbroken effort: a steady run, a row, a ruck."""
 
     kind: Literal["continuous"] = "continuous"
@@ -181,7 +206,10 @@ class DurationEstimate(BaseModel):
 
 
 def _describe(block: WorkoutBlock, missing: str) -> str:
-    name = getattr(block, "exercise", None) or block.label or block.kind
+    name = (
+        getattr(block, "exercise", None) or getattr(block, "activity", None)
+        or block.label or block.kind
+    )
     return f"{name}: {missing}"
 
 

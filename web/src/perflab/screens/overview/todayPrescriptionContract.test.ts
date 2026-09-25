@@ -33,7 +33,7 @@ const populated: TodaySessionResponse = {
     // generated type marks them required. Null here: this fixture carries no structure.
     calculated_duration_min: null,
     duration_estimate: null,
-    model_version: "v0.3",
+    model_version: "v0.4",
     exercises: [{ name: "Back Squat", sets: 4, reps: "5", weak_point_tags: [], prescribed_load_kg: 102.5 }],
     why: {
       state_drivers: ["hrv above baseline"],

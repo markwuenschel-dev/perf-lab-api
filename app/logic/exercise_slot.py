@@ -29,7 +29,9 @@ logic layer keeps its DB-free boundary and the resolution is directly unit-testa
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
 
 #: Equipment an athlete is assumed to have without configuring anything.
 _ALWAYS_AVAILABLE: frozenset[str] = frozenset({"bodyweight", "none", ""})
@@ -126,6 +128,13 @@ class ExerciseSlot:
     allow_repeat: bool = False
 
     load_note: str | None = None
+
+    #: The WORK SHAPE of an endurance position (phase 5.3): an interval or continuous block
+    #: with its timing and intensity basis, and no name. Selection names it after the catalog
+    #: pick and the prescriber emits it in place of a strength block. None keeps the position
+    #: strength-shaped, as every slot was before. Excluded from the hash: a pydantic model is
+    #: not hashable, and the shape is not part of what the slot requires of the catalog.
+    endurance: IntervalBlock | ContinuousBlock | None = field(default=None, hash=False)
 
     def describe(self) -> str:
         """Human-readable requirement, for diagnostics when nothing resolves."""

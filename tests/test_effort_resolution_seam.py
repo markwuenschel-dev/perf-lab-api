@@ -126,7 +126,7 @@ async def test_the_final_structure_load_is_what_its_own_effort_target_resolves_t
         async_db, user.id, rx, {**BLOCK, "intensity": level}, as_of=AS_OF
     )
     # Exactly what prescribe_for_athlete does after resolution (prescription_service.py).
-    rx.structure = structure_from_exercises(rx.exercises)
+    rx.structure = structure_from_exercises(rx.exercises, rx.structure)
 
     assert rx.exercises[0].prescribed_load_kg is not None, "the lift must have resolved a load"
     assert _disagreements(rx.structure) == []
@@ -143,7 +143,7 @@ async def test_an_effort_change_made_after_load_resolution_is_detected(async_db)
     await _enrich_exercises_with_load(
         async_db, user.id, rx, {**BLOCK, "intensity": "medium"}, as_of=AS_OF
     )
-    rx.structure = structure_from_exercises(rx.exercises)
+    rx.structure = structure_from_exercises(rx.exercises, rx.structure)
 
     late = [rx.structure[0].model_copy(update={"rpe_target": 9.5})]
 

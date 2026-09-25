@@ -746,8 +746,9 @@ async def prescribe_for_athlete(
     await _enrich_exercises_with_weak_point_tags(db, rx, ctx.active_weak_points)
     # Both enrichers write onto the exercises, so the structure attached in finalize is stale.
     # Re-derive it once, AFTER both — it used to run between them, so the persisted structure
-    # carried pre-enrichment weak-point tags while exercises[] carried the enriched ones.
-    rx.structure = structure_from_exercises(rx.exercises)
+    # carried pre-enrichment weak-point tags while exercises[] carried the enriched ones. The
+    # current structure is passed as `previous` so a structured run keeps its work shape.
+    rx.structure = structure_from_exercises(rx.exercises, rx.structure)
 
     # Phase 5 — persist the prescription (the production commit).
     await _persist_prescription(db, ctx.target_session, rx)
