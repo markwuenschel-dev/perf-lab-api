@@ -137,7 +137,20 @@ logged sessions with a tissue outcome (pain reports, missed sessions, readiness 
 **Observed (phase 1.2).** v1 reports `density_basis = not_applicable` for continuous and
 mixed sessions: a run's work is distance and pace, which the set count cannot describe.
 
-**What a fit must resolve.** Phase 5 supplies a real temporal work quantity from interval and
-continuous structure (`structured_endurance_work`). Until then, endurance rows in the shadow
-dataset carry `v1_density_not_modelled = true`, and a fit must not read their v1/v0 ratio as
-evidence about density — it is evidence about a missing input.
+**What a fit must resolve.** A not-modelled endurance row's v1/v0 ratio is evidence about a
+missing input, not about density.
+
+**Phase 5.4 (2026-09-25): a prescribed proxy, not performed density.** When a log is
+EXPLICITLY linked to a planned session whose structure is fully timed, v1 (dose version
+`v1.1`) reads `prescribed_timed_work_over_elapsed`: the prescription's work seconds (interval
+work only; recovery enters through the denominator) over the logged elapsed seconds. It is
+dimensionless in (0, 1], and each row's `v1_dose_json.density_provenance` records it as
+`prescribed_not_performed`. Impossible timing (prescribed work > logged elapsed), a zero
+elapsed time, ranged or distance-only work, and heuristic links stay not modelled, with a reason.
+
+**Default for 8B, encoded in `dose_model.DENSITY_FIT_ELIGIBILITY`:** these rows are EXCLUDED
+from fitting (as are not-modelled and legacy rows). They remain useful for shadow diagnostics.
+A fit may opt in only after demonstrating adherence. Performed structure, when the athlete can
+log it, gets its own basis (`performed_timed_work_over_elapsed`, fit-eligible), so historical
+proxy rows stay unambiguous. A guard test makes any `app/ml` reader of the shadow log consult
+the policy.

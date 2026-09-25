@@ -10,8 +10,12 @@ whether a difference is a real correction or a missing input:
 
 * ``v1_density_basis = "not_applicable"`` — density was not modelled for this session (a
   continuous effort, or no reported set count). A v1/v0 ratio there reflects the absence of an
-  endurance-density input, not a corrected one. Phase 5 introduces
-  ``structured_endurance_work``; these rows are how the fit will tell the two apart.
+  endurance-density input, not a corrected one. Its reason, when known, is in
+  ``v1_dose_json["density_provenance"]``.
+* ``v1_density_basis = "prescribed_timed_work_over_elapsed"`` (phase 5.4) — the density came
+  from the EXPLICITLY linked prescription's timed work over the logged elapsed time: what was
+  prescribed, not what was performed. Excluded from fitting by default
+  (``dose_model.density_fit_eligible``).
 * ``v0_volume_sets_basis = "fabricated_fallback"`` — v0's volume includes the invented
   ``max(3, duration/12)`` set count. The fit should exclude these by default.
 

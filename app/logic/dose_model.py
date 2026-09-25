@@ -123,8 +123,14 @@ def select_production_dose_model(name: str | None = None) -> DoseModel:
 DensityBasis = Literal[
     #: Working sets divided by elapsed minutes (v1, set-counted modalities).
     "sets_per_elapsed_minute",
-    #: A real endurance work rate — pace, power, structured intervals. Phase 5 introduces it.
-    "structured_endurance_work",
+    #: Timed work in the LINKED PRESCRIPTION's structure over the LOGGED elapsed time (phase 5.4).
+    #: A shadow-only proxy: what was prescribed, not what was performed. Two athletes who log
+    #: the same prescription identically get the same value; that does NOT show they ran the
+    #: intervals identically. Dimensionless, in (0, 1]: work seconds / elapsed seconds.
+    "prescribed_timed_work_over_elapsed",
+    #: Reserved for PERFORMED structure logged by the athlete (the eventual endpoint). Produced
+    #: by nothing yet. A separate value so historical prescribed-proxy rows stay unambiguous.
+    "performed_timed_work_over_elapsed",
     #: Density is not modelled for this session: no reported set count, or a continuous effort
     #: whose work the set count cannot describe. NOT an observation of average density.
     "not_applicable",
@@ -144,6 +150,10 @@ class DensityMeasurement:
 
     value: float | None
     basis: DensityBasis
+    #: Why density is not modelled, when a specific reason is known (e.g.
+    #: "prescribed_work_exceeds_logged_elapsed"). Diagnostic only: never enters the dose law,
+    #: and never a production StressDose field.
+    reason: str | None = None
 
     @property
     def factor(self) -> float:
@@ -152,3 +162,25 @@ class DensityMeasurement:
 
 
 NOT_MODELLED = DensityMeasurement(value=None, basis="not_applicable")
+
+
+# --- Which densities a calibration fit may learn from (phase 5.4) -----------------------
+#
+# Encoded now, so 8B does not have to remember it. A prescribed-structure proxy measures the
+# PLAN, not the athlete, so it is excluded by default. It stays useful for shadow diagnostics
+# and model development, and a fit can opt in deliberately once adherence is demonstrated.
+# Every consumer of the dose shadow log under app/ml must consult ``density_fit_eligible``;
+# tests/test_density_fit_policy.py enforces that.
+
+DENSITY_FIT_ELIGIBILITY: dict[str, bool] = {
+    "sets_per_elapsed_minute": True,
+    "performed_timed_work_over_elapsed": True,
+    "prescribed_timed_work_over_elapsed": False,
+    "not_applicable": False,
+    "legacy_minutes_per_set": False,
+}
+
+
+def density_fit_eligible(basis: str | None) -> bool:
+    """May a fit learn from a dose whose density has ``basis``? Unknown or absent: no."""
+    return basis is not None and DENSITY_FIT_ELIGIBILITY.get(basis, False)

@@ -1221,6 +1221,14 @@ async def process_new_workout(
         planned_domain=shadow_planned_domain,
         planned_category=shadow_planned_category,
         n_set_rows=shadow_n_set_rows,
+        # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as
+        # this athlete's above) may lend the prescription's structure to v1's density. The
+        # same-day fallback match is a heuristic, and a false link invents a density.
+        linked_prescription=(
+            planned_session.prescribed_content
+            if log.planned_session_id is not None and planned_session is not None
+            else None
+        ),
     )
 
     return result
