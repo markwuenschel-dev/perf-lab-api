@@ -74,7 +74,7 @@ def compute_tissue_risk(
         tissue_val = getattr(state.tissue_t, axis, 0.0)
         base_risk = tissue_val / 100.0 * 0.50
 
-        # Acute:chronic spike (ACWR > 1.3 starts adding risk)
+        # Acute:chronic spike (ACWR > 1.3 starts adding risk) — an unvalidated heuristic threshold
         spike_risk = min(0.30, max(0.0, (ac_ratio - 1.3) / 1.7) * 0.30) if ac_ratio > 1.3 else 0.0
 
         # Recent concentration (3d exposure relative to 7d)

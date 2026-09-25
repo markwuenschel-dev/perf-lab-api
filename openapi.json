@@ -6901,7 +6901,7 @@
         "type": "object"
       },
       "TrainingLoadMetrics": {
-        "description": "Acute:chronic workload ratio vs the 0.8-1.3 sweet spot.\n\n``acute`` is the 7-day summed load; ``chronic`` is the average *weekly*\nload over 28 days (28-day sum / 4). ``acwr`` = acute / chronic. All three\nare ``None`` when there is insufficient history to compute a meaningful\nbaseline (``status == \"insufficient\"``).",
+        "description": "Acute:chronic workload ratio against a 0.8-1.3 reference band.\n\nThe band is an unvalidated heuristic: a training-load rule of thumb that this engine has\nnever checked against injury outcomes. It is not an injury-risk predictor; ``status`` only\nsays where the ratio sits relative to the band.\n\n``acute`` is the 7-day summed load; ``chronic`` is the average *weekly*\nload over 28 days (28-day sum / 4). ``acwr`` = acute / chronic. All three\nare ``None`` when there is insufficient history to compute a meaningful\nbaseline (``status == \"insufficient\"``).",
         "properties": {
           "acute": {
             "anyOf": [
@@ -6924,7 +6924,7 @@
                 "type": "null"
               }
             ],
-            "description": "acute(7d) / chronic(28d avg weekly) load ratio",
+            "description": "acute(7d) / chronic(28d avg weekly) load ratio. Descriptive only, not a validated injury-risk predictor",
             "title": "Acwr"
           },
           "chronic": {
@@ -6940,6 +6940,7 @@
             "title": "Chronic"
           },
           "status": {
+            "description": "Where acwr sits relative to the heuristic 0.8-1.3 band; 'optimal' means inside the band, not a validated safe range",
             "enum": [
               "insufficient",
               "low",
@@ -6951,11 +6952,13 @@
           },
           "sweet_spot_high": {
             "default": 1.3,
+            "description": "Upper edge of the unvalidated heuristic band",
             "title": "Sweet Spot High",
             "type": "number"
           },
           "sweet_spot_low": {
             "default": 0.8,
+            "description": "Lower edge of the unvalidated heuristic band",
             "title": "Sweet Spot Low",
             "type": "number"
           }

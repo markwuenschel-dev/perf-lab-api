@@ -563,7 +563,7 @@ export async function getReadiness(token: string): Promise<ReadinessScore> {
 
 /**
  * Dashboard (P6): the Overview tiles' backend-owned metrics — acute:chronic
- * training load vs the sweet spot, plus recent plan adherence + streak. Fields
+ * training load vs a heuristic reference band, plus recent plan adherence + streak. Fields
  * are null / `status == "insufficient"` for new users with little history.
  */
 export async function getDashboardOverview(token: string): Promise<OverviewMetrics> {
