@@ -110,7 +110,7 @@ class DifficultyTransform(Protocol):
 # --- the declared policies ----------------------------------------------------------
 #
 # Declarations only in 3.1. A policy with no transform is a statement of intent that 3.2 (or,
-# for endurance, phase 5) must satisfy.
+# for endurance, a calibrated step size: deferred, docs/calibration-backlog.md C5) must satisfy.
 
 POLICIES: dict[str, FamilyDifficultyPolicy] = {
     "strength": FamilyDifficultyPolicy(
@@ -203,16 +203,24 @@ def _strength_signature(block: StrengthBlock) -> dict[DifficultyDimension, objec
 
 
 def _interval_signature(block: IntervalBlock) -> dict[DifficultyDimension, object]:
+    # activity, rpe_cap, quality_stop and recovery_after_last_rep arrived with the phase 5.3
+    # endurance blocks. Leaving any of them out makes swapping the run, raising its effort
+    # ceiling or ending it early invisible to every check below.
     return {
         DifficultyDimension.VOLUME: (
             block.repetitions,
             block.work_duration_sec,
             block.work_distance_m,
+            block.quality_stop,
         ),
         DifficultyDimension.INTENSITY: (block.intensity_target, block.intensity_basis),
-        DifficultyDimension.EFFORT: None,
-        DifficultyDimension.DENSITY: (block.recovery_duration_sec, block.recovery_type),
-        DifficultyDimension.EXERCISE_SELECTION: block.label,
+        DifficultyDimension.EFFORT: block.rpe_cap,
+        DifficultyDimension.DENSITY: (
+            block.recovery_duration_sec,
+            block.recovery_type,
+            block.recovery_after_last_rep,
+        ),
+        DifficultyDimension.EXERCISE_SELECTION: (block.label, block.activity),
     }
 
 
@@ -220,9 +228,9 @@ def _continuous_signature(block: ContinuousBlock) -> dict[DifficultyDimension, o
     return {
         DifficultyDimension.VOLUME: (block.duration_sec, block.distance_m),
         DifficultyDimension.INTENSITY: (block.intensity_target, block.intensity_basis),
-        DifficultyDimension.EFFORT: None,
+        DifficultyDimension.EFFORT: block.rpe_cap,
         DifficultyDimension.DENSITY: None,
-        DifficultyDimension.EXERCISE_SELECTION: block.label,
+        DifficultyDimension.EXERCISE_SELECTION: (block.label, block.activity),
     }
 
 

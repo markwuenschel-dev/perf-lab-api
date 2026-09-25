@@ -154,3 +154,31 @@ A fit may opt in only after demonstrating adherence. Performed structure, when t
 log it, gets its own basis (`performed_timed_work_over_elapsed`, fit-eligible), so historical
 proxy rows stay unambiguous. A guard test makes any `app/ml` reader of the shadow log consult
 the policy.
+
+---
+
+## C5 · Endurance difficulty has levers but no magnitudes (phase 5.5, deferred)
+
+**The statement.** `app/logic/difficulty.py` `POLICIES` already says which lever each endurance
+family may pull when difficulty changes: easy aerobic moves duration, threshold moves
+accumulated work, a max-velocity sprint session moves the number of quality repetitions. It does
+not say how far any of them moves, and `CONSTRAINTS` states no endurance bound, so the validator
+rejects any threshold recovery change and any easy-aerobic intensity change.
+
+**Why deferred (2026-09-25).** No universal progression constant exists to borrow: endurance
+programming varies repetitions, duration, recovery and intensity by session type, athlete and
+phase (Casado et al. 2022; Hofmann & Tschakert 2017; Tønnessen et al. 2024; Haugen et al.
+2022; Buchheit & Laursen 2013). A ±1 repetition or ±15 % duration step chosen now would be a
+physiology guess written into production. A phase 3.4 candidate would also stay dormant until
+dose can tell the change apart (C1).
+
+**What exists instead.** `tests/test_endurance_difficulty_validator.py` exercises the validator
+on interval and continuous blocks with test-only synthetic transforms, and pins that no
+endurance bound or transform exists yet. That run found, and fixed, fields the phase 5.3 blocks
+added but the detector could not see (`activity`, `rpe_cap`, `recovery_after_last_rep`,
+`quality_stop`), and a volume scaler that left the displayed interval count stale.
+
+**What a fit must resolve.** Per-family step sizes and the threshold recovery bound, against
+logged endurance sessions with an outcome. One further prerequisite: scaling a continuous
+duration must decide how its display text (`"20 min @ RPE 7–8"`) changes. That is a UI
+decision, not a side effect.

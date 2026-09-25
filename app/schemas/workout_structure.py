@@ -307,8 +307,7 @@ def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> Worko
       Changing reps would change the nature of the prescription: 5×3 to 5×8 is not "more
       volume", it is a different session.
     * **Interval** — repetitions change, not the work duration or the intensity target. The
-      interface exists now; nothing emits interval blocks until the running conversion, so
-      this path is dormant by design rather than untested.
+      displayed set count follows the repetitions it mirrors.
     * **Continuous** — accumulated work duration changes.
     * **Warmup / cooldown** — never scaled. Preparation is not training volume.
 
@@ -328,11 +327,13 @@ def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> Worko
         if isinstance(block, StrengthBlock) and block.sets is not None:
             out.append(block.model_copy(update={"sets": _scaled_count(block.sets, modifier)}))
         elif isinstance(block, IntervalBlock) and block.repetitions is not None:
-            out.append(
-                block.model_copy(
-                    update={"repetitions": _scaled_count(block.repetitions, modifier)}
-                )
-            )
+            repetitions = _scaled_count(block.repetitions, modifier)
+            update: dict[str, object] = {"repetitions": repetitions}
+            # The displayed set count IS the repetition count (phase 5.3); scaling one without
+            # the other shows the athlete a different session from the one prescribed.
+            if block.display_sets == block.repetitions:
+                update["display_sets"] = repetitions
+            out.append(block.model_copy(update=update))
         elif isinstance(block, ContinuousBlock) and block.duration_sec is not None:
             out.append(
                 block.model_copy(
