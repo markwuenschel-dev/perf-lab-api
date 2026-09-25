@@ -31,9 +31,20 @@ they broke — the flags are heuristics for a human to read, not assertions:
 * a session with no exercises at all
 * zero or negative dose on a real session
 
+Matrix #2 (phase-5 exit) adds the planned running and power days phase 5 made real, and two
+corrections to #1:
+
+* the movement catalog is passed, built from the seeder source exactly as the test suite's
+  ``catalog_snapshot`` is. #1 passed none, so every cell fell back to the generic equipment
+  map (``prescriber._select_exercises``: ``catalog is None``) and slot selection was never
+  exercised;
+* a per-cell ``plan-replaced`` flag: a planned day that prescribed something else (the
+  prescriber's own ``plan:session_replaced=`` code), and ``redirect`` for a readiness /
+  safety session that is not a library template.
+
 Run:
     uv run python -m app.scripts.simulate_matrix
-    uv run python -m app.scripts.simulate_matrix --out docs/simulations/phase-1.md
+    uv run python -m app.scripts.simulate_matrix --grid phase-5         --out docs/simulations/phase-5.md --title "Simulation matrix #2 — phase 5 exit"
 """
 from __future__ import annotations
 
@@ -48,6 +59,7 @@ from app.logic import dose_engine_v0 as _v0
 from app.logic import dose_engine_v1 as _v1
 from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
 from app.logic.dose_engine import PRODUCTION_DOSE_MODEL_NAME, calculate_stress_dose
+from app.logic.exercise_slot import CatalogExercise
 from app.logic.mpc.candidate_dose import modality_for_domain
 from app.logic.prescriber import recommend_next_session
 from app.logic.state_update_v0 import update_athlete_state
@@ -82,11 +94,61 @@ FRESHNESS = {
     "fatigued": (55.0, 45.0),
 }
 
-#: goal label -> (training goal, canonical domain, planned slot category)
+#: Every template id in the library. A winning branch outside it is a readiness redirect, a
+#: safety override or the infeasible fallback: not a planned session.
+_TEMPLATE_BRANCHES: frozenset[str] = frozenset(
+    t.branch_id for pool in GOAL_TEMPLATE_LIBRARY.values() for t in pool
+)
+
+#: goal label -> (training goal, canonical domain, planned slot category). The phase-1 grid,
+#: kept exactly: ``tests/test_structure_projection_identity.py`` compares it to the committed
+#: ``docs/simulations/phase-1.md``.
 GOALS = {
     "strength": ("Strength", "strength", "Max Strength"),
     "endurance": ("Running", "running", "Aerobic Base"),
     "mixed": ("CrossFit", "mixed", "Metabolic Conditioning"),
+}
+
+#: The phase-5 grid: goal label -> (training goal as a block passes it, canonical domain,
+#: planned slot category, KPIs). The running days use goal "Running", as an active Running
+#: block does (``prescription_service.resolve_effective_goal``). Threshold runs twice: without
+#: the fatigue-factor KPI (most athletes) and with a high one, the two members of the family.
+PHASE_5_GOALS: dict[str, tuple[str, str, str, dict[str, float]]] = {
+    **{label: (*spec, {}) for label, spec in GOALS.items()},
+    "threshold": ("Running", "running", "Threshold Work", {}),
+    "threshold_ff20": ("Running", "running", "Threshold Work", {"run_fatigue_factor": 20.0}),
+    "speed": ("Running", "running", "Speed", {}),
+    "recovery": ("Running", "running", "Active Recovery", {}),
+    "potentiation": ("Power", "power", "Strength Potentiation", {}),
+}
+
+
+def _catalog() -> list[CatalogExercise]:
+    """The movement catalog as plain data, from the seeder source: no database."""
+    from app.data.exercise_bulk import bulk_exercises
+    from app.scripts.seed_exercises import EXERCISES
+
+    return [
+        CatalogExercise(
+            name=row["name"],
+            modality=row["modality"],
+            movement_pattern=row["movement_pattern"],
+            load_type=row["load_type"],
+            pattern_family=row.get("pattern_family"),
+            equipment_required=tuple(row.get("equipment_required") or ()),
+            sport_domains=tuple(row.get("sport_domains") or ()),
+            weak_point_tags=tuple(row.get("weak_point_tags") or ()),
+            skill_demand=row.get("skill_demand") or 0.5,
+            e1rm_benchmark_code=row.get("e1rm_benchmark_code"),
+        )
+        for row in list(EXERCISES) + list(bulk_exercises())
+    ]
+
+
+#: grid name -> (goals, catalog). Phase 1 ran without a catalog; see the module docstring.
+GRIDS: dict[str, tuple[dict[str, tuple[str, str, str, dict[str, float]]], list[CatalogExercise] | None]] = {
+    "phase-1": ({label: (*spec, {}) for label, spec in GOALS.items()}, None),
+    "phase-5": (PHASE_5_GOALS, _catalog()),
 }
 
 WORKLOADS = ("easy", "medium", "hard")
@@ -135,6 +197,7 @@ class Cell:
     goal: str
     workload: str
     session: str
+    exercises: str
     sets: int
     duration_min: int
     dose_total: float
@@ -147,15 +210,20 @@ class Cell:
         return (self.experience, self.freshness, self.goal)
 
 
-def _run_cell(experience: str, freshness: str, goal: str, workload: str) -> Cell:
+def _run_cell(
+    experience: str, freshness: str, goal: str, workload: str, grid: str = "phase-1"
+) -> Cell:
     level_key, _years = EXPERIENCE[experience]
     fatigue, tissue = FRESHNESS[freshness]
-    training_goal, domain, category = GOALS[goal]
+    goals, catalog = GRIDS[grid]
+    training_goal, domain, category, kpi = goals[goal]
     state = _state(level_key, fatigue, tissue)
 
     rx = recommend_next_session(
         state,
-        goal=training_goal,
+        goal=training_goal,  # type: ignore[arg-type]
+        kpi_summary=kpi,
+        catalog=catalog,
         block_context={
             "block_goal": training_goal,
             "session_category": category,
@@ -188,6 +256,12 @@ def _run_cell(experience: str, freshness: str, goal: str, workload: str) -> Cell
     dose_total = float(sum(dose.dose_six.model_dump().values()))
     if dose_total <= 0.0:
         flags.append("zero-dose")
+    applied = rx.why.constraints_applied if rx.why is not None else []
+    for code in applied:
+        if code.startswith("plan:session_replaced="):
+            flags.append(f"plan-replaced({code.split('=', 1)[1]})")
+    if branch and branch not in _TEMPLATE_BRANCHES:
+        flags.append(f"redirect({branch})")
 
     return Cell(
         experience=experience,
@@ -195,6 +269,7 @@ def _run_cell(experience: str, freshness: str, goal: str, workload: str) -> Cell
         goal=goal,
         workload=workload,
         session=rx.type,
+        exercises=", ".join(e.name for e in rx.exercises),
         sets=sets,
         duration_min=rx.duration_min,
         dose_total=dose_total,
@@ -236,11 +311,12 @@ def _log(rx) -> WorkoutLog:
     )
 
 
-def build_matrix() -> list[Cell]:
+def build_matrix(grid: str = "phase-1") -> list[Cell]:
+    goals, _catalog_rows = GRIDS[grid]
     return [
-        _run_cell(experience, freshness, goal, workload)
+        _run_cell(experience, freshness, goal, workload, grid)
         for experience, freshness, goal, workload in itertools.product(
-            EXPERIENCE, FRESHNESS, GOALS, WORKLOADS
+            EXPERIENCE, FRESHNESS, goals, WORKLOADS
         )
     ]
 
@@ -249,8 +325,9 @@ def cross_cell_flags(cells: list[Cell]) -> list[str]:
     """Checks that only make sense ACROSS cells — the globally-ridiculous ones."""
     findings: list[str] = []
     by_key = {(c.experience, c.freshness, c.goal, c.workload): c for c in cells}
+    goals = list(dict.fromkeys(c.goal for c in cells))
 
-    for experience, goal, workload in itertools.product(EXPERIENCE, GOALS, WORKLOADS):
+    for experience, goal, workload in itertools.product(EXPERIENCE, goals, WORKLOADS):
         fresh = by_key[(experience, "fresh", goal, workload)]
         tired = by_key[(experience, "fatigued", goal, workload)]
         if tired.sets > fresh.sets:
@@ -264,7 +341,7 @@ def cross_cell_flags(cells: list[Cell]) -> list[str]:
                 f"{tired.dose_total:.2f} vs {fresh.dose_total:.2f}"
             )
 
-    for experience, freshness, goal in itertools.product(EXPERIENCE, FRESHNESS, GOALS):
+    for experience, freshness, goal in itertools.product(EXPERIENCE, FRESHNESS, goals):
         easy = by_key[(experience, freshness, goal, "easy")]
         hard = by_key[(experience, freshness, goal, "hard")]
         if easy.dose_total > hard.dose_total * 1.05:
@@ -294,12 +371,12 @@ def _session_dose(engine, sets: int, duration: float = 75.0) -> float:
     return float(sum(engine.calculate_stress_dose(log).dose_six.model_dump().values()))
 
 
-def render(cells: list[Cell]) -> str:
+def render(cells: list[Cell], title: str = "Simulation matrix #1 — phase 1 exit") -> str:
     cross = cross_cell_flags(cells)
     per_cell = [c for c in cells if c.flags]
 
     lines = [
-        "# Simulation matrix #1 — phase 1 exit",
+        f"# {title}",
         "",
         "Generated by `app/scripts/simulate_matrix.py`. Every number comes from the production",
         "path: baseline capacities from `state_service._BASELINE_CAPACITIES`, the session from",
@@ -308,7 +385,8 @@ def render(cells: list[Cell]) -> str:
         "",
         f"- production dose model: **{PRODUCTION_DOSE_MODEL_NAME}** "
         "(`app/logic/dose_model.py`; v1 is shadow-only until phase 8C)",
-        f"- cells: **{len(cells)}** (3 experience × 2 freshness × 3 goal × 3 workload)",
+        f"- cells: **{len(cells)}** ({len(EXPERIENCE)} experience × {len(FRESHNESS)} freshness "
+        f"× {len({c.goal for c in cells})} goal/day × {len(WORKLOADS)} workload)",
         f"- cells with a per-cell flag: **{len(per_cell)}**",
         f"- cross-cell findings: **{len(cross)}**",
         "",
@@ -354,25 +432,27 @@ def render(cells: list[Cell]) -> str:
         "",
         "## Matrix",
         "",
-        "| experience | freshness | goal | workload | session | sets | min | dose | Δcapacity | Δfatigue |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| experience | freshness | goal | workload | session | exercises | sets | min | dose | Δcapacity | Δfatigue |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for c in cells:
         flag = " ⚠️" if c.flags else ""
         lines.append(
             f"| {c.experience} | {c.freshness} | {c.goal} | {c.workload} | {c.session}{flag} | "
-            f"{c.sets} | {c.duration_min} | {c.dose_total:.2f} | {c.capacity_delta:+.3f} | "
-            f"{c.fatigue_delta:+.2f} |"
+            f"{c.exercises} | {c.sets} | {c.duration_min} | {c.dose_total:.2f} | "
+            f"{c.capacity_delta:+.3f} | {c.fatigue_delta:+.2f} |"
         )
     return "\n".join(lines) + "\n"
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Phase-1 simulation matrix.")
+    ap = argparse.ArgumentParser(description="Simulation matrix.")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--title", default="Simulation matrix #1 — phase 1 exit")
+    ap.add_argument("--grid", choices=sorted(GRIDS), default="phase-1")
     args = ap.parse_args()
 
-    report = render(build_matrix())
+    report = render(build_matrix(args.grid), args.title)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(report, encoding="utf-8")

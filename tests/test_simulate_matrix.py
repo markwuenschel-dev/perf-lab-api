@@ -39,3 +39,35 @@ def test_the_report_names_its_findings_rather_than_only_counting_them() -> None:
     assert "## Findings" in report and "## Matrix" in report
     assert "easy > hard DOSE" in report, "the known v0 density inversion should be reported"
     assert "v1 (shadow)" in report, "and explained against the corrected engine"
+
+
+def test_every_planned_day_is_prescribed_as_planned() -> None:
+    """The phase-5 exit claim, over the whole grid: no planned day is replaced by something
+    else, and no cell is a generic redirect."""
+    flagged = [
+        (c.experience, c.freshness, c.goal, c.workload, c.flags)
+        for c in sm.build_matrix("phase-5")
+        if any(f.startswith(("plan-replaced", "redirect")) for f in c.flags)
+    ]
+
+    assert not flagged, flagged
+
+
+def test_the_plan_replaced_flag_fires(monkeypatch) -> None:
+    """Test the test: a Sprinting goal on an Aerobic Base day draws the sprint pool, so the
+    bound aerobic templates are unavailable and the plan is replaced."""
+    monkeypatch.setitem(sm.PHASE_5_GOALS, "planted", ("Sprinting", "running", "Aerobic Base", {}))
+
+    cell = sm._run_cell("novice", "fresh", "planted", "medium", "phase-5")
+
+    assert "plan-replaced(running_base(unavailable))" in cell.flags, cell.flags
+
+
+def test_the_matrix_uses_the_real_catalog_not_the_equipment_fallback() -> None:
+    """#1 passed no catalog, so every session came from the generic equipment map. The
+    phase-1 grid still does, on purpose: it is a committed before-snapshot."""
+    by_goal = {c.goal: c for c in sm.build_matrix("phase-5") if c.workload == "medium"}
+
+    assert by_goal["threshold"].exercises == "Tempo Run"
+    assert by_goal["recovery"].exercises == "Easy Run"
+    assert by_goal["potentiation"].exercises == "Back Squat, Broad Jump"
