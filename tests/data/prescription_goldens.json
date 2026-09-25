@@ -52,8 +52,21 @@
       ],
       "tissue_weight": 1.0
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20-30s",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "20-30s",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
     "tags": [
       "gymnastics_skill",
       "overhead_stability"

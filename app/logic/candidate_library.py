@@ -837,6 +837,14 @@ CALISTHENICS_TEMPLATES: list[CandidateTemplate] = [
             tissue_axes=("wrist", "shoulder", "elbow"),
             covers_weak_points=True,
         ),
+        # The same holds as gymnastics' gym_skill, whose content this template has always
+        # shared; it had simply never been given slots (phase 4.4).
+        exercise_slots=[
+            ExerciseSlot(sets="4", reps="20-30s", movement_pattern="push_vertical",
+                         modality="Calisthenics", load_type="time"),
+            ExerciseSlot(sets="3", reps="20-30s", movement_pattern="push_vertical",
+                         modality="Calisthenics", load_type="time"),
+        ],
     ),
     CandidateTemplate(
         type="Bodyweight Strength",
