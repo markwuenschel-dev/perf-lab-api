@@ -1133,16 +1133,29 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 }
 
 
+#: Planned categories that OWN their day (phase 5.6): on a day planned as one of these, the
+#: domain draws only this pool, and no other day can reach it. That keeps a template written
+#: for one planned day from competing on every other day of its domain. The value takes the
+#: goal, because a day's family may still choose its member by goal.
+_CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]] = {
+    ("running", SPEED_CATEGORY): lambda goal: SPRINTING_TEMPLATES,
+}
+
+
 def template_pool(
     domain: str, goal: str = "", session_category: str | None = None
 ) -> list[CandidateTemplate]:
     """The templates a domain draws from, before any eligibility predicate.
 
-    Sprinting is a sub-domain of running with its own pool. Two things select it: the
-    Sprinting goal, and a planned Speed day (phase 5.6). Nothing else does, so an ordinary
-    running day can never be handed a sprint session.
+    A category-owned day draws its own pool (``_CATEGORY_POOLS``). Otherwise sprinting, a
+    sub-domain of running, has its own pool for the Sprinting goal; nothing else reaches it,
+    so an ordinary running day can never be handed a sprint session.
     """
-    if domain == "running" and (goal == "Sprinting" or session_category == SPEED_CATEGORY):
+    if session_category is not None:
+        owned = _CATEGORY_POOLS.get((domain, session_category))
+        if owned is not None:
+            return owned(goal)
+    if domain == "running" and goal == "Sprinting":
         return SPRINTING_TEMPLATES
     return GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
 
