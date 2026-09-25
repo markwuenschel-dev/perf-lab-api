@@ -22,7 +22,6 @@ from app.services.planning_service import _DEFAULT_TEMPLATES, _DOMAIN_SLOT, _mix
 #: Kept only so the phase-0 xfail can name exactly what is outstanding; delete entries as each
 #: is closed, and delete this table when it is empty.
 OUTSTANDING_UNBOUND_SLOTS: dict[str, set[str]] = {
-    "running": {"Active Recovery"},
     "power": {"Strength Potentiation"},
     "mixed": {"Strength + Skill", "Running + Functional", "Hyrox Simulation"},
 }

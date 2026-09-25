@@ -14,8 +14,8 @@ Three deliberate limits:
 
 * **Bindings are a product judgement, not derived.** Each entry below says which template an
   athlete would recognise as the planned session. They are marked where the choice is open.
-* **Gaps are allowed and silent.** A slot with no binding (e.g. a running "Active Recovery",
-  for which the running pool has no template) leaves selection exactly as it was. A wrong
+* **Gaps are allowed and silent.** A slot with no binding (e.g. a HYROX "Hyrox Simulation",
+  for which the mixed pool has no template yet) leaves selection exactly as it was. A wrong
   guess would be worse than no binding.
 * **A binding is not a promise.** It narrows the pool when one of its templates is eligible;
   readiness redirects, safety overrides, hard constraints and the session validator all still
@@ -35,6 +35,10 @@ from dataclasses import dataclass
 #: that may bring the sprint templates into a non-Sprinting goal's pool
 #: (``candidate_library.template_pool``).
 SPEED_CATEGORY = "Speed"
+
+#: The planner's recovery slot. In the running domain it owns its pool too (phase 5.6): a
+#: very-low-load run, reachable on no other day.
+ACTIVE_RECOVERY_CATEGORY = "Active Recovery"
 
 
 @dataclass(frozen=True)
@@ -73,7 +77,7 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
         # Acceleration / max velocity and speed endurance are different session qualities, so
         # both stay separate candidates; which one a week needs is phase 7's call.
         SPEED_CATEGORY: SlotBinding("running_speed", ("run_sprint", "run_speed_endurance")),
-        # "Active Recovery" is deliberately unbound: the running pool has no recovery template.
+        ACTIVE_RECOVERY_CATEGORY: SlotBinding("running_recovery", ("run_recovery",)),
     },
     "power": {
         "Power Development": SlotBinding("power_development", ("power_main",)),

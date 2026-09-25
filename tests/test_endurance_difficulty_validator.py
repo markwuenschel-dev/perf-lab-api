@@ -46,7 +46,9 @@ ENDURANCE_FAMILIES = ("easy_aerobic", "threshold", "max_velocity_sprint")
 _VOLUME = frozenset({DifficultyDimension.VOLUME})
 _INTENSITY = frozenset({DifficultyDimension.INTENSITY})
 _DENSITY = frozenset({DifficultyDimension.DENSITY})
-_RUNNING = [t for pool in ("running", "sprinting") for t in GOAL_TEMPLATE_LIBRARY[pool]]
+_RUNNING = [
+    t for pool in ("running", "sprinting", "running_recovery") for t in GOAL_TEMPLATE_LIBRARY[pool]
+]
 
 Edit = Callable[[IntervalBlock | ContinuousBlock, int], IntervalBlock | ContinuousBlock]
 

@@ -26,7 +26,7 @@ from app.logic.constraint_engine.candidate import (
     overall_readiness,
 )
 from app.logic.exercise_slot import ExerciseSlot
-from app.logic.planned_session_slots import SPEED_CATEGORY
+from app.logic.planned_session_slots import ACTIVE_RECOVERY_CATEGORY, SPEED_CATEGORY
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
 
@@ -758,6 +758,37 @@ RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
     *RUN_THRESHOLD_FAMILY.expand(),
 ]
 
+#: The running Active Recovery day (phase 5.6), reachable on that day only
+#: (``_CATEGORY_POOLS``). A very-low-load run on the recovery slot, NOT a claim that easy
+#: running speeds recovery: easy runs are often loosely called recovery runs, and the evidence
+#: for active-recovery interventions is mixed (Haugen et al.). Zone 1, not 1-2: the point is
+#: the lowest running load that is still a run. The range stays a range, so its duration stays
+#: unknown rather than a picked midpoint.
+RUNNING_RECOVERY_TEMPLATES: list[CandidateTemplate] = [
+    CandidateTemplate(
+        type=ACTIVE_RECOVERY_CATEGORY,
+        focus="Very Easy Run 20–30 min @ Zone 1",
+        rationale="The lowest running load that is still a run, on the week's recovery slot.",
+        branch_id="run_recovery",
+        duration_min=30,
+        goal_alignment=0.6,
+        tags=["aerobic_base"],
+        domain="running",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r,
+            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+            fatigue_weight=0.3,
+            tissue_axes=("ankle", "knee"),
+            tissue_weight=0.3,
+        ),
+        exercise_slots=[
+            ExerciseSlot(sets="1", reps="20-30 min very easy (Zone 1)", movement_pattern="run",
+                         modality="Running", prefer_tags=("aerobic_base",),
+                         endurance=ContinuousBlock(intensity_basis="zone", intensity_target=1.0)),
+        ],
+    ),
+]
+
 SPRINTING_TEMPLATES: list[CandidateTemplate] = [
     CandidateTemplate(
         type="Speed",
@@ -1126,6 +1157,9 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     "mixed": MIXED_TEMPLATES,
     "running": RUNNING_BASE_TEMPLATES,
     "sprinting": SPRINTING_TEMPLATES,
+    # Category-owned pools (``_CATEGORY_POOLS``). Listed so every library-wide guard and golden
+    # covers them; no canonical domain has these names, so no ordinary day resolves here.
+    "running_recovery": RUNNING_RECOVERY_TEMPLATES,
     "gymnastics": GYMNASTICS_TEMPLATES,
     "calisthenics": CALISTHENICS_TEMPLATES,
     "grip": GRIP_TEMPLATES,
@@ -1139,6 +1173,7 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 #: goal, because a day's family may still choose its member by goal.
 _CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]] = {
     ("running", SPEED_CATEGORY): lambda goal: SPRINTING_TEMPLATES,
+    ("running", ACTIVE_RECOVERY_CATEGORY): lambda goal: RUNNING_RECOVERY_TEMPLATES,
 }
 
 

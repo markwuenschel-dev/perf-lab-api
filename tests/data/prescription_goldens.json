@@ -1056,6 +1056,43 @@
     ],
     "type": "Aerobic Base"
   },
+  "running_recovery/run_recovery": {
+    "duration_min": 30,
+    "focus": "Very Easy Run 20\u201330 min @ Zone 1",
+    "goal_alignment": 0.6,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.3,
+      "tissue_axes": [
+        "ankle",
+        "knee"
+      ],
+      "tissue_weight": 0.3
+    },
+    "slot_count": 1,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20-30 min very easy (Zone 1)",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
+    "tags": [
+      "aerobic_base"
+    ],
+    "type": "Active Recovery"
+  },
   "sprinting/run_speed_endurance": {
     "duration_min": 40,
     "focus": "6\u00d7300m @ ~90% Effort (Full Recovery) + Bounding Drill Primer",

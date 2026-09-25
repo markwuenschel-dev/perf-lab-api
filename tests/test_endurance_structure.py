@@ -43,7 +43,9 @@ from app.schemas.workout_structure import (
     WarmupBlock,
 )
 
-_RUNNING = [t for pool in ("running", "sprinting") for t in GOAL_TEMPLATE_LIBRARY[pool]]
+_RUNNING = [
+    t for pool in ("running", "sprinting", "running_recovery") for t in GOAL_TEMPLATE_LIBRARY[pool]
+]
 
 
 def _healthy() -> UnifiedStateVector:

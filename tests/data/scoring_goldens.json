@@ -327,6 +327,27 @@
       "run_z2_base",
       "run_threshold"
     ],
+    "running_recovery/healthy_baseline": [
+      "run_recovery"
+    ],
+    "running_recovery/high_cns_systemic": [
+      "run_recovery"
+    ],
+    "running_recovery/low_readiness": [
+      "run_recovery"
+    ],
+    "running_recovery/mixed_adverse": [
+      "run_recovery"
+    ],
+    "running_recovery/multi_tissue": [
+      "run_recovery"
+    ],
+    "running_recovery/single_tissue_knee": [
+      "run_recovery"
+    ],
+    "running_recovery/weak_points": [
+      "run_recovery"
+    ],
     "strength/healthy_baseline": [
       "strength_max",
       "strength_volume"
@@ -3185,6 +3206,106 @@
         "above_thresholds": true,
         "below_thresholds": false,
         "none": false
+      }
+    },
+    "running_recovery/run_recovery": {
+      "by_state": {
+        "healthy_baseline": {
+          "fatigue_penalty": 0.03,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.9,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.03,
+          "total": 0.4131,
+          "weak_point_coverage": 0.0
+        },
+        "high_cns_systemic": {
+          "fatigue_penalty": 0.1275,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.491666667,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.03,
+          "total": 0.296391667,
+          "weak_point_coverage": 0.0
+        },
+        "low_readiness": {
+          "fatigue_penalty": 0.216,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.28,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.03,
+          "total": 0.2302,
+          "weak_point_coverage": 0.0
+        },
+        "mixed_adverse": {
+          "fatigue_penalty": 0.1275,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.2,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.525,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.09,
+          "total": 0.290925,
+          "weak_point_coverage": 0.0
+        },
+        "multi_tissue": {
+          "fatigue_penalty": 0.03,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.9,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.24,
+          "total": 0.3963,
+          "weak_point_coverage": 0.0
+        },
+        "single_tissue_knee": {
+          "fatigue_penalty": 0.03,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.9,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.255,
+          "total": 0.3951,
+          "weak_point_coverage": 0.0
+        },
+        "weak_points": {
+          "fatigue_penalty": 0.03,
+          "goal_alignment": 0.6,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.825,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.03,
+          "total": 0.39435,
+          "weak_point_coverage": 0.0
+        }
+      },
+      "goal_eligible": {
+        "(none)": true,
+        "5K": true,
+        "FullMarathon": true,
+        "HalfMarathon": true,
+        "Sprinting": true
+      },
+      "kpi_eligible": {
+        "above_thresholds": true,
+        "below_thresholds": true,
+        "none": true
       }
     },
     "sprinting/run_speed_endurance": {
