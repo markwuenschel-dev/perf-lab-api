@@ -1220,23 +1220,47 @@ _CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]]
     ("power", STRENGTH_POTENTIATION_CATEGORY): lambda goal: POWER_POTENTIATION_TEMPLATES,
 }
 
+#: Owned days that ARE the pulled-down option. A readiness redirect exists to pull work down;
+#: opening these days to the ordinary pool on a bad day would let a longer aerobic-base run
+#: beat the very easy one, which is backwards. The redirects still compete with them.
+_LOW_LOAD_CATEGORIES: frozenset[tuple[str, str]] = frozenset(
+    {("running", ACTIVE_RECOVERY_CATEGORY)}
+)
+
 
 def template_pool(
-    domain: str, goal: str = "", session_category: str | None = None
+    domain: str,
+    goal: str = "",
+    session_category: str | None = None,
+    *,
+    category_owns_day: bool = True,
 ) -> list[CandidateTemplate]:
     """The templates a domain draws from, before any eligibility predicate.
 
-    A category-owned day draws its own pool (``_CATEGORY_POOLS``). Otherwise sprinting, a
-    sub-domain of running, has its own pool for the Sprinting goal; nothing else reaches it,
-    so an ordinary running day can never be handed a sprint session.
+    Sprinting, a sub-domain of running, has its own pool for the Sprinting goal; nothing else
+    reaches it, so an ordinary running day can never be handed a sprint session.
+
+    A category-owned day (``_CATEGORY_POOLS``) draws its own pool instead. Except when a
+    readiness redirect is competing (``category_owns_day=False``): redirects exist to pull
+    work down on a bad day, and the plan must not talk over them, so the category's templates
+    JOIN the ordinary pool (replacing same-id entries) and scoring chooses, exactly as the
+    prescriber already skips plan narrowing on a redirect day. A low-load day
+    (``_LOW_LOAD_CATEGORIES``) keeps its pool: it already is the pulled-down session.
     """
-    if session_category is not None:
-        owned = _CATEGORY_POOLS.get((domain, session_category))
-        if owned is not None:
-            return owned(goal)
     if domain == "running" and goal == "Sprinting":
-        return SPRINTING_TEMPLATES
-    return GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
+        ordinary = SPRINTING_TEMPLATES
+    else:
+        ordinary = GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
+    owned = (
+        None if session_category is None else _CATEGORY_POOLS.get((domain, session_category))
+    )
+    if owned is None:
+        return ordinary
+    pool = owned(goal)
+    if category_owns_day or (domain, session_category) in _LOW_LOAD_CATEGORIES:
+        return pool
+    ids = {t.branch_id for t in pool}
+    return [*pool, *(t for t in ordinary if t.branch_id not in ids)]
 
 
 def get_templates(
@@ -1245,6 +1269,8 @@ def get_templates(
     goal: str = "",
     state: UnifiedStateVector | None = None,
     session_category: str | None = None,
+    *,
+    category_owns_day: bool = True,
 ) -> list[CandidateTemplate]:
     """Return templates for the domain, filtered by all eligibility predicates.
 
@@ -1252,7 +1278,7 @@ def get_templates(
     skipped (treated as eligible), so callers that do not yet have state can still query the
     static content.
     """
-    pool = template_pool(domain, goal, session_category)
+    pool = template_pool(domain, goal, session_category, category_owns_day=category_owns_day)
 
     return [
         t for t in pool

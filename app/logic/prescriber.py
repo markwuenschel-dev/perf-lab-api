@@ -414,6 +414,7 @@ def _generate_candidates(
     readiness_override: float | None = None,
     domain_override: str | None = None,
     session_category: str | None = None,
+    category_owns_day: bool = True,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
@@ -432,9 +433,11 @@ def _generate_candidates(
     # relabel days.
     domain = domain_override or _candidate_domain(goal)
     r = readiness_override if readiness_override is not None else _readiness(state)
-    # A planned Speed day draws the sprint pool whatever the block goal (phase 5.6).
+    # A planned category may own its day's pool whatever the block goal (phase 5.6), unless a
+    # readiness redirect is competing (see ``template_pool``).
     templates = get_templates(
-        domain, kpi, goal=str(goal), state=state, session_category=session_category
+        domain, kpi, goal=str(goal), state=state, session_category=session_category,
+        category_owns_day=category_owns_day,
     )
     return [score_template(t, state, kpi, readiness=r) for t in templates]
 
@@ -1092,13 +1095,14 @@ def _recommend_next_session(
     deload_need = compute_deload_need(state)
 
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
+    # Readiness redirects stay modeled-only: acute wellness has no honest per-axis mapping,
+    # so it enters via the score channel above, not here (ADR-0052). Computed first: a
+    # competing redirect stops a planned category from owning the day's pool.
+    redirects = _readiness_redirect(state, goal, kpi)
     goal_candidates = _generate_candidates(
         state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain,
-        session_category=block.get("session_category"),
+        session_category=block.get("session_category"), category_owns_day=not redirects,
     )
-    # Readiness redirects stay modeled-only: acute wellness has no honest per-axis mapping,
-    # so it enters via the score channel above, not here (ADR-0052).
-    redirects = _readiness_redirect(state, goal, kpi)
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
 

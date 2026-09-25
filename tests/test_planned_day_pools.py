@@ -19,6 +19,7 @@ from datetime import date, timedelta
 
 import pytest
 from test_running_prescriptions import _healthy
+from test_scoring_goldens import _athlete
 
 from app.logic.candidate_library import _CATEGORY_POOLS, GOAL_TEMPLATE_LIBRARY
 from app.logic.constraint_engine.candidate import SessionCandidate
@@ -38,14 +39,16 @@ KPIS = {"nokpi": {}, "ff10": {"run_fatigue_factor": 10.0}, "ff20": {"run_fatigue
 
 def _day(
     catalog: list[CatalogExercise], goal: str, domain: str, category: str | None,
-    kpi: dict[str, float] | None = None,
+    kpi: dict[str, float] | None = None, *, fatigued: bool = False,
 ) -> tuple[WorkoutPrescription, list[SessionCandidate]]:
+    """``fatigued`` = CNS fatigue 70, which raises a readiness redirect."""
     scored: list[SessionCandidate] = []
     block = None if category is None else {
         "block_goal": goal, "session_domain": domain, "session_category": category,
     }
     rx = recommend_next_session(
-        _healthy(), goal=goal,  # type: ignore[arg-type]
+        _athlete(fatigue={"cns": 70.0}) if fatigued else _healthy(),
+        goal=goal,  # type: ignore[arg-type]
         kpi_summary=kpi or {}, catalog=catalog, block_context=block, candidate_log_out=scored,
     )
     return rx, scored
@@ -62,6 +65,39 @@ def test_no_ordinary_day_can_resolve_to_a_category_pool() -> None:
     assert owned <= set(GOAL_TEMPLATE_LIBRARY)
     assert not any(is_canonical_domain(key) for key in owned)
     assert all(not is_canonical_domain(category) for _, category in _CATEGORY_POOLS)
+
+
+# ── a readiness redirect outranks the plan ───────────────────────────────────
+
+
+def test_a_fatigued_speed_day_is_pulled_down_to_an_easy_run(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    """Redirects exist to pull work down on a bad day, and the plan must not talk over them.
+    A category that owned its pool on that day would leave only sprints to beat the redirect;
+    the ordinary running pool rejoins instead, and scoring picks the easy option."""
+    from test_speed_day import SPRINT_IDS
+
+    rx, scored = _day(catalog_snapshot, "Running", "running", "Speed", fatigued=True)
+
+    assert scored[0].branch_id not in SPRINT_IDS, [c.branch_id for c in scored]
+    assert _plan_codes(rx) == ["plan:session_replaced=running_speed(readiness)"]
+    ids = {c.branch_id for c in scored}
+    assert set(SPRINT_IDS) <= ids, "still offered, just not chosen"
+    assert "run_z2_base" in ids, "the ordinary running pool rejoins on a redirect day"
+
+
+def test_a_fatigued_recovery_day_keeps_the_very_easy_run(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    """The recovery day IS the pulled-down session. Opening it to the ordinary pool would let
+    a 30-40 min zone-2 run beat the very easy one on exactly the day it should not."""
+    rx, scored = _day(
+        catalog_snapshot, "Running", "running", ACTIVE_RECOVERY_CATEGORY, fatigued=True
+    )
+
+    assert scored[0].branch_id == "run_recovery", [c.branch_id for c in scored]
+    assert not {c.branch_id for c in scored} & {"run_z2_base", "run_z2_base_threshold"}
 
 
 # ── running / Active Recovery ────────────────────────────────────────────────
