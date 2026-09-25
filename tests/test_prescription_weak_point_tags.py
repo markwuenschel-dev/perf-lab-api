@@ -118,3 +118,39 @@ async def test_a_prescription_with_no_exercises_is_a_no_op(async_db) -> None:
     await _enrich_exercises_with_weak_point_tags(async_db, rx, ["grip"])
 
     assert rx.exercises == []
+
+
+async def test_the_persisted_structure_carries_the_enriched_tags(
+    async_db, seeded_exercise_catalog
+) -> None:
+    """The full pipeline, not the enricher alone.
+
+    The structure used to be re-derived BETWEEN the load enricher and this one, so the
+    structure persisted with a prescription carried pre-enrichment tags while ``exercises[]``
+    carried the enriched ones: two views of one session that disagreed. Nothing re-validates
+    stored content, so it never raised. The re-derivation now runs after both enrichers.
+    """
+    from app.models.user import AthleteProfile, User
+    from app.models.weak_point import WeakPoint, WeakPointSource
+    from app.schemas.prescription import project_exercises
+    from app.schemas.training_goals import TRAINING_GOAL_DEFAULT
+    from app.services.prescription_service import prescribe_for_athlete
+    from app.services.state_service import initialize_athlete_state
+
+    user = User(email="wp-structure@test.com", hashed_password="h", is_active=True)
+    async_db.add(user)
+    await async_db.commit()
+    await async_db.refresh(user)
+    async_db.add(AthleteProfile(user_id=user.id, equipment=["barbell", "dumbbells", "pullup_bar"]))
+    for tag in ("hip_hinge", "squat_pattern", "push_horizontal", "push_vertical",
+                "pull_vertical", "carry", "core_stability", "single_leg"):
+        async_db.add(WeakPoint(user_id=user.id, tag=tag, source=WeakPointSource.SELF_REPORT))
+    await async_db.commit()
+    await initialize_athlete_state(async_db, user.id)
+
+    rx = await prescribe_for_athlete(async_db, user.id, TRAINING_GOAL_DEFAULT)
+
+    # Load-bearing only if the enricher actually tagged something.
+    assert any(ex.weak_point_tags for ex in rx.exercises), [e.name for e in rx.exercises]
+    assert rx.structure is not None
+    assert project_exercises(rx.structure) == rx.exercises
