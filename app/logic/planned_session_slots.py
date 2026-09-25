@@ -40,6 +40,9 @@ SPEED_CATEGORY = "Speed"
 #: very-low-load run, reachable on no other day.
 ACTIVE_RECOVERY_CATEGORY = "Active Recovery"
 
+#: The power block's contrast day (phase 5.6): a heavy squat before jumps. Owns its pool.
+STRENGTH_POTENTIATION_CATEGORY = "Strength Potentiation"
+
 
 @dataclass(frozen=True)
 class SlotBinding:
@@ -82,7 +85,9 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
     "power": {
         "Power Development": SlotBinding("power_development", ("power_main",)),
         "Neural Priming": SlotBinding("power_neural_priming", ("power_neural_prime",)),
-        # "Strength Potentiation" is unbound: no power template carries that intent.
+        STRENGTH_POTENTIATION_CATEGORY: SlotBinding(
+            "power_potentiation", ("power_potentiation",)
+        ),
     },
     "powerlifting": {
         "SBD Strength": SlotBinding("powerlifting_sbd", ("pl_sbd_main", "pl_sbd_main_volume")),

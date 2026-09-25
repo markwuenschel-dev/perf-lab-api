@@ -749,6 +749,40 @@
     "tags": [],
     "type": "Reactive Power"
   },
+  "power_potentiation/power_potentiation": {
+    "duration_min": 45,
+    "focus": "3 rounds: Back Squat \u00d72 (heavy, no grinding) \u2192 Broad Jump \u00d73 \u2014 full recovery between every set",
+    "goal_alignment": 0.9,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": "Primer, not a strength set: no grinding reps. Full recovery before the jumps.",
+        "reps": "2",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": "Maximal intent. Stop or regress if jump quality clearly drops. Full recovery before the next round.",
+        "reps": "3",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "squat_pattern"
+    ],
+    "type": "Strength Potentiation"
+  },
   "powerlifting/pl_accessory": {
     "duration_min": 65,
     "focus": "Paused Squat 3\u00d74 + Close-Grip Bench + Romanian Deadlift 3\u00d76",

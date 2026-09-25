@@ -16,13 +16,12 @@ from app.logic.planned_session_slots import _BINDINGS, binding_for
 from app.services.planning_service import _DEFAULT_TEMPLATES, _DOMAIN_SLOT, _mix_slot
 
 #: Slots the planner writes that bind no template. Previously an accepted allowlist; from the
-#: engine-coherence work these are DEFECTS awaiting phases 5 (running, power) and 6 (the three
-#: mixed/HYROX/CrossFit days). A day the planner shows an athlete and then cannot prescribe
+#: engine-coherence work these are DEFECTS awaiting phase 6 (the three mixed/HYROX/CrossFit
+#: days; phase 5 closed the running and power ones). A day the planner shows an athlete and then cannot prescribe
 #: falls through to a generic pool — the "Running day prescribes Air Squat" failure.
 #: Kept only so the phase-0 xfail can name exactly what is outstanding; delete entries as each
 #: is closed, and delete this table when it is empty.
 OUTSTANDING_UNBOUND_SLOTS: dict[str, set[str]] = {
-    "power": {"Strength Potentiation"},
     "mixed": {"Strength + Skill", "Running + Functional", "Hyrox Simulation"},
 }
 
@@ -68,9 +67,9 @@ def _unbound_planned_slots() -> list[str]:
 
 
 @pytest.mark.xfail(
-    reason="phases 5-6: 5 planned slots bind no template (running Active Recovery, power "
-    "Strength Potentiation, both HYROX days, CrossFit Strength + Skill), so the prescriber "
-    "falls through to the generic pool for a day the athlete was shown",
+    reason="phase 6: 3 planned slots bind no template (both HYROX days, CrossFit Strength + "
+    "Skill), so the prescriber falls through to the generic pool for a day the athlete was "
+    "shown",
     strict=True,
 )
 def test_every_planned_slot_is_bound() -> None:

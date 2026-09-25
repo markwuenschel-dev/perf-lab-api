@@ -26,7 +26,11 @@ from app.logic.constraint_engine.candidate import (
     overall_readiness,
 )
 from app.logic.exercise_slot import ExerciseSlot
-from app.logic.planned_session_slots import ACTIVE_RECOVERY_CATEGORY, SPEED_CATEGORY
+from app.logic.planned_session_slots import (
+    ACTIVE_RECOVERY_CATEGORY,
+    SPEED_CATEGORY,
+    STRENGTH_POTENTIATION_CATEGORY,
+)
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
 
@@ -454,6 +458,44 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
             tissue_weight=0.6,
             habit_mult=0.8,
         ),
+    ),
+]
+
+#: The power block's Strength Potentiation day (phase 5.6), reachable on that day only
+#: (``_CATEGORY_POOLS``). Contrast / PAPE: a heavy squat before explosive jumps. The acute
+#: effect depends heavily on load, volume and the recovery interval, so this is a PRIMER, not
+#: a second strength session: doubles, three sets, full recovery. Fatigue that accumulates
+#: before the jumps cancels what the pairing is for.
+#:
+#: Two things the structure cannot say yet, carried in the text instead:
+#: - the A/B round order (squat, then jumps, three times) needs a rounds block (phase 6);
+#: - the effort target: the block envelope owns effort, so the squat's cap is the week's, not
+#:   a per-template RPE (``test_effort_resolution_seam``). Per-session effort is phase 7.
+POWER_POTENTIATION_TEMPLATES: list[CandidateTemplate] = [
+    CandidateTemplate(
+        type=STRENGTH_POTENTIATION_CATEGORY,
+        focus="3 rounds: Back Squat ×2 (heavy, no grinding) → Broad Jump ×3 — full recovery "
+              "between every set",
+        rationale="Contrast pairing: a heavy squat primes the jumps that follow. Low volume on "
+                  "purpose, because accumulated fatigue cancels the potentiation.",
+        branch_id="power_potentiation",
+        duration_min=45,
+        goal_alignment=0.9,
+        tags=["squat_pattern"],
+        domain="power",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("knee", "hip"), covers_weak_points=True,
+        ),
+        exercise_slots=[
+            ExerciseSlot(sets="3", reps="2", e1rm_code="pl_e1rm_squat",
+                         load_note="Primer, not a strength set: no grinding reps. Full recovery "
+                                   "before the jumps."),
+            ExerciseSlot(sets="3", reps="3", movement_pattern="jump",
+                         prefer_tags=("plyometric", "power"),
+                         load_note="Maximal intent. Stop or regress if jump quality clearly "
+                                   "drops. Full recovery before the next round."),
+        ],
     ),
 ]
 
@@ -1160,6 +1202,7 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     # Category-owned pools (``_CATEGORY_POOLS``). Listed so every library-wide guard and golden
     # covers them; no canonical domain has these names, so no ordinary day resolves here.
     "running_recovery": RUNNING_RECOVERY_TEMPLATES,
+    "power_potentiation": POWER_POTENTIATION_TEMPLATES,
     "gymnastics": GYMNASTICS_TEMPLATES,
     "calisthenics": CALISTHENICS_TEMPLATES,
     "grip": GRIP_TEMPLATES,
@@ -1174,6 +1217,7 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 _CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]] = {
     ("running", SPEED_CATEGORY): lambda goal: SPRINTING_TEMPLATES,
     ("running", ACTIVE_RECOVERY_CATEGORY): lambda goal: RUNNING_RECOVERY_TEMPLATES,
+    ("power", STRENGTH_POTENTIATION_CATEGORY): lambda goal: POWER_POTENTIATION_TEMPLATES,
 }
 
 

@@ -243,6 +243,27 @@
       "power_reactive",
       "power_neural_prime"
     ],
+    "power_potentiation/healthy_baseline": [
+      "power_potentiation"
+    ],
+    "power_potentiation/high_cns_systemic": [
+      "power_potentiation"
+    ],
+    "power_potentiation/low_readiness": [
+      "power_potentiation"
+    ],
+    "power_potentiation/mixed_adverse": [
+      "power_potentiation"
+    ],
+    "power_potentiation/multi_tissue": [
+      "power_potentiation"
+    ],
+    "power_potentiation/single_tissue_knee": [
+      "power_potentiation"
+    ],
+    "power_potentiation/weak_points": [
+      "power_potentiation"
+    ],
     "powerlifting/healthy_baseline": [
       "pl_sbd_main",
       "pl_accessory"
@@ -2493,6 +2514,106 @@
           "tissue_penalty": 0.06,
           "total": 0.4420125,
           "weak_point_coverage": 0.0
+        }
+      },
+      "goal_eligible": {
+        "(none)": true,
+        "5K": true,
+        "FullMarathon": true,
+        "HalfMarathon": true,
+        "Sprinting": true
+      },
+      "kpi_eligible": {
+        "above_thresholds": true,
+        "below_thresholds": true,
+        "none": true
+      }
+    },
+    "power_potentiation/power_potentiation": {
+      "by_state": {
+        "healthy_baseline": {
+          "fatigue_penalty": 0.1,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.81,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.1,
+          "total": 0.4645,
+          "weak_point_coverage": 0.0
+        },
+        "high_cns_systemic": {
+          "fatigue_penalty": 0.85,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.07375,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.1,
+          "total": 0.1679375,
+          "weak_point_coverage": 0.0
+        },
+        "low_readiness": {
+          "fatigue_penalty": 0.72,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.0784,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.1,
+          "total": 0.1886,
+          "weak_point_coverage": 0.0
+        },
+        "mixed_adverse": {
+          "fatigue_penalty": 0.5,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.2,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.2625,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.3,
+          "total": 0.242625,
+          "weak_point_coverage": 0.0
+        },
+        "multi_tissue": {
+          "fatigue_penalty": 0.1,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.81,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.8,
+          "total": 0.4085,
+          "weak_point_coverage": 0.0
+        },
+        "single_tissue_knee": {
+          "fatigue_penalty": 0.1,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.81,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.85,
+          "total": 0.4045,
+          "weak_point_coverage": 0.0
+        },
+        "weak_points": {
+          "fatigue_penalty": 0.1,
+          "goal_alignment": 0.9,
+          "habit_bonus": 0.5,
+          "novelty_bonus": 0.0,
+          "state_eligible": true,
+          "state_fit": 0.7425,
+          "template_bias": 0.0,
+          "tissue_penalty": 0.1,
+          "total": 0.466375,
+          "weak_point_coverage": 0.125
         }
       },
       "goal_eligible": {

@@ -269,13 +269,14 @@ def test_the_template_inventory() -> None:
     templates = [t for _, t in _templates()]
     ids = Counter(t.branch_id for t in templates)
 
-    assert len(templates) == 38
-    assert sum(1 for t in templates if t.exercise_slots) == 29
+    assert len(templates) == 39
+    assert sum(1 for t in templates if t.exercise_slots) == 30
     assert sum(1 for t in templates if not t.exercise_slots) == 9
     # 13 before phase 4.2; the other 24 were scored by branch_id-keyed domain functions.
     assert all(t.scoring is not None for t in templates)
     # Phase 4.4 renamed the calisthenics copy of gym_skill to cal_skill; no id is shared now.
-    # Phase 5.6 added run_recovery (38 / 29 slotted), reachable only on its planned day.
+    # Phase 5.6 added run_recovery and power_potentiation (39 / 30 slotted), each reachable
+    # only on its own planned day.
     assert not {branch for branch, n in ids.items() if n > 1}
 
 
