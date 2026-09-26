@@ -1020,6 +1020,39 @@ def _focus_from_exercises(exercises: list[ExercisePrescription]) -> str:
     return f"{head} + {extra} more" if extra > 0 else head
 
 
+def _rotate_variant_family(
+    scored: list[SessionCandidate],
+    score: Callable[[SessionCandidate], float],
+    planned: SlotBinding | None,
+    week_number: int,
+) -> list[SessionCandidate]:
+    """Deterministic variant-family rotation (phase 7.2).
+
+    When the winner is one of today's planned variants and other variants of the SAME planned
+    slot tie with it exactly, the block week picks among them, in the binding's order:
+    week 1 the first, week 2 the second, and so on. Without it a stable sort hands the first
+    variant every week (Half Simulation A, never B).
+
+    Deliberately narrow: only an exact tie, only among the planned slot's own variants
+    (``SlotBinding.branch_ids``) — never unrelated candidates that happen to score the same.
+    Eligibility and equipment are decided upstream, so a lone resolvable variant wins every
+    week. This is block-week rotation, not periodization: no phase decides which variant.
+    """
+    if planned is None or week_number <= 0 or len(scored) < 2:
+        return scored
+    top = scored[0]
+    if top.branch_id not in planned.branch_ids:
+        return scored
+    top_score = score(top)
+    family = [c for c in scored if c.branch_id in planned.branch_ids and score(c) == top_score]
+    if len(family) < 2:
+        return scored
+    order = {branch: i for i, branch in enumerate(planned.branch_ids)}
+    family.sort(key=lambda c: order[c.branch_id])
+    chosen = family[(week_number - 1) % len(family)]
+    return [chosen, *(c for c in scored if c is not chosen)]
+
+
 def _plan_outcome_code(
     planned: SlotBinding | None,
     rx: WorkoutPrescription,
@@ -1262,6 +1295,9 @@ def _recommend_next_session(
         return base
 
     scored = sorted(all_candidates, key=_score_with_context, reverse=True)
+    scored = _rotate_variant_family(
+        scored, _score_with_context, planned, int(block.get("week_number") or 0)
+    )
 
     if not scored:
         # Fallback — should not happen unless generator returns empty

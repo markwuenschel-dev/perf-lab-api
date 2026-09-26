@@ -53,12 +53,16 @@ def test_every_planned_day_is_prescribed_as_planned() -> None:
     assert not flagged, flagged
 
 
-#: Every HYROX and CrossFit planned day, and what it prescribes at medium workload.
+#: Every HYROX and CrossFit planned day, and what it prescribes at medium workload. The grid runs
+#: week 2 of 8, so days with two variants show the SECOND (phase 7.2 rotates tied variants by
+#: block week): Half Simulation B, Running + Functional — Lunges, Strength + Skill — Deadlift.
 PHASE_6_DAYS = {
     "hyrox_strength_endurance": "Back Squat, Overhead Press, Barbell Row",
-    "hyrox_running_functional": "Run, SkiErg",
-    "hyrox_simulation": "Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump",
-    "crossfit_strength_skill": "Back Squat, Double Unders, Toes to Bar",
+    "hyrox_running_functional": "Run, Sandbag Lunges",
+    "hyrox_simulation": (
+        "Run, Rowing (Ergometer), Run, Farmer Carry, Run, Sandbag Lunges, Run, Wall Ball"
+    ),
+    "crossfit_strength_skill": "Conventional Deadlift, Double Unders, Toes to Bar",
     "crossfit_engine_work": "Assault Bike, Assault Bike",
 }
 

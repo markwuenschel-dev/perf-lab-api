@@ -67,14 +67,17 @@ _HALF_B_KIT = ["rower", "dumbbells", "sandbag", "wall_ball"]
 def _day(
     catalog: list[CatalogExercise], category: str, *,
     equipment: list[str] | None = None, workload: str = "medium", goal: str = "Hyrox",
+    week: int = 1,
 ) -> tuple[WorkoutPrescription, list[SessionCandidate]]:
+    """Week 1 by default: the first variant of a planned day's family (phase 7.2 rotates the
+    rest by block week, pinned in ``test_variants_rotate_by_block_week``)."""
     scored: list[SessionCandidate] = []
     rx = recommend_next_session(
         _healthy(), goal=goal,  # type: ignore[arg-type]
         catalog=catalog, available_equipment=equipment, candidate_log_out=scored,
         block_context={
             "block_goal": goal, "session_domain": "mixed", "session_category": category,
-            "week_number": 2, "duration_weeks": 8, "deload_every_n_weeks": 4,
+            "week_number": week, "duration_weeks": 8, "deload_every_n_weeks": 4,
             "intensity": workload,
         },
     )
@@ -420,3 +423,65 @@ def test_strength_endurance_without_a_barbell_is_visibly_replaced(
     (code,) = _plan_codes(rx)
     assert code.startswith("plan:session_replaced=mixed_strength_endurance")
     assert not any(isinstance(b, CircuitBlock) for b in rx.structure or [])
+
+
+# ── deterministic variant-family rotation (phase 7.2) ────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("category", "goal", "family"),
+    [
+        (HYROX_SIMULATION_CATEGORY, "Hyrox", ("hyrox_half_sim_a", "hyrox_half_sim_b")),
+        (RUNNING_FUNCTIONAL_CATEGORY, "Hyrox", ("run_functional_ski", "run_functional_lunges")),
+        (STRENGTH_SKILL_CATEGORY, "CrossFit",
+         ("cf_strength_skill_squat", "cf_strength_skill_deadlift")),
+    ],
+)
+def test_variants_rotate_by_block_week(
+    catalog_snapshot: list[CatalogExercise], category: str, goal: str, family: tuple[str, str]
+) -> None:
+    """Tied variants of one planned slot alternate by block week, in the binding's order."""
+    picks = [
+        _day(catalog_snapshot, category, goal=goal, week=w)[0].why.prescription_branch  # type: ignore[union-attr]
+        for w in (1, 2, 3, 4)
+    ]
+    assert picks == [family[0], family[1], family[0], family[1]]
+
+
+def test_rotation_never_forces_an_unavailable_variant(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    """Equipment is decided upstream: with no sled, Half Simulation B every week."""
+    picks = {
+        _day(catalog_snapshot, HYROX_SIMULATION_CATEGORY, equipment=_HALF_B_KIT, week=w)[0]
+        .why.prescription_branch  # type: ignore[union-attr]
+        for w in (1, 2, 3, 4)
+    }
+    assert picks == {"hyrox_half_sim_b"}
+
+
+def test_rotation_touches_only_an_exact_tie_inside_the_planned_family() -> None:
+    from app.logic.planned_session_slots import SlotBinding
+    from app.logic.prescriber import (
+        _rotate_variant_family,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    def c(branch: str, total: float) -> SessionCandidate:
+        return SessionCandidate(type=branch, focus="", rationale="", duration_min=30,
+                                branch_id=branch, state_fit=total)
+
+    def score(x: SessionCandidate) -> float:
+        return x.state_fit
+
+    family = SlotBinding("day", ("a", "b"))
+    tied = [c("a", 1.0), c("b", 1.0), c("z", 1.0)]
+    assert _rotate_variant_family(tied, score, family, 2)[0].branch_id == "b"
+    # An unrelated candidate with the same score is never rotated in.
+    assert _rotate_variant_family(tied, score, SlotBinding("day", ("a",)), 2)[0].branch_id == "a"
+    # Not a tie: the better-scoring variant wins every week.
+    assert _rotate_variant_family([c("a", 1.0), c("b", 0.9)], score, family, 2)[0].branch_id == "a"
+    # The winner is not a planned variant (a redirect): nothing rotates.
+    assert _rotate_variant_family([c("z", 2.0), *tied], score, family, 2)[0].branch_id == "z"
+    # No planned slot or no block week: sort order stands.
+    assert _rotate_variant_family(tied, score, None, 2)[0].branch_id == "a"
+    assert _rotate_variant_family(tied, score, family, 0)[0].branch_id == "a"
