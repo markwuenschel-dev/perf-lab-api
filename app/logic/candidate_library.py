@@ -709,6 +709,26 @@ METCON_TEMPLATES: list[CandidateTemplate] = [
             fatigue_axis="metabolic", fatigue_weight=0.8, habit_mult=0.6,
             covers_weak_points=True,
         ),
+        # Phase 6.2 (F13a): the focus above, as structure — nothing new but the recovery,
+        # which the focus never stated. 2 min easy spin (1:1) is AUTHORED: recovery changes
+        # the response to an interval session, so it is stated rather than left to read as
+        # back-to-back work. Timed: 20 + 4 x 2 + 3 x 2 = 34 min (no recovery after the last).
+        # Any bike; the intervals repeat the bike the steady block chose. Fixed under the
+        # workload preference in phase 6 (mixed-domain endurance never scaled); phase 7
+        # decides which dimension Engine Work progresses along.
+        exercise_slots=[
+            ExerciseSlot(sets="1", reps="20 min Zone 2", movement_pattern="bike",
+                         endurance=ContinuousBlock(duration_sec=1200, intensity_basis="zone",
+                                                   intensity_target=2.0)),
+            ExerciseSlot(sets="4", reps="2 min @ RPE 8 / 2 min easy spin",
+                         movement_pattern="bike", allow_repeat=True,
+                         endurance=IntervalBlock(
+                             repetitions=4, work_duration_sec=120,
+                             recovery_duration_sec=120, recovery_type="easy",
+                             recovery_after_last_rep=False,
+                             intensity_basis="rpe", intensity_target=8.0,
+                         )),
+        ],
     ),
 ]
 

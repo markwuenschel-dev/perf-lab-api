@@ -41,9 +41,11 @@ from app.logic.prescriber import recommend_next_session
 from app.schemas.prescription import WorkoutPrescription, project_exercises
 from app.schemas.workout_structure import (
     CircuitBlock,
+    ContinuousBlock,
     EMOMScheme,
     FixedRoundsScheme,
     ForTimeScheme,
+    IntervalBlock,
     StrengthBlock,
 )
 
@@ -313,3 +315,27 @@ async def test_a_blocks_planned_day_is_prescribed_its_session(
     assert rx.structure is not None
     assert any(isinstance(b, CircuitBlock) for b in rx.structure)
     assert project_exercises(rx.structure) == rx.exercises
+
+
+# ── Engine Work (F13a) ───────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("workload", ["easy", "medium", "hard"])
+def test_engine_work_is_the_authored_bike_session_on_one_bike(
+    catalog_snapshot: list[CatalogExercise], workload: str
+) -> None:
+    """20 min Zone 2, then 4 x (2 min @ RPE 8 / 2 min easy), with no recovery after the last:
+    34 timed minutes. The intervals repeat the steady block's bike, and the session does not
+    move with the workload preference in phase 6."""
+    rx, _ = _day(catalog_snapshot, "Engine Work", workload=workload, goal="CrossFit")
+    assert _plan_codes(rx) == ["plan:session_followed=metcon_engine"]
+    assert rx.structure is not None
+    steady, intervals = rx.structure
+    assert isinstance(steady, ContinuousBlock) and isinstance(intervals, IntervalBlock)
+    assert (steady.duration_sec, steady.intensity_basis, steady.intensity_target) == (
+        1200, "zone", 2.0,
+    )
+    assert (intervals.repetitions, intervals.work_duration_sec) == (4, 120)
+    assert (intervals.recovery_duration_sec, intervals.recovery_after_last_rep) == (120, False)
+    assert steady.activity == intervals.activity
+    assert rx.calculated_duration_min == 34.0
