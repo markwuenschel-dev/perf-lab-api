@@ -270,14 +270,15 @@ def test_the_template_inventory() -> None:
     ids = Counter(t.branch_id for t in templates)
 
     assert len(templates) == 45
-    assert sum(1 for t in templates if t.exercise_slots) == 36
-    assert sum(1 for t in templates if not t.exercise_slots) == 9
+    assert sum(1 for t in templates if t.exercise_slots) == 37
+    assert sum(1 for t in templates if not t.exercise_slots) == 8
     # 13 before phase 4.2; the other 24 were scored by branch_id-keyed domain functions.
     assert all(t.scoring is not None for t in templates)
     # Phase 4.4 renamed the calisthenics copy of gym_skill to cal_skill; no id is shared now.
     # Phase 5.6 added run_recovery and power_potentiation (39 / 30 slotted), each reachable
     # only on its own planned day. Phase 6.2 added six HYROX / CrossFit templates on three
-    # owned days (45 / 36 slotted); the 9 slot-less ones are unchanged.
+    # owned days (45 / 36 slotted), and gave metcon_engine its authored bike session
+    # (37 slotted, 8 slot-less).
     assert not {branch for branch, n in ids.items() if n > 1}
 
 

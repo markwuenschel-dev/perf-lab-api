@@ -751,8 +751,21 @@
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20 min Zone 2",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "2 min @ RPE 8 / 2 min easy spin",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
