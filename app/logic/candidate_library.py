@@ -886,9 +886,15 @@ def _running_functional(variant: str, station: str) -> CandidateTemplate:
     """4 x (1 km run -> a quarter of one official station): one race's worth of the station.
 
     Not a simulation: the point is the run that FOLLOWS a station. Wall Balls are deliberately
-    absent -- the race has no run after them. The round count is the volume lever, moved one
-    round by the workload preference (3 / 4 / 5): the natural round-scaled form of this
-    authored session, not a validated difficulty dose.
+    absent -- the race has no run after them.
+
+    FIXED at four rounds under every workload. The round count is this session's natural
+    volume lever, and the circuit can scale it (``scales_with_workload``), but neither dose
+    engine can see round-scaled distance work yet: production v0 records LESS dose for more
+    rounds (its density is minutes per set), and v1 counts sets only for set-counted
+    modalities, so it records none of the difference. A live lever the applied dose gets
+    wrong would feed incorrect state updates, so it stays off until the dose model represents
+    this work monotonically (phase 7 may re-enable it then).
     """
     name, distance_m, reps, loaded = next(s for s in HYROX_OFFICIAL_STATIONS if s[0] == station)
     quarter_m = None if distance_m is None else distance_m / 4
@@ -908,13 +914,13 @@ def _running_functional(variant: str, station: str) -> CandidateTemplate:
         goal_alignment=1.0,
         tags=["aerobic_base", "work_capacity"],
         domain="mixed",
+        workload_volume="fixed",
         scoring=_HYROX_SCORING,
         exercise_slots=[run_slot, work_slot],
         circuit=CircuitSpec(
             scheme=FixedRoundsScheme(rounds=4),
             stations=(run_station, work_station),
             label=f"Running + Functional \u2014 {variant}",
-            scales_with_workload=True,
         ),
     )
 

@@ -15,7 +15,7 @@ is a generic redirect, and no HYROX / CrossFit day is built from the equipment f
 | planned day | prescribed (medium) | structure | workload |
 |---|---|---|---|
 | HYROX Strength Endurance | Back Squat, Overhead Press, Barbell Row | 5 fixed rounds × 8 each | fixed |
-| HYROX Running + Functional | Run 1 km → SkiErg 250 m | fixed rounds: 3 / 4 / 5 | rounds scale |
+| HYROX Running + Functional | Run 1 km → SkiErg 250 m | 4 fixed rounds | fixed (see 1) |
 | HYROX Hyrox Simulation | Half Simulation A: Run → SkiErg → Run → Sled Push → Run → Sled Pull → Run → Burpee Broad Jump | for time, 1 round | fixed |
 | CrossFit Strength + Skill | Back Squat 5 × 3 → EMOM 10: Double Unders / Toes to Bar | strength + rotating EMOM | fixed |
 | CrossFit MetCon | SkiErg, Assault Bike, Kettlebell Clean | unchanged by phase 6 | — |
@@ -23,18 +23,21 @@ is a generic redirect, and no HYROX / CrossFit day is built from the equipment f
 
 **Findings.**
 
-1. **Running + Functional: neither dose engine yet sees its workload.** Its rounds follow the
-   workload preference (6 / 8 / 10 sets = 3 / 4 / 5 rounds × 2 stations). But the production
-   dose goes DOWN as work goes up: 1.97 / 1.44 / 1.14. This is the same v0 density inversion
-   explained below, since the legacy `duration_min` stays 46 while the sets grow. Unlike the
-   strength example below, **v1 does not correct it: v1 gives 1.14 at every workload.** That is
-   by design: v1 counts sets only for Strength, Hypertrophy and Power
-   (`dose_engine_v1.py:102,131-132,190-191`), because a Mixed session's work is not sets. The
-   phase-6.3 timed-work proxy cannot see it either, because this session's stations are
-   distances, not times. So the prescription changes with workload, and the recorded dose
-   either inverts (v0) or ignores it (v1). Measuring it needs pace-resolved or performed
-   durations: calibration work (8B), not phase 6.
-2. **Every other HYROX / CrossFit day is fixed under the workload preference**, and says so
+1. **Running + Functional is fixed at 4 rounds, because neither dose engine can see its
+   rounds.** The first run of this matrix had its rounds following the workload
+   (3 / 4 / 5 rounds = 6 / 8 / 10 sets). The applied dose contradicted the prescription:
+   - production v0 went DOWN as work went up: 1.97 / 1.44 / 1.14. This is the v0 density
+     inversion explained below, since the legacy `duration_min` stays 46 while the sets grow;
+   - v1 gave 1.14 at every workload. By design, v1 counts sets only for Strength, Hypertrophy
+     and Power (`dose_engine_v1.py:102,131-132,190-191`);
+   - the phase-6.3 timed-work proxy cannot see it either, because the stations are distances.
+
+   A live workload lever that the applied dose gets wrong would feed incorrect state updates,
+   so the template does not opt into round scaling. The circuit capability stays and is
+   tested. `test_run_functional_does_not_scale_until_its_dose_can_see_the_rounds` pins the
+   reason: structure and applied dose are identical across easy / medium / hard. Phase 7 may
+   re-enable the lever once the dose model represents round-scaled distance work monotonically.
+2. **Every HYROX / CrossFit day is therefore fixed under the workload preference**, and says so
    (`block:intensity=<level>(no-op:...)`). Progression for these sessions is phase 7.
 3. **The first variant wins every cell**: Half Simulation A, Running + Functional — Ski,
    Strength + Skill — Squat. The variants score identically, and which one appears when is
@@ -73,22 +76,16 @@ path: baseline capacities from `state_service._BASELINE_CAPACITIES`, the session
 - production dose model: **v0** (`app/logic/dose_model.py`; v1 is shadow-only until phase 8C)
 - cells: **252** (3 experience × 2 freshness × 14 goal/day × 3 workload)
 - cells with a per-cell flag: **0**
-- cross-cell findings: **12**
+- cross-cell findings: **6**
 
 ## Findings
 
 - **easy > hard DOSE: novice/fresh/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: novice/fresh/hyrox_running_functional — 1.97 vs 1.14**
 - **easy > hard DOSE: novice/fatigued/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: novice/fatigued/hyrox_running_functional — 1.97 vs 1.14**
 - **easy > hard DOSE: intermediate/fresh/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: intermediate/fresh/hyrox_running_functional — 1.97 vs 1.14**
 - **easy > hard DOSE: intermediate/fatigued/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: intermediate/fatigued/hyrox_running_functional — 1.97 vs 1.14**
 - **easy > hard DOSE: advanced/fresh/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: advanced/fresh/hyrox_running_functional — 1.97 vs 1.14**
 - **easy > hard DOSE: advanced/fatigued/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: advanced/fatigued/hyrox_running_functional — 1.97 vs 1.14**
 
 ### Why easy carries more dose than hard, in production
 
@@ -137,9 +134,9 @@ Strength log: it does not show how v1 orders any other flagged session.
 | novice | fresh | hyrox_strength_endurance | easy | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.299 | +5.57 |
 | novice | fresh | hyrox_strength_endurance | medium | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.299 | +5.57 |
 | novice | fresh | hyrox_strength_endurance | hard | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.299 | +5.57 |
-| novice | fresh | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 6 | 46 | 1.97 | +0.502 | +16.79 |
+| novice | fresh | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.403 | +11.44 |
 | novice | fresh | hyrox_running_functional | medium | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.403 | +11.44 |
-| novice | fresh | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 10 | 46 | 1.14 | +0.341 | +8.31 |
+| novice | fresh | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.403 | +11.44 |
 | novice | fresh | hyrox_simulation | easy | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.522 | +16.31 |
 | novice | fresh | hyrox_simulation | medium | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.522 | +16.31 |
 | novice | fresh | hyrox_simulation | hard | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.522 | +16.31 |
@@ -179,9 +176,9 @@ Strength log: it does not show how v1 orders any other flagged session.
 | novice | fatigued | hyrox_strength_endurance | easy | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.091 | -46.31 |
 | novice | fatigued | hyrox_strength_endurance | medium | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.091 | -46.31 |
 | novice | fatigued | hyrox_strength_endurance | hard | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.091 | -46.31 |
-| novice | fatigued | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 6 | 46 | 1.97 | +0.263 | -35.09 |
+| novice | fatigued | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.182 | -40.44 |
 | novice | fatigued | hyrox_running_functional | medium | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.182 | -40.44 |
-| novice | fatigued | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 10 | 46 | 1.14 | +0.131 | -43.57 |
+| novice | fatigued | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.182 | -40.44 |
 | novice | fatigued | hyrox_simulation | easy | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.271 | -35.57 |
 | novice | fatigued | hyrox_simulation | medium | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.271 | -35.57 |
 | novice | fatigued | hyrox_simulation | hard | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.271 | -35.57 |
@@ -221,9 +218,9 @@ Strength log: it does not show how v1 orders any other flagged session.
 | intermediate | fresh | hyrox_strength_endurance | easy | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.130 | +5.57 |
 | intermediate | fresh | hyrox_strength_endurance | medium | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.130 | +5.57 |
 | intermediate | fresh | hyrox_strength_endurance | hard | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | +0.130 | +5.57 |
-| intermediate | fresh | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 6 | 46 | 1.97 | +0.333 | +16.79 |
+| intermediate | fresh | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.233 | +11.44 |
 | intermediate | fresh | hyrox_running_functional | medium | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.233 | +11.44 |
-| intermediate | fresh | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 10 | 46 | 1.14 | +0.172 | +8.31 |
+| intermediate | fresh | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.233 | +11.44 |
 | intermediate | fresh | hyrox_simulation | easy | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.353 | +16.31 |
 | intermediate | fresh | hyrox_simulation | medium | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.353 | +16.31 |
 | intermediate | fresh | hyrox_simulation | hard | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.353 | +16.31 |
@@ -263,9 +260,9 @@ Strength log: it does not show how v1 orders any other flagged session.
 | intermediate | fatigued | hyrox_strength_endurance | easy | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.078 | -46.31 |
 | intermediate | fatigued | hyrox_strength_endurance | medium | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.078 | -46.31 |
 | intermediate | fatigued | hyrox_strength_endurance | hard | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.078 | -46.31 |
-| intermediate | fatigued | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 6 | 46 | 1.97 | +0.094 | -35.09 |
+| intermediate | fatigued | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.012 | -40.44 |
 | intermediate | fatigued | hyrox_running_functional | medium | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.012 | -40.44 |
-| intermediate | fatigued | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 10 | 46 | 1.14 | -0.039 | -43.57 |
+| intermediate | fatigued | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | +0.012 | -40.44 |
 | intermediate | fatigued | hyrox_simulation | easy | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.101 | -35.57 |
 | intermediate | fatigued | hyrox_simulation | medium | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.101 | -35.57 |
 | intermediate | fatigued | hyrox_simulation | hard | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.101 | -35.57 |
@@ -305,9 +302,9 @@ Strength log: it does not show how v1 orders any other flagged session.
 | advanced | fresh | hyrox_strength_endurance | easy | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.136 | +5.57 |
 | advanced | fresh | hyrox_strength_endurance | medium | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.136 | +5.57 |
 | advanced | fresh | hyrox_strength_endurance | hard | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.136 | +5.57 |
-| advanced | fresh | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 6 | 46 | 1.97 | +0.067 | +16.79 |
+| advanced | fresh | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | -0.032 | +11.44 |
 | advanced | fresh | hyrox_running_functional | medium | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | -0.032 | +11.44 |
-| advanced | fresh | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 10 | 46 | 1.14 | -0.094 | +8.31 |
+| advanced | fresh | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | -0.032 | +11.44 |
 | advanced | fresh | hyrox_simulation | easy | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.087 | +16.31 |
 | advanced | fresh | hyrox_simulation | medium | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.087 | +16.31 |
 | advanced | fresh | hyrox_simulation | hard | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | +0.087 | +16.31 |
@@ -347,9 +344,9 @@ Strength log: it does not show how v1 orders any other flagged session.
 | advanced | fatigued | hyrox_strength_endurance | easy | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.344 | -46.31 |
 | advanced | fatigued | hyrox_strength_endurance | medium | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.344 | -46.31 |
 | advanced | fatigued | hyrox_strength_endurance | hard | Strength Endurance | Back Squat, Overhead Press, Barbell Row | 15 | 52 | 0.88 | -0.344 | -46.31 |
-| advanced | fatigued | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 6 | 46 | 1.97 | -0.172 | -35.09 |
+| advanced | fatigued | hyrox_running_functional | easy | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | -0.254 | -40.44 |
 | advanced | fatigued | hyrox_running_functional | medium | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | -0.254 | -40.44 |
-| advanced | fatigued | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 10 | 46 | 1.14 | -0.304 | -43.57 |
+| advanced | fatigued | hyrox_running_functional | hard | Running + Functional — Ski | Run, SkiErg | 8 | 46 | 1.44 | -0.254 | -40.44 |
 | advanced | fatigued | hyrox_simulation | easy | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | -0.165 | -35.57 |
 | advanced | fatigued | hyrox_simulation | medium | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | -0.165 | -35.57 |
 | advanced | fatigued | hyrox_simulation | hard | HYROX Half Simulation — A | Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump | 8 | 57 | 1.91 | -0.165 | -35.57 |

@@ -133,7 +133,6 @@ def test_no_compromised_running_session_uses_wall_balls() -> None:
 def test_compromised_running_is_a_quarter_station_four_times(template: CandidateTemplate) -> None:
     circuit = template.circuit
     assert circuit is not None and circuit.scheme == FixedRoundsScheme(rounds=4)
-    assert circuit.scales_with_workload
     run, station = circuit.stations
     name = template.exercise_slots[1].exercise
     (official,) = [s for s in HYROX_OFFICIAL_STATIONS if s[0] == name]
@@ -228,16 +227,46 @@ def test_a_simulation_day_is_one_for_time_circuit_of_runs_and_stations(
     assert rx.exercises[3].prescribed_load_kg is None
 
 
-@pytest.mark.parametrize(("workload", "rounds"), [("easy", 3), ("medium", 4), ("hard", 5)])
-def test_compromised_running_rounds_follow_the_workload(
-    catalog_snapshot: list[CatalogExercise], workload: str, rounds: int
+def test_run_functional_does_not_scale_until_its_dose_can_see_the_rounds(
+    catalog_snapshot: list[CatalogExercise],
 ) -> None:
-    rx, _ = _day(catalog_snapshot, RUNNING_FUNCTIONAL_CATEGORY, workload=workload)
-    assert _plan_codes(rx) == ["plan:session_followed=run_functional_ski"]
-    assert _circuit(rx).scheme == FixedRoundsScheme(rounds=rounds)
-    assert [(e.name, e.sets, e.reps) for e in rx.exercises] == [
-        ("Run", rounds, "1 km"), ("SkiErg", rounds, "250 m"),
+    """run_functional stays structurally identical across easy / medium / hard until its dose
+    model represents round-scaled distance work.
+
+    The reason, not only the value: with the rounds scaling (3 / 4 / 5), production v0 recorded
+    1.97 / 1.44 / 1.14 (more work, less dose: its density is minutes per set) and v1 recorded
+    1.14 for all three (it counts sets only for Strength / Hypertrophy / Power). A workload
+    lever the applied dose gets wrong feeds incorrect state updates. Re-enabling it must first
+    make the dose assertion below meaningful, not just flip the flag.
+    """
+    from app.scripts import simulate_matrix as sm
+
+    for template in RUNNING_FUNCTIONAL_TEMPLATES:
+        assert template.workload_volume == "fixed"
+        assert template.circuit is not None and not template.circuit.scales_with_workload
+
+    days = {
+        w: _day(catalog_snapshot, RUNNING_FUNCTIONAL_CATEGORY, workload=w)[0]
+        for w in ("easy", "medium", "hard")
+    }
+    assert all(
+        _plan_codes(rx) == ["plan:session_followed=run_functional_ski"] for rx in days.values()
+    )
+    assert days["easy"].structure == days["medium"].structure == days["hard"].structure
+    assert _circuit(days["medium"]).scheme == FixedRoundsScheme(rounds=4)
+    assert [(e.name, e.sets, e.reps) for e in days["medium"].exercises] == [
+        ("Run", 4, "1 km"), ("SkiErg", 4, "250 m"),
     ]
+    for level in ("easy", "hard"):
+        why = days[level].why
+        assert why is not None
+        assert f"block:intensity={level}(no-op:fixed-volume)" in why.constraints_applied
+
+    applied = {
+        w: sm._run_cell("novice", "fresh", "hyrox_running_functional", w, "phase-6").dose_total
+        for w in ("easy", "medium", "hard")
+    }
+    assert applied["easy"] == applied["medium"] == applied["hard"], applied
 
 
 @pytest.mark.parametrize("workload", ["easy", "medium", "hard"])
