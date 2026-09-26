@@ -97,8 +97,8 @@ def test_the_corpus_covers_every_domain_the_engine_prescribes_for() -> None:
 
 
 @pytest.mark.xfail(
-    reason="phases 6-9: 8 of 45 templates declare no exercise slots (e.g. "
-    "mixed_strength_endurance; "
+    reason="phases 7-9: 7 of 45 templates declare no exercise slots (e.g. "
+    "strength_volume; "
     "the count is pinned by test_scoring_goldens.py), so the prescriber falls back to the "
     "generic equipment map and prescribes Air Squat, Push-up, Lunges for them",
     strict=True,

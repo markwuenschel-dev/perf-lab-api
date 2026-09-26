@@ -825,8 +825,27 @@
       ],
       "tissue_weight": 0.4
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "reps": "8",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "reps": "8",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "reps": "8",
+        "requirements": [],
+        "sets": "5"
+      }
+    ],
     "tags": [
       "max_strength",
       "work_capacity"
