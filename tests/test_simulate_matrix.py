@@ -104,3 +104,30 @@ def test_the_matrix_uses_the_real_catalog_not_the_equipment_fallback() -> None:
     assert by_goal["threshold"].exercises == "Tempo Run"
     assert by_goal["recovery"].exercises == "Easy Run"
     assert by_goal["potentiation"].exercises == "Back Squat, Broad Jump"
+
+
+def test_matrix_4_shows_each_block_periodized_by_its_own_data() -> None:
+    """The phase-7 exit claim, over the week axis."""
+    rows = sm.build_periodization()
+    by_block: dict[str, list[sm.WeekRow]] = {}
+    for r in rows:
+        by_block.setdefault(r.block, []).append(r)
+
+    def phases(block: str) -> list[str]:
+        return [r.phase.split("(")[0] for r in by_block[block]]
+
+    assert phases("running (distance)") == [
+        "base", "base", "base", "deload", "threshold", "threshold", "race_specific", "taper",
+    ]
+    assert {r.source for r in by_block["running (distance)"]} == {"running"}
+    # Sprint-primary: generic, not a distance runner's base / threshold / race shape.
+    assert {r.source for r in by_block["running (sprint-primary)"]} == {"generic"}
+    assert {r.source for r in by_block["calisthenics"]} == {"calisthenics"}
+    generic = [
+        "accumulation", "accumulation", "accumulation", "deload",
+        "intensification", "intensification", "peak", "taper",
+    ]
+    for block in ("running (sprint-primary)", "strength", "hyrox"):
+        assert phases(block) == generic, block
+    # The HYROX simulation day rotates its two halves by block week.
+    assert [r.branch for r in by_block["hyrox"]] == ["hyrox_half_sim_a", "hyrox_half_sim_b"] * 4

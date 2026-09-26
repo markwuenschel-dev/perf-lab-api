@@ -50,6 +50,11 @@ Run:
     uv run python -m app.scripts.simulate_matrix
     uv run python -m app.scripts.simulate_matrix --grid phase-5         --out docs/simulations/phase-5.md --title "Simulation matrix #2 — phase 5 exit"
     uv run python -m app.scripts.simulate_matrix --grid phase-6         --out docs/simulations/phase-6.md --title "Simulation matrix #3 — phase 6 exit"
+    uv run python -m app.scripts.simulate_matrix --grid phase-7         --out docs/simulations/phase-7.md --title "Simulation matrix #4 — phase 7 exit"
+
+Matrix #4 (phase-7 exit) keeps the phase-6 grid and adds a week axis: every week of an 8-week
+block for each kind of block phase 7 distinguishes (a distance and a sprint-primary Running
+block, Calisthenics, and generic Strength and HYROX blocks).
 """
 from __future__ import annotations
 
@@ -167,7 +172,35 @@ GRIDS: dict[str, tuple[dict[str, tuple[str, str, str, dict[str, float]]], list[C
     "phase-1": ({label: (*spec, {}) for label, spec in GOALS.items()}, None),
     "phase-5": (PHASE_5_GOALS, _catalog()),
     "phase-6": (PHASE_6_GOALS, _catalog()),
+    # Matrix #4 (phase-7 exit): the phase-6 grid at week 2, plus the per-week periodization
+    # section (``build_periodization``) that phase 7 is actually about.
+    "phase-7": (PHASE_6_GOALS, _catalog()),
 }
+
+#: Matrix #4's week axis: one athlete (novice, fresh, medium workload) through an 8-week block,
+#: deload every 4, for each kind of block phase 7 distinguishes. label ->
+#: (block goal, canonical domain, planned category, block modality mix).
+PERIODIZATION_BLOCKS: dict[str, tuple[str, str, str, dict[str, float]]] = {
+    "running (distance)": ("Running", "running", "Aerobic Base", {}),
+    "running (sprint-primary)": ("Running", "running", "Speed", {"sprinting": 1.0}),
+    "calisthenics": ("Calisthenics", "calisthenics", "Bodyweight Strength", {}),
+    "strength": ("Strength", "strength", "Max Strength", {}),
+    "hyrox": ("Hyrox", "mixed", "Hyrox Simulation", {}),
+}
+PERIODIZATION_WEEKS = 8
+
+
+@dataclass(frozen=True)
+class WeekRow:
+    block: str
+    week: int
+    phase: str
+    rpe_target: str
+    source: str
+    session: str
+    branch: str
+    duration_min: int
+
 
 WORKLOADS = ("easy", "medium", "hard")
 
@@ -329,6 +362,62 @@ def _log(rx) -> WorkoutLog:
     )
 
 
+def _code_value(codes: list[str], prefix: str) -> str:
+    return next((c[len(prefix):] for c in codes if c.startswith(prefix)), "")
+
+
+def build_periodization() -> list[WeekRow]:
+    """Every week of an 8-week block for each block kind, through the real prescriber."""
+    level_key, _years = EXPERIENCE["novice"]
+    fatigue, tissue = FRESHNESS["fresh"]
+    catalog = _catalog()
+    rows: list[WeekRow] = []
+    for label, (goal, domain, category, mix) in PERIODIZATION_BLOCKS.items():
+        for week in range(1, PERIODIZATION_WEEKS + 1):
+            rx = recommend_next_session(
+                _state(level_key, fatigue, tissue),
+                goal=goal,  # type: ignore[arg-type]
+                catalog=catalog,
+                block_context={
+                    "block_goal": goal, "modality_mix": mix, "session_category": category,
+                    "session_domain": domain, "week_number": week,
+                    "duration_weeks": PERIODIZATION_WEEKS, "deload_every_n_weeks": 4,
+                    "intensity": "medium",
+                },
+            )
+            codes = rx.why.constraints_applied if rx.why is not None else []
+            rows.append(WeekRow(
+                block=label, week=week,
+                phase=_code_value(codes, "block:phase="),
+                rpe_target=_code_value(codes, "block:rpe_target="),
+                source=_code_value(codes, "block:periodization="),
+                session=rx.type,
+                branch=rx.why.prescription_branch or "" if rx.why is not None else "",
+                duration_min=rx.duration_min,
+            ))
+    return rows
+
+
+def render_periodization(rows: list[WeekRow]) -> str:
+    lines = [
+        "",
+        "## Periodization by week (matrix #4)",
+        "",
+        "One athlete (novice, fresh, medium workload), every week of an 8-week block with a "
+        "deload every 4 weeks. `source` is the block's periodization: an authored template, or "
+        "`generic`.",
+        "",
+        "| block | week | phase (×length) | RPE target | source | session | min |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r.block} | {r.week} | {r.phase} | {r.rpe_target} | {r.source} | "
+            f"{r.session} | {r.duration_min} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def build_matrix(grid: str = "phase-1") -> list[Cell]:
     goals, _catalog_rows = GRIDS[grid]
     return [
@@ -472,6 +561,8 @@ def main() -> None:
     args = ap.parse_args()
 
     report = render(build_matrix(args.grid), args.title)
+    if args.grid == "phase-7":
+        report += render_periodization(build_periodization())
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(report, encoding="utf-8")
