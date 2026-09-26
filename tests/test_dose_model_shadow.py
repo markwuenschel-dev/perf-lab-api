@@ -114,7 +114,7 @@ def test_every_row_names_the_models_and_the_chronology_that_produced_it() -> Non
     row = _row(_log())
 
     assert row.v0_model_version == "v0"
-    assert row.v1_model_version == "v1"
+    assert row.v1_model_version == "v1.1"
     assert row.state_update_model == STATE_UPDATE_MODEL_VERSION
     assert row.prescription_engine_version
     assert row.decision_impact == "none_shadow_only"

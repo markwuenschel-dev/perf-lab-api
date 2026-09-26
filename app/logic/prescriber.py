@@ -29,6 +29,7 @@ from typing import Any, Literal
 from app.logic.candidate_library import get_templates, score_template
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
+    WorkloadVolume,
 )
 from app.logic.constraint_engine.candidate import (
     overall_readiness as _readiness,
@@ -68,11 +69,13 @@ from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import (
     ExercisePrescription,
     WorkoutPrescription,
+    endurance_block_for,
     project_exercises,
     structure_from_exercises,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
+from app.schemas.workout_structure import WorkoutStructure
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -411,6 +414,8 @@ def _generate_candidates(
     recent: list[dict[str, Any]] | None,
     readiness_override: float | None = None,
     domain_override: str | None = None,
+    session_category: str | None = None,
+    category_owns_day: bool = True,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
@@ -429,7 +434,12 @@ def _generate_candidates(
     # relabel days.
     domain = domain_override or _candidate_domain(goal)
     r = readiness_override if readiness_override is not None else _readiness(state)
-    templates = get_templates(domain, kpi, goal=str(goal), state=state)
+    # A planned category may own its day's pool whatever the block goal (phase 5.6), unless a
+    # readiness redirect is competing (see ``template_pool``).
+    templates = get_templates(
+        domain, kpi, goal=str(goal), state=state, session_category=session_category,
+        category_owns_day=category_owns_day,
+    )
     return [score_template(t, state, kpi, readiness=r) for t in templates]
 
 
@@ -502,8 +512,12 @@ def _apply_intensity_sets(
     domain: str,
     *,
     is_recovery_week: bool,
+    workload_volume: WorkloadVolume = "scaled",
 ) -> None:
     """Move working sets by the block's workload preference, and always say what happened.
+
+    A session whose template declares ``workload_volume="fixed"`` keeps its authored volume:
+    its volume is the protocol, not a knob (the phase-5 potentiation primer).
 
     Every no-op is reported with its reason. A preference that silently does nothing is the
     defect this whole slice exists to avoid: the athlete chose "hard" and is owed either more
@@ -514,6 +528,8 @@ def _apply_intensity_sets(
     reason: str | None = None
     if is_recovery_week:
         reason = "recovery-week"
+    elif workload_volume == "fixed":
+        reason = "fixed-volume"
     elif domain not in INTENSITY_SET_DOMAINS:
         reason = f"no-set-targets:{domain}"
 
@@ -525,7 +541,7 @@ def _apply_intensity_sets(
         # editing sets inline. LEGACY_TRANSFORM reproduces today's rule exactly (±1 set), so
         # this is behaviour-neutral; 3.2 swaps in real per-family policies, and none of them
         # goes live until its effect under both dose engines has been measured.
-        before = rx.structure or structure_from_exercises(rx.exercises)
+        before = structure_from_exercises(rx.exercises, rx.structure)
         after = LEGACY_TRANSFORM.apply(before, intensity)
         moved = sum(
             1
@@ -778,6 +794,9 @@ class _ExerciseSelection:
     #: with no preference. ``None`` when no preference was applied (none set, or the slot-less
     #: equipment-map path, which does not rank).
     preference_changes: int | None = None
+    #: The slot each exercise was chosen for, aligned with ``exercises`` — how an endurance
+    #: slot's work shape reaches the structure. None on the equipment-map path (no slots).
+    slots: tuple[ExerciseSlot, ...] | None = None
 
 
 def _map_selection(available_equipment: Sequence[str] | None) -> _ExerciseSelection:
@@ -844,9 +863,11 @@ def _select_exercises(
     )
 
     out: list[ExercisePrescription] = []
+    chosen_slots: list[ExerciseSlot] = []
     for res in resolutions:
         if res.chosen is None:
             continue
+        chosen_slots.append(res.slot)
         try:
             sets = int(res.slot.sets)
         except ValueError:
@@ -867,7 +888,10 @@ def _select_exercises(
         else None
     )
     return _ExerciseSelection(
-        out, [_CATALOG_EQUIPMENT_CODE[_equipment_state(available_equipment)]], changes
+        out,
+        [_CATALOG_EQUIPMENT_CODE[_equipment_state(available_equipment)]],
+        changes,
+        tuple(chosen_slots),
     )
 
 
@@ -883,6 +907,21 @@ def _exercise_list_for_candidate(
 
 #: How many resolved exercises the displayed session title names before "+N more".
 _FOCUS_NAMED_EXERCISES = 3
+
+
+def _structure_for_selection(selection: _ExerciseSelection) -> WorkoutStructure:
+    """The selected exercises as blocks: an endurance slot's work shape, else a strength block.
+
+    Phase 5.3: this is where a running session becomes an interval or continuous block. The
+    exercise list stays exactly what it was — it is the block's compatibility projection.
+    """
+    blocks = structure_from_exercises(selection.exercises)
+    for i, slot in enumerate(selection.slots or ()):
+        if slot.endurance is not None:
+            shaped = endurance_block_for(slot.endurance, selection.exercises[i])
+            if shaped is not None:
+                blocks[i] = shaped
+    return blocks
 
 
 def _focus_from_exercises(exercises: list[ExercisePrescription]) -> str:
@@ -1063,12 +1102,14 @@ def _recommend_next_session(
     deload_need = compute_deload_need(state)
 
     # --- 2. Build candidate pool: goal-specific + readiness redirects ---
-    goal_candidates = _generate_candidates(
-        state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain
-    )
     # Readiness redirects stay modeled-only: acute wellness has no honest per-axis mapping,
-    # so it enters via the score channel above, not here (ADR-0052).
+    # so it enters via the score channel above, not here (ADR-0052). Computed first: a
+    # competing redirect stops a planned category from owning the day's pool.
     redirects = _readiness_redirect(state, goal, kpi)
+    goal_candidates = _generate_candidates(
+        state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain,
+        session_category=block.get("session_category"), category_owns_day=not redirects,
+    )
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
 
@@ -1268,6 +1309,7 @@ def _recommend_next_session(
         equipment_preference=equipment_preference,
     )
     rx.exercises = selection.exercises
+    rx.structure = _structure_for_selection(selection)
     # A hard validator failure replaced the session with a recovery override; its title says so
     # and must not be rebuilt from the template's exercises.
     overridden = (
@@ -1378,6 +1420,7 @@ def _recommend_next_session(
         intensity,
         session_domain or _candidate_domain(str(goal)),
         is_recovery_week=_is_recovery_week(block, week_n, weeks_total),
+        workload_volume=scored[0].workload_volume,
     )
 
     if rx.why:

@@ -22,6 +22,7 @@ import {
   GOAL_DOMAIN,
   initialForm,
   INTENSITIES,
+  RUNNING_FOCUS,
   SECONDARY_STYLES,
   type BlockForm,
 } from "./blockCreateBody";
@@ -52,7 +53,8 @@ const chipCls = (active: boolean) =>
 export function BlockCreateModal() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
-  const [form, setForm] = useState<BlockForm>(initialForm);
+  const profileGoal = auth.profile?.primary_goal ?? null;
+  const [form, setForm] = useState<BlockForm>(() => initialForm(profileGoal));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // The week the SERVER would generate. Fetched rather than computed here: a style that ends
@@ -64,8 +66,17 @@ export function BlockCreateModal() {
   const open = state.blockCreateOpen;
   const token = auth.token;
   const previewKey = open
-    ? JSON.stringify({ g: form.goal, s: form.secondary, n: form.sessionsPerWeek })
+    ? JSON.stringify({ g: form.goal, f: form.runningFocus, s: form.secondary, n: form.sessionsPerWeek })
     : null;
+
+  // The profile can arrive after first render. Preselect from it only while the form is
+  // untouched, so it never overrides a choice the athlete made.
+  useEffect(() => {
+    if (!open) return;
+    setForm((f) =>
+      JSON.stringify(f) === JSON.stringify(initialForm()) ? initialForm(profileGoal) : f,
+    );
+  }, [open, profileGoal]);
 
   useEffect(() => {
     if (!open || !token || previewKey === null) return;
@@ -118,7 +129,7 @@ export function BlockCreateModal() {
       // the current wall-clock week) so its first sessions are what Planning shows.
       actions.focusPlanningWeek(req.start_date);
       actions.closeBlockCreate();
-      setForm(initialForm());
+      setForm(initialForm(profileGoal));
     } catch (e) {
       setSaveError(
         (e as ApiError)?.message ??
@@ -149,6 +160,20 @@ export function BlockCreateModal() {
               ))}
             </select>
           </label>
+
+          {form.goal === "Running" && (
+            <div>
+              <span className="text-[12px] font-medium leading-none text-mute">Running focus</span>
+              <div className="mt-2 flex gap-2">
+                {RUNNING_FOCUS.map((o) => (
+                  <div key={o.value} onClick={() => set("runningFocus", o.value)} className={segCls(form.runningFocus === o.value)}>{o.label}</div>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] font-medium leading-[1.45] text-faint">
+                {RUNNING_FOCUS.find((o) => o.value === form.runningFocus)?.help}
+              </p>
+            </div>
+          )}
 
           <div>
             <span className="text-[12px] font-medium leading-none text-mute">Also train (optional)</span>

@@ -1608,6 +1608,21 @@ export interface components {
          * @description One unbroken effort: a steady run, a row, a ruck.
          */
         ContinuousBlock: {
+            /**
+             * Activity
+             * @description What the work is, e.g. 'Tempo Run'.
+             */
+            activity?: string | null;
+            /**
+             * Display Reps
+             * @description Compatibility projection: the legacy exercise's reps text.
+             */
+            display_reps?: string | null;
+            /**
+             * Display Sets
+             * @description Compatibility projection: the legacy exercise's set count.
+             */
+            display_sets?: number | null;
             /** Distance M */
             distance_m?: number | null;
             /** Duration Sec */
@@ -1626,8 +1641,15 @@ export interface components {
              * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
              */
             label?: string | null;
+            load_explanation?: components["schemas"]["LoadExplanation"] | null;
+            /** Load Note */
+            load_note?: string | null;
+            /** Rpe Cap */
+            rpe_cap?: number | null;
             /** Transition Sec */
             transition_sec?: number | null;
+            /** Weak Point Tags */
+            weak_point_tags?: string[];
         };
         /** CooldownBlock */
         CooldownBlock: {
@@ -2041,11 +2063,26 @@ export interface components {
          * IntervalBlock
          * @description Repeated efforts with prescribed recovery — the shape running and HYROX need.
          *
-         *     Emitted by nothing in 2.1. Declared now so phase 5 extends behaviour rather than schema:
-         *     a threshold session is ``repetitions=4, work_duration_sec=300, recovery_duration_sec=120``,
-         *     not the sentence "4×5 min @ threshold pace / 2 min easy recovery".
+         *     Emitted by running templates since phase 5.3: a threshold session is
+         *     ``repetitions=4, work_duration_sec=300, recovery_duration_sec=120``, not the sentence
+         *     "4×5 min @ threshold pace / 2 min easy recovery".
          */
         IntervalBlock: {
+            /**
+             * Activity
+             * @description What the work is, e.g. 'Tempo Run'.
+             */
+            activity?: string | null;
+            /**
+             * Display Reps
+             * @description Compatibility projection: the legacy exercise's reps text.
+             */
+            display_reps?: string | null;
+            /**
+             * Display Sets
+             * @description Compatibility projection: the legacy exercise's set count.
+             */
+            display_sets?: number | null;
             /** Intensity Basis */
             intensity_basis?: ("pace_s_per_km" | "watts" | "hr_bpm" | "zone" | "rpe" | "percent_e1rm") | null;
             /** Intensity Target */
@@ -2060,6 +2097,9 @@ export interface components {
              * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
              */
             label?: string | null;
+            load_explanation?: components["schemas"]["LoadExplanation"] | null;
+            /** Load Note */
+            load_note?: string | null;
             /** Quality Stop */
             quality_stop?: string | null;
             /**
@@ -2073,8 +2113,12 @@ export interface components {
             recovery_type?: ("passive" | "easy" | "walk" | "jog" | "active") | null;
             /** Repetitions */
             repetitions?: number | null;
+            /** Rpe Cap */
+            rpe_cap?: number | null;
             /** Transition Sec */
             transition_sec?: number | null;
+            /** Weak Point Tags */
+            weak_point_tags?: string[];
             /** Work Distance M */
             work_distance_m?: number | null;
             /** Work Duration Sec */
@@ -4043,7 +4087,7 @@ export interface components {
             /**
              * Model Version
              * @description Prescription engine version
-             * @default v0.3
+             * @default v0.4
              */
             model_version: string;
             /** Rationale */

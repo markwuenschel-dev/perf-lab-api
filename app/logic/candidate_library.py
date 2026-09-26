@@ -18,15 +18,23 @@ thin re-export alias is kept there for backwards compatibility if needed.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.domain.vectors import FatigueState, TissueState
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
+    WorkloadVolume,
     overall_readiness,
 )
 from app.logic.exercise_slot import ExerciseSlot
+from app.logic.planned_session_slots import (
+    ACTIVE_RECOVERY_CATEGORY,
+    SPEED_CATEGORY,
+    STRENGTH_POTENTIATION_CATEGORY,
+    THRESHOLD_CATEGORY,
+)
 from app.schemas.state import UnifiedStateVector
+from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
 
 # ---------------------------------------------------------------------------
 # ScoringSpec — per-template dynamic scoring, carried as data
@@ -132,6 +140,10 @@ class CandidateTemplate:
     scoring: ScoringSpec = field(kw_only=True)
     # Requirement-based movement slots — see class docstring.
     exercise_slots: list[ExerciseSlot] = field(default_factory=lambda: [])
+    # "scaled" (default): the block's easy/medium/hard preference moves working sets. "fixed":
+    # the authored volume is the session, and the generic scaler skips it (phase 5). A declared
+    # property of the session, so no code path keys on a template id.
+    workload_volume: WorkloadVolume = "scaled"
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +163,12 @@ class FamilyVariant:
     kpi_eligible: Callable[[dict[str, float]], bool] | None = None
     state_eligible: Callable[[UnifiedStateVector], bool] | None = None
     goal_eligible: Callable[[str], bool] | None = None
+    #: Overrides the family's focus when the variant is the same design written differently —
+    #: a tempo run and threshold intervals are both threshold work. None inherits the family's.
+    focus: str | None = None
+    #: Overrides the family's slots when the variant's work is shaped differently (one
+    #: continuous tempo vs four intervals). None inherits the family's.
+    exercise_slots: tuple[ExerciseSlot, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -180,7 +198,7 @@ class WorkoutFamily:
         return [
             CandidateTemplate(
                 type=self.type,
-                focus=self.focus,
+                focus=self.focus if v.focus is None else v.focus,
                 rationale=v.rationale,
                 branch_id=v.branch_id,
                 duration_min=self.duration_min,
@@ -192,7 +210,9 @@ class WorkoutFamily:
                 goal_eligible=v.goal_eligible,
                 scoring=self.scoring,
                 # A fresh list per member: templates are mutable, families are not.
-                exercise_slots=list(self.exercise_slots),
+                exercise_slots=list(
+                    self.exercise_slots if v.exercise_slots is None else v.exercise_slots
+                ),
             )
             for v in self.variants
         ]
@@ -447,6 +467,52 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
     ),
 ]
 
+#: The power block's Strength Potentiation day (phase 5.6), reachable on that day only
+#: (``_CATEGORY_POOLS``). Contrast / PAPE: a heavy squat before explosive jumps. The acute
+#: effect depends heavily on load, volume and the recovery interval, so this is a PRIMER, not
+#: a second strength session: doubles, three sets, full recovery. Fatigue that accumulates
+#: before the jumps cancels what the pairing is for.
+#:
+#: Two things the structure cannot say yet, carried in the text instead:
+#: - the A/B round order (squat, then jumps, three times) needs a rounds block (phase 6);
+#: - the effort target: the block envelope owns effort, so the squat's cap is the week's, not
+#:   a per-template RPE (``test_effort_resolution_seam``). Per-session effort is phase 7.
+POWER_POTENTIATION_TEMPLATES: list[CandidateTemplate] = [
+    CandidateTemplate(
+        type=STRENGTH_POTENTIATION_CATEGORY,
+        focus="3 rounds: Back Squat ×2 (heavy, no grinding) → Broad Jump ×3 — full recovery "
+              "between every set",
+        rationale="Contrast pairing: a heavy squat primes the jumps that follow. Fixed-volume "
+                  "primer: additional rounds may increase fatigue and undermine the intended "
+                  "potentiation effect, so workload-specific progression is left to the "
+                  "periodization layer.",
+        branch_id="power_potentiation",
+        duration_min=45,
+        goal_alignment=0.9,
+        tags=["squat_pattern"],
+        domain="power",
+        # Three rounds is the authored protocol, not a claimed optimum. What the evidence does
+        # support is that conditioning-activity volume and recovery shift the fatigue /
+        # potentiation balance (Xu et al. 2025), so "hard = another heavy round" is not a safe
+        # generic progression. Neither sets nor load move with the workload preference; phase
+        # 7 owns primer-specific progression.
+        workload_volume="fixed",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+            tissue_axes=("knee", "hip"), covers_weak_points=True,
+        ),
+        exercise_slots=[
+            ExerciseSlot(sets="3", reps="2", e1rm_code="pl_e1rm_squat",
+                         load_note="Primer, not a strength set: no grinding reps. Full recovery "
+                                   "before the jumps."),
+            ExerciseSlot(sets="3", reps="3", movement_pattern="jump",
+                         prefer_tags=("plyometric", "power"),
+                         load_note="Maximal intent. Stop or regress if jump quality clearly "
+                                   "drops. Full recovery before the next round."),
+        ],
+    ),
+]
+
 # Two technique variants: kpi_eligible disambiguates snatch vs C&J focus.
 OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
     CandidateTemplate(
@@ -644,83 +710,139 @@ MIXED_TEMPLATES: list[CandidateTemplate] = [
     ),
 ]
 
-# Running base templates: two aerobic-base variants (threshold vs standard)
-# and two threshold-work variants (marathon goal vs high fatigue-factor).
+# Running base: two families. Aerobic base splits on fatigue factor; threshold work splits on
+# the race goal and, off a marathon goal, on fatigue factor.
+def _run_high_fatigue_factor(kpi: dict[str, float]) -> bool:
+    """Fatigue factor above 14: pace falls off with distance, so durability work comes first."""
+    return (kpi.get("run_fatigue_factor") or 0.0) > 14.0
+
+
+def _marathon_goal(goal: str) -> bool:
+    return goal in ("HalfMarathon", "FullMarathon")
+
+
+#: Zone-2 aerobic base. The two variants are exact complements on fatigue factor: every
+#: athlete gets exactly one.
+RUN_AEROBIC_FAMILY = WorkoutFamily(
+    family_id="run_aerobic_base",
+    domain="running",
+    type="Aerobic Base",
+    focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
+    duration_min=45,
+    goal_alignment=1.0,
+    tags=("aerobic_base", "running_economy"),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r,
+        fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+        tissue_axes=("ankle", "knee"), covers_weak_points=True,
+    ),
+    exercise_slots=(
+        # Zone 2 is the prescribed intensity. 30-40 min is a range, not a duration, so the
+        # block's duration stays unknown rather than a picked midpoint.
+        ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
+                     modality="Running",
+                     endurance=ContinuousBlock(intensity_basis="zone", intensity_target=2.0)),
+    ),
+    variants=(
+        FamilyVariant(
+            branch_id="run_z2_base_threshold",
+            rationale="Threshold durability priority — moderate effort over pure easy volume.",
+            kpi_eligible=_run_high_fatigue_factor,
+        ),
+        FamilyVariant(
+            branch_id="run_z2_base",
+            rationale="Cardiac output and mitochondrial density via sustained easy effort.",
+            kpi_eligible=lambda kpi: not _run_high_fatigue_factor(kpi),
+        ),
+    ),
+)
+
+#: Threshold work: a continuous tempo for a half/full-marathon goal, intervals otherwise when
+#: fatigue factor is high. NOT a partition — a non-marathon athlete with a low fatigue factor
+#: is offered neither on an unplanned day, and gets aerobic base. A PLANNED Threshold day is
+#: exhaustive instead (``_threshold_day_pool``).
+RUN_THRESHOLD_FAMILY = WorkoutFamily(
+    family_id="run_threshold",
+    domain="running",
+    type="Threshold Work",
+    focus="Tempo Run 20 min @ RPE 7–8 + Progression Miles",
+    duration_min=50,
+    goal_alignment=0.9,
+    tags=("lactate_threshold", "aerobic_base"),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * 0.9,
+        fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
+        tissue_axes=("ankle", "knee"), habit_mult=0.7,
+        covers_weak_points=True,
+    ),
+    # One continuous tempo; the interval variant replaces it with repeats.
+    exercise_slots=(
+        # 20 min is timed. RPE 7-8 is a band, so the basis is recorded and the target left
+        # unknown rather than collapsed to 7.5.
+        ExerciseSlot(sets="1", reps="20 min @ RPE 7–8",
+                     movement_pattern="run", modality="Running",
+                     prefer_tags=("lactate_threshold",),
+                     endurance=ContinuousBlock(duration_sec=1200, intensity_basis="rpe")),
+    ),
+    variants=(
+        FamilyVariant(
+            branch_id="run_threshold",
+            rationale="Threshold pace improves fractional utilization of VO2max.",
+            goal_eligible=_marathon_goal,
+        ),
+        FamilyVariant(
+            branch_id="run_threshold_ff",
+            rationale="Threshold pace improves fractional utilization of VO2max.",
+            focus="4×5 min @ threshold pace (RPE 8) / 2 min easy recovery",
+            exercise_slots=(
+                ExerciseSlot(sets="4", reps="5 min @ threshold pace (RPE 8) / 2 min easy",
+                             movement_pattern="run", modality="Running", skill_target=0.5,
+                             prefer_tags=("lactate_threshold",),
+                             endurance=IntervalBlock(
+                                 repetitions=4, work_duration_sec=300,
+                                 recovery_duration_sec=120, recovery_type="easy",
+                                 intensity_basis="rpe", intensity_target=8.0,
+                             )),
+            ),
+            kpi_eligible=_run_high_fatigue_factor,
+            goal_eligible=lambda g: not _marathon_goal(g),
+        ),
+    ),
+)
+
 RUNNING_BASE_TEMPLATES: list[CandidateTemplate] = [
+    *RUN_AEROBIC_FAMILY.expand(),
+    *RUN_THRESHOLD_FAMILY.expand(),
+]
+
+#: The running Active Recovery day (phase 5.6), reachable on that day only
+#: (``_CATEGORY_POOLS``). A very-low-load run on the recovery slot, NOT a claim that easy
+#: running speeds recovery: easy runs are often loosely called recovery runs, and the evidence
+#: for active-recovery interventions is mixed (Haugen et al.). Zone 1, not 1-2: the point is
+#: the lowest running load that is still a run. The range stays a range, so its duration stays
+#: unknown rather than a picked midpoint.
+RUNNING_RECOVERY_TEMPLATES: list[CandidateTemplate] = [
     CandidateTemplate(
-        type="Aerobic Base",
-        focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
-        rationale="Threshold durability priority — moderate effort over pure easy volume.",
-        branch_id="run_z2_base_threshold",
-        duration_min=45,
-        goal_alignment=1.0,
-        tags=["aerobic_base", "running_economy"],
+        type=ACTIVE_RECOVERY_CATEGORY,
+        focus="Very Easy Run 20–30 min @ Zone 1",
+        rationale="The lowest running load that is still a run, on the week's recovery slot.",
+        branch_id="run_recovery",
+        duration_min=30,
+        goal_alignment=0.6,
+        tags=["aerobic_base"],
         domain="running",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), covers_weak_points=True,
+            fatigue_weight=0.3,
+            tissue_axes=("ankle", "knee"),
+            tissue_weight=0.3,
         ),
         exercise_slots=[
-            ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
-                         modality="Running"),
+            ExerciseSlot(sets="1", reps="20-30 min very easy (Zone 1)", movement_pattern="run",
+                         modality="Running", prefer_tags=("aerobic_base",),
+                         endurance=ContinuousBlock(intensity_basis="zone", intensity_target=1.0)),
         ],
-        kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
-    ),
-    CandidateTemplate(
-        type="Aerobic Base",
-        focus="Easy–Moderate Run @ Zone 2 (conversational pace)",
-        rationale="Cardiac output and mitochondrial density via sustained easy effort.",
-        branch_id="run_z2_base",
-        duration_min=45,
-        goal_alignment=1.0,
-        tags=["aerobic_base", "running_economy"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="1", reps="30-40 min conversational pace", movement_pattern="run",
-                         modality="Running"),
-        ],
-        kpi_eligible=lambda kpi: not ((kpi.get("run_fatigue_factor") or 0.0) > 14.0),
-    ),
-    CandidateTemplate(
-        type="Threshold Work",
-        focus="Tempo Run 20 min @ RPE 7–8 + Progression Miles",
-        rationale="Threshold pace improves fractional utilization of VO2max.",
-        branch_id="run_threshold",
-        duration_min=50,
-        goal_alignment=0.9,
-        tags=["lactate_threshold", "aerobic_base"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * 0.9,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), habit_mult=0.7,
-            covers_weak_points=True,
-        ),
-        goal_eligible=lambda g: g in ("HalfMarathon", "FullMarathon"),
-    ),
-    CandidateTemplate(
-        type="Threshold Work",
-        focus="4×5 min @ threshold pace (RPE 8) / 2 min easy recovery",
-        rationale="Threshold pace improves fractional utilization of VO2max.",
-        branch_id="run_threshold_ff",
-        duration_min=50,
-        goal_alignment=0.9,
-        tags=["lactate_threshold", "aerobic_base"],
-        domain="running",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * 0.9,
-            fatigue_axes=(("structural", 1.0), ("tendon", 1.0)),
-            tissue_axes=("ankle", "knee"), habit_mult=0.7,
-            covers_weak_points=True,
-        ),
-        kpi_eligible=lambda kpi: (kpi.get("run_fatigue_factor") or 0.0) > 14.0,
-        goal_eligible=lambda g: g not in ("HalfMarathon", "FullMarathon"),
     ),
 ]
 
@@ -739,8 +861,11 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
             tissue_axes=("ankle", "hip"), covers_weak_points=True,
         ),
         exercise_slots=[
-            ExerciseSlot(sets="3", reps="30m", movement_pattern="run", modality="Power"),
-            ExerciseSlot(sets="4", reps="20m", movement_pattern="run", modality="Power"),
+            # Distance-only: no pace target times them, so their duration stays unknown.
+            ExerciseSlot(sets="3", reps="30m", movement_pattern="run", modality="Power",
+                         endurance=IntervalBlock(repetitions=3, work_distance_m=30.0)),
+            ExerciseSlot(sets="4", reps="20m", movement_pattern="run", modality="Power",
+                         endurance=IntervalBlock(repetitions=4, work_distance_m=20.0)),
         ],
     ),
     CandidateTemplate(
@@ -753,11 +878,14 @@ SPRINTING_TEMPLATES: list[CandidateTemplate] = [
         tags=[],
         domain="running",
         exercise_slots=[
+            # The build-up's 20-30 m is a range: its distance stays unknown.
             ExerciseSlot(sets="3", reps="20-30m build-up", movement_pattern="run", modality="Power",
-                         sport_domain="running", skill_target=0.55),
+                         sport_domain="running", skill_target=0.55,
+                         endurance=IntervalBlock(repetitions=3)),
             ExerciseSlot(sets="6", reps="300m @ ~90% effort, full recovery", movement_pattern="run",
                          modality="Running", skill_target=0.40,
-                         prefer_tags=("lactate_threshold", "running_economy")),
+                         prefer_tags=("lactate_threshold", "running_economy"),
+                         endurance=IntervalBlock(repetitions=6, work_distance_m=300.0)),
         ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (
@@ -1071,7 +1199,11 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
 # ---------------------------------------------------------------------------
 
 #: Every family whose members are in the pool. Pool = expanded families + remaining literals.
-WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (SBD_STRENGTH_FAMILY,)
+WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (
+    SBD_STRENGTH_FAMILY,
+    RUN_AEROBIC_FAMILY,
+    RUN_THRESHOLD_FAMILY,
+)
 
 GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     "strength": STRENGTH_TEMPLATES,
@@ -1082,6 +1214,10 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     "mixed": MIXED_TEMPLATES,
     "running": RUNNING_BASE_TEMPLATES,
     "sprinting": SPRINTING_TEMPLATES,
+    # Category-owned pools (``_CATEGORY_POOLS``). Listed so every library-wide guard and golden
+    # covers them; no canonical domain has these names, so no ordinary day resolves here.
+    "running_recovery": RUNNING_RECOVERY_TEMPLATES,
+    "power_potentiation": POWER_POTENTIATION_TEMPLATES,
     "gymnastics": GYMNASTICS_TEMPLATES,
     "calisthenics": CALISTHENICS_TEMPLATES,
     "grip": GRIP_TEMPLATES,
@@ -1089,23 +1225,105 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
 }
 
 
+def _threshold_day_pool(goal: str) -> list[CandidateTemplate]:
+    """A planned Threshold day: exactly one threshold session is eligible, whatever the KPIs.
+
+    The family's own predicates are NOT a partition: a non-marathon athlete without a high
+    fatigue factor, including one who never logged the 400 m + 1 mile benchmarks it needs,
+    is offered neither template, and a planned Threshold day became an Easy Run. On the planned
+    day the choice becomes exhaustive:
+
+        marathon goal     -> run_threshold (continuous tempo)
+        high ff (> 14)    -> run_threshold_ff (intervals)
+        otherwise         -> run_threshold
+
+    The ff split stays as it was: an existing coaching heuristic, not a validated partition.
+    Only this day widens. On every other running day the family's predicates are unchanged,
+    so threshold work does not start competing with aerobic base on ordinary days (phase 5.7).
+    """
+    tempo, intervals = (
+        next(t for t in RUNNING_BASE_TEMPLATES if t.branch_id == bid)
+        for bid in ("run_threshold", "run_threshold_ff")
+    )
+    if _marathon_goal(goal):
+        return [replace(tempo, goal_eligible=None, kpi_eligible=None)]
+
+    def unless_intervals(kpi: dict[str, float]) -> bool:
+        return not _run_high_fatigue_factor(kpi)
+
+    return [replace(tempo, goal_eligible=None, kpi_eligible=unless_intervals), intervals]
+
+
+#: Planned categories that OWN their day (phase 5.6): on a day planned as one of these, the
+#: domain draws only this pool, and no other day can reach it. That keeps a template written
+#: for one planned day from competing on every other day of its domain. The value takes the
+#: goal, because a day's family may still choose its member by goal.
+_CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]] = {
+    ("running", SPEED_CATEGORY): lambda goal: SPRINTING_TEMPLATES,
+    ("running", ACTIVE_RECOVERY_CATEGORY): lambda goal: RUNNING_RECOVERY_TEMPLATES,
+    ("running", THRESHOLD_CATEGORY): _threshold_day_pool,
+    ("power", STRENGTH_POTENTIATION_CATEGORY): lambda goal: POWER_POTENTIATION_TEMPLATES,
+}
+
+#: Owned days that ARE the pulled-down option. A readiness redirect exists to pull work down;
+#: opening these days to the ordinary pool on a bad day would let a longer aerobic-base run
+#: beat the very easy one, which is backwards. The redirects still compete with them.
+_LOW_LOAD_CATEGORIES: frozenset[tuple[str, str]] = frozenset(
+    {("running", ACTIVE_RECOVERY_CATEGORY)}
+)
+
+
+def template_pool(
+    domain: str,
+    goal: str = "",
+    session_category: str | None = None,
+    *,
+    category_owns_day: bool = True,
+) -> list[CandidateTemplate]:
+    """The templates a domain draws from, before any eligibility predicate.
+
+    Sprinting, a sub-domain of running, has its own pool for the Sprinting goal; nothing else
+    reaches it, so an ordinary running day can never be handed a sprint session.
+
+    A category-owned day (``_CATEGORY_POOLS``) draws its own pool instead. Except when a
+    readiness redirect is competing (``category_owns_day=False``): redirects exist to pull
+    work down on a bad day, and the plan must not talk over them, so the category's templates
+    JOIN the ordinary pool (replacing same-id entries) and scoring chooses, exactly as the
+    prescriber already skips plan narrowing on a redirect day. A low-load day
+    (``_LOW_LOAD_CATEGORIES``) keeps its pool: it already is the pulled-down session.
+    """
+    if domain == "running" and goal == "Sprinting":
+        ordinary = SPRINTING_TEMPLATES
+    else:
+        ordinary = GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
+    owned = (
+        None if session_category is None else _CATEGORY_POOLS.get((domain, session_category))
+    )
+    if owned is None:
+        return ordinary
+    pool = owned(goal)
+    if category_owns_day or (domain, session_category) in _LOW_LOAD_CATEGORIES:
+        return pool
+    ids = {t.branch_id for t in pool}
+    return [*pool, *(t for t in ordinary if t.branch_id not in ids)]
+
+
 def get_templates(
     domain: str,
     kpi: dict[str, float],
     goal: str = "",
     state: UnifiedStateVector | None = None,
+    session_category: str | None = None,
+    *,
+    category_owns_day: bool = True,
 ) -> list[CandidateTemplate]:
     """Return templates for the domain, filtered by all eligibility predicates.
 
-    Sprinting is a sub-domain of running and resolves to its own pool.
-    When ``state`` is None, state_eligible predicates are skipped (treated
-    as eligible), so callers that do not yet have state can still query the
+    The pool is ``template_pool``'s. When ``state`` is None, state_eligible predicates are
+    skipped (treated as eligible), so callers that do not yet have state can still query the
     static content.
     """
-    if domain == "running" and goal == "Sprinting":
-        pool = SPRINTING_TEMPLATES
-    else:
-        pool = GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
+    pool = template_pool(domain, goal, session_category, category_owns_day=category_owns_day)
 
     return [
         t for t in pool
@@ -1181,4 +1399,5 @@ def score_template(
     candidate = _score_from_spec(t, state, kpi, r)
     candidate.exercise_slots = t.exercise_slots
     candidate.domain = t.domain
+    candidate.workload_volume = t.workload_volume
     return candidate

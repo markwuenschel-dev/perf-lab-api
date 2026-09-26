@@ -118,7 +118,7 @@ def test_endurance_density_is_declared_not_modelled_rather_than_averaged() -> No
     dose = v1.calculate_stress_dose(_log(modality="Running", estimated_sets=None))
 
     assert dose.density_basis == "not_applicable"
-    assert dose.dose_model_version == "v1"
+    assert dose.dose_model_version == "v1.1"
 
 
 # ── orderings that must survive the re-fit ────────────────────────────────────
@@ -142,7 +142,7 @@ def test_model_version_travels_with_every_dose() -> None:
     """Whatever else changes, a stored dose can always name the model that produced it."""
     for modality in ("Strength", "Hypertrophy", "Power", "Running", "Mixed"):
         dose = v1.calculate_stress_dose(_log(modality=modality))
-        assert dose.dose_model_version == "v1", modality
+        assert dose.dose_model_version == "v1.1", modality
         assert dose.density_basis in {"sets_per_elapsed_minute", "not_applicable"}, modality
 
 

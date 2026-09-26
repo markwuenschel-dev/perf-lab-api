@@ -17,6 +17,8 @@ import pytest
 
 from app.logic.candidate_library import (
     GOAL_TEMPLATE_LIBRARY,
+    RUN_AEROBIC_FAMILY,
+    RUN_THRESHOLD_FAMILY,
     SBD_STRENGTH_FAMILY,
     WORKOUT_FAMILIES,
     FamilyVariant,
@@ -24,7 +26,12 @@ from app.logic.candidate_library import (
 )
 
 #: What a variant may set. Everything else a member carries comes from its family.
-VARIANT_FIELDS = {"branch_id", "rationale", "kpi_eligible", "state_eligible", "goal_eligible"}
+VARIANT_FIELDS = {
+    "branch_id", "rationale", "kpi_eligible", "state_eligible", "goal_eligible", "focus",
+    "exercise_slots",
+}
+#: Variant fields that override a family field when set; None inherits the family's value.
+OVERRIDES = {"focus", "exercise_slots"}
 
 
 def _pool_ids(domain: str) -> list[str]:
@@ -63,9 +70,13 @@ def test_members_differ_only_in_what_their_variant_declares(family: WorkoutFamil
         "exercise_slots",
     }
 
-    for member in members[1:]:
+    for member, variant in zip(members, family.variants, strict=True):
         for name in shared:
-            assert getattr(member, name) == getattr(members[0], name), name
+            override = getattr(variant, name, None) if name in OVERRIDES else None
+            expected = getattr(family, name) if override is None else override
+            if name in ("tags", "exercise_slots"):
+                expected = list(expected)
+            assert getattr(member, name) == expected, (variant.branch_id, name)
     assert set(FamilyVariant.__dataclass_fields__) == VARIANT_FIELDS
 
 
@@ -100,3 +111,47 @@ def test_the_sbd_variants_partition_athletes_by_relative_total(kpi: dict[str, fl
     ]
 
     assert len(eligible) == 1, eligible
+
+
+@pytest.mark.parametrize(
+    "kpi",
+    [{}, {"run_fatigue_factor": 10.0}, {"run_fatigue_factor": 14.0},
+     {"run_fatigue_factor": 14.01}, {"run_fatigue_factor": 20.0}],
+    ids=["no_ff", "10", "exactly_14", "just_over_14", "20"],
+)
+def test_the_aerobic_base_variants_partition_athletes_by_fatigue_factor(kpi: dict[str, float]) -> None:
+    eligible = [
+        m.branch_id for m in RUN_AEROBIC_FAMILY.expand()
+        if m.kpi_eligible is None or m.kpi_eligible(kpi)
+    ]
+
+    assert len(eligible) == 1, eligible
+
+
+@pytest.mark.parametrize(
+    ("goal", "kpi", "expected"),
+    [
+        ("HalfMarathon", {"run_fatigue_factor": 20.0}, ["run_threshold"]),
+        ("FullMarathon", {}, ["run_threshold"]),
+        ("5K", {"run_fatigue_factor": 20.0}, ["run_threshold_ff"]),
+        # Not a partition, on purpose: this athlete is offered no threshold session.
+        ("5K", {"run_fatigue_factor": 10.0}, []),
+    ],
+)
+def test_threshold_work_follows_the_race_goal_then_fatigue_factor(
+    goal: str, kpi: dict[str, float], expected: list[str]
+) -> None:
+    eligible = [
+        m.branch_id for m in RUN_THRESHOLD_FAMILY.expand()
+        if (m.kpi_eligible is None or m.kpi_eligible(kpi))
+        and (m.goal_eligible is None or m.goal_eligible(goal))
+    ]
+
+    assert eligible == expected
+
+
+def test_a_variant_focus_overrides_only_its_own_member() -> None:
+    tempo, intervals = RUN_THRESHOLD_FAMILY.expand()
+
+    assert tempo.focus == RUN_THRESHOLD_FAMILY.focus
+    assert intervals.focus.startswith("4×5 min")

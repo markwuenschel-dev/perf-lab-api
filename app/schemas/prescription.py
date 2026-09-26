@@ -10,8 +10,11 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 from app.logic.confidence_presentation import ConfidenceStatus
 from app.schemas.load_explanation import LoadExplanation, LoadExplanationReason
 from app.schemas.workout_structure import (
+    ContinuousBlock,
     DurationEstimate,
+    IntervalBlock,
     StrengthBlock,
+    WorkoutBlock,
     WorkoutStructure,
     calculate_duration,
 )
@@ -30,7 +33,7 @@ __all__ = ["LoadExplanation", "LoadExplanationReason"]
 #: ``openapi.json`` carries it as the schema default, so a bump needs all three updated
 #: together. ``test_prescription_engine_version_is_assigned_not_defaulted`` pins the Python
 #: half of that coupling.
-PRESCRIPTION_ENGINE_VERSION = "v0.3"
+PRESCRIPTION_ENGINE_VERSION = "v0.4"
 
 
 class ValidationSummary(BaseModel):
@@ -325,12 +328,28 @@ class ExercisePrescription(BaseModel):
 def project_exercises(structure: "WorkoutStructure") -> list[ExercisePrescription]:
     """The flat ``exercises[]`` a structure means — the ONE place the two are related.
 
-    Only strength blocks project to exercises today, which is exactly what 2.1 emits. When
-    phase 5 starts emitting interval and continuous blocks, this function decides how (or
-    whether) they appear in the legacy list, and every client keeps working.
+    Strength blocks project their fields. Interval and continuous blocks (phase 5.3) project
+    their compatibility view — ``activity`` plus the ``display_*`` text the legacy list always
+    showed — so structuring a run changes nothing a client or a log prefill reads. A block
+    with nothing to name (a warmup, an endurance block without ``activity``) does not project.
     """
     out: list[ExercisePrescription] = []
     for block in structure:
+        if isinstance(block, IntervalBlock | ContinuousBlock):
+            if block.activity is None:
+                continue
+            out.append(
+                ExercisePrescription(
+                    name=block.activity,
+                    sets=block.display_sets,
+                    reps=block.display_reps,
+                    load_note=block.load_note,
+                    weak_point_tags=list(block.weak_point_tags),
+                    rpe_cap=block.rpe_cap,
+                    load_explanation=block.load_explanation,
+                )
+            )
+            continue
         if not isinstance(block, StrengthBlock):
             continue
         out.append(
@@ -350,32 +369,85 @@ def project_exercises(structure: "WorkoutStructure") -> list[ExercisePrescriptio
     return out
 
 
+def endurance_block_for(
+    template: IntervalBlock | ContinuousBlock, ex: ExercisePrescription
+) -> IntervalBlock | ContinuousBlock | None:
+    """``template``'s work shape, named and displayed as ``ex`` — or None if ``ex`` cannot be.
+
+    An exercise carrying a resolved load (kg, %e1RM, e1RM basis) is strength-shaped: an
+    endurance block has nowhere to put that, and dropping it would make the two views
+    disagree. Such an exercise stays a strength block.
+    """
+    if (
+        ex.prescribed_load_kg is not None
+        or ex.percent_e1rm is not None
+        or ex.e1rm_basis_kg is not None
+    ):
+        return None
+    return template.model_copy(
+        update={
+            "activity": ex.name,
+            "display_sets": ex.sets,
+            "display_reps": ex.reps,
+            "load_note": ex.load_note,
+            "weak_point_tags": list(ex.weak_point_tags),
+            "rpe_cap": ex.rpe_cap,
+            "load_explanation": ex.load_explanation,
+        }
+    )
+
+
 def structure_from_exercises(
     exercises: list[ExercisePrescription],
+    previous: "WorkoutStructure | None" = None,
 ) -> "WorkoutStructure":
-    """Lift today's authored exercises into blocks, losslessly.
+    """Lift the session's exercises into blocks, losslessly.
 
-    2.1 derives structure from the exercises the templates author; authorship flips in 2.3.
-    Lossless: every field ``ExercisePrescription`` carries has a home on the block, including
+    Every field ``ExercisePrescription`` carries has a home on the block, including
     ``load_explanation``. A projection that dropped anything would make the two views disagree
     by construction, which the agreement validator refuses.
+
+    ``previous`` is the structure these exercises were last projected from. Exercises are
+    edited after selection (loads, weak-point tags, appended accessories), and re-deriving
+    from the list alone would turn a structured run back into a strength block. So, walking
+    ``previous`` in order: a block that does not project (a warmup) is kept where it was; an
+    endurance block keeps its work shape when the exercise at its position is still the same
+    activity, refreshed from that exercise; anything else — and any exercise beyond the
+    previous structure — becomes a strength block, exactly as before phase 5.3.
     """
-    return [
-        StrengthBlock(
-            exercise=ex.name,
-            sets=ex.sets,
-            reps=ex.reps,
-            load_target_kg=ex.prescribed_load_kg,
-            percent_e1rm=ex.percent_e1rm,
-            rpe_target=ex.rpe_cap,
-            rest_sec=None,
-            load_note=ex.load_note,
-            e1rm_basis_kg=ex.e1rm_basis_kg,
-            weak_point_tags=list(ex.weak_point_tags),
-            load_explanation=ex.load_explanation,
-        )
-        for ex in exercises
-    ]
+    out: WorkoutStructure = []
+    remaining = list(exercises)
+    for block in previous or []:
+        if isinstance(block, IntervalBlock | ContinuousBlock) and block.activity is not None:
+            if not remaining:
+                break
+            ex = remaining.pop(0)
+            kept = endurance_block_for(block, ex) if ex.name == block.activity else None
+            out.append(kept if kept is not None else _strength_block(ex))
+        elif isinstance(block, StrengthBlock):
+            if not remaining:
+                break
+            out.append(_strength_block(remaining.pop(0)))
+        else:
+            out.append(block)
+    out.extend(_strength_block(ex) for ex in remaining)
+    return out
+
+
+def _strength_block(ex: ExercisePrescription) -> WorkoutBlock:
+    return StrengthBlock(
+        exercise=ex.name,
+        sets=ex.sets,
+        reps=ex.reps,
+        load_target_kg=ex.prescribed_load_kg,
+        percent_e1rm=ex.percent_e1rm,
+        rpe_target=ex.rpe_cap,
+        rest_sec=None,
+        load_note=ex.load_note,
+        e1rm_basis_kg=ex.e1rm_basis_kg,
+        weak_point_tags=list(ex.weak_point_tags),
+        load_explanation=ex.load_explanation,
+    )
 
 
 class WorkoutPrescription(BaseModel):
@@ -443,9 +515,13 @@ class WorkoutPrescription(BaseModel):
     def with_structure(self) -> "WorkoutPrescription":
         """This prescription with its structure (re-)derived from its exercises.
 
-        The single seam through which 2.1 attaches structure, so there is exactly one writer.
+        The single seam through which structure is attached, so there is exactly one writer.
+        The current structure is passed as ``previous`` so a structured run survives the
+        edits made to its exercises since it was built (see ``structure_from_exercises``).
         """
-        return self.model_copy(update={"structure": structure_from_exercises(self.exercises)})
+        return self.model_copy(
+            update={"structure": structure_from_exercises(self.exercises, self.structure)}
+        )
 
     def to_prescribed_content(self) -> dict[str, Any]:
         """Serialize for persistence into ``PlannedSession.prescribed_content``.

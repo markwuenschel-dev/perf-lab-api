@@ -14,8 +14,8 @@ Three deliberate limits:
 
 * **Bindings are a product judgement, not derived.** Each entry below says which template an
   athlete would recognise as the planned session. They are marked where the choice is open.
-* **Gaps are allowed and silent.** A slot with no binding (e.g. a running "Active Recovery",
-  for which the running pool has no template) leaves selection exactly as it was. A wrong
+* **Gaps are allowed and silent.** A slot with no binding (e.g. a HYROX "Hyrox Simulation",
+  for which the mixed pool has no template yet) leaves selection exactly as it was. A wrong
   guess would be worse than no binding.
 * **A binding is not a promise.** It narrows the pool when one of its templates is eligible;
   readiness redirects, safety overrides, hard constraints and the session validator all still
@@ -29,6 +29,23 @@ domain's library, so a rename cannot silently turn a binding into a gap.
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+#: A running day of sprint work (phase 5.6). Sprinting stays inside the running DOMAIN
+#: (ADR-0038); the planned category is what says the day is speed, and it is the only thing
+#: that may bring the sprint templates into a non-Sprinting goal's pool
+#: (``candidate_library.template_pool``).
+SPEED_CATEGORY = "Speed"
+
+#: The planner's recovery slot. In the running domain it owns its pool too (phase 5.6): a
+#: very-low-load run, reachable on no other day.
+ACTIVE_RECOVERY_CATEGORY = "Active Recovery"
+
+#: A planned threshold day. Owns its pool (phase 5.7): the plan decides that today is
+#: threshold; the family and KPIs only decide which threshold session represents it.
+THRESHOLD_CATEGORY = "Threshold Work"
+
+#: The power block's contrast day (phase 5.6): a heavy squat before jumps. Owns its pool.
+STRENGTH_POTENTIATION_CATEGORY = "Strength Potentiation"
 
 
 @dataclass(frozen=True)
@@ -63,13 +80,20 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
     },
     "running": {
         "Aerobic Base": SlotBinding("running_base", ("run_z2_base", "run_z2_base_threshold")),
-        "Threshold Work": SlotBinding("running_threshold", ("run_threshold", "run_threshold_ff")),
-        # "Active Recovery" is deliberately unbound: the running pool has no recovery template.
+        THRESHOLD_CATEGORY: SlotBinding(
+            "running_threshold", ("run_threshold", "run_threshold_ff")
+        ),
+        # Acceleration / max velocity and speed endurance are different session qualities, so
+        # both stay separate candidates; which one a week needs is phase 7's call.
+        SPEED_CATEGORY: SlotBinding("running_speed", ("run_sprint", "run_speed_endurance")),
+        ACTIVE_RECOVERY_CATEGORY: SlotBinding("running_recovery", ("run_recovery",)),
     },
     "power": {
         "Power Development": SlotBinding("power_development", ("power_main",)),
         "Neural Priming": SlotBinding("power_neural_priming", ("power_neural_prime",)),
-        # "Strength Potentiation" is unbound: no power template carries that intent.
+        STRENGTH_POTENTIATION_CATEGORY: SlotBinding(
+            "power_potentiation", ("power_potentiation",)
+        ),
     },
     "powerlifting": {
         "SBD Strength": SlotBinding("powerlifting_sbd", ("pl_sbd_main", "pl_sbd_main_volume")),

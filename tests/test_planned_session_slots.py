@@ -11,33 +11,33 @@ from __future__ import annotations
 
 import pytest
 
-from app.logic.candidate_library import GENERAL_TEMPLATES, GOAL_TEMPLATE_LIBRARY
+from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY, template_pool
 from app.logic.planned_session_slots import _BINDINGS, binding_for
-from app.services.planning_service import _DEFAULT_TEMPLATES, _DOMAIN_SLOT
+from app.services.planning_service import _DEFAULT_TEMPLATES, _DOMAIN_SLOT, _mix_slot
 
 #: Slots the planner writes that bind no template. Previously an accepted allowlist; from the
-#: engine-coherence work these are DEFECTS awaiting phases 5 (running, power) and 6 (the three
-#: mixed/HYROX/CrossFit days). A day the planner shows an athlete and then cannot prescribe
+#: engine-coherence work these are DEFECTS awaiting phase 6 (the three mixed/HYROX/CrossFit
+#: days; phase 5 closed the running and power ones). A day the planner shows an athlete and then cannot prescribe
 #: falls through to a generic pool — the "Running day prescribes Air Squat" failure.
 #: Kept only so the phase-0 xfail can name exactly what is outstanding; delete entries as each
 #: is closed, and delete this table when it is empty.
 OUTSTANDING_UNBOUND_SLOTS: dict[str, set[str]] = {
-    "running": {"Active Recovery"},
-    "power": {"Strength Potentiation"},
     "mixed": {"Strength + Skill", "Running + Functional", "Hyrox Simulation"},
 }
 
 
-def _pool_branch_ids(domain: str) -> set[str]:
-    """The branch ids `get_templates` can return for a domain, eligibility aside."""
-    pool = GOAL_TEMPLATE_LIBRARY.get(domain, GENERAL_TEMPLATES)
-    return {t.branch_id for t in pool}
+def _pool_branch_ids(domain: str, category: str) -> set[str]:
+    """The branch ids `get_templates` can return for that planned day, eligibility aside.
+
+    The day's category is part of it: a running Speed day draws the sprint pool.
+    """
+    return {t.branch_id for t in template_pool(domain, session_category=category)}
 
 
 @pytest.mark.parametrize("domain", sorted(_BINDINGS))
 def test_every_bound_branch_exists_in_that_domains_pool(domain: str) -> None:
-    available = _pool_branch_ids(domain)
     for category, binding in _BINDINGS[domain].items():
+        available = _pool_branch_ids(domain, category)
         missing = [b for b in binding.branch_ids if b not in available]
         assert not missing, f"{domain}/{category} binds unknown template(s): {missing}"
 
@@ -59,16 +59,17 @@ def _unbound_planned_slots() -> list[str]:
         for slot in slots:
             if binding_for(domain, slot.category) is None:
                 unresolved.append(f"{domain}/{slot.category}")
-    for domain, (category, _modality) in _DOMAIN_SLOT.items():
+    mix_keys = [*_DOMAIN_SLOT, "sprinting"]
+    for domain, category, _modality in map(_mix_slot, mix_keys):
         if binding_for(domain, category) is None:
             unresolved.append(f"{domain}/{category}")
     return sorted(set(unresolved))
 
 
 @pytest.mark.xfail(
-    reason="phases 5-6: 5 planned slots bind no template (running Active Recovery, power "
-    "Strength Potentiation, both HYROX days, CrossFit Strength + Skill), so the prescriber "
-    "falls through to the generic pool for a day the athlete was shown",
+    reason="phase 6: 3 planned slots bind no template (both HYROX days, CrossFit Strength + "
+    "Skill), so the prescriber falls through to the generic pool for a day the athlete was "
+    "shown",
     strict=True,
 )
 def test_every_planned_slot_is_bound() -> None:
@@ -107,9 +108,8 @@ def test_every_binding_can_actually_produce_a_template() -> None:
     """
     empty: list[str] = []
     for domain, slots in _BINDINGS.items():
-        available = _pool_branch_ids(domain)
         for category, binding in slots.items():
-            if not set(binding.branch_ids) & available:
+            if not set(binding.branch_ids) & _pool_branch_ids(domain, category):
                 empty.append(f"{domain}/{category}")
 
     assert not empty, f"bindings whose templates are unreachable in their pool: {empty}"

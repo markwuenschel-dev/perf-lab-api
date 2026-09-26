@@ -749,6 +749,40 @@
     "tags": [],
     "type": "Reactive Power"
   },
+  "power_potentiation/power_potentiation": {
+    "duration_min": 45,
+    "focus": "3 rounds: Back Squat \u00d72 (heavy, no grinding) \u2192 Broad Jump \u00d73 \u2014 full recovery between every set",
+    "goal_alignment": 0.9,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": "Primer, not a strength set: no grinding reps. Full recovery before the jumps.",
+        "reps": "2",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": "Maximal intent. Stop or regress if jump quality clearly drops. Full recovery before the next round.",
+        "reps": "3",
+        "requirements": [],
+        "sets": "3"
+      }
+    ],
+    "tags": [
+      "squat_pattern"
+    ],
+    "type": "Strength Potentiation"
+  },
   "powerlifting/pl_accessory": {
     "duration_min": 65,
     "focus": "Paused Squat 3\u00d74 + Close-Grip Bench + Romanian Deadlift 3\u00d76",
@@ -927,8 +961,15 @@
       ],
       "tissue_weight": 1.0
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 1,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20 min @ RPE 7\u20138",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
@@ -958,8 +999,15 @@
       ],
       "tissue_weight": 1.0
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 1,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "5 min @ threshold pace (RPE 8) / 2 min easy",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
@@ -1041,6 +1089,43 @@
       "running_economy"
     ],
     "type": "Aerobic Base"
+  },
+  "running_recovery/run_recovery": {
+    "duration_min": 30,
+    "focus": "Very Easy Run 20\u201330 min @ Zone 1",
+    "goal_alignment": 0.6,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "structural",
+          1.0
+        ],
+        [
+          "tendon",
+          1.0
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.3,
+      "tissue_axes": [
+        "ankle",
+        "knee"
+      ],
+      "tissue_weight": 0.3
+    },
+    "slot_count": 1,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20-30 min very easy (Zone 1)",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
+    "tags": [
+      "aerobic_base"
+    ],
+    "type": "Active Recovery"
   },
   "sprinting/run_speed_endurance": {
     "duration_min": 40,

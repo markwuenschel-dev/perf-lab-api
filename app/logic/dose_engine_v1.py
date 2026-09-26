@@ -36,6 +36,8 @@ engine that produced them; only new dose computations use this module.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.dose_engine_v0 import (
     DoseVariables,
@@ -48,6 +50,13 @@ from app.logic.dose_engine_v0 import (
 )
 from app.logic.dose_model import NOT_MODELLED as _NOT_MODELLED
 from app.logic.dose_model import DensityMeasurement
+from app.schemas.workout_structure import (
+    ContinuousBlock,
+    CooldownBlock,
+    IntervalBlock,
+    WarmupBlock,
+    WorkoutStructure,
+)
 from app.schemas.workouts import (
     ExerciseEntry,
     ExternalIntensity,
@@ -104,10 +113,10 @@ def session_density(log: WorkoutLog, sets: float, p: EngineParameters) -> Densit
     * **Sets reported, set-counted modality** → sets per minute, relative to reference.
     * **Sets not reported** → not modelled. v0 substituted ``max(3, duration/12)``; treating that
       invention as measured work would make density a statement about the fallback.
-    * **Running / Mixed** → not modelled, because a continuous effort's work is distance and
-      pace, not sets. Density for those domains needs a real endurance target (phase 5,
-      ``structured_endurance_work``), and the honest answer until then is that we do not
-      model it — not a number derived from a proxy.
+    * **Running / Mixed** → not modelled here, because a continuous effort's work is distance
+      and pace, not sets. Phase 5.4 adds one explicit exception, in the shadow only: timed
+      work from an explicitly linked prescription (``prescribed_work_density``), passed in
+      by the caller. Nothing in the log alone can produce it.
 
     A not-modelled measurement contributes the multiplicative identity to the dose product,
     and carries ``basis="not_applicable"`` so it can never be read back as an observation.
@@ -178,10 +187,70 @@ def reported_volume_sets(log: WorkoutLog, sets: float) -> tuple[float, str]:
     return float(log.estimated_sets), "reported"
 
 
-#: The corrected density variable, injected into the shared dose law.
+# ---------------------------------------------------------------------------
+# Prescribed timed work (phase 5.4) — a SHADOW-ONLY proxy, not performed density
+# ---------------------------------------------------------------------------
+#
+# Temporal work density, not running intensity: a 20-minute easy run and 20 minutes of
+# threshold work can share a density while differing completely in intensity and dose. The
+# numerator is the prescription's WORK only (interval work, a continuous effort); recovery,
+# warmup and cooldown reach the value through the denominator, the logged elapsed time.
+#
+#   same work, more elapsed time  -> lower density
+#   same elapsed time, more work  -> higher density
+
+
+def prescribed_timed_work_seconds(structure: WorkoutStructure) -> tuple[float | None, str | None]:
+    """Seconds of prescribed WORK in ``structure``, or ``(None, reason)`` when it has none.
+
+    Only fully timed endurance work counts. A range ("30-40 min") or distance-only reps have
+    no duration, and a partial sum would understate the numerator, so any untimed endurance
+    block makes the whole session not modelled. A strength block means this is not an
+    endurance session at all.
+    """
+    if not structure:
+        return None, "prescription_has_no_structure"
+    work = 0.0
+    for block in structure:
+        if isinstance(block, WarmupBlock | CooldownBlock):
+            continue
+        if isinstance(block, IntervalBlock):
+            if block.repetitions is None or block.work_duration_sec is None:
+                return None, "structure_not_fully_timed"
+            work += block.repetitions * block.work_duration_sec
+        elif isinstance(block, ContinuousBlock):
+            if block.duration_sec is None:
+                return None, "structure_not_fully_timed"
+            work += block.duration_sec
+        else:
+            return None, "structure_is_not_endurance"
+    if work <= 0.0:
+        return None, "no_timed_work"
+    return work, None
+
+
+def prescribed_work_density(work_seconds: float, elapsed_minutes: float) -> DensityMeasurement:
+    """Prescribed work seconds / logged elapsed seconds, rejected when physically impossible.
+
+    Never corrected: prescribed work longer than the logged session is an inconsistent
+    observation, not a density of 1.18; a missing (zero) elapsed time is missing, not zero.
+    """
+    elapsed_seconds = elapsed_minutes * 60.0
+    if elapsed_seconds <= 0.0:
+        return replace(NOT_MODELLED, reason="missing_logged_elapsed")
+    if work_seconds > elapsed_seconds:
+        return replace(NOT_MODELLED, reason="prescribed_work_exceeds_logged_elapsed")
+    return DensityMeasurement(
+        value=work_seconds / elapsed_seconds, basis="prescribed_timed_work_over_elapsed"
+    )
+
+
+#: The corrected density variable, injected into the shared dose law. "v1.1" since phase 5.4:
+#: v1 can now take a prescribed-work density for endurance sessions, so doses from here on
+#: are recorded as such. Without a prescribed density the numbers are identical to "v1".
 WORK_PER_TIME_DENSITY = DoseVariables(
     name="v1_work_per_elapsed_time",
-    version="v1",
+    version="v1.1",
     session=session_density,
     entry=exercise_density_proxy,
     volume_sets=reported_volume_sets,
@@ -192,13 +261,28 @@ def calculate_stress_dose(
     log: WorkoutLog,
     params: EngineParameters | None = None,
     external_intensity: ExternalIntensity | None = None,
+    *,
+    prescribed_density: DensityMeasurement | None = None,
 ) -> StressDose:
-    """The v0 dose law with the v1 density variable. Same law, corrected input."""
+    """The v0 dose law with the v1 density variable. Same law, corrected input.
+
+    ``prescribed_density`` (phase 5.4, shadow only) replaces the session density of a session
+    whose work is NOT counted in sets. For a set-counted session it is ignored: reported sets
+    are a measurement and outrank a plan.
+    """
+    variables = WORK_PER_TIME_DENSITY
+    if prescribed_density is not None and log.modality not in SET_COUNTED_MODALITIES:
+        measured = prescribed_density
+
+        def _prescribed(_log: WorkoutLog, _sets: float, _p: EngineParameters) -> DensityMeasurement:
+            return measured
+
+        variables = replace(WORK_PER_TIME_DENSITY, session=_prescribed)
     return _calculate_stress_dose(
         log,
         params or default_parameters(),
         external_intensity,
-        dose_variables=WORK_PER_TIME_DENSITY,
+        dose_variables=variables,
     )
 
 
