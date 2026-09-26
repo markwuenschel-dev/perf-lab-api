@@ -182,7 +182,9 @@ def _simulate(
     peak_fatigue = mean_fatigue(cur)
 
     for w in range(1, weeks + 1):
-        env_mod = periodization_envelope(weeks, w).volume_modifier if periodized else 1.0
+        env_mod = (
+            periodization_envelope(weeks, w, goal=goal).volume_modifier if periodized else 1.0
+        )
         raw = base_sessions * (weekly_volume / _MAINTAIN_VOLUME) * env_mod
         sessions_per_week = max(1, min(10, round(raw)))
         week_mix = _week_sessions(mix, sessions_per_week)

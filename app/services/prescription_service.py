@@ -162,6 +162,8 @@ def _envelope_rpe_cap(block_context: BlockContext) -> float:
             int(wk),
             int(block_context.get("deload_every_n_weeks") or 4),
             intensity=block_context.get("intensity"),
+            goal=block_context.get("block_goal"),
+            domain=block_context.get("session_domain"),
         )
         return env.rpe_high
     return 8.0

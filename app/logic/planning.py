@@ -568,6 +568,9 @@ def periodization_envelope(
     week_number: int,
     deload_every_n_weeks: int = 4,
     intensity: str | None = None,
+    *,
+    goal: str | None = None,
+    domain: str | None = None,
 ) -> PhaseEnvelope:
     """Resolve a block week to its periodization envelope (ADR-0029).
 
@@ -575,7 +578,12 @@ def periodization_envelope(
     deloads and an end taper. The prescriber applies ``volume_modifier`` to the
     session and targets ``rpe_low..rpe_high``; state may pull the prescription
     *down* within this envelope but never above it.
+
+    ``goal`` (the block's goal) and ``domain`` (the planned day's canonical domain) are the
+    inputs a domain-specific envelope resolves from (phase 7). This stays the ONE entry point:
+    every caller passes them here rather than choosing a template beside it.
     """
+    del goal, domain  # phase 7.0: plumbed, not yet consulted
     weeks = max(1, int(duration_weeks))
     wk = max(1, int(week_number))
     deload_n = max(0, int(deload_every_n_weeks))

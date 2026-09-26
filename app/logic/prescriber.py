@@ -1332,7 +1332,8 @@ def _recommend_next_session(
     intensity = normalize_intensity(block.get("intensity"))
     if week_n and weeks_total:
         env = periodization_envelope(
-            weeks_total, week_n, int(block.get("deload_every_n_weeks") or 4), intensity=intensity
+            weeks_total, week_n, int(block.get("deload_every_n_weeks") or 4), intensity=intensity,
+            goal=str(goal), domain=session_domain or _candidate_domain(str(goal)),
         )
         vol = env.volume_modifier
         phase = env.phase
