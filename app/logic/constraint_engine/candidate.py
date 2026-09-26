@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from app.logic.exercise_slot import ExerciseSlot
+from app.logic.exercise_slot import CircuitSpec, ExerciseSlot
 from app.schemas.state import UnifiedStateVector
 
 #: May the block's workload preference change a session's volume? See SessionCandidate.
@@ -70,6 +70,9 @@ class SessionCandidate:
     # from the source CandidateTemplate. "fixed" is an authored protocol whose volume IS the
     # session (the phase-5 potentiation primer): the generic ±1-set step skips it and says so.
     workload_volume: WorkloadVolume = "scaled"
+
+    # The winning template's circuit, carried over like its slots (phase 6.1).
+    circuit: CircuitSpec | None = None
 
 
 # Default scoring weights (can be overridden per use case)

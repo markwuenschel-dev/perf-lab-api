@@ -1,6 +1,6 @@
 """Workout prescription + structured explainability (backward compatible)."""
 
-from typing import Any, Literal
+from typing import Any, Literal, assert_never
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
@@ -10,10 +10,14 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 from app.logic.confidence_presentation import ConfidenceStatus
 from app.schemas.load_explanation import LoadExplanation, LoadExplanationReason
 from app.schemas.workout_structure import (
+    CircuitBlock,
+    CircuitStation,
     ContinuousBlock,
+    CooldownBlock,
     DurationEstimate,
     IntervalBlock,
     StrengthBlock,
+    WarmupBlock,
     WorkoutBlock,
     WorkoutStructure,
     calculate_duration,
@@ -33,7 +37,7 @@ __all__ = ["LoadExplanation", "LoadExplanationReason"]
 #: ``openapi.json`` carries it as the schema default, so a bump needs all three updated
 #: together. ``test_prescription_engine_version_is_assigned_not_defaulted`` pins the Python
 #: half of that coupling.
-PRESCRIPTION_ENGINE_VERSION = "v0.4"
+PRESCRIPTION_ENGINE_VERSION = "v0.5"
 
 
 class ValidationSummary(BaseModel):
@@ -350,8 +354,14 @@ def project_exercises(structure: "WorkoutStructure") -> list[ExercisePrescriptio
                 )
             )
             continue
-        if not isinstance(block, StrengthBlock):
+        if isinstance(block, CircuitBlock):
+            out.extend(_station_exercise(station) for station in block.stations)
             continue
+        if isinstance(block, WarmupBlock | CooldownBlock):
+            continue
+        if not isinstance(block, StrengthBlock):
+            # Fail closed: a kind that does not say what it projects must not vanish silently.
+            assert_never(block)
         out.append(
             ExercisePrescription(
                 name=block.exercise,
@@ -367,6 +377,40 @@ def project_exercises(structure: "WorkoutStructure") -> list[ExercisePrescriptio
             )
         )
     return out
+
+
+def _station_exercise(station: CircuitStation) -> ExercisePrescription:
+    """A circuit station's compatibility projection: one exercise, as a flat session showed it."""
+    return ExercisePrescription(
+        name=station.exercise,
+        sets=station.display_sets,
+        reps=station.display_reps,
+        load_note=station.load_note,
+        weak_point_tags=list(station.weak_point_tags),
+        prescribed_load_kg=station.load_target_kg,
+        percent_e1rm=station.percent_e1rm,
+        rpe_cap=station.rpe_cap,
+        e1rm_basis_kg=station.e1rm_basis_kg,
+        load_explanation=station.load_explanation,
+    )
+
+
+def circuit_station_for(station: CircuitStation, ex: ExercisePrescription) -> CircuitStation:
+    """``station``'s work shape, named and displayed as ``ex``."""
+    return station.model_copy(
+        update={
+            "exercise": ex.name,
+            "display_sets": ex.sets,
+            "display_reps": ex.reps,
+            "load_note": ex.load_note,
+            "weak_point_tags": list(ex.weak_point_tags),
+            "load_target_kg": ex.prescribed_load_kg,
+            "percent_e1rm": ex.percent_e1rm,
+            "rpe_cap": ex.rpe_cap,
+            "e1rm_basis_kg": ex.e1rm_basis_kg,
+            "load_explanation": ex.load_explanation,
+        }
+    )
 
 
 def endurance_block_for(
@@ -414,6 +458,13 @@ def structure_from_exercises(
     endurance block keeps its work shape when the exercise at its position is still the same
     activity, refreshed from that exercise; anything else — and any exercise beyond the
     previous structure — becomes a strength block, exactly as before phase 5.3.
+
+    A circuit (phase 6.1) is different: it was AUTHORED, not reconstructed. It consumes one
+    exercise per station, in order, and each station is refreshed from its exercise. If those
+    exercises no longer name its stations, the circuit is not silently degraded into strength
+    blocks — that would erase its scheme by passing it through a compatibility view — and a
+    ``ValueError`` is raised instead. Falling back to strength blocks is for legacy
+    reconstruction only, where there is no authored structure to lose.
     """
     out: WorkoutStructure = []
     remaining = list(exercises)
@@ -428,8 +479,24 @@ def structure_from_exercises(
             if not remaining:
                 break
             out.append(_strength_block(remaining.pop(0)))
-        else:
+        elif isinstance(block, CircuitBlock):
+            stations = block.stations
+            taken = remaining[: len(stations)]
+            if [ex.name for ex in taken] != [s.exercise for s in stations]:
+                raise ValueError(
+                    f"circuit {block.label or ''!s} stations "
+                    f"{[s.exercise for s in stations]} disagree with exercises "
+                    f"{[ex.name for ex in taken]}: edit the circuit, not its projection"
+                )
+            del remaining[: len(stations)]
+            refreshed = [circuit_station_for(s, ex) for s, ex in zip(stations, taken, strict=True)]
+            out.append(block.model_copy(update={"stations": refreshed}))
+        elif isinstance(block, IntervalBlock | ContinuousBlock | WarmupBlock | CooldownBlock):
+            # Blocks that project nothing (a warmup, an endurance block without an activity)
+            # stay where they were.
             out.append(block)
+        else:
+            assert_never(block)
     out.extend(_strength_block(ex) for ex in remaining)
     return out
 

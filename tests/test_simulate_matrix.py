@@ -53,6 +53,35 @@ def test_every_planned_day_is_prescribed_as_planned() -> None:
     assert not flagged, flagged
 
 
+#: Every HYROX and CrossFit planned day, and what it prescribes at medium workload.
+PHASE_6_DAYS = {
+    "hyrox_strength_endurance": "Back Squat, Overhead Press, Barbell Row",
+    "hyrox_running_functional": "Run, SkiErg",
+    "hyrox_simulation": "Run, SkiErg, Run, Sled Push, Run, Sled Pull, Run, Burpee Broad Jump",
+    "crossfit_strength_skill": "Back Squat, Double Unders, Toes to Bar",
+    "crossfit_engine_work": "Assault Bike, Assault Bike",
+}
+
+
+def test_every_hyrox_and_crossfit_day_is_prescribed_as_planned() -> None:
+    """The phase-6 exit claim, over the whole phase-6 grid: no planned day is replaced, no
+    cell is a generic redirect, and no HYROX / CrossFit day is built from the generic
+    equipment fallback."""
+    cells = sm.build_matrix("phase-6")
+    flagged = [
+        (c.experience, c.freshness, c.goal, c.workload, c.flags)
+        for c in cells
+        if any(f.startswith(("plan-replaced", "redirect")) for f in c.flags)
+        or (c.goal in sm.PHASE_6_GOALS and c.goal not in sm.PHASE_5_GOALS
+            and "template-has-no-exercises" in c.flags)
+    ]
+    by_goal = {c.goal: c for c in cells if c.workload == "medium" and c.experience == "novice"
+               and c.freshness == "fresh"}
+
+    assert not flagged, flagged
+    assert {g: by_goal[g].exercises for g in PHASE_6_DAYS} == PHASE_6_DAYS
+
+
 def test_the_plan_replaced_flag_fires(monkeypatch) -> None:
     """Test the test: a Sprinting goal on an Aerobic Base day draws the sprint pool, so the
     bound aerobic templates are unavailable and the plan is replaced."""

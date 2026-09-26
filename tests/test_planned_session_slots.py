@@ -4,8 +4,8 @@ Pure, no DB. Two things matter here and neither is about scoring:
 
 * every branch id a binding names exists in the pool that domain actually prescribes from —
   a renamed template must fail here rather than silently becoming "no binding";
-* every category the planner can write is either bound or a stated gap, so a new slot cannot
-  be added without someone deciding what it means.
+* every category the planner can write is bound (phase 6 closed the last gaps), so a new slot
+  cannot be added without someone deciding what it means.
 """
 from __future__ import annotations
 
@@ -14,16 +14,6 @@ import pytest
 from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY, template_pool
 from app.logic.planned_session_slots import _BINDINGS, binding_for
 from app.services.planning_service import _DEFAULT_TEMPLATES, _DOMAIN_SLOT, _mix_slot
-
-#: Slots the planner writes that bind no template. Previously an accepted allowlist; from the
-#: engine-coherence work these are DEFECTS awaiting phase 6 (the three mixed/HYROX/CrossFit
-#: days; phase 5 closed the running and power ones). A day the planner shows an athlete and then cannot prescribe
-#: falls through to a generic pool — the "Running day prescribes Air Squat" failure.
-#: Kept only so the phase-0 xfail can name exactly what is outstanding; delete entries as each
-#: is closed, and delete this table when it is empty.
-OUTSTANDING_UNBOUND_SLOTS: dict[str, set[str]] = {
-    "mixed": {"Strength + Skill", "Running + Functional", "Hyrox Simulation"},
-}
 
 
 def _pool_branch_ids(domain: str, category: str) -> set[str]:
@@ -66,37 +56,15 @@ def _unbound_planned_slots() -> list[str]:
     return sorted(set(unresolved))
 
 
-@pytest.mark.xfail(
-    reason="phase 6: 3 planned slots bind no template (both HYROX days, CrossFit Strength + "
-    "Skill), so the prescriber falls through to the generic pool for a day the athlete was "
-    "shown",
-    strict=True,
-)
 def test_every_planned_slot_is_bound() -> None:
     """A day the planner can schedule must be a day the prescriber can build.
 
-    This was an allowlist (KNOWN_GAPS) — a slot could be "a stated gap" forever. A stated gap
-    is still an athlete receiving general-purpose work on a day labelled as their sport.
+    This was an allowlist (KNOWN_GAPS), then a strict xfail with a shrinking gap list; phase 6
+    bound the last three (both HYROX days and CrossFit Strength + Skill). A stated gap is still
+    an athlete receiving general-purpose work on a day labelled as their sport, so any new
+    unbound slot fails here.
     """
     assert _unbound_planned_slots() == []
-
-
-def test_the_outstanding_gap_list_matches_reality() -> None:
-    """The xfail above must stay honest: no gap may appear that is not already declared.
-
-    This test PASSES today and is the ratchet — a newly added unbound slot fails here
-    immediately rather than hiding inside the known failure above.
-    """
-    declared = {
-        f"{domain}/{category}"
-        for domain, categories in OUTSTANDING_UNBOUND_SLOTS.items()
-        for category in categories
-    }
-
-    assert set(_unbound_planned_slots()) <= declared, (
-        "a NEW unbound planned slot appeared: "
-        f"{sorted(set(_unbound_planned_slots()) - declared)}"
-    )
 
 
 def test_every_binding_can_actually_produce_a_template() -> None:

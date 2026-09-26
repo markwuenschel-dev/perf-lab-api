@@ -1,6 +1,27 @@
 {
   "components": {
     "schemas": {
+      "AMRAPScheme": {
+        "description": "As many rounds as possible inside the cap. The cap IS the elapsed time.",
+        "properties": {
+          "format": {
+            "const": "amrap",
+            "default": "amrap",
+            "title": "Format",
+            "type": "string"
+          },
+          "time_cap_sec": {
+            "exclusiveMinimum": 0.0,
+            "title": "Time Cap Sec",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "time_cap_sec"
+        ],
+        "title": "AMRAPScheme",
+        "type": "object"
+      },
       "AdaptationContribution": {
         "description": "Per-session adaptation signal by capacity axis.\n\nComputed by the dose engine from aggregated phi_adapt vectors and session\nload. Consumed by state_update to drive explicit capacity gains.",
         "properties": {
@@ -1575,6 +1596,244 @@
         "title": "CapacityState",
         "type": "object"
       },
+      "CircuitBlock": {
+        "description": "Stations performed in order, under a scheme. Projects one exercise per station.",
+        "properties": {
+          "kind": {
+            "const": "circuit",
+            "default": "circuit",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
+            "title": "Label"
+          },
+          "scales_with_workload": {
+            "default": false,
+            "title": "Scales With Workload",
+            "type": "boolean"
+          },
+          "scheme": {
+            "discriminator": {
+              "mapping": {
+                "amrap": "#/components/schemas/AMRAPScheme",
+                "emom": "#/components/schemas/EMOMScheme",
+                "for_time": "#/components/schemas/ForTimeScheme",
+                "rounds": "#/components/schemas/FixedRoundsScheme"
+              },
+              "propertyName": "format"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AMRAPScheme"
+              },
+              {
+                "$ref": "#/components/schemas/EMOMScheme"
+              },
+              {
+                "$ref": "#/components/schemas/ForTimeScheme"
+              },
+              {
+                "$ref": "#/components/schemas/FixedRoundsScheme"
+              }
+            ],
+            "title": "Scheme"
+          },
+          "stations": {
+            "items": {
+              "$ref": "#/components/schemas/CircuitStation"
+            },
+            "minItems": 1,
+            "title": "Stations",
+            "type": "array"
+          },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
+          }
+        },
+        "required": [
+          "stations",
+          "scheme"
+        ],
+        "title": "CircuitBlock",
+        "type": "object"
+      },
+      "CircuitStation": {
+        "description": "One station of a circuit: what is done there in each round.\n\nThe work quantities are per round and typed; only ``duration_sec`` is time. The rest of\nthe fields are the station's compatibility projection into ``exercises[]`` \u2014 exactly what\nan ``ExercisePrescription`` carries \u2014 so a circuit shows the same list a flat session did.",
+        "properties": {
+          "display_reps": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compatibility projection: the legacy exercise's reps text.",
+            "title": "Display Reps"
+          },
+          "display_sets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compatibility projection: the legacy exercise's set count.",
+            "title": "Display Sets"
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance M"
+          },
+          "duration_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Sec"
+          },
+          "e1rm_basis_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "E1Rm Basis Kg"
+          },
+          "exercise": {
+            "title": "Exercise",
+            "type": "string"
+          },
+          "load_explanation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoadExplanation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "load_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Note"
+          },
+          "load_target_kg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Target Kg"
+          },
+          "percent_e1rm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent E1Rm"
+          },
+          "reps": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reps"
+          },
+          "rpe_cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe Cap"
+          },
+          "transition_sec": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Sec"
+          },
+          "weak_point_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Weak Point Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "exercise"
+        ],
+        "title": "CircuitStation",
+        "type": "object"
+      },
       "CompleteOnboardingRequest": {
         "properties": {
           "reason": {
@@ -1958,12 +2217,51 @@
             },
             "title": "Unknown Components",
             "type": "array"
+          },
+          "upper_bound_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Bound Seconds"
           }
         },
         "required": [
           "known_seconds"
         ],
         "title": "DurationEstimate",
+        "type": "object"
+      },
+      "EMOMScheme": {
+        "description": "Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.\n\n**Stations ROTATE.** Interval ``k`` (from 0) performs station ``k mod n`` only \u2014 the\n\"odd minute / even minute\" form \u2014 so a 10-interval EMOM of two stations gives each station\nfive exposures, not ten of both. See :func:`emom_exposures`.",
+        "properties": {
+          "format": {
+            "const": "emom",
+            "default": "emom",
+            "title": "Format",
+            "type": "string"
+          },
+          "interval_sec": {
+            "exclusiveMinimum": 0.0,
+            "title": "Interval Sec",
+            "type": "integer"
+          },
+          "intervals": {
+            "exclusiveMinimum": 0.0,
+            "title": "Intervals",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "intervals",
+          "interval_sec"
+        ],
+        "title": "EMOMScheme",
         "type": "object"
       },
       "ExerciseCatalogOut": {
@@ -2554,6 +2852,60 @@
           }
         },
         "title": "FatigueState",
+        "type": "object"
+      },
+      "FixedRoundsScheme": {
+        "description": "A fixed number of rounds at no stated pace \u2014 e.g. a contrast pair done three times.",
+        "properties": {
+          "format": {
+            "const": "rounds",
+            "default": "rounds",
+            "title": "Format",
+            "type": "string"
+          },
+          "rounds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Rounds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rounds"
+        ],
+        "title": "FixedRoundsScheme",
+        "type": "object"
+      },
+      "ForTimeScheme": {
+        "description": "A fixed amount of work as fast as possible. The athlete's time is the result, not the\nprescription; the cap only bounds it.",
+        "properties": {
+          "format": {
+            "const": "for_time",
+            "default": "for_time",
+            "title": "Format",
+            "type": "string"
+          },
+          "rounds": {
+            "exclusiveMinimum": 0.0,
+            "title": "Rounds",
+            "type": "integer"
+          },
+          "time_cap_sec": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Cap Sec"
+          }
+        },
+        "required": [
+          "rounds"
+        ],
+        "title": "ForTimeScheme",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -7746,7 +8098,7 @@
             "type": "string"
           },
           "model_version": {
-            "default": "v0.4",
+            "default": "v0.5",
             "description": "Prescription engine version",
             "title": "Model Version",
             "type": "string"
@@ -7761,6 +8113,7 @@
                 "items": {
                   "discriminator": {
                     "mapping": {
+                      "circuit": "#/components/schemas/CircuitBlock",
                       "continuous": "#/components/schemas/ContinuousBlock",
                       "cooldown": "#/components/schemas/CooldownBlock",
                       "interval": "#/components/schemas/IntervalBlock",
@@ -7778,6 +8131,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ContinuousBlock"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CircuitBlock"
                     },
                     {
                       "$ref": "#/components/schemas/WarmupBlock"

@@ -580,6 +580,166 @@
     "tags": [],
     "type": "Upper Body Hypertrophy"
   },
+  "hyrox_simulation/hyrox_half_sim_a": {
+    "duration_min": 50,
+    "focus": "For time: 4 x (1 km run -> station), race order: SkiErg / Sled Push / Sled Pull / Burpee Broad Jump",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "metabolic",
+          1.0
+        ],
+        [
+          "muscular",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "lumbar"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 8,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1000 m",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "reps": "50 m",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "reps": "50 m",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "80 m",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "work_capacity"
+    ],
+    "type": "HYROX Half Simulation \u2014 A"
+  },
+  "hyrox_simulation/hyrox_half_sim_b": {
+    "duration_min": 50,
+    "focus": "For time: 4 x (1 km run -> station), race order: Rowing (Ergometer) / Farmer Carry / Sandbag Lunges / Wall Ball",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "metabolic",
+          1.0
+        ],
+        [
+          "muscular",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "lumbar"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 8,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1000 m",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "reps": "200 m",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "reps": "100 m",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "reps": "100",
+        "requirements": [],
+        "sets": "1"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "work_capacity"
+    ],
+    "type": "HYROX Half Simulation \u2014 B"
+  },
   "mixed/metcon_engine": {
     "duration_min": 45,
     "focus": "Zone 2 Bike 20 min + Short Threshold Intervals (4\u00d72 min @ RPE 8)",
@@ -591,8 +751,21 @@
       "tissue_axes": [],
       "tissue_weight": 1.0
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "20 min Zone 2",
+        "requirements": [],
+        "sets": "1"
+      },
+      {
+        "load_note": null,
+        "reps": "2 min @ RPE 8 / 2 min easy spin",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
@@ -652,8 +825,27 @@
       ],
       "tissue_weight": 0.4
     },
-    "slot_count": 0,
-    "slots": [],
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "reps": "8",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "reps": "8",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "reps": "8",
+        "requirements": [],
+        "sets": "5"
+      }
+    ],
     "tags": [
       "max_strength",
       "work_capacity"
@@ -1090,6 +1282,94 @@
     ],
     "type": "Aerobic Base"
   },
+  "running_functional/run_functional_lunges": {
+    "duration_min": 40,
+    "focus": "4 rounds: 1 km run -> 25 m Sandbag Lunges",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "metabolic",
+          1.0
+        ],
+        [
+          "muscular",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "lumbar"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "reps": "25 m",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "work_capacity"
+    ],
+    "type": "Running + Functional \u2014 Lunges"
+  },
+  "running_functional/run_functional_ski": {
+    "duration_min": 40,
+    "focus": "4 rounds: 1 km run -> 250 m SkiErg",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "metabolic",
+          1.0
+        ],
+        [
+          "muscular",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "lumbar"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "1 km",
+        "requirements": [],
+        "sets": "4"
+      },
+      {
+        "load_note": null,
+        "reps": "250 m",
+        "requirements": [],
+        "sets": "4"
+      }
+    ],
+    "tags": [
+      "aerobic_base",
+      "work_capacity"
+    ],
+    "type": "Running + Functional \u2014 Ski"
+  },
   "running_recovery/run_recovery": {
     "duration_min": 30,
     "focus": "Very Easy Run 20\u201330 min @ Zone 1",
@@ -1282,6 +1562,106 @@
     "slots": [],
     "tags": [],
     "type": "Strength \u2014 Volume"
+  },
+  "strength_skill/cf_strength_skill_deadlift": {
+    "duration_min": 50,
+    "focus": "Deadlift 3x5 -> EMOM 10: Double Unders / Toes to Bar",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "cns",
+          1.0
+        ],
+        [
+          "muscular",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "lumbar",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "5",
+        "requirements": [],
+        "sets": "3"
+      },
+      {
+        "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "reps": "20\u201330 unbroken; stop before repeated misses",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "reps": "4\u20136 clean; stop before form or rhythm breaks",
+        "requirements": [],
+        "sets": "5"
+      }
+    ],
+    "tags": [
+      "hip_hinge",
+      "max_strength"
+    ],
+    "type": "Strength + Skill \u2014 Deadlift"
+  },
+  "strength_skill/cf_strength_skill_squat": {
+    "duration_min": 50,
+    "focus": "Squat 5x3 -> EMOM 10: Double Unders / Toes to Bar",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [
+        [
+          "cns",
+          1.0
+        ],
+        [
+          "muscular",
+          0.5
+        ]
+      ],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "lumbar",
+        "knee"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "load_note": null,
+        "reps": "3",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "reps": "20\u201330 unbroken; stop before repeated misses",
+        "requirements": [],
+        "sets": "5"
+      },
+      {
+        "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "reps": "4\u20136 clean; stop before form or rhythm breaks",
+        "requirements": [],
+        "sets": "5"
+      }
+    ],
+    "tags": [
+      "max_strength",
+      "squat_pattern"
+    ],
+    "type": "Strength + Skill \u2014 Squat"
   },
   "weightlifting/wl_strength_pulls": {
     "duration_min": 55,

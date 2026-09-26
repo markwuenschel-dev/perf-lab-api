@@ -295,6 +295,13 @@ EXERCISES = [
          "weak_point_tags": ["push_horizontal", "gymnastics_skill"]},
 
     # ── RUNNING ───────────────────────────────────────────────────────────
+    # The activity, with no intensity in its identity (phase 6.2): how far and how hard belong
+    # to the prescription. A HYROX station supplies the distance ("Run · 1 km").
+    {"name": "Run", "modality": "Running", "movement_pattern": "run",
+         "primary_muscles": ["quads", "glutes", "calves"], "secondary_muscles": [],
+         "equipment_required": [], "load_type": "distance",
+         "skill_demand": 0.2, "impact_level": 0.6,
+         "weak_point_tags": ["aerobic_base", "running_economy"]},
     {"name": "Easy Run", "modality": "Running", "movement_pattern": "run",
          "primary_muscles": ["quads", "glutes", "calves"], "secondary_muscles": [],
          "equipment_required": [], "load_type": "distance",

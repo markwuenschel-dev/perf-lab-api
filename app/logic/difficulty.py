@@ -31,13 +31,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, cast
+from typing import Protocol, assert_never, cast
 
 from app.logic.planning import INTENSITY_CHOICES, intensity_set_delta, normalize_intensity
 from app.schemas.workout_structure import (
+    AMRAPScheme,
+    CircuitBlock,
     ContinuousBlock,
+    CooldownBlock,
+    EMOMScheme,
+    FixedRoundsScheme,
+    ForTimeScheme,
     IntervalBlock,
     StrengthBlock,
+    WarmupBlock,
+    WorkoutBlock,
     WorkoutStructure,
     adjust_strength_sets,
 )
@@ -234,14 +242,52 @@ def _continuous_signature(block: ContinuousBlock) -> dict[DifficultyDimension, o
     }
 
 
-def _signature(block: object) -> dict[DifficultyDimension, object] | None:
+def _circuit_signature(block: CircuitBlock) -> dict[DifficultyDimension, object]:
+    # The scheme's volume lever (cap, intervals or rounds) is VOLUME, like a strength block's
+    # sets. What compresses the same work into less time — transitions, an EMOM's interval, a
+    # for-time cap — is DENSITY. Changing format or a station is a different session.
+    scheme = block.scheme
+    if isinstance(scheme, AMRAPScheme):
+        lever: object = scheme.time_cap_sec
+        clock: object = None
+    elif isinstance(scheme, EMOMScheme):
+        lever, clock = scheme.intervals, scheme.interval_sec
+    elif isinstance(scheme, ForTimeScheme):
+        lever, clock = scheme.rounds, scheme.time_cap_sec
+    elif isinstance(scheme, FixedRoundsScheme):
+        lever, clock = scheme.rounds, None
+    else:
+        assert_never(scheme)
+    stations = block.stations
+    return {
+        DifficultyDimension.VOLUME: (
+            lever,
+            tuple((s.reps, s.distance_m, s.duration_sec) for s in stations),
+        ),
+        DifficultyDimension.INTENSITY: tuple((s.load_target_kg, s.percent_e1rm) for s in stations),
+        DifficultyDimension.EFFORT: tuple(s.rpe_cap for s in stations),
+        DifficultyDimension.DENSITY: (clock, tuple(s.transition_sec for s in stations)),
+        DifficultyDimension.EXERCISE_SELECTION: (
+            block.label,
+            scheme.format,
+            tuple(s.exercise for s in stations),
+        ),
+    }
+
+
+def _signature(block: WorkoutBlock) -> dict[DifficultyDimension, object] | None:
     if isinstance(block, StrengthBlock):
         return _strength_signature(block)
     if isinstance(block, IntervalBlock):
         return _interval_signature(block)
     if isinstance(block, ContinuousBlock):
         return _continuous_signature(block)
-    return None
+    if isinstance(block, CircuitBlock):
+        return _circuit_signature(block)
+    if isinstance(block, WarmupBlock | CooldownBlock):
+        return None
+    # Fail closed: an unsigned kind would read every change as exercise selection.
+    assert_never(block)
 
 
 def dimensions_changed(

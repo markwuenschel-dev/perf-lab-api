@@ -42,6 +42,7 @@ from app.logic.constraint_labels import (
     EQUIPMENT_FALLBACK_BODYWEIGHT,
     EQUIPMENT_FILTERED,
     EQUIPMENT_UNCONFIGURED,
+    STRUCTURE_CIRCUIT_UNREALIZED,
     describe_constraints,
 )
 from app.logic.deload_need import compute_deload_need
@@ -49,7 +50,9 @@ from app.logic.difficulty import LEGACY_TRANSFORM
 from app.logic.domain_vocab import GOAL_TO_DOMAIN, canonical_domain
 from app.logic.exercise_slot import (
     CatalogExercise,
+    CircuitSpec,
     ExerciseSlot,
+    circuit_resolves,
     equipment_available,
     preferred_load_types,
     resolve_slots,
@@ -57,6 +60,7 @@ from app.logic.exercise_slot import (
 from app.logic.planned_session_slots import SlotBinding, binding_for
 from app.logic.planning import (
     INTENSITY_MEDIUM,
+    intensity_set_delta,
     normalize_intensity,
     periodization_envelope,
 )
@@ -69,13 +73,18 @@ from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import (
     ExercisePrescription,
     WorkoutPrescription,
+    circuit_station_for,
     endurance_block_for,
     project_exercises,
     structure_from_exercises,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.schemas.workout_structure import WorkoutStructure
+from app.schemas.workout_structure import (
+    CircuitBlock,
+    WorkoutStructure,
+    adjust_scaled_circuit_rounds,
+)
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -416,6 +425,8 @@ def _generate_candidates(
     domain_override: str | None = None,
     session_category: str | None = None,
     category_owns_day: bool = True,
+    catalog: list[CatalogExercise] | None = None,
+    available_equipment: list[str] | None = None,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
@@ -440,6 +451,12 @@ def _generate_candidates(
         domain, kpi, goal=str(goal), state=state, session_category=session_category,
         category_owns_day=category_owns_day,
     )
+    # An authored circuit is atomic (phase 6.2): a template whose stations do not all resolve
+    # for this athlete is not eligible, rather than emitting part of it.
+    templates = [
+        t for t in templates
+        if circuit_resolves(t.exercise_slots, t.circuit, catalog, available_equipment)
+    ]
     return [score_template(t, state, kpi, readiness=r) for t in templates]
 
 
@@ -519,6 +536,11 @@ def _apply_intensity_sets(
     A session whose template declares ``workload_volume="fixed"`` keeps its authored volume:
     its volume is the protocol, not a knob (the phase-5 potentiation primer).
 
+    Two things move, each only where it has something honest to move: strength sets in the
+    set-target domains, and the rounds of any circuit that declares ``scales_with_workload``
+    (phase 6), whatever the domain. A mixed-domain session's strength blocks stay as they
+    always have.
+
     Every no-op is reported with its reason. A preference that silently does nothing is the
     defect this whole slice exists to avoid: the athlete chose "hard" and is owed either more
     work or the reason there isn't any.
@@ -530,7 +552,11 @@ def _apply_intensity_sets(
         reason = "recovery-week"
     elif workload_volume == "fixed":
         reason = "fixed-volume"
-    elif domain not in INTENSITY_SET_DOMAINS:
+    moves_sets = domain in INTENSITY_SET_DOMAINS
+    moves_rounds = any(
+        isinstance(b, CircuitBlock) and b.scales_with_workload for b in rx.structure or []
+    )
+    if reason is None and not (moves_sets or moves_rounds):
         reason = f"no-set-targets:{domain}"
 
     if reason is None:
@@ -542,7 +568,11 @@ def _apply_intensity_sets(
         # this is behaviour-neutral; 3.2 swaps in real per-family policies, and none of them
         # goes live until its effect under both dose engines has been measured.
         before = structure_from_exercises(rx.exercises, rx.structure)
-        after = LEGACY_TRANSFORM.apply(before, intensity)
+        after = LEGACY_TRANSFORM.apply(before, intensity) if moves_sets else list(before)
+        if moves_rounds:
+            after = adjust_scaled_circuit_rounds(
+                after, intensity_set_delta(normalize_intensity(intensity))
+            )
         moved = sum(
             1
             for old_block, new_block in zip(before, after, strict=True)
@@ -909,11 +939,20 @@ def _exercise_list_for_candidate(
 _FOCUS_NAMED_EXERCISES = 3
 
 
-def _structure_for_selection(selection: _ExerciseSelection) -> WorkoutStructure:
+def _structure_for_selection(
+    selection: _ExerciseSelection,
+    circuit: CircuitSpec | None = None,
+    template_slots: Sequence[ExerciseSlot] = (),
+) -> WorkoutStructure:
     """The selected exercises as blocks: an endurance slot's work shape, else a strength block.
 
     Phase 5.3: this is where a running session becomes an interval or continuous block. The
     exercise list stays exactly what it was — it is the block's compatibility projection.
+
+    Phase 6.1: a template's ``circuit`` turns its station slots into ONE circuit block, named
+    after the catalog picks. It is built only when every station resolved, in order; a circuit
+    missing a station would be a different session, so the resolved exercises stay strength
+    blocks instead (see :func:`_circuit_realized`).
     """
     blocks = structure_from_exercises(selection.exercises)
     for i, slot in enumerate(selection.slots or ()):
@@ -921,7 +960,49 @@ def _structure_for_selection(selection: _ExerciseSelection) -> WorkoutStructure:
             shaped = endurance_block_for(slot.endurance, selection.exercises[i])
             if shaped is not None:
                 blocks[i] = shaped
+    span = _circuit_span(selection, circuit, template_slots)
+    if circuit is not None and span is not None:
+        start, stop = span
+        stations = [
+            circuit_station_for(shape, ex)
+            for shape, ex in zip(circuit.stations, selection.exercises[start:stop], strict=True)
+        ]
+        blocks[start:stop] = [
+            CircuitBlock(
+                label=circuit.label,
+                stations=stations,
+                scheme=circuit.scheme,
+                scales_with_workload=circuit.scales_with_workload,
+            )
+        ]
     return blocks
+
+
+def _circuit_span(
+    selection: _ExerciseSelection,
+    circuit: CircuitSpec | None,
+    template_slots: Sequence[ExerciseSlot],
+) -> tuple[int, int] | None:
+    """Where the circuit's stations sit in the selection, or None if it cannot be built."""
+    if circuit is None or selection.slots is None:
+        return None
+    wanted = list(template_slots[circuit.first_slot : circuit.first_slot + len(circuit.stations)])
+    if len(wanted) != len(circuit.stations):
+        return None
+    chosen = list(selection.slots)
+    for start in range(len(chosen) - len(wanted) + 1):
+        if all(a is b for a, b in zip(chosen[start : start + len(wanted)], wanted, strict=True)):
+            return start, start + len(wanted)
+    return None
+
+
+def _circuit_realized(
+    selection: _ExerciseSelection,
+    circuit: CircuitSpec | None,
+    template_slots: Sequence[ExerciseSlot],
+) -> bool:
+    """False only for a template circuit whose stations did not all resolve."""
+    return circuit is None or _circuit_span(selection, circuit, template_slots) is not None
 
 
 def _focus_from_exercises(exercises: list[ExercisePrescription]) -> str:
@@ -1109,6 +1190,7 @@ def _recommend_next_session(
     goal_candidates = _generate_candidates(
         state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain,
         session_category=block.get("session_category"), category_owns_day=not redirects,
+        catalog=catalog, available_equipment=available_equipment,
     )
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside
@@ -1309,7 +1391,13 @@ def _recommend_next_session(
         equipment_preference=equipment_preference,
     )
     rx.exercises = selection.exercises
-    rx.structure = _structure_for_selection(selection)
+    rx.structure = _structure_for_selection(
+        selection, scored[0].circuit, scored[0].exercise_slots
+    )
+    if rx.why is not None and not _circuit_realized(
+        selection, scored[0].circuit, scored[0].exercise_slots
+    ):
+        rx.why.constraints_applied.append(STRUCTURE_CIRCUIT_UNREALIZED)
     # A hard validator failure replaced the session with a recovery override; its title says so
     # and must not be rebuilt from the template's exercises.
     overridden = (

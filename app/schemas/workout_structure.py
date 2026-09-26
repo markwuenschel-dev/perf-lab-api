@@ -28,9 +28,9 @@ real interval/continuous structure; inventing one here would be a third proxy.
 """
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, assert_never
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.load_explanation import LoadExplanation
 
@@ -163,8 +163,122 @@ class CooldownBlock(_Block):
     description: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Circuits (phase 6.1)
+# ---------------------------------------------------------------------------
+#
+# A circuit is a sequence of STATIONS executed under a SCHEME. The block says what is
+# performed; the scheme says how that sequence is run — as many rounds as fit in a cap
+# (AMRAP), a fixed number of intervals on a clock (EMOM), a set number of rounds as fast as
+# possible (for time), or a set number of rounds at no stated pace (rounds). Formats are
+# scheme variants rather than block kinds because they share the stations and differ only in
+# how time and volume are defined, and a new format (a ladder, a chipper) extends the scheme
+# union, not every reader of the block union.
+
+
+class CircuitStation(BaseModel):
+    """One station of a circuit: what is done there in each round.
+
+    The work quantities are per round and typed; only ``duration_sec`` is time. The rest of
+    the fields are the station's compatibility projection into ``exercises[]`` — exactly what
+    an ``ExercisePrescription`` carries — so a circuit shows the same list a flat session did.
+    """
+
+    exercise: str
+    reps: int | None = Field(default=None, ge=0)
+    distance_m: float | None = Field(default=None, ge=0)
+    #: Time the station's work takes in one round, when the station is timed ("1 min SkiErg").
+    duration_sec: int | None = Field(default=None, ge=0)
+    #: Time after this station before the next one: changing station, not recovery. The FINAL
+    #: station's transition is the gap between rounds, and does not follow the final round.
+    transition_sec: int | None = Field(default=None, ge=0)
+    display_sets: int | None = Field(
+        default=None, description="Compatibility projection: the legacy exercise's set count."
+    )
+    display_reps: str | None = Field(
+        default=None, description="Compatibility projection: the legacy exercise's reps text."
+    )
+    load_note: str | None = None
+    weak_point_tags: list[str] = Field(default_factory=list)
+    load_target_kg: float | None = None
+    percent_e1rm: float | None = None
+    rpe_cap: float | None = None
+    e1rm_basis_kg: float | None = None
+    load_explanation: LoadExplanation | None = None
+
+
+class AMRAPScheme(BaseModel):
+    """As many rounds as possible inside the cap. The cap IS the elapsed time."""
+
+    format: Literal["amrap"] = "amrap"
+    time_cap_sec: int = Field(gt=0)
+
+
+class EMOMScheme(BaseModel):
+    """Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.
+
+    **Stations ROTATE.** Interval ``k`` (from 0) performs station ``k mod n`` only — the
+    "odd minute / even minute" form — so a 10-interval EMOM of two stations gives each station
+    five exposures, not ten of both. See :func:`emom_exposures`.
+    """
+
+    format: Literal["emom"] = "emom"
+    intervals: int = Field(gt=0)
+    interval_sec: int = Field(gt=0)
+
+
+class ForTimeScheme(BaseModel):
+    """A fixed amount of work as fast as possible. The athlete's time is the result, not the
+    prescription; the cap only bounds it."""
+
+    format: Literal["for_time"] = "for_time"
+    rounds: int = Field(gt=0)
+    time_cap_sec: int | None = Field(default=None, gt=0)
+
+
+class FixedRoundsScheme(BaseModel):
+    """A fixed number of rounds at no stated pace — e.g. a contrast pair done three times."""
+
+    format: Literal["rounds"] = "rounds"
+    rounds: int = Field(gt=0)
+
+
+CircuitScheme = Annotated[
+    AMRAPScheme | EMOMScheme | ForTimeScheme | FixedRoundsScheme,
+    Field(discriminator="format"),
+]
+
+
+class CircuitBlock(_Block):
+    """Stations performed in order, under a scheme. Projects one exercise per station."""
+
+    kind: Literal["circuit"] = "circuit"
+    stations: list[CircuitStation] = Field(min_length=1)
+    scheme: CircuitScheme
+    #: Whether the athlete's workload preference (easy / medium / hard) moves this circuit's
+    #: ROUNDS by one, as it moves a strength block's sets. Declared per circuit, never inferred
+    #: from the format: a skill EMOM and a compromised-running circuit are both circuits, and
+    #: only one of them should grow when the athlete picks "hard". Rounds-based schemes only.
+    scales_with_workload: bool = False
+
+    @model_validator(mode="after")
+    def _only_rounds_scale_with_workload(self) -> CircuitBlock:
+        if self.scales_with_workload and not isinstance(
+            self.scheme, FixedRoundsScheme | ForTimeScheme
+        ):
+            raise ValueError(
+                f"a {self.scheme.format} circuit has no rounds for the workload step to move"
+            )
+        return self
+
+
+def emom_exposures(scheme: EMOMScheme, station_count: int, index: int) -> int:
+    """How many intervals of a rotating EMOM station ``index`` performs."""
+    return len(range(index, scheme.intervals, station_count))
+
+
 WorkoutBlock = Annotated[
-    StrengthBlock | IntervalBlock | ContinuousBlock | WarmupBlock | CooldownBlock,
+    StrengthBlock | IntervalBlock | ContinuousBlock | CircuitBlock | WarmupBlock | CooldownBlock,
     Field(discriminator="kind"),
 ]
 
@@ -194,6 +308,11 @@ class DurationEstimate(BaseModel):
     known_seconds: float = Field(ge=0.0)
     #: What could not be timed, in words, e.g. "Back Squat: set execution time unknown".
     unknown_components: list[str] = Field(default_factory=list)
+    #: The most the session can take, when its duration is NOT exact but every unknown part is
+    #: capped (a for-time circuit with a time cap). None when the duration is exact (read
+    #: ``minutes``) or when any unknown part has no cap. A cap bounds a duration; it is never
+    #: added to ``known_seconds`` as though the athlete would take exactly that long.
+    upper_bound_seconds: float | None = Field(default=None, ge=0.0)
 
     @property
     def complete(self) -> bool:
@@ -226,9 +345,18 @@ def calculate_duration(structure: WorkoutStructure) -> DurationEstimate:
     * **Distance-only work is NOT a time quantity.** 5 × 1 km has no duration until a pace
       target can resolve one, which is phase 5's job. Marked unknown here.
     * **Transitions** are counted once per block, separately from recovery.
+    * **Circuit** — the scheme's clock owns elapsed time. An AMRAP takes exactly its cap and an
+      EMOM ``intervals × interval_sec``; station timing and transitions happen INSIDE that
+      clock and are not added to it. A for-time circuit is unknown, because the athlete's time
+      is the result; its cap becomes ``upper_bound_seconds``, never known time. Fixed rounds
+      are exact only when every station's work and transition time is known.
     """
     known = 0.0
     unknown: list[str] = []
+    #: Unknown parts that carry a cap, and the caps' total — the upper bound, when every
+    #: unknown part has one.
+    capped_parts = 0
+    capped_seconds = 0.0
 
     for block in structure:
         if isinstance(block, WarmupBlock | CooldownBlock):
@@ -273,10 +401,56 @@ def calculate_duration(structure: WorkoutStructure) -> DurationEstimate:
                 gaps = sets if block.rest_after_last_set else sets - 1
                 known += max(0, gaps) * block.rest_sec
 
+        elif isinstance(block, CircuitBlock):
+            scheme = block.scheme
+            if isinstance(scheme, AMRAPScheme):
+                known += scheme.time_cap_sec
+            elif isinstance(scheme, EMOMScheme):
+                known += scheme.intervals * scheme.interval_sec
+            elif isinstance(scheme, ForTimeScheme):
+                unknown.append(_describe(block, "for time: the athlete's time is the result"))
+                if scheme.time_cap_sec is not None:
+                    capped_parts += 1
+                    capped_seconds += scheme.time_cap_sec
+            elif isinstance(scheme, FixedRoundsScheme):
+                seconds = _fixed_rounds_seconds(block.stations, scheme.rounds)
+                if seconds is None:
+                    unknown.append(_describe(block, "a station's work or transition time unknown"))
+                else:
+                    known += seconds
+            else:
+                assert_never(scheme)
+
+        else:
+            # Fail closed: a kind with no timing rule must not add 0 s and read as complete.
+            assert_never(block)
+
         if block.transition_sec is not None:
             known += block.transition_sec
 
-    return DurationEstimate(known_seconds=known, unknown_components=unknown)
+    upper_bound = known + capped_seconds if unknown and capped_parts == len(unknown) else None
+    return DurationEstimate(
+        known_seconds=known, unknown_components=unknown, upper_bound_seconds=upper_bound
+    )
+
+
+def _fixed_rounds_seconds(stations: list[CircuitStation], rounds: int) -> float | None:
+    """``rounds`` of ``stations``, or None when any part of it is untimed.
+
+    Each station's transition follows it; the final station's transition is the gap between
+    rounds, so it is counted ``rounds - 1`` times and never after the final round.
+    """
+    *within, last = stations
+    if any(s.duration_sec is None for s in stations):
+        return None
+    if any(s.transition_sec is None for s in within):
+        return None
+    if rounds > 1 and last.transition_sec is None:
+        return None
+    per_round = sum(s.duration_sec or 0 for s in stations) + sum(
+        s.transition_sec or 0 for s in within
+    )
+    return rounds * per_round + (rounds - 1) * (last.transition_sec or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -324,9 +498,15 @@ def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> Worko
 
     out: WorkoutStructure = []
     for block in structure:
-        if isinstance(block, StrengthBlock) and block.sets is not None:
+        if isinstance(block, StrengthBlock):
+            if block.sets is None:
+                out.append(block)
+                continue
             out.append(block.model_copy(update={"sets": _scaled_count(block.sets, modifier)}))
-        elif isinstance(block, IntervalBlock) and block.repetitions is not None:
+        elif isinstance(block, IntervalBlock):
+            if block.repetitions is None:
+                out.append(block)
+                continue
             repetitions = _scaled_count(block.repetitions, modifier)
             update: dict[str, object] = {"repetitions": repetitions}
             # The displayed set count IS the repetition count (phase 5.3); scaling one without
@@ -334,14 +514,90 @@ def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> Worko
             if block.display_sets == block.repetitions:
                 update["display_sets"] = repetitions
             out.append(block.model_copy(update=update))
-        elif isinstance(block, ContinuousBlock) and block.duration_sec is not None:
+        elif isinstance(block, ContinuousBlock):
+            if block.duration_sec is None:
+                out.append(block)
+                continue
             out.append(
                 block.model_copy(
                     update={"duration_sec": _scaled_count(block.duration_sec, modifier)}
                 )
             )
-        else:
+        elif isinstance(block, CircuitBlock):
+            out.append(_scale_circuit(block, modifier))
+        elif isinstance(block, WarmupBlock | CooldownBlock):
             out.append(block)
+        else:
+            # Fail closed: a kind must declare what its volume is before it can be scaled.
+            assert_never(block)
+    return out
+
+
+def _scale_circuit(block: CircuitBlock, modifier: float) -> CircuitBlock:
+    """A circuit with its scheme's volume lever scaled.
+
+    Which lever is volume: an AMRAP's cap, an EMOM's interval count, a for-time or fixed-rounds
+    circuit's rounds. That is a structural fact about each format, not a claim about how far
+    easy or hard should move it. A for-time cap is a bound, not volume, and is left alone.
+    Stations whose displayed set count mirrors the scaled count follow it, as an interval
+    block's does.
+    """
+    scheme = block.scheme
+    if isinstance(scheme, AMRAPScheme):
+        cap = _scaled_count(scheme.time_cap_sec, modifier)
+        return block.model_copy(update={"scheme": scheme.model_copy(update={"time_cap_sec": cap})})
+    if isinstance(scheme, EMOMScheme):
+        # Stations rotate, so each one's displayed count is its own exposures, not the total.
+        scaled = scheme.model_copy(
+            update={"intervals": _scaled_count(scheme.intervals, modifier)}
+        )
+        n = len(block.stations)
+        stations = [
+            s.model_copy(update={"display_sets": emom_exposures(scaled, n, i)})
+            if s.display_sets == emom_exposures(scheme, n, i)
+            else s
+            for i, s in enumerate(block.stations)
+        ]
+        return block.model_copy(update={"scheme": scaled, "stations": stations})
+    if isinstance(scheme, ForTimeScheme | FixedRoundsScheme):
+        before = scheme.rounds
+        after = _scaled_count(before, modifier)
+        stations = [
+            s.model_copy(update={"display_sets": after}) if s.display_sets == before else s
+            for s in block.stations
+        ]
+        return block.model_copy(
+            update={"scheme": scheme.model_copy(update={"rounds": after}), "stations": stations}
+        )
+    assert_never(scheme)
+
+
+def adjust_scaled_circuit_rounds(structure: WorkoutStructure, delta: int) -> WorkoutStructure:
+    """Add or remove ROUNDS on every circuit that declares ``scales_with_workload``, never
+    below one. The circuit analogue of :func:`adjust_strength_sets`, for the same fixed-step
+    workload preference; stations whose displayed count mirrors the rounds follow them.
+    """
+    if delta == 0:
+        return list(structure)
+    out: WorkoutStructure = []
+    for block in structure:
+        if not (isinstance(block, CircuitBlock) and block.scales_with_workload):
+            out.append(block)
+            continue
+        scheme = block.scheme
+        if not isinstance(scheme, FixedRoundsScheme | ForTimeScheme):
+            out.append(block)  # unreachable: the block's validator refuses it
+            continue
+        after = max(1, scheme.rounds + delta)
+        stations = [
+            s.model_copy(update={"display_sets": after}) if s.display_sets == scheme.rounds else s
+            for s in block.stations
+        ]
+        out.append(
+            block.model_copy(
+                update={"scheme": scheme.model_copy(update={"rounds": after}), "stations": stations}
+            )
+        )
     return out
 
 

@@ -31,8 +31,8 @@ from app.logic.planned_session_slots import (
     THRESHOLD_CATEGORY,
 )
 from app.logic.prescriber import recommend_next_session
-from app.schemas.prescription import WorkoutPrescription
-from app.schemas.workout_structure import ContinuousBlock, StrengthBlock
+from app.schemas.prescription import WorkoutPrescription, project_exercises
+from app.schemas.workout_structure import CircuitBlock, ContinuousBlock, FixedRoundsScheme
 
 RUNNING_GOALS = ("Running", "5K", "HalfMarathon", "FullMarathon", "Sprinting")
 KPIS = {"nokpi": {}, "ff10": {"run_fatigue_factor": 10.0}, "ff20": {"run_fatigue_factor": 20.0}}
@@ -179,8 +179,12 @@ def test_a_strength_potentiation_day_is_a_heavy_squat_before_jumps(
     assert [(e.name, e.sets, e.reps) for e in rx.exercises] == [
         ("Back Squat", 3, "2"), ("Broad Jump", 3, "3"),
     ]
+    # The squat -> jump order is structure, not prose (phase 6.1b): one fixed-rounds circuit.
     assert rx.structure is not None
-    assert all(isinstance(b, StrengthBlock) for b in rx.structure)
+    (circuit,) = rx.structure
+    assert isinstance(circuit, CircuitBlock)
+    assert circuit.scheme == FixedRoundsScheme(rounds=3)
+    assert [(s.exercise, s.reps) for s in circuit.stations] == [("Back Squat", 2), ("Broad Jump", 3)]
     # The jump's quality rule survives to the athlete (the squat's note is replaced by its
     # resolved load once an e1RM exists).
     assert "Stop or regress" in (rx.exercises[1].load_note or "")
@@ -230,6 +234,13 @@ async def test_a_power_blocks_potentiation_day_is_prescribed_the_contrast_sessio
 
     assert _plan_codes(rx) == ["plan:session_followed=power_potentiation"]
     assert [e.name for e in rx.exercises] == ["Back Squat", "Broad Jump"]
+    # Load enrichment and the service's re-derivation keep the circuit, and its stations carry
+    # what the enriched exercises carry.
+    assert rx.structure is not None
+    (circuit,) = rx.structure
+    assert isinstance(circuit, CircuitBlock)
+    assert [s.exercise for s in circuit.stations] == ["Back Squat", "Broad Jump"]
+    assert project_exercises(rx.structure) == rx.exercises
 
 
 # ── running / Threshold Work ─────────────────────────────────────────────────
@@ -331,10 +342,12 @@ def test_the_primer_structure_is_identical_at_every_workload(
 
     assert all(rx.structure == medium.structure for rx in others)
     assert medium.structure is not None
-    squat, jump = medium.structure
-    assert isinstance(squat, StrengthBlock) and isinstance(jump, StrengthBlock)
-    assert (squat.exercise, squat.sets, squat.reps) == ("Back Squat", 3, "2")
-    assert (jump.exercise, jump.sets, jump.reps) == ("Broad Jump", 3, "3")
+    (circuit,) = medium.structure
+    assert isinstance(circuit, CircuitBlock)
+    assert circuit.scheme == FixedRoundsScheme(rounds=3)
+    squat, jump = circuit.stations
+    assert (squat.exercise, squat.display_sets, squat.reps) == ("Back Squat", 3, 2)
+    assert (jump.exercise, jump.display_sets, jump.reps) == ("Broad Jump", 3, 3)
     assert "Stop or regress if jump quality clearly drops" in (jump.load_note or "")
     assert "Full recovery" in (jump.load_note or "") and "Full recovery" in (squat.load_note or "")
 
