@@ -4220,7 +4220,7 @@ export interface components {
             /**
              * Model Version
              * @description Prescription engine version
-             * @default v0.5
+             * @default v0.6
              */
             model_version: string;
             /** Rationale */

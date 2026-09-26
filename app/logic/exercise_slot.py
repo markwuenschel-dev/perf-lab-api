@@ -140,6 +140,12 @@ class ExerciseSlot:
 
     load_note: str | None = None
 
+    #: The MOST effort this position may be prescribed at (phase 7.3), e.g. 7.0 for "about
+    #: RPE 7". A ceiling, not a target: the block envelope and uncertainty conservatism can
+    #: pull the prescribed cap below it, never above (ADR-0029). None leaves the envelope's
+    #: cap alone, as every slot did before.
+    rpe_cap: float | None = None
+
     #: The WORK SHAPE of an endurance position (phase 5.3): an interval or continuous block
     #: with its timing and intensity basis, and no name. Selection names it after the catalog
     #: pick and the prescriber emits it in place of a strength block. None keeps the position
@@ -150,6 +156,8 @@ class ExerciseSlot:
     def __post_init__(self) -> None:
         if self.exercise is not None and self.e1rm_code is not None:
             raise ValueError("a slot pins by exercise name or by e1RM code, not both")
+        if self.rpe_cap is not None and not 1.0 <= self.rpe_cap <= 10.0:
+            raise ValueError(f"rpe_cap must be an RPE between 1 and 10, got {self.rpe_cap}")
 
     def describe(self) -> str:
         """Human-readable requirement, for diagnostics when nothing resolves."""

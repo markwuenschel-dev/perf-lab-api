@@ -185,8 +185,8 @@ def test_a_strength_potentiation_day_is_a_heavy_squat_before_jumps(
     assert isinstance(circuit, CircuitBlock)
     assert circuit.scheme == FixedRoundsScheme(rounds=3)
     assert [(s.exercise, s.reps) for s in circuit.stations] == [("Back Squat", 2), ("Broad Jump", 3)]
-    # The jump's quality rule survives to the athlete (the squat's note is replaced by its
-    # resolved load once an e1RM exists).
+    # The jump's quality rule survives to the athlete. Since phase 7.3 the squat's authored
+    # note survives too: load sizing puts the resolved load BESIDE it instead of replacing it.
     assert "Stop or regress" in (rx.exercises[1].load_note or "")
 
 

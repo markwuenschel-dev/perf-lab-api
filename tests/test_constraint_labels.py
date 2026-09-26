@@ -44,6 +44,7 @@ EXAMPLES: dict[str, str] = {
     "objective:taper(": "objective:taper(×0.60)",
     "block:phase=": "block:phase=accumulation(×1.15)",
     "block:rpe_target=": "block:rpe_target=6.5-7.5",
+    "block:periodization=": "block:periodization=generic",
     "block:deload(": "block:deload(×0.50)",
     "block:benchmark": "block:benchmark",
     "block:accessories=": "block:accessories=balanced(+2)",

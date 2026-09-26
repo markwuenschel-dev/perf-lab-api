@@ -16,8 +16,8 @@ from app.logic import strength_calibration as sc
 from app.logic import uncertainty_conservatism
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.exercise_slot import CatalogExercise
-from app.logic.planning import periodization_envelope
-from app.logic.prescriber import recommend_next_session
+from app.logic.planning import periodization_envelope, periodization_goal
+from app.logic.prescriber import DEFAULT_LOAD_NOTE, recommend_next_session
 from app.logic.prescription_evidence import (
     EXPLAIN_NO_EVIDENCE,
     BasisSelection,
@@ -53,6 +53,9 @@ from app.services.state_service import (
 
 class BlockContext(TypedDict, total=False):
     block_goal: str
+    # The block's emphasis split (phase 7): with block_goal, what the block periodizes for
+    # (``planning.periodization_goal`` — a sprint-primary Running block is Sprinting).
+    modality_mix: dict[str, Any] | None
     session_category: str | None
     # The planned slot's OWN canonical domain (a045). None for a session planned before the
     # column existed, or one whose template recorded no domain — the prescriber then falls
@@ -162,6 +165,9 @@ def _envelope_rpe_cap(block_context: BlockContext) -> float:
             int(wk),
             int(block_context.get("deload_every_n_weeks") or 4),
             intensity=block_context.get("intensity"),
+            goal=periodization_goal(
+                block_context.get("block_goal"), block_context.get("modality_mix")
+            ),
         )
         return env.rpe_high
     return 8.0
@@ -430,14 +436,21 @@ async def _enrich_exercises_with_load(
             basis = decision.selected_basis  # legacy in shadow; candidate-aware in on
             if decision.shadow_payload is not None:
                 shadow_payloads.append(decision.shadow_payload)
+        # An authored per-slot ceiling (phase 7.3) can only lower the cap:
+        # effective = min(slot cap, envelope cap after conservatism). ADR-0029.
+        cap = rpe_cap if ex.rpe_cap is None else min(rpe_cap, ex.rpe_cap)
         reps = _first_int(ex.reps) or 5
-        pct = sc.percent_1rm_for_prescription(reps, rpe_cap).value
-        load = sc.suggested_load_kg(basis, reps, rpe_cap)
+        pct = sc.percent_1rm_for_prescription(reps, cap).value
+        load = sc.suggested_load_kg(basis, reps, cap)
         ex.percent_e1rm = round(pct, 3)
         ex.prescribed_load_kg = load
-        ex.rpe_cap = rpe_cap
+        ex.rpe_cap = cap
         ex.e1rm_basis_kg = round(basis, 1)
-        ex.load_note = f"~{load:g} kg · {round(pct * 100)}% e1RM · cap RPE {rpe_cap:g}"
+        sized = f"~{load:g} kg · {round(pct * 100)}% e1RM · cap RPE {cap:g}"
+        # The generic default note is replaced by the load; an AUTHORED one ("Primer, not a
+        # strength set: no grinding reps") is an instruction the load does not replace.
+        authored = ex.load_note if ex.load_note and ex.load_note != DEFAULT_LOAD_NOTE else None
+        ex.load_note = sized if authored is None else f"{sized}. {authored}"
     return shadow_payloads
 
 
@@ -570,6 +583,7 @@ async def _gather_prescription_context(
     if active_block and target_session:
         block_context.update(
             block_goal=active_block.goal.value,
+            modality_mix=active_block.modality_mix,
             session_category=target_session.category,
             session_domain=target_session.domain,
             intensity=active_block.intensity,
