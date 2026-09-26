@@ -853,6 +853,11 @@ _CATALOG_EQUIPMENT_CODE: dict[_EquipmentState, str] = {
 }
 
 
+#: The note a slot without an authored one gets. Load sizing replaces it with the resolved load;
+#: an AUTHORED note is kept beside the load instead (phase 7.3).
+DEFAULT_LOAD_NOTE = "Autoregulate by RPE; scale to available equipment"
+
+
 def _select_exercises(
     exercise_slots: list[ExerciseSlot],
     available_equipment: list[str] | None,
@@ -908,7 +913,8 @@ def _select_exercises(
                 name=res.chosen.name,
                 sets=sets,
                 reps=res.slot.reps,
-                load_note=res.slot.load_note or "Autoregulate by RPE; scale to available equipment",
+                load_note=res.slot.load_note or DEFAULT_LOAD_NOTE,
+                rpe_cap=res.slot.rpe_cap,
             )
         )
     if not out:

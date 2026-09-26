@@ -762,15 +762,16 @@ MIXED_TEMPLATES: list[CandidateTemplate] = [
         # fatigue is a dose no evidence supports here. An authored lift is never swapped for
         # one with better load-resolution metadata, so the press and row are pinned by name.
         # "Short rest" names no number, so transitions and the duration stay unknown. Fixed
-        # under the workload preference; phase 7 owns progression. RPE 7 is carried in the
-        # note: per-session effort targets are phase 7 (the block envelope owns effort today).
+        # under the workload preference; phase 7 owns progression. "About RPE 7" is a
+        # structural CEILING since phase 7.3 (rpe_cap=7.0): the envelope can pull it lower,
+        # never higher.
         workload_volume="fixed",
         exercise_slots=[
-            ExerciseSlot(sets="5", reps="8", e1rm_code="pl_e1rm_squat",
+            ExerciseSlot(sets="5", reps="8", e1rm_code="pl_e1rm_squat", rpe_cap=7.0,
                          load_note=_STRENGTH_ENDURANCE_NOTE),
-            ExerciseSlot(sets="5", reps="8", exercise="Overhead Press",
+            ExerciseSlot(sets="5", reps="8", exercise="Overhead Press", rpe_cap=7.0,
                          load_note=_STRENGTH_ENDURANCE_NOTE),
-            ExerciseSlot(sets="5", reps="8", exercise="Barbell Row",
+            ExerciseSlot(sets="5", reps="8", exercise="Barbell Row", rpe_cap=7.0,
                          load_note=_STRENGTH_ENDURANCE_NOTE),
         ],
         circuit=CircuitSpec(
