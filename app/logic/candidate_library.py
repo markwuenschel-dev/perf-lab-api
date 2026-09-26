@@ -29,15 +29,20 @@ from app.logic.constraint_engine.candidate import (
 from app.logic.exercise_slot import CircuitSpec, ExerciseSlot
 from app.logic.planned_session_slots import (
     ACTIVE_RECOVERY_CATEGORY,
+    HYROX_SIMULATION_CATEGORY,
+    RUNNING_FUNCTIONAL_CATEGORY,
     SPEED_CATEGORY,
     STRENGTH_POTENTIATION_CATEGORY,
+    STRENGTH_SKILL_CATEGORY,
     THRESHOLD_CATEGORY,
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workout_structure import (
     CircuitStation,
     ContinuousBlock,
+    EMOMScheme,
     FixedRoundsScheme,
+    ForTimeScheme,
     IntervalBlock,
 )
 
@@ -727,6 +732,204 @@ MIXED_TEMPLATES: list[CandidateTemplate] = [
     ),
 ]
 
+# ---------------------------------------------------------------------------
+# HYROX and CrossFit planned days (phase 6.2)
+# ---------------------------------------------------------------------------
+#
+# Each owns its planned day (``_CATEGORY_POOLS``) and competes on no other. Every station is an
+# EXACT catalog movement (``ExerciseSlot.exercise``), and each circuit is atomic: if a station
+# cannot be done with the athlete's equipment, the whole template is ineligible
+# (``circuit_resolves``) rather than prescribed in part. Where two variants share a day, which
+# one appears when is phase 7's decision; until then the first eligible one wins ties.
+
+#: The official HYROX race, in order: (catalog movement, distance m, reps, carries a load).
+#: Source: hyrox.com/the-fitness-race, checked 2026-09-26 -- 8 x (1 km run -> station). Loads
+#: and the wall-ball count vary by division; the athlete's division is not recorded, so no
+#: load is invented (see ``_HYROX_LOAD_NOTE``). The simulation invariant test reads this table.
+HYROX_OFFICIAL_STATIONS: tuple[tuple[str, float | None, int | None, bool], ...] = (
+    ("SkiErg", 1000.0, None, False),
+    ("Sled Push", 50.0, None, True),
+    ("Sled Pull", 50.0, None, True),
+    ("Burpee Broad Jump", 80.0, None, False),
+    ("Rowing (Ergometer)", 1000.0, None, False),
+    ("Farmer Carry", 200.0, None, True),
+    ("Sandbag Lunges", 100.0, None, True),
+    ("Wall Ball", None, 100, True),
+)
+HYROX_RUN_M = 1000.0
+
+_HYROX_LOAD_NOTE = (
+    "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is "
+    "set here."
+)
+
+
+def _volume_text(distance_m: float | None, reps: int | None) -> str:
+    return f"{distance_m:g} m" if distance_m is not None else f"{reps}"
+
+
+def _hyrox_station(
+    name: str, distance_m: float | None, reps: int | None, loaded: bool, *, sets: int,
+) -> tuple[ExerciseSlot, CircuitStation]:
+    """One exact station: the slot that names it and the circuit station that shapes it."""
+    slot = ExerciseSlot(
+        sets=str(sets), reps=_volume_text(distance_m, reps), exercise=name,
+        load_note=_HYROX_LOAD_NOTE if loaded else None,
+    )
+    return slot, CircuitStation(exercise="", distance_m=distance_m, reps=reps)
+
+
+def _hyrox_run(*, sets: int) -> tuple[ExerciseSlot, CircuitStation]:
+    slot = ExerciseSlot(sets=str(sets), reps="1 km", exercise="Run", allow_repeat=True)
+    return slot, CircuitStation(exercise="", distance_m=HYROX_RUN_M)
+
+
+_HYROX_SCORING = ScoringSpec(
+    state_fit=lambda s, r: r * (1.0 - s.fatigue_f.metabolic / 100.0),
+    fatigue_axes=(("metabolic", 1.0), ("muscular", 0.5)),
+    tissue_axes=("knee", "lumbar"),
+    covers_weak_points=True,
+)
+
+
+def _hyrox_half_simulation(half: str, stations: range) -> CandidateTemplate:
+    """Half of the race, exactly as raced: 4 x (1 km run -> the next official station)."""
+    pairs = [
+        pair
+        for i in stations
+        for pair in (_hyrox_run(sets=1), _hyrox_station(*HYROX_OFFICIAL_STATIONS[i], sets=1))
+    ]
+    names = " / ".join(HYROX_OFFICIAL_STATIONS[i][0] for i in stations)
+    return CandidateTemplate(
+        type=f"HYROX Half Simulation \u2014 {half}",
+        focus=f"For time: 4 x (1 km run -> station), race order: {names}",
+        rationale=(
+            "Half of the race in official order and volume: running under station-induced "
+            "fatigue, and race transitions. A half rather than the full race: HYROX studies "
+            "show high acute demand and progressive fatigue, and do not establish how often a "
+            "full simulation should be done. Fixed volume: the race defines it."
+        ),
+        branch_id=f"hyrox_half_sim_{half.lower()}",
+        # A legacy display field, not the structure's duration: a for-time session's duration
+        # is the athlete's result and stays unknown in the structure.
+        duration_min=50,
+        goal_alignment=1.0,
+        tags=["work_capacity", "aerobic_base"],
+        domain="mixed",
+        workload_volume="fixed",
+        scoring=_HYROX_SCORING,
+        exercise_slots=[slot for slot, _ in pairs],
+        circuit=CircuitSpec(
+            scheme=ForTimeScheme(rounds=1),
+            stations=tuple(station for _, station in pairs),
+            label=f"HYROX Half Simulation \u2014 {half}",
+        ),
+    )
+
+
+HYROX_SIMULATION_TEMPLATES: list[CandidateTemplate] = [
+    _hyrox_half_simulation("A", range(0, 4)),
+    _hyrox_half_simulation("B", range(4, 8)),
+]
+
+
+def _running_functional(variant: str, station: str) -> CandidateTemplate:
+    """4 x (1 km run -> a quarter of one official station): one race's worth of the station.
+
+    Not a simulation: the point is the run that FOLLOWS a station. Wall Balls are deliberately
+    absent -- the race has no run after them. The round count is the volume lever, moved one
+    round by the workload preference (3 / 4 / 5): the natural round-scaled form of this
+    authored session, not a validated difficulty dose.
+    """
+    name, distance_m, reps, loaded = next(s for s in HYROX_OFFICIAL_STATIONS if s[0] == station)
+    quarter_m = None if distance_m is None else distance_m / 4
+    quarter_reps = None if reps is None else reps // 4
+    run_slot, run_station = _hyrox_run(sets=4)
+    work_slot, work_station = _hyrox_station(name, quarter_m, quarter_reps, loaded, sets=4)
+    return CandidateTemplate(
+        type=f"Running + Functional \u2014 {variant}",
+        focus=f"4 rounds: 1 km run -> {_volume_text(quarter_m, quarter_reps)} {name}",
+        rationale=(
+            "Repeated race-order run\u2013station work; later running repetitions are "
+            "performed under station-induced fatigue. Four quarter-volume rounds add up to one "
+            "full station and 4 km of running."
+        ),
+        branch_id=f"run_functional_{variant.lower()}",
+        duration_min=40,
+        goal_alignment=1.0,
+        tags=["aerobic_base", "work_capacity"],
+        domain="mixed",
+        scoring=_HYROX_SCORING,
+        exercise_slots=[run_slot, work_slot],
+        circuit=CircuitSpec(
+            scheme=FixedRoundsScheme(rounds=4),
+            stations=(run_station, work_station),
+            label=f"Running + Functional \u2014 {variant}",
+            scales_with_workload=True,
+        ),
+    )
+
+
+RUNNING_FUNCTIONAL_TEMPLATES: list[CandidateTemplate] = [
+    _running_functional("Ski", "SkiErg"),
+    _running_functional("Lunges", "Sandbag Lunges"),
+]
+
+_SKILL_NOTE = (
+    "Complete only as many quality reps as allow substantial rest before the next minute; "
+    "regress the movement rather than training through repeated technical failure."
+)
+
+
+def _strength_skill(variant: str, lift_code: str, sets: int, reps: int) -> CandidateTemplate:
+    """A load-resolved lift, then a 10-minute rotating skill EMOM (5 exposures each).
+
+    Skill work is quality-capped and never progressed by forcing technical failure. The whole
+    session is fixed volume in phase 6: the lift's scheme is reused from ``strength_max`` and
+    the EMOM is skill practice under a clock, not a MetCon; phase 7 owns progressing either.
+    """
+    return CandidateTemplate(
+        type=f"Strength + Skill \u2014 {variant}",
+        focus=f"{variant} {sets}x{reps} -> EMOM 10: Double Unders / Toes to Bar",
+        rationale=(
+            "Strength with a resolved load, then rope and gymnastics skill practised fresh "
+            "enough to keep quality: a rotating EMOM spreads the work so technique, not "
+            "fatigue, is what is trained."
+        ),
+        branch_id=f"cf_strength_skill_{variant.lower()}",
+        duration_min=50,
+        goal_alignment=1.0,
+        tags=["max_strength", "squat_pattern" if variant == "Squat" else "hip_hinge"],
+        domain="mixed",
+        workload_volume="fixed",
+        scoring=ScoringSpec(
+            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.5),
+            fatigue_axes=(("cns", 1.0), ("muscular", 0.5)),
+            tissue_axes=("lumbar", "knee"),
+            covers_weak_points=True,
+        ),
+        exercise_slots=[
+            ExerciseSlot(sets=str(sets), reps=str(reps), e1rm_code=lift_code),
+            ExerciseSlot(sets="5", reps="20\u201330 unbroken; stop before repeated misses",
+                         exercise="Double Unders", load_note=_SKILL_NOTE),
+            ExerciseSlot(sets="5", reps="4\u20136 clean; stop before form or rhythm breaks",
+                         exercise="Toes to Bar", load_note=_SKILL_NOTE),
+        ],
+        circuit=CircuitSpec(
+            scheme=EMOMScheme(intervals=10, interval_sec=60),
+            stations=(CircuitStation(exercise=""), CircuitStation(exercise="")),
+            first_slot=1,
+            label="Skill EMOM",
+        ),
+    )
+
+
+STRENGTH_SKILL_TEMPLATES: list[CandidateTemplate] = [
+    _strength_skill("Squat", "pl_e1rm_squat", 5, 3),
+    _strength_skill("Deadlift", "pl_e1rm_deadlift", 3, 5),
+]
+
+
 # Running base: two families. Aerobic base splits on fatigue factor; threshold work splits on
 # the race goal and, off a marathon goal, on fatigue factor.
 def _run_high_fatigue_factor(kpi: dict[str, float]) -> bool:
@@ -1235,6 +1438,9 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     # covers them; no canonical domain has these names, so no ordinary day resolves here.
     "running_recovery": RUNNING_RECOVERY_TEMPLATES,
     "power_potentiation": POWER_POTENTIATION_TEMPLATES,
+    "hyrox_simulation": HYROX_SIMULATION_TEMPLATES,
+    "running_functional": RUNNING_FUNCTIONAL_TEMPLATES,
+    "strength_skill": STRENGTH_SKILL_TEMPLATES,
     "gymnastics": GYMNASTICS_TEMPLATES,
     "calisthenics": CALISTHENICS_TEMPLATES,
     "grip": GRIP_TEMPLATES,
@@ -1280,6 +1486,9 @@ _CATEGORY_POOLS: dict[tuple[str, str], Callable[[str], list[CandidateTemplate]]]
     ("running", ACTIVE_RECOVERY_CATEGORY): lambda goal: RUNNING_RECOVERY_TEMPLATES,
     ("running", THRESHOLD_CATEGORY): _threshold_day_pool,
     ("power", STRENGTH_POTENTIATION_CATEGORY): lambda goal: POWER_POTENTIATION_TEMPLATES,
+    ("mixed", HYROX_SIMULATION_CATEGORY): lambda goal: HYROX_SIMULATION_TEMPLATES,
+    ("mixed", RUNNING_FUNCTIONAL_CATEGORY): lambda goal: RUNNING_FUNCTIONAL_TEMPLATES,
+    ("mixed", STRENGTH_SKILL_CATEGORY): lambda goal: STRENGTH_SKILL_TEMPLATES,
 }
 
 #: Owned days that ARE the pulled-down option. A readiness redirect exists to pull work down;

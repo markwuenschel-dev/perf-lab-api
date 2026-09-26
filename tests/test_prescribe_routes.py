@@ -176,13 +176,13 @@ async def test_next_session_why_field_present(http_client):
     assert "constraints_applied" in why
 
 
-async def test_next_session_model_version_v04(http_client):
+async def test_next_session_model_version_v05(http_client):
     token = await _register_and_login(http_client, "model_ver@test.com")
     headers = {"Authorization": f"Bearer {token}"}
 
     resp = await http_client.get("/v1/next-session", headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["model_version"] == "v0.4"
+    assert resp.json()["model_version"] == "v0.5"
 
 
 async def test_next_session_ignores_user_id_query_param(http_client):

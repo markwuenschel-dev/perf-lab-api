@@ -28,7 +28,7 @@ logic layer keeps its DB-free boundary and the resolution is directly unit-testa
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 from app.schemas.workout_structure import (
@@ -97,6 +97,12 @@ class ExerciseSlot:
     #: substituting a metadata-equivalent movement would be wrong.
     e1rm_code: str | None = None
 
+    #: Pin to the catalog movement with EXACTLY this name (phase 6.2): resolve it or fail the
+    #: slot. No pattern fallback, no closest match, no weak-point substitution — the equipment
+    #: check still applies. For event-defined movements (a HYROX station), where "the nearest
+    #: carry" would keep a movement category and destroy the session's meaning.
+    exercise: str | None = None
+
     movement_pattern: str | None = None
     pattern_family: str | None = None
     modality: str | None = None
@@ -141,8 +147,14 @@ class ExerciseSlot:
     #: not hashable, and the shape is not part of what the slot requires of the catalog.
     endurance: IntervalBlock | ContinuousBlock | None = field(default=None, hash=False)
 
+    def __post_init__(self) -> None:
+        if self.exercise is not None and self.e1rm_code is not None:
+            raise ValueError("a slot pins by exercise name or by e1RM code, not both")
+
     def describe(self) -> str:
         """Human-readable requirement, for diagnostics when nothing resolves."""
+        if self.exercise:
+            return f"exact:{self.exercise}"
         if self.e1rm_code:
             return f"pinned:{self.e1rm_code}"
         parts = [
@@ -194,6 +206,8 @@ def equipment_available(
 
 def _matches(slot: ExerciseSlot, ex: CatalogExercise) -> bool:
     """Hard requirements. All must hold; a pinned slot ignores the rest."""
+    if slot.exercise is not None:
+        return ex.name == slot.exercise
     if slot.e1rm_code is not None:
         return ex.e1rm_benchmark_code == slot.e1rm_code
     if slot.movement_pattern is not None and ex.movement_pattern != slot.movement_pattern:
@@ -278,6 +292,42 @@ def resolve_slot(
         without_preference = min(pool, key=lambda ex: _rank(ex, slot, weak_point_tags))
         changed = without_preference.name != chosen.name
     return SlotResolution(slot, chosen, len(afforded), preference_changed=changed)
+
+
+def equipment_set(available_equipment: Sequence[str] | None) -> frozenset[str] | None:
+    """An athlete's equipment as the resolver reads it.
+
+    An empty or missing list means "never configured", which is NOT "owns nothing": ``None``
+    turns the equipment filter off (see :func:`equipment_available`). Only a populated list
+    filters.
+    """
+    if not available_equipment:
+        return None
+    return frozenset(e.strip().lower() for e in available_equipment if e and e.strip())
+
+
+def circuit_resolves(
+    slots: Sequence[ExerciseSlot],
+    circuit: CircuitSpec | None,
+    catalog: list[CatalogExercise] | None,
+    available_equipment: Sequence[str] | None,
+) -> bool:
+    """Whether every station of ``circuit`` resolves for this athlete (phase 6.2).
+
+    An authored circuit is atomic: all of its stations, or it is not this session. A template
+    whose circuit fails here is ineligible, so the day falls to another variant or is visibly
+    replaced, rather than emitting part of a simulation under the simulation's name. With no
+    circuit, or no catalog to resolve against, there is nothing to check.
+    """
+    if circuit is None or catalog is None:
+        return True
+    stations = list(slots[circuit.first_slot : circuit.first_slot + len(circuit.stations)])
+    if len(stations) != len(circuit.stations):
+        return False
+    resolutions = resolve_slots(
+        stations, catalog, available_equipment=equipment_set(available_equipment)
+    )
+    return all(r.chosen is not None for r in resolutions)
 
 
 def resolve_slots(

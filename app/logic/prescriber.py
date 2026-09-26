@@ -52,6 +52,7 @@ from app.logic.exercise_slot import (
     CatalogExercise,
     CircuitSpec,
     ExerciseSlot,
+    circuit_resolves,
     equipment_available,
     preferred_load_types,
     resolve_slots,
@@ -424,6 +425,8 @@ def _generate_candidates(
     domain_override: str | None = None,
     session_category: str | None = None,
     category_owns_day: bool = True,
+    catalog: list[CatalogExercise] | None = None,
+    available_equipment: list[str] | None = None,
 ) -> list[SessionCandidate]:
     """Build the goal-specific candidate pool via the CandidateTemplate library.
 
@@ -448,6 +451,12 @@ def _generate_candidates(
         domain, kpi, goal=str(goal), state=state, session_category=session_category,
         category_owns_day=category_owns_day,
     )
+    # An authored circuit is atomic (phase 6.2): a template whose stations do not all resolve
+    # for this athlete is not eligible, rather than emitting part of it.
+    templates = [
+        t for t in templates
+        if circuit_resolves(t.exercise_slots, t.circuit, catalog, available_equipment)
+    ]
     return [score_template(t, state, kpi, readiness=r) for t in templates]
 
 
@@ -1181,6 +1190,7 @@ def _recommend_next_session(
     goal_candidates = _generate_candidates(
         state, goal, kpi, recent_sessions, readiness_override, domain_override=session_domain,
         session_category=block.get("session_category"), category_owns_day=not redirects,
+        catalog=catalog, available_equipment=available_equipment,
     )
 
     all_candidates = redirects + goal_candidates   # redirects evaluated first but scored alongside

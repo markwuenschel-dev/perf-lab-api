@@ -47,6 +47,15 @@ THRESHOLD_CATEGORY = "Threshold Work"
 #: The power block's contrast day (phase 5.6): a heavy squat before jumps. Owns its pool.
 STRENGTH_POTENTIATION_CATEGORY = "Strength Potentiation"
 
+#: The HYROX block's simulation day (phase 6.2). Owns its pool: half-race simulations.
+HYROX_SIMULATION_CATEGORY = "Hyrox Simulation"
+
+#: The HYROX block's compromised-running day (phase 6.2). Owns its pool.
+RUNNING_FUNCTIONAL_CATEGORY = "Running + Functional"
+
+#: The CrossFit block's strength-and-skill day (phase 6.2). Owns its pool.
+STRENGTH_SKILL_CATEGORY = "Strength + Skill"
+
 
 @dataclass(frozen=True)
 class SlotBinding:
@@ -110,8 +119,15 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
         "Mixed Modal": SlotBinding("mixed_modal", ("metcon_mixed_modal",)),
         "Engine Work": SlotBinding("mixed_engine", ("metcon_engine",)),
         "Strength Endurance": SlotBinding("mixed_strength_endurance", ("mixed_strength_endurance",)),
-        # "Strength + Skill", "Running + Functional" and "Hyrox Simulation" are unbound: no
-        # mixed template is specifically either of those yet.
+        HYROX_SIMULATION_CATEGORY: SlotBinding(
+            "hyrox_simulation", ("hyrox_half_sim_a", "hyrox_half_sim_b")
+        ),
+        RUNNING_FUNCTIONAL_CATEGORY: SlotBinding(
+            "hyrox_running_functional", ("run_functional_ski", "run_functional_lunges")
+        ),
+        STRENGTH_SKILL_CATEGORY: SlotBinding(
+            "crossfit_strength_skill", ("cf_strength_skill_squat", "cf_strength_skill_deadlift")
+        ),
     },
     "calisthenics": {
         "Skill & Straight-Arm Strength": SlotBinding("calisthenics_skill", ("cal_skill",)),
