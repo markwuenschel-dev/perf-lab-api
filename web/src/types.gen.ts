@@ -925,6 +925,19 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AMRAPScheme
+         * @description As many rounds as possible inside the cap. The cap IS the elapsed time.
+         */
+        AMRAPScheme: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            format: "amrap";
+            /** Time Cap Sec */
+            time_cap_sec: number;
+        };
+        /**
          * AdaptationContribution
          * @description Per-session adaptation signal by capacity axis.
          *
@@ -1545,6 +1558,71 @@ export interface components {
              */
             work_capacity: number;
         };
+        /**
+         * CircuitBlock
+         * @description Stations performed in order, under a scheme. Projects one exercise per station.
+         */
+        CircuitBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "circuit";
+            /**
+             * Label
+             * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
+             */
+            label?: string | null;
+            /** Scheme */
+            scheme: components["schemas"]["AMRAPScheme"] | components["schemas"]["EMOMScheme"] | components["schemas"]["ForTimeScheme"] | components["schemas"]["FixedRoundsScheme"];
+            /** Stations */
+            stations: components["schemas"]["CircuitStation"][];
+            /** Transition Sec */
+            transition_sec?: number | null;
+        };
+        /**
+         * CircuitStation
+         * @description One station of a circuit: what is done there in each round.
+         *
+         *     The work quantities are per round and typed; only ``duration_sec`` is time. The rest of
+         *     the fields are the station's compatibility projection into ``exercises[]`` — exactly what
+         *     an ``ExercisePrescription`` carries — so a circuit shows the same list a flat session did.
+         */
+        CircuitStation: {
+            /**
+             * Display Reps
+             * @description Compatibility projection: the legacy exercise's reps text.
+             */
+            display_reps?: string | null;
+            /**
+             * Display Sets
+             * @description Compatibility projection: the legacy exercise's set count.
+             */
+            display_sets?: number | null;
+            /** Distance M */
+            distance_m?: number | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** E1Rm Basis Kg */
+            e1rm_basis_kg?: number | null;
+            /** Exercise */
+            exercise: string;
+            load_explanation?: components["schemas"]["LoadExplanation"] | null;
+            /** Load Note */
+            load_note?: string | null;
+            /** Load Target Kg */
+            load_target_kg?: number | null;
+            /** Percent E1Rm */
+            percent_e1rm?: number | null;
+            /** Reps */
+            reps?: number | null;
+            /** Rpe Cap */
+            rpe_cap?: number | null;
+            /** Transition Sec */
+            transition_sec?: number | null;
+            /** Weak Point Tags */
+            weak_point_tags?: string[];
+        };
         /** CompleteOnboardingRequest */
         CompleteOnboardingRequest: {
             /**
@@ -1703,6 +1781,23 @@ export interface components {
             known_seconds: number;
             /** Unknown Components */
             unknown_components?: string[];
+            /** Upper Bound Seconds */
+            upper_bound_seconds?: number | null;
+        };
+        /**
+         * EMOMScheme
+         * @description Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.
+         */
+        EMOMScheme: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            format: "emom";
+            /** Interval Sec */
+            interval_sec: number;
+            /** Intervals */
+            intervals: number;
         };
         /**
          * ExerciseCatalogOut
@@ -1938,6 +2033,35 @@ export interface components {
              * @default 0
              */
             tendon: number;
+        };
+        /**
+         * FixedRoundsScheme
+         * @description A fixed number of rounds at no stated pace — e.g. a contrast pair done three times.
+         */
+        FixedRoundsScheme: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            format: "rounds";
+            /** Rounds */
+            rounds: number;
+        };
+        /**
+         * ForTimeScheme
+         * @description A fixed amount of work as fast as possible. The athlete's time is the result, not the
+         *     prescription; the cap only bounds it.
+         */
+        ForTimeScheme: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            format: "for_time";
+            /** Rounds */
+            rounds: number;
+            /** Time Cap Sec */
+            time_cap_sec?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4093,7 +4217,7 @@ export interface components {
             /** Rationale */
             rationale: string;
             /** Structure */
-            structure?: (components["schemas"]["StrengthBlock"] | components["schemas"]["IntervalBlock"] | components["schemas"]["ContinuousBlock"] | components["schemas"]["WarmupBlock"] | components["schemas"]["CooldownBlock"])[] | null;
+            structure?: (components["schemas"]["StrengthBlock"] | components["schemas"]["IntervalBlock"] | components["schemas"]["ContinuousBlock"] | components["schemas"]["CircuitBlock"] | components["schemas"]["WarmupBlock"] | components["schemas"]["CooldownBlock"])[] | null;
             /** Type */
             type: string;
             why?: components["schemas"]["PrescriptionExplanation"] | null;

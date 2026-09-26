@@ -52,6 +52,7 @@ from app.logic.dose_engine_v0 import (
 from app.logic.dose_model import NOT_MODELLED as _NOT_MODELLED
 from app.logic.dose_model import DensityMeasurement
 from app.schemas.workout_structure import (
+    CircuitBlock,
     ContinuousBlock,
     CooldownBlock,
     IntervalBlock,
@@ -226,6 +227,9 @@ def prescribed_timed_work_seconds(structure: WorkoutStructure) -> tuple[float | 
             work += block.duration_sec
         elif isinstance(block, StrengthBlock):
             return None, "structure_is_not_endurance"
+        elif isinstance(block, CircuitBlock):
+            # Timed circuit work is phase 6.3, shadow-only. Until then, not modelled.
+            return None, "circuit_not_modelled"
         else:
             assert_never(block)
     if work <= 0.0:

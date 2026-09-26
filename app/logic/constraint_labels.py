@@ -37,6 +37,9 @@ EQUIPMENT_FALLBACK_BODYWEIGHT = "equipment:fallback_bodyweight"
 EQUIPMENT_ACCESSORIES_SKIPPED_PREFIX = "equipment:accessories_skipped="
 EQUIPMENT_PREFERENCE_PREFIX = "equipment:preference="
 
+#: A template's circuit could not be built because a station had no exercise (phase 6.1).
+STRUCTURE_CIRCUIT_UNREALIZED = "structure:circuit_unrealized"
+
 #: Today's planned session was prescribed, or something took precedence over it.
 PLAN_FOLLOWED_PREFIX = "plan:session_followed="
 PLAN_REPLACED_PREFIX = "plan:session_replaced="
@@ -64,6 +67,12 @@ _EXACT: dict[str, tuple[str, AppliedConstraintGroup, bool]] = {
     ),
     EQUIPMENT_FALLBACK_BODYWEIGHT: (
         "Bodyweight exercises used: this session type has no equipment-specific options for you.",
+        "equipment",
+        True,
+    ),
+    STRUCTURE_CIRCUIT_UNREALIZED: (
+        "One station of this circuit had no exercise you can do, so the rest are listed as "
+        "separate exercises.",
         "equipment",
         True,
     ),

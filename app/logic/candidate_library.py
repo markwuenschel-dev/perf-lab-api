@@ -26,7 +26,7 @@ from app.logic.constraint_engine.candidate import (
     WorkloadVolume,
     overall_readiness,
 )
-from app.logic.exercise_slot import ExerciseSlot
+from app.logic.exercise_slot import CircuitSpec, ExerciseSlot
 from app.logic.planned_session_slots import (
     ACTIVE_RECOVERY_CATEGORY,
     SPEED_CATEGORY,
@@ -144,6 +144,9 @@ class CandidateTemplate:
     # the authored volume is the session, and the generic scaler skips it (phase 5). A declared
     # property of the session, so no code path keys on a template id.
     workload_volume: WorkloadVolume = "scaled"
+    # Phase 6.1: slots performed as one circuit under a scheme. None: every slot is its own
+    # block, as before.
+    circuit: CircuitSpec | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1400,4 +1403,5 @@ def score_template(
     candidate.exercise_slots = t.exercise_slots
     candidate.domain = t.domain
     candidate.workload_volume = t.workload_volume
+    candidate.circuit = t.circuit
     return candidate

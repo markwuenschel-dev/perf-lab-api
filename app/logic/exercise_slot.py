@@ -31,7 +31,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
+from app.schemas.workout_structure import (
+    CircuitScheme,
+    CircuitStation,
+    ContinuousBlock,
+    IntervalBlock,
+)
 
 #: Equipment an athlete is assumed to have without configuring anything.
 _ALWAYS_AVAILABLE: frozenset[str] = frozenset({"bodyweight", "none", ""})
@@ -299,3 +304,22 @@ def resolve_slots(
             used.add(res.chosen.name)
         out.append(res)
     return out
+
+
+@dataclass(frozen=True)
+class CircuitSpec:
+    """A run of a template's slots performed as ONE circuit (phase 6.1).
+
+    Slots ``first_slot .. first_slot + len(stations) - 1`` are the stations, in order. Each
+    entry of ``stations`` is that station's per-round work shape — reps, distance, time,
+    transition — with a placeholder name: selection names it after the catalog pick, exactly
+    as an endurance slot's block is named. The scheme says how the stations are run.
+
+    Declared on the template rather than per slot because the scheme belongs to the group,
+    not to any one station.
+    """
+
+    scheme: CircuitScheme = field(hash=False)
+    stations: tuple[CircuitStation, ...] = field(hash=False)
+    first_slot: int = 0
+    label: str | None = None
