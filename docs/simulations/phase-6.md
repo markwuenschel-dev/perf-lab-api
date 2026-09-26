@@ -57,7 +57,34 @@ is a generic redirect, and no HYROX / CrossFit day is built from the equipment f
    - variant alternation, a full race simulation, and per-session progression (phase 7);
    - Olympic-lift CrossFit content (waits for load anchors).
 
-**Not yet shown.** The live check on EC2 (after the phase-6 PR lands and deploys).
+**Live check, EC2, 2026-09-26.** Release `8f62117` (PR #250, a two-parent merge of `b52ead1`
+and `1cf8169`) was deployed with `./scripts/deploy.sh 8f62117d610ca2642b85d0e45b05f9b772869aa5`:
+
+- the box's source is at `8f62117`, clean (the previous release was `b52ead1`);
+- the schema is unchanged at `a046_dose_model_shadow_log` (head); the release has no migration;
+- external `/ping` 200 and internal `/ping` 200;
+- the running code reports `PRESCRIPTION_ENGINE_VERSION` `v0.5`.
+
+The production movement catalog has **263 rows** (262 at the phase-5 check). The new `Run` row
+is present (Running / run / distance), seeded on boot. Every pinned station exists.
+
+The prescriber was run inside the container against that catalog, read-only, with nothing
+written: one SELECT, then in-memory prescribing. The athlete is intermediate and fresh, in week
+2 of 8, with no equipment profile. Every day below was the same at "medium" and "hard"; hard
+was a reported no-op.
+
+| planned day | prescribed | structure | plan |
+|---|---|---|---|
+| HYROX Strength Endurance | Back Squat 5×8, Overhead Press 5×8, Barbell Row 5×8 | circuit / rounds | followed `mixed_strength_endurance`; hard = no-op: fixed-volume |
+| HYROX Running + Functional | Run 4 × 1 km, SkiErg 4 × 250 m | circuit / rounds | followed `run_functional_ski`; hard = no-op: fixed-volume |
+| HYROX Hyrox Simulation | Run → SkiErg 1000 m → Run → Sled Push 50 m → Run → Sled Pull 50 m → Run → Burpee Broad Jump 80 m | circuit / for_time | followed `hyrox_half_sim_a`; hard = no-op: fixed-volume |
+| CrossFit Strength + Skill | Back Squat 5×3 → Double Unders / Toes to Bar (5 each, quality-capped) | strength + circuit / emom | followed `cf_strength_skill_squat`; hard = no-op: fixed-volume |
+| CrossFit MetCon | SkiErg, Assault Bike, Kettlebell Clean | strength × 3 (unchanged) | followed `metcon_mixed_modal` |
+| CrossFit Engine Work | Assault Bike 20 min Zone 2 → 4 × (2 min RPE 8 / 2 min easy) | continuous + interval, 34.0 min | followed `metcon_engine` |
+
+Not exercised: the authenticated route end to end with a real account, which would write a user
+and a block to the production database. The same seam is covered by the database tests
+(`tests/test_hyrox_crossfit_days.py::test_a_blocks_planned_day_is_prescribed_its_session`).
 
 Regenerate the part below with:
 
