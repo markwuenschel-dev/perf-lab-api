@@ -1,6 +1,6 @@
 """Workout prescription + structured explainability (backward compatible)."""
 
-from typing import Any, Literal
+from typing import Any, Literal, assert_never
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
@@ -11,9 +11,11 @@ from app.logic.confidence_presentation import ConfidenceStatus
 from app.schemas.load_explanation import LoadExplanation, LoadExplanationReason
 from app.schemas.workout_structure import (
     ContinuousBlock,
+    CooldownBlock,
     DurationEstimate,
     IntervalBlock,
     StrengthBlock,
+    WarmupBlock,
     WorkoutBlock,
     WorkoutStructure,
     calculate_duration,
@@ -350,8 +352,11 @@ def project_exercises(structure: "WorkoutStructure") -> list[ExercisePrescriptio
                 )
             )
             continue
-        if not isinstance(block, StrengthBlock):
+        if isinstance(block, WarmupBlock | CooldownBlock):
             continue
+        if not isinstance(block, StrengthBlock):
+            # Fail closed: a kind that does not say what it projects must not vanish silently.
+            assert_never(block)
         out.append(
             ExercisePrescription(
                 name=block.exercise,
@@ -428,8 +433,12 @@ def structure_from_exercises(
             if not remaining:
                 break
             out.append(_strength_block(remaining.pop(0)))
-        else:
+        elif isinstance(block, IntervalBlock | ContinuousBlock | WarmupBlock | CooldownBlock):
+            # Blocks that project nothing (a warmup, an endurance block without an activity)
+            # stay where they were.
             out.append(block)
+        else:
+            assert_never(block)
     out.extend(_strength_block(ex) for ex in remaining)
     return out
 

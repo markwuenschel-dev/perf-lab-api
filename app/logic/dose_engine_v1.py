@@ -37,6 +37,7 @@ engine that produced them; only new dose computations use this module.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import assert_never
 
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic.dose_engine_v0 import (
@@ -54,6 +55,7 @@ from app.schemas.workout_structure import (
     ContinuousBlock,
     CooldownBlock,
     IntervalBlock,
+    StrengthBlock,
     WarmupBlock,
     WorkoutStructure,
 )
@@ -222,8 +224,10 @@ def prescribed_timed_work_seconds(structure: WorkoutStructure) -> tuple[float | 
             if block.duration_sec is None:
                 return None, "structure_not_fully_timed"
             work += block.duration_sec
-        else:
+        elif isinstance(block, StrengthBlock):
             return None, "structure_is_not_endurance"
+        else:
+            assert_never(block)
     if work <= 0.0:
         return None, "no_timed_work"
     return work, None

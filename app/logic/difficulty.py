@@ -31,13 +31,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, cast
+from typing import Protocol, assert_never, cast
 
 from app.logic.planning import INTENSITY_CHOICES, intensity_set_delta, normalize_intensity
 from app.schemas.workout_structure import (
     ContinuousBlock,
+    CooldownBlock,
     IntervalBlock,
     StrengthBlock,
+    WarmupBlock,
+    WorkoutBlock,
     WorkoutStructure,
     adjust_strength_sets,
 )
@@ -234,14 +237,17 @@ def _continuous_signature(block: ContinuousBlock) -> dict[DifficultyDimension, o
     }
 
 
-def _signature(block: object) -> dict[DifficultyDimension, object] | None:
+def _signature(block: WorkoutBlock) -> dict[DifficultyDimension, object] | None:
     if isinstance(block, StrengthBlock):
         return _strength_signature(block)
     if isinstance(block, IntervalBlock):
         return _interval_signature(block)
     if isinstance(block, ContinuousBlock):
         return _continuous_signature(block)
-    return None
+    if isinstance(block, WarmupBlock | CooldownBlock):
+        return None
+    # Fail closed: an unsigned kind would read every change as exercise selection.
+    assert_never(block)
 
 
 def dimensions_changed(

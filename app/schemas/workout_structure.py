@@ -28,7 +28,7 @@ real interval/continuous structure; inventing one here would be a third proxy.
 """
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, assert_never
 
 from pydantic import BaseModel, Field
 
@@ -273,6 +273,10 @@ def calculate_duration(structure: WorkoutStructure) -> DurationEstimate:
                 gaps = sets if block.rest_after_last_set else sets - 1
                 known += max(0, gaps) * block.rest_sec
 
+        else:
+            # Fail closed: a kind with no timing rule must not add 0 s and read as complete.
+            assert_never(block)
+
         if block.transition_sec is not None:
             known += block.transition_sec
 
@@ -324,9 +328,15 @@ def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> Worko
 
     out: WorkoutStructure = []
     for block in structure:
-        if isinstance(block, StrengthBlock) and block.sets is not None:
+        if isinstance(block, StrengthBlock):
+            if block.sets is None:
+                out.append(block)
+                continue
             out.append(block.model_copy(update={"sets": _scaled_count(block.sets, modifier)}))
-        elif isinstance(block, IntervalBlock) and block.repetitions is not None:
+        elif isinstance(block, IntervalBlock):
+            if block.repetitions is None:
+                out.append(block)
+                continue
             repetitions = _scaled_count(block.repetitions, modifier)
             update: dict[str, object] = {"repetitions": repetitions}
             # The displayed set count IS the repetition count (phase 5.3); scaling one without
@@ -334,14 +344,20 @@ def apply_volume_modifier(structure: WorkoutStructure, modifier: float) -> Worko
             if block.display_sets == block.repetitions:
                 update["display_sets"] = repetitions
             out.append(block.model_copy(update=update))
-        elif isinstance(block, ContinuousBlock) and block.duration_sec is not None:
+        elif isinstance(block, ContinuousBlock):
+            if block.duration_sec is None:
+                out.append(block)
+                continue
             out.append(
                 block.model_copy(
                     update={"duration_sec": _scaled_count(block.duration_sec, modifier)}
                 )
             )
-        else:
+        elif isinstance(block, WarmupBlock | CooldownBlock):
             out.append(block)
+        else:
+            # Fail closed: a kind must declare what its volume is before it can be scaled.
+            assert_never(block)
     return out
 
 
