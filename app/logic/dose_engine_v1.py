@@ -52,9 +52,13 @@ from app.logic.dose_engine_v0 import (
 from app.logic.dose_model import NOT_MODELLED as _NOT_MODELLED
 from app.logic.dose_model import DensityMeasurement
 from app.schemas.workout_structure import (
+    AMRAPScheme,
     CircuitBlock,
     ContinuousBlock,
     CooldownBlock,
+    EMOMScheme,
+    FixedRoundsScheme,
+    ForTimeScheme,
     IntervalBlock,
     StrengthBlock,
     WarmupBlock,
@@ -209,7 +213,8 @@ def prescribed_timed_work_seconds(structure: WorkoutStructure) -> tuple[float | 
     Only fully timed endurance work counts. A range ("30-40 min") or distance-only reps have
     no duration, and a partial sum would understate the numerator, so any untimed endurance
     block makes the whole session not modelled. A strength block means this is not an
-    endurance session at all.
+    endurance session at all. A circuit counts only where its work time is prescribed
+    (:func:`circuit_timed_work_seconds`).
     """
     if not structure:
         return None, "prescription_has_no_structure"
@@ -228,13 +233,44 @@ def prescribed_timed_work_seconds(structure: WorkoutStructure) -> tuple[float | 
         elif isinstance(block, StrengthBlock):
             return None, "structure_is_not_endurance"
         elif isinstance(block, CircuitBlock):
-            # Timed circuit work is phase 6.3, shadow-only. Until then, not modelled.
-            return None, "circuit_not_modelled"
+            seconds, reason = circuit_timed_work_seconds(block)
+            if seconds is None:
+                return None, reason
+            work += seconds
         else:
             assert_never(block)
     if work <= 0.0:
         return None, "no_timed_work"
     return work, None
+
+
+def circuit_timed_work_seconds(block: CircuitBlock) -> tuple[float | None, str | None]:
+    """A circuit's prescribed WORK seconds (phase 6.3), or ``(None, reason)``.
+
+    Counted only where the prescription says how long the work is:
+
+    * **AMRAP** — the cap. Work continues for the whole window; transitions happen inside the
+      effort, as they do in a continuous block.
+    * **Fixed rounds** — ``rounds x`` the stations' work time, when EVERY station is timed.
+      Transitions are not work; like recovery, they reach density through the denominator.
+    * **EMOM** — never. The clock is known; the work inside each interval is whatever the
+      athlete does before resting out the minute. Counting the clock would be an invented
+      proxy for work nobody prescribed.
+    * **For time** — never. The duration is the athlete's result, not the prescription.
+    """
+    scheme = block.scheme
+    if isinstance(scheme, AMRAPScheme):
+        return float(scheme.time_cap_sec), None
+    if isinstance(scheme, FixedRoundsScheme):
+        durations = [s.duration_sec for s in block.stations]
+        if any(d is None for d in durations):
+            return None, "structure_not_fully_timed"
+        return float(scheme.rounds * sum(d or 0 for d in durations)), None
+    if isinstance(scheme, EMOMScheme):
+        return None, "emom_work_not_prescribed"
+    if isinstance(scheme, ForTimeScheme):
+        return None, "for_time_duration_is_the_result"
+    assert_never(scheme)
 
 
 def prescribed_work_density(work_seconds: float, elapsed_minutes: float) -> DensityMeasurement:

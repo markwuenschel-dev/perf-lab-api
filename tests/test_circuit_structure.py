@@ -358,11 +358,61 @@ def test_tightening_transitions_is_density_and_changing_format_is_a_different_se
     assert DifficultyDimension.EXERCISE_SELECTION in dimensions_changed(before, other_format)
 
 
-def test_dose_v1_does_not_model_circuits_yet() -> None:
-    assert prescribed_timed_work_seconds([_circuit(SCHEMES["emom"])]) == (
-        None,
-        "circuit_not_modelled",
+# ── dose v1 shadow: circuit work only where it is prescribed (phase 6.3) ─────
+
+
+def _timed(duration_sec: int | None, transition_sec: int | None = 30) -> list[CircuitStation]:
+    return [
+        CircuitStation(exercise="Wall Ball", duration_sec=duration_sec, transition_sec=transition_sec),
+        CircuitStation(exercise="SkiErg", duration_sec=60, transition_sec=transition_sec),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [
+        # An AMRAP's cap is its work window.
+        (_circuit(AMRAPScheme(time_cap_sec=720)), (720.0, None)),
+        # Fixed rounds: station work only; transitions reach density through elapsed time.
+        (CircuitBlock(stations=_timed(40), scheme=FixedRoundsScheme(rounds=3)), (300.0, None)),
+        (CircuitBlock(stations=_timed(None), scheme=FixedRoundsScheme(rounds=3)),
+         (None, "structure_not_fully_timed")),
+        # The clock is known; the work inside each minute is not.
+        (_circuit(EMOMScheme(intervals=10, interval_sec=60), duration_sec=40),
+         (None, "emom_work_not_prescribed")),
+        # The duration is the athlete's result.
+        (_circuit(ForTimeScheme(rounds=3, time_cap_sec=900)),
+         (None, "for_time_duration_is_the_result")),
+    ],
+    ids=["amrap", "rounds_timed", "rounds_untimed", "emom", "for_time"],
+)
+def test_dose_v1_counts_circuit_work_only_where_it_is_prescribed(
+    block: CircuitBlock, expected: tuple[float | None, str | None]
+) -> None:
+    assert prescribed_timed_work_seconds([block]) == expected
+
+
+def test_a_stored_amrap_reaches_the_density_shadow() -> None:
+    """Through the stored-content parse the shadow service uses, not just the function."""
+    from datetime import UTC, datetime
+
+    from app.schemas.workouts import WorkoutLog
+    from app.services.dose_model_shadow_service import resolve_prescribed_density
+
+    rx = WorkoutPrescription(
+        type="MetCon", focus="f", rationale="r", duration_min=20,
+        exercises=project_exercises([_circuit(AMRAPScheme(time_cap_sec=720))]),
+        structure=[_circuit(AMRAPScheme(time_cap_sec=720))],
     )
+    log = WorkoutLog(
+        timestamp=datetime(2026, 9, 26, tzinfo=UTC), modality="Mixed", duration_minutes=15.0,
+        session_rpe=7,
+    )
+
+    density, provenance = resolve_prescribed_density(log, rx.to_prescribed_content())
+
+    assert density is not None and density.value is not None
+    assert provenance is not None and provenance["work_seconds"] == 720.0
 
 
 # ── emission ─────────────────────────────────────────────────────────────────
