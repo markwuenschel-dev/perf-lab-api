@@ -34,7 +34,12 @@ from app.logic.planned_session_slots import (
     THRESHOLD_CATEGORY,
 )
 from app.schemas.state import UnifiedStateVector
-from app.schemas.workout_structure import ContinuousBlock, IntervalBlock
+from app.schemas.workout_structure import (
+    CircuitStation,
+    ContinuousBlock,
+    FixedRoundsScheme,
+    IntervalBlock,
+)
 
 # ---------------------------------------------------------------------------
 # ScoringSpec — per-template dynamic scoring, carried as data
@@ -476,8 +481,10 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
 #: a second strength session: doubles, three sets, full recovery. Fatigue that accumulates
 #: before the jumps cancels what the pairing is for.
 #:
-#: Two things the structure cannot say yet, carried in the text instead:
-#: - the A/B round order (squat, then jumps, three times) needs a rounds block (phase 6);
+#: The A/B round order (squat, then jumps, three times) is a fixed-rounds circuit (phase 6.1),
+#: so the structure says it rather than the text. The exercises it projects are the same two
+#: lines, 3×2 and 3×3, as before it was a circuit. One thing it still cannot say, carried in
+#: the text instead:
 #: - the effort target: the block envelope owns effort, so the squat's cap is the week's, not
 #:   a per-template RPE (``test_effort_resolution_seam``). Per-session effort is phase 7.
 POWER_POTENTIATION_TEMPLATES: list[CandidateTemplate] = [
@@ -513,6 +520,13 @@ POWER_POTENTIATION_TEMPLATES: list[CandidateTemplate] = [
                          load_note="Maximal intent. Stop or regress if jump quality clearly "
                                    "drops. Full recovery before the next round."),
         ],
+        # No station duration or transition is authored ("full recovery" is not a number),
+        # so the structure's duration stays unknown rather than guessed.
+        circuit=CircuitSpec(
+            scheme=FixedRoundsScheme(rounds=3),
+            stations=(CircuitStation(exercise="", reps=2), CircuitStation(exercise="", reps=3)),
+            label="Contrast pair",
+        ),
     ),
 ]
 
