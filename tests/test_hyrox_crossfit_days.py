@@ -339,3 +339,55 @@ def test_engine_work_is_the_authored_bike_session_on_one_bike(
     assert (intervals.recovery_duration_sec, intervals.recovery_after_last_rep) == (120, False)
     assert steady.activity == intervals.activity
     assert rx.calculated_duration_min == 34.0
+
+
+# ── Strength Endurance (F13b) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("workload", ["easy", "medium", "hard"])
+def test_strength_endurance_is_five_rounds_of_three_lifts(
+    catalog_snapshot: list[CatalogExercise], workload: str
+) -> None:
+    """Characterization, not validation: the focus text "5x8 @ RPE 7" read as five circuit
+    rounds of eight reps at each of three stations, lower / push / pull. No deadlift beside the
+    squat. Rest is unstated, so the duration stays unknown; fixed under every workload."""
+    rx, _ = _day(catalog_snapshot, "Strength Endurance", workload=workload)
+    assert _plan_codes(rx) == ["plan:session_followed=mixed_strength_endurance"]
+    circuit = _circuit(rx)
+    assert circuit.scheme == FixedRoundsScheme(rounds=5)
+    assert [(s.exercise, s.reps, s.display_sets) for s in circuit.stations] == [
+        ("Back Squat", 8, 5), ("Overhead Press", 8, 5), ("Barbell Row", 8, 5),
+    ]
+    assert "Conventional Deadlift" not in {e.name for e in rx.exercises}
+    assert all("RPE 7" in (e.load_note or "") for e in rx.exercises)
+    assert rx.calculated_duration_min is None
+
+
+def test_authored_lifts_are_never_swapped_for_better_load_metadata(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    """An authored RPE target is not permission to substitute an exercise because the
+    substitute resolves a load: weak points and equipment preference change nothing here."""
+    (template,) = [
+        t for t in GOAL_TEMPLATE_LIBRARY["mixed"] if t.branch_id == "mixed_strength_endurance"
+    ]
+    from app.logic.exercise_slot import resolve_slots
+
+    chosen = resolve_slots(
+        template.exercise_slots, catalog_snapshot,
+        weak_point_tags=frozenset({"push_vertical", "pull_horizontal", "hip_hinge"}),
+        preferred_load_types=frozenset({"dumbbell", "machine"}),
+    )
+    assert [r.chosen.name if r.chosen else None for r in chosen] == [
+        "Back Squat", "Overhead Press", "Barbell Row",
+    ]
+
+
+def test_strength_endurance_without_a_barbell_is_visibly_replaced(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    rx, scored = _day(catalog_snapshot, "Strength Endurance", equipment=["dumbbells"])
+    assert "mixed_strength_endurance" not in {c.branch_id for c in scored}
+    (code,) = _plan_codes(rx)
+    assert code.startswith("plan:session_replaced=mixed_strength_endurance")
+    assert not any(isinstance(b, CircuitBlock) for b in rx.structure or [])

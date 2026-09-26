@@ -732,6 +732,11 @@ METCON_TEMPLATES: list[CandidateTemplate] = [
     ),
 ]
 
+_STRENGTH_ENDURANCE_NOTE = (
+    "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short "
+    "transitions; rest as available."
+)
+
 # Mixed = MetCon pool plus the strength-endurance side for concurrent blocks.
 MIXED_TEMPLATES: list[CandidateTemplate] = [
     *METCON_TEMPLATES,
@@ -748,6 +753,30 @@ MIXED_TEMPLATES: list[CandidateTemplate] = [
             state_fit=lambda s, r: r,
             fatigue_axis="muscular", fatigue_weight=0.6,
             tissue_axes=("lumbar",), tissue_weight=0.4, habit_mult=0.7, covers_weak_points=True,
+        ),
+        # Phase 6.2 (F13b): the focus above, read literally enough to keep its magnitude —
+        # "5x8 @ RPE 7" as five circuit rounds of eight reps at each station, about RPE 7. An
+        # INTERPRETATION of ambiguous prose, pinned by a characterization test, not a validated
+        # HYROX protocol. Three movements alternating lower / push / pull (120 reps): no
+        # deadlift beside the squat, because 40 squats + 40 deadlifts under short-rest circuit
+        # fatigue is a dose no evidence supports here. An authored lift is never swapped for
+        # one with better load-resolution metadata, so the press and row are pinned by name.
+        # "Short rest" names no number, so transitions and the duration stay unknown. Fixed
+        # under the workload preference; phase 7 owns progression. RPE 7 is carried in the
+        # note: per-session effort targets are phase 7 (the block envelope owns effort today).
+        workload_volume="fixed",
+        exercise_slots=[
+            ExerciseSlot(sets="5", reps="8", e1rm_code="pl_e1rm_squat",
+                         load_note=_STRENGTH_ENDURANCE_NOTE),
+            ExerciseSlot(sets="5", reps="8", exercise="Overhead Press",
+                         load_note=_STRENGTH_ENDURANCE_NOTE),
+            ExerciseSlot(sets="5", reps="8", exercise="Barbell Row",
+                         load_note=_STRENGTH_ENDURANCE_NOTE),
+        ],
+        circuit=CircuitSpec(
+            scheme=FixedRoundsScheme(rounds=5),
+            stations=tuple(CircuitStation(exercise="", reps=8) for _ in range(3)),
+            label="Strength Endurance",
         ),
     ),
 ]
