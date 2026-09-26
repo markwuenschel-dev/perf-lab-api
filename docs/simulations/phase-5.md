@@ -37,7 +37,32 @@ is a generic redirect.
    ordinary running pool rejoins, and an Easy Run wins). A fatigued Strength Potentiation day
    still falls to it.
 
-**Not yet shown.** The live check on EC2 (after the phase-5 PR lands and deploys).
+**Live check, EC2, 2026-09-26.** Release `b52ead1` (PR #249) deployed with
+`./scripts/deploy.sh b52ead1`:
+
+- the box's source is at `b52ead1`;
+- schema unchanged at `a046_dose_model_shadow_log` (head); no migration in the release;
+- external `/ping` 200 once the known post-deploy startup race cleared, and internal
+  `/ping` 200;
+- the running code reports `PRESCRIPTION_ENGINE_VERSION` `v0.4`.
+
+The prescriber was run inside the container against the PRODUCTION movement catalog (262
+rows), read-only, with nothing written. The athlete is healthy, in week 2 of 8, workload "hard":
+
+| planned day | prescribed | structure | plan |
+|---|---|---|---|
+| Threshold Work | Tempo Run 1 × 20 min @ RPE 7–8 | continuous | followed `run_threshold` |
+| Threshold Work, ff 20 | Threshold Tempo Run 4 × 5 min / 2 min easy | interval | followed `run_threshold_ff` |
+| Speed | Bounding Drill 3 × 30 m, Sprint Acceleration 4 × 20 m | interval × 2 | followed `run_sprint` |
+| Active Recovery | Easy Run, 20–30 min very easy (Zone 1) | continuous | followed `run_recovery` |
+| Strength Potentiation | Back Squat 3 × 2, Broad Jump 3 × 3 | strength × 2 | followed `power_potentiation`; `hard` = no-op: fixed-volume |
+| Aerobic Base | Easy Run, 30–40 min | continuous | followed `run_z2_base` |
+
+A 5-session Sprint-focus week plans Speed, Active Recovery, Speed, Active Recovery, Speed.
+
+Not exercised: the authenticated route end to end with a real account, which would write a
+user and a block to the production database. The same seam is covered by the database tests
+(`tests/test_speed_day.py`, `tests/test_planned_day_pools.py`).
 
 Regenerate the part below with:
 
