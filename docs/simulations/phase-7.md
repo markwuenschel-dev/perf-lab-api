@@ -46,7 +46,32 @@ week axis, **"Periodization by week"**, at the end. The week axis is where phase
 6. **Unreachable by design.** The Powerlifting, OlympicLifts, Grip, HalfMarathon and
    FullMarathon templates stay reference data until a block can declare those goals (ADR-0071).
 
-**Not yet shown.** The live check on EC2, after the phase-7 PR lands and deploys.
+**Live check, EC2, 2026-09-26.** Release `e1fc8bc` (PR #252, a two-parent merge of `5474974`
+and `85567c1`) was deployed with `./scripts/deploy.sh e1fc8bca65725c48f1a623100003b65c47eccb84`:
+
+- the box's source is at `e1fc8bc`, clean (the previous release was `8f62117`);
+- the schema is unchanged at `a046_dose_model_shadow_log` (head); the release has no migration;
+- external `/ping` 200 and internal `/ping` 200;
+- the running code reports `PRESCRIPTION_ENGINE_VERSION` `v0.6`;
+- the production catalog has 263 rows (unchanged).
+
+The prescriber was run inside the container against that catalog, read-only, with nothing
+written: one SELECT, then in-memory prescribing. The athlete is intermediate and fresh, in an
+8-week block with a deload every 4 weeks, at medium workload. Weeks 1–8, phase / RPE target:
+
+| block | source | weeks 1–8 | sessions |
+|---|---|---|---|
+| Running, distance | running | base 4.0–6.0 ×3 · deload 5.0–6.5 · threshold 6.5–8.0 ×2 · race_specific 7.0–8.5 · taper 5.0–7.5 | `run_z2_base` |
+| Running, sprint-primary | generic | accumulation 6.5–7.5 ×3 · deload · intensification 7.5–8.5 ×2 · peak 8.5–9.5 · taper 6.0–8.0 | `run_sprint` |
+| Calisthenics | calisthenics | prerequisites 4.0–6.5 ×2 · strength_focus 6.0–8.0 · deload · strength_focus · skill 6.5–8.0 ×2 · taper 6.0–8.0 | `cal_strength` |
+| Strength | generic | accumulation ×3 · deload · intensification ×2 · peak · taper | `strength_max` |
+| HYROX | generic | accumulation ×3 · deload · intensification ×2 · peak · taper | `hyrox_half_sim_a`, `hyrox_half_sim_b` (alternating) |
+
+It matches the "Periodization by week" table below.
+
+Not exercised: the authenticated route end to end with a real account, which would write a user
+and a block to the production database. The same seam is covered by the database tests
+(`tests/test_domain_periodization.py::test_a_running_blocks_own_mix_decides_its_periodization`).
 
 Regenerate the part below with:
 
