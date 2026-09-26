@@ -90,7 +90,7 @@ _BINDINGS: dict[str, dict[str, SlotBinding]] = {
         # mixed template is specifically either of those yet.
     },
     "calisthenics": {
-        "Skill & Straight-Arm Strength": SlotBinding("calisthenics_skill", ("gym_skill",)),
+        "Skill & Straight-Arm Strength": SlotBinding("calisthenics_skill", ("cal_skill",)),
         "Bodyweight Strength": SlotBinding("calisthenics_strength", ("cal_strength",)),
         "Gymnastics Conditioning": SlotBinding("calisthenics_conditioning", ("cal_conditioning",)),
     },

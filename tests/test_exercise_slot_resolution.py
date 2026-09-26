@@ -250,3 +250,34 @@ def test_a_pinned_lift_ignores_the_preference() -> None:
 def test_unknown_preference_values_prefer_nothing() -> None:
     assert preferred_load_types(["kettlebell", ""]) == frozenset()
     assert preferred_load_types(None) == frozenset()
+
+
+def test_every_declared_slot_resolves_against_the_real_catalog(catalog_snapshot) -> None:
+    """A slot nothing in the catalog satisfies drops that movement from the session.
+
+    If every slot misses, the prescriber falls back to the generic equipment map — the
+    "Running day prescribes Air Squat" failure — even though the template declared slots.
+    Phases 5, 6 and 9 add slots; this keeps each one honest against the seeded catalog.
+    Unknown equipment (None) is used so the check is about the catalog, not a gym.
+    """
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+
+    unmet = [
+        f"{domain}/{template.branch_id}[{i}]: {res.unmet_reason}"
+        for domain, pool in GOAL_TEMPLATE_LIBRARY.items()
+        for template in pool
+        for i, res in enumerate(resolve_slots(template.exercise_slots, catalog_snapshot))
+        if res.chosen is None
+    ]
+
+    assert not unmet, f"slots the catalog cannot fill: {unmet}"
+
+
+def test_the_calisthenics_skill_day_prescribes_holds(catalog_snapshot) -> None:
+    """cal_skill had no slots before phase 4.4, so it fell back to the generic map."""
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+
+    (cal_skill,) = [t for t in GOAL_TEMPLATE_LIBRARY["calisthenics"] if t.branch_id == "cal_skill"]
+    chosen = resolve_slots(cal_skill.exercise_slots, catalog_snapshot)
+
+    assert [r.chosen.name for r in chosen if r.chosen] == ["Parallette Hold", "Ring Support Hold"]

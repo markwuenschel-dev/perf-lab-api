@@ -115,12 +115,6 @@ def test_every_binding_can_actually_produce_a_template() -> None:
     assert not empty, f"bindings whose templates are unreachable in their pool: {empty}"
 
 
-@pytest.mark.xfail(
-    reason="phase 4 workout families: 'gym_skill' is declared twice as two different "
-    "templates (candidate_library.py:616 and :660), so an explanation naming that branch id "
-    "does not identify which session the athlete was given",
-    strict=True,
-)
 def test_no_branch_id_is_declared_twice() -> None:
     """Duplicate ids make "which template won?" unanswerable from the explanation alone."""
     from collections import Counter
