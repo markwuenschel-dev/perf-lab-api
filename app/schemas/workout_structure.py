@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, assert_never
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.load_explanation import LoadExplanation
 
@@ -215,7 +215,12 @@ class AMRAPScheme(BaseModel):
 
 
 class EMOMScheme(BaseModel):
-    """Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's."""
+    """Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.
+
+    **Stations ROTATE.** Interval ``k`` (from 0) performs station ``k mod n`` only — the
+    "odd minute / even minute" form — so a 10-interval EMOM of two stations gives each station
+    five exposures, not ten of both. See :func:`emom_exposures`.
+    """
 
     format: Literal["emom"] = "emom"
     intervals: int = Field(gt=0)
@@ -250,6 +255,26 @@ class CircuitBlock(_Block):
     kind: Literal["circuit"] = "circuit"
     stations: list[CircuitStation] = Field(min_length=1)
     scheme: CircuitScheme
+    #: Whether the athlete's workload preference (easy / medium / hard) moves this circuit's
+    #: ROUNDS by one, as it moves a strength block's sets. Declared per circuit, never inferred
+    #: from the format: a skill EMOM and a compromised-running circuit are both circuits, and
+    #: only one of them should grow when the athlete picks "hard". Rounds-based schemes only.
+    scales_with_workload: bool = False
+
+    @model_validator(mode="after")
+    def _only_rounds_scale_with_workload(self) -> CircuitBlock:
+        if self.scales_with_workload and not isinstance(
+            self.scheme, FixedRoundsScheme | ForTimeScheme
+        ):
+            raise ValueError(
+                f"a {self.scheme.format} circuit has no rounds for the workload step to move"
+            )
+        return self
+
+
+def emom_exposures(scheme: EMOMScheme, station_count: int, index: int) -> int:
+    """How many intervals of a rotating EMOM station ``index`` performs."""
+    return len(range(index, scheme.intervals, station_count))
 
 
 WorkoutBlock = Annotated[
@@ -522,19 +547,58 @@ def _scale_circuit(block: CircuitBlock, modifier: float) -> CircuitBlock:
         cap = _scaled_count(scheme.time_cap_sec, modifier)
         return block.model_copy(update={"scheme": scheme.model_copy(update={"time_cap_sec": cap})})
     if isinstance(scheme, EMOMScheme):
-        before, field = scheme.intervals, "intervals"
-    elif isinstance(scheme, ForTimeScheme | FixedRoundsScheme):
-        before, field = scheme.rounds, "rounds"
-    else:
-        assert_never(scheme)
-    after = _scaled_count(before, modifier)
-    stations = [
-        s.model_copy(update={"display_sets": after}) if s.display_sets == before else s
-        for s in block.stations
-    ]
-    return block.model_copy(
-        update={"scheme": scheme.model_copy(update={field: after}), "stations": stations}
-    )
+        # Stations rotate, so each one's displayed count is its own exposures, not the total.
+        scaled = scheme.model_copy(
+            update={"intervals": _scaled_count(scheme.intervals, modifier)}
+        )
+        n = len(block.stations)
+        stations = [
+            s.model_copy(update={"display_sets": emom_exposures(scaled, n, i)})
+            if s.display_sets == emom_exposures(scheme, n, i)
+            else s
+            for i, s in enumerate(block.stations)
+        ]
+        return block.model_copy(update={"scheme": scaled, "stations": stations})
+    if isinstance(scheme, ForTimeScheme | FixedRoundsScheme):
+        before = scheme.rounds
+        after = _scaled_count(before, modifier)
+        stations = [
+            s.model_copy(update={"display_sets": after}) if s.display_sets == before else s
+            for s in block.stations
+        ]
+        return block.model_copy(
+            update={"scheme": scheme.model_copy(update={"rounds": after}), "stations": stations}
+        )
+    assert_never(scheme)
+
+
+def adjust_scaled_circuit_rounds(structure: WorkoutStructure, delta: int) -> WorkoutStructure:
+    """Add or remove ROUNDS on every circuit that declares ``scales_with_workload``, never
+    below one. The circuit analogue of :func:`adjust_strength_sets`, for the same fixed-step
+    workload preference; stations whose displayed count mirrors the rounds follow them.
+    """
+    if delta == 0:
+        return list(structure)
+    out: WorkoutStructure = []
+    for block in structure:
+        if not (isinstance(block, CircuitBlock) and block.scales_with_workload):
+            out.append(block)
+            continue
+        scheme = block.scheme
+        if not isinstance(scheme, FixedRoundsScheme | ForTimeScheme):
+            out.append(block)  # unreachable: the block's validator refuses it
+            continue
+        after = max(1, scheme.rounds + delta)
+        stations = [
+            s.model_copy(update={"display_sets": after}) if s.display_sets == scheme.rounds else s
+            for s in block.stations
+        ]
+        out.append(
+            block.model_copy(
+                update={"scheme": scheme.model_copy(update={"rounds": after}), "stations": stations}
+            )
+        )
+    return out
 
 
 def adjust_strength_sets(structure: WorkoutStructure, delta: int) -> WorkoutStructure:

@@ -323,3 +323,6 @@ class CircuitSpec:
     stations: tuple[CircuitStation, ...] = field(hash=False)
     first_slot: int = 0
     label: str | None = None
+    #: Whether the workload preference moves this circuit's rounds (see
+    #: ``CircuitBlock.scales_with_workload``). Off unless the session is authored to scale.
+    scales_with_workload: bool = False

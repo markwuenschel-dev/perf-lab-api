@@ -1617,6 +1617,11 @@
             "description": "Display name, e.g. 'Main lift' or 'Threshold intervals'.",
             "title": "Label"
           },
+          "scales_with_workload": {
+            "default": false,
+            "title": "Scales With Workload",
+            "type": "boolean"
+          },
           "scheme": {
             "discriminator": {
               "mapping": {
@@ -2233,7 +2238,7 @@
         "type": "object"
       },
       "EMOMScheme": {
-        "description": "Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.",
+        "description": "Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.\n\n**Stations ROTATE.** Interval ``k`` (from 0) performs station ``k mod n`` only \u2014 the\n\"odd minute / even minute\" form \u2014 so a 10-interval EMOM of two stations gives each station\nfive exposures, not ten of both. See :func:`emom_exposures`.",
         "properties": {
           "format": {
             "const": "emom",

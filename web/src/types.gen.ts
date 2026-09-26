@@ -1573,6 +1573,11 @@ export interface components {
              * @description Display name, e.g. 'Main lift' or 'Threshold intervals'.
              */
             label?: string | null;
+            /**
+             * Scales With Workload
+             * @default false
+             */
+            scales_with_workload: boolean;
             /** Scheme */
             scheme: components["schemas"]["AMRAPScheme"] | components["schemas"]["EMOMScheme"] | components["schemas"]["ForTimeScheme"] | components["schemas"]["FixedRoundsScheme"];
             /** Stations */
@@ -1787,6 +1792,10 @@ export interface components {
         /**
          * EMOMScheme
          * @description Work starts on a fixed clock, ``intervals`` times. Elapsed time is the clock's.
+         *
+         *     **Stations ROTATE.** Interval ``k`` (from 0) performs station ``k mod n`` only — the
+         *     "odd minute / even minute" form — so a 10-interval EMOM of two stations gives each station
+         *     five exposures, not ten of both. See :func:`emom_exposures`.
          */
         EMOMScheme: {
             /**

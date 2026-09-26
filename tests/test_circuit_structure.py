@@ -20,6 +20,7 @@ from app.logic.difficulty import DifficultyDimension, dimensions_changed
 from app.logic.dose_engine_v1 import prescribed_timed_work_seconds
 from app.logic.exercise_slot import CatalogExercise, CircuitSpec, ExerciseSlot
 from app.logic.prescriber import (
+    _apply_intensity_sets,  # pyright: ignore[reportPrivateUsage]
     _circuit_realized,  # pyright: ignore[reportPrivateUsage]
     _select_exercises,  # pyright: ignore[reportPrivateUsage]
     _structure_for_selection,  # pyright: ignore[reportPrivateUsage]
@@ -41,8 +42,10 @@ from app.schemas.workout_structure import (
     StrengthBlock,
     WarmupBlock,
     WorkoutStructure,
+    adjust_scaled_circuit_rounds,
     apply_volume_modifier,
     calculate_duration,
+    emom_exposures,
 )
 
 
@@ -231,12 +234,96 @@ def test_volume_scales_an_amraps_cap() -> None:
     assert [s.display_sets for s in scaled.stations] == [3, 3]
 
 
-def test_volume_scales_an_emoms_intervals_and_the_sets_that_mirror_them() -> None:
-    circuit = _circuit(EMOMScheme(intervals=10, interval_sec=60), display_sets=10)
+def test_volume_scales_an_emoms_intervals_and_each_stations_exposures() -> None:
+    circuit = _circuit(EMOMScheme(intervals=10, interval_sec=60), display_sets=5)
     (scaled,) = apply_volume_modifier([circuit], 0.5)
     assert isinstance(scaled, CircuitBlock) and isinstance(scaled.scheme, EMOMScheme)
     assert (scaled.scheme.intervals, scaled.scheme.interval_sec) == (5, 60)
-    assert [s.display_sets for s in scaled.stations] == [5, 5]
+    # Stations rotate: 5 intervals over 2 stations is 3 exposures, then 2.
+    assert [s.display_sets for s in scaled.stations] == [3, 2]
+
+
+# ── rotating EMOM ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("intervals", "stations", "expected"),
+    [(10, 2, [5, 5]), (10, 3, [4, 3, 3]), (1, 2, [1, 0]), (6, 1, [6])],
+)
+def test_an_emom_rotates_one_station_per_interval(
+    intervals: int, stations: int, expected: list[int]
+) -> None:
+    scheme = EMOMScheme(intervals=intervals, interval_sec=60)
+    assert [emom_exposures(scheme, stations, i) for i in range(stations)] == expected
+
+
+# ── the workload step moves declared circuit rounds only ─────────────────────
+
+
+def test_only_rounds_based_circuits_may_scale_with_workload() -> None:
+    for scheme in (AMRAPScheme(time_cap_sec=600), EMOMScheme(intervals=10, interval_sec=60)):
+        with pytest.raises(ValidationError, match="no rounds"):
+            CircuitBlock(stations=_stations(), scheme=scheme, scales_with_workload=True)
+
+
+def test_the_workload_step_moves_a_declared_circuits_rounds_and_mirrored_sets() -> None:
+    declared = CircuitBlock(
+        stations=_stations(display_sets=4), scheme=FixedRoundsScheme(rounds=4),
+        scales_with_workload=True,
+    )
+    undeclared = declared.model_copy(update={"scales_with_workload": False})
+
+    harder, untouched = adjust_scaled_circuit_rounds([declared, undeclared], +1)
+    (easier,) = adjust_scaled_circuit_rounds([declared], -1)
+    (floor,) = adjust_scaled_circuit_rounds([declared], -10)
+
+    assert isinstance(harder, CircuitBlock) and harder.scheme == FixedRoundsScheme(rounds=5)
+    assert [s.display_sets for s in harder.stations] == [5, 5]
+    assert untouched == undeclared
+    assert isinstance(easier, CircuitBlock) and easier.scheme == FixedRoundsScheme(rounds=3)
+    assert isinstance(floor, CircuitBlock) and floor.scheme == FixedRoundsScheme(rounds=1)
+
+
+def _rx(structure: WorkoutStructure) -> WorkoutPrescription:
+    return WorkoutPrescription(
+        type="Running + Functional", focus="f", rationale="r", duration_min=60,
+        exercises=project_exercises(structure), structure=structure,
+    )
+
+
+def test_a_mixed_day_moves_its_declared_circuit_and_leaves_its_strength_sets() -> None:
+    squat = StrengthBlock(exercise="Back Squat", sets=5, reps="3")
+    circuit = CircuitBlock(
+        stations=_stations(display_sets=4), scheme=FixedRoundsScheme(rounds=4),
+        scales_with_workload=True,
+    )
+    rx = _rx([squat, circuit])
+
+    _apply_intensity_sets(rx, "hard", "mixed", is_recovery_week=False)
+
+    assert rx.structure is not None
+    moved_squat, moved_circuit = rx.structure
+    assert moved_squat == squat  # mixed-domain strength never had a set step
+    assert isinstance(moved_circuit, CircuitBlock)
+    assert moved_circuit.scheme == FixedRoundsScheme(rounds=5)
+    assert [e.sets for e in rx.exercises] == [5, 5, 5]
+
+
+@pytest.mark.parametrize("workload_volume", ["scaled", "fixed"])
+def test_an_undeclared_or_fixed_circuit_does_not_move(workload_volume: str) -> None:
+    declared = workload_volume == "fixed"  # a fixed template wins even over a declaration
+    circuit = CircuitBlock(
+        stations=_stations(display_sets=4), scheme=FixedRoundsScheme(rounds=4),
+        scales_with_workload=declared,
+    )
+    rx = _rx([circuit])
+
+    _apply_intensity_sets(
+        rx, "hard", "mixed", is_recovery_week=False,
+        workload_volume=workload_volume,  # type: ignore[arg-type]
+    )
+
+    assert rx.structure == [circuit]
 
 
 def test_volume_scales_for_time_rounds_and_leaves_the_cap() -> None:

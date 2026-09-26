@@ -59,6 +59,7 @@ from app.logic.exercise_slot import (
 from app.logic.planned_session_slots import SlotBinding, binding_for
 from app.logic.planning import (
     INTENSITY_MEDIUM,
+    intensity_set_delta,
     normalize_intensity,
     periodization_envelope,
 )
@@ -78,7 +79,11 @@ from app.schemas.prescription import (
 )
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.schemas.workout_structure import CircuitBlock, WorkoutStructure
+from app.schemas.workout_structure import (
+    CircuitBlock,
+    WorkoutStructure,
+    adjust_scaled_circuit_rounds,
+)
 
 # Note: SessionCandidate, scoring, and readiness helpers now live in
 # app.logic.constraint_engine.candidate for better separation of concerns.
@@ -522,6 +527,11 @@ def _apply_intensity_sets(
     A session whose template declares ``workload_volume="fixed"`` keeps its authored volume:
     its volume is the protocol, not a knob (the phase-5 potentiation primer).
 
+    Two things move, each only where it has something honest to move: strength sets in the
+    set-target domains, and the rounds of any circuit that declares ``scales_with_workload``
+    (phase 6), whatever the domain. A mixed-domain session's strength blocks stay as they
+    always have.
+
     Every no-op is reported with its reason. A preference that silently does nothing is the
     defect this whole slice exists to avoid: the athlete chose "hard" and is owed either more
     work or the reason there isn't any.
@@ -533,7 +543,11 @@ def _apply_intensity_sets(
         reason = "recovery-week"
     elif workload_volume == "fixed":
         reason = "fixed-volume"
-    elif domain not in INTENSITY_SET_DOMAINS:
+    moves_sets = domain in INTENSITY_SET_DOMAINS
+    moves_rounds = any(
+        isinstance(b, CircuitBlock) and b.scales_with_workload for b in rx.structure or []
+    )
+    if reason is None and not (moves_sets or moves_rounds):
         reason = f"no-set-targets:{domain}"
 
     if reason is None:
@@ -545,7 +559,11 @@ def _apply_intensity_sets(
         # this is behaviour-neutral; 3.2 swaps in real per-family policies, and none of them
         # goes live until its effect under both dose engines has been measured.
         before = structure_from_exercises(rx.exercises, rx.structure)
-        after = LEGACY_TRANSFORM.apply(before, intensity)
+        after = LEGACY_TRANSFORM.apply(before, intensity) if moves_sets else list(before)
+        if moves_rounds:
+            after = adjust_scaled_circuit_rounds(
+                after, intensity_set_delta(normalize_intensity(intensity))
+            )
         moved = sum(
             1
             for old_block, new_block in zip(before, after, strict=True)
@@ -941,7 +959,12 @@ def _structure_for_selection(
             for shape, ex in zip(circuit.stations, selection.exercises[start:stop], strict=True)
         ]
         blocks[start:stop] = [
-            CircuitBlock(label=circuit.label, stations=stations, scheme=circuit.scheme)
+            CircuitBlock(
+                label=circuit.label,
+                stations=stations,
+                scheme=circuit.scheme,
+                scales_with_workload=circuit.scales_with_workload,
+            )
         ]
     return blocks
 
