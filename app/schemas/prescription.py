@@ -37,7 +37,7 @@ __all__ = ["LoadExplanation", "LoadExplanationReason"]
 #: ``openapi.json`` carries it as the schema default, so a bump needs all three updated
 #: together. ``test_prescription_engine_version_is_assigned_not_defaulted`` pins the Python
 #: half of that coupling.
-PRESCRIPTION_ENGINE_VERSION = "v0.5"
+PRESCRIPTION_ENGINE_VERSION = "v0.6"
 
 
 class ValidationSummary(BaseModel):

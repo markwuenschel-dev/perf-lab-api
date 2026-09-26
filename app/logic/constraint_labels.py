@@ -78,12 +78,30 @@ _EXACT: dict[str, tuple[str, AppliedConstraintGroup, bool]] = {
     ),
 }
 
+#: Every phase an envelope can name: the generic progression's, and every template block type
+#: (``planning.BlockType``, pinned by a test) — an unlabelled phase would reach the athlete as
+#: "Another planning rule was applied."
 _PHASES = {
     "accumulation": "Accumulation",
     "intensification": "Intensification",
     "peak": "Peak",
     "taper": "Taper",
     "deload": "Deload",
+    "technique": "Technique",
+    "base": "Base",
+    "threshold": "Threshold",
+    "race_specific": "Race-specific",
+    "skill": "Skill",
+    "prerequisites": "Prerequisites",
+    "strength_focus": "Strength focus",
+    "grip_tissue": "Tissue preparation",
+}
+
+#: Which plan a block's periodization follows (phase 7): an authored template, or generic.
+_PERIODIZATION = {
+    "generic": "General periodization: this block type has no sport-specific plan yet.",
+    "running": "Periodized with the running plan.",
+    "calisthenics": "Periodized with the calisthenics and gymnastics skill plan.",
 }
 
 _EMPHASES = {"minimal": "minimal", "balanced": "balanced", "high": "high"}
@@ -223,6 +241,7 @@ _HARD_REPLACED_SUFFIX = " This session was replaced with easy movement."
 _NUMBER = r"\d+(?:\.\d+)?"
 _BLOCK_PHASE = re.compile(rf"^block:phase=(?P<phase>[a-z_]+)\(×(?P<factor>{_NUMBER})\)$")
 _BLOCK_RPE = re.compile(rf"^block:rpe_target=(?P<low>{_NUMBER})-(?P<high>{_NUMBER})$")
+_BLOCK_PERIODIZATION = re.compile(r"^block:periodization=(?P<source>[a-z_]+)$")
 _BLOCK_DELOAD = re.compile(rf"^block:deload\(×(?P<factor>{_NUMBER})\)$")
 _BLOCK_ACCESSORIES = re.compile(r"^block:accessories=(?P<emphasis>[a-z_]+)\(\+(?P<count>\d+)\)$")
 _BLOCK_TARGET_DURATION = re.compile(r"^block:target_duration=(?P<minutes>\d+)$")
@@ -261,6 +280,7 @@ CODE_FAMILIES: tuple[str, ...] = (
     "objective:taper(",
     "block:phase=",
     "block:rpe_target=",
+    "block:periodization=",
     "block:deload(",
     "block:benchmark",
     "block:accessories=",
@@ -310,6 +330,9 @@ def _block(code: str) -> _Labelled | None:
         return f"{phase} phase: session length ×{_num(m['factor'])}.", "block", True
     if m := _BLOCK_RPE.match(code):
         return f"Target effort: RPE {_num(m['low'])}–{_num(m['high'])}.", "block", True
+    if m := _BLOCK_PERIODIZATION.match(code):
+        label = _PERIODIZATION.get(m["source"])
+        return None if label is None else (label, "block", True)
     if m := _BLOCK_DELOAD.match(code):
         return f"Deload week: session length ×{_num(m['factor'])}.", "block", True
     if m := _BLOCK_ACCESSORIES.match(code):

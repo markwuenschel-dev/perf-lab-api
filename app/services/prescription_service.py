@@ -16,7 +16,7 @@ from app.logic import strength_calibration as sc
 from app.logic import uncertainty_conservatism
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.exercise_slot import CatalogExercise
-from app.logic.planning import periodization_envelope
+from app.logic.planning import periodization_envelope, periodization_goal
 from app.logic.prescriber import recommend_next_session
 from app.logic.prescription_evidence import (
     EXPLAIN_NO_EVIDENCE,
@@ -53,6 +53,9 @@ from app.services.state_service import (
 
 class BlockContext(TypedDict, total=False):
     block_goal: str
+    # The block's emphasis split (phase 7): with block_goal, what the block periodizes for
+    # (``planning.periodization_goal`` — a sprint-primary Running block is Sprinting).
+    modality_mix: dict[str, Any] | None
     session_category: str | None
     # The planned slot's OWN canonical domain (a045). None for a session planned before the
     # column existed, or one whose template recorded no domain — the prescriber then falls
@@ -162,8 +165,9 @@ def _envelope_rpe_cap(block_context: BlockContext) -> float:
             int(wk),
             int(block_context.get("deload_every_n_weeks") or 4),
             intensity=block_context.get("intensity"),
-            goal=block_context.get("block_goal"),
-            domain=block_context.get("session_domain"),
+            goal=periodization_goal(
+                block_context.get("block_goal"), block_context.get("modality_mix")
+            ),
         )
         return env.rpe_high
     return 8.0
@@ -572,6 +576,7 @@ async def _gather_prescription_context(
     if active_block and target_session:
         block_context.update(
             block_goal=active_block.goal.value,
+            modality_mix=active_block.modality_mix,
             session_category=target_session.category,
             session_domain=target_session.domain,
             intensity=active_block.intensity,

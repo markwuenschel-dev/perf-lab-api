@@ -11,6 +11,12 @@ Four claims, each checked over the whole simulation grid rather than a sample:
 2-4 are checked against `docs/simulations/phase-1.md`, which was generated and committed
 BEFORE this change. That file is the before-snapshot; if a representation refactor moved any
 number in it, this test says so.
+
+Phase 7 (ADR-0071) scoped claims 2-4 to cells whose block still periodizes GENERICALLY. A
+Running block now follows the running template, which deliberately changes its session length
+and so its dose and state delta. The committed file is a characterization of phase 1 and is
+never rewritten to pretend phase 1 behaved like phase 7; matrix #4
+(`docs/simulations/phase-7.md`) is the evidence for the intended running change.
 """
 import re
 from pathlib import Path
@@ -48,11 +54,31 @@ def test_the_before_snapshot_is_actually_present() -> None:
     ), f"parsed {len(committed)} rows from {_REPORT.name}"
 
 
+def _templated_goals() -> set[str]:
+    """Grid goals whose block reaches an authored periodization template (phase 7)."""
+    from app.logic.planning import GENERIC_PERIODIZATION, periodization_envelope
+
+    return {
+        label
+        for label, (training_goal, _domain, _category) in sm.GOALS.items()
+        if periodization_envelope(8, 2, 4, goal=training_goal).source != GENERIC_PERIODIZATION
+    }
+
+
+def test_only_the_running_rows_left_the_generic_envelope() -> None:
+    """The scope below may not grow silently: exactly the endurance (Running) rows moved."""
+    assert _templated_goals() == {"endurance"}
+
+
 def test_selection_dose_and_state_transition_are_unchanged() -> None:
-    """Claims 2-4, over all 54 cells, against the pre-2.1 committed report."""
+    """Claims 2-4 against the pre-2.1 committed report, over every cell whose block still
+    periodizes generically (36 of 54 since phase 7)."""
     committed = _committed_rows()
+    templated = _templated_goals()
     drift: list[str] = []
     for cell in sm.build_matrix():
+        if cell.goal in templated:
+            continue
         was = committed[(cell.experience, cell.freshness, cell.goal, cell.workload)]
         now = (
             cell.session,

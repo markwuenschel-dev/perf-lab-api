@@ -63,6 +63,7 @@ from app.logic.planning import (
     intensity_set_delta,
     normalize_intensity,
     periodization_envelope,
+    periodization_goal,
 )
 from app.logic.planning_constraints import (
     ConstraintApplication,
@@ -1333,7 +1334,7 @@ def _recommend_next_session(
     if week_n and weeks_total:
         env = periodization_envelope(
             weeks_total, week_n, int(block.get("deload_every_n_weeks") or 4), intensity=intensity,
-            goal=str(goal), domain=session_domain or _candidate_domain(str(goal)),
+            goal=periodization_goal(block.get("block_goal"), block.get("modality_mix")),
         )
         vol = env.volume_modifier
         phase = env.phase
@@ -1350,6 +1351,7 @@ def _recommend_next_session(
             rx.why.constraints_applied.append(
                 f"block:rpe_target={env.rpe_low:.1f}-{env.rpe_high:.1f}"
             )
+            rx.why.constraints_applied.append(f"block:periodization={env.source}")
     elif block.get("is_deload"):
         # No periodization context — fall back to plain deload scaling.
         factor = block.get("deload_volume_factor")

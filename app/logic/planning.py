@@ -22,8 +22,11 @@ Phase 1 implementation: template-guided, not full optimization.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import math
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from enum import Enum
+from typing import Any
 
 from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TrainingGoal
@@ -523,6 +526,13 @@ class PhaseEnvelope:
     volume_modifier: float
     rpe_low: float
     rpe_high: float
+    #: Where the bands came from: an authored template's slug ("running", "calisthenics"), or
+    #: "generic" — the one progression every sport without a template gets (phase 7, F15).
+    source: str = "generic"
+
+
+#: The envelope every block without an authored template gets.
+GENERIC_PERIODIZATION = "generic"
 
 
 # --- Workload preference (E) ------------------------------------------------------
@@ -563,6 +573,99 @@ def intensity_set_delta(intensity: str | None) -> int:
     return _INTENSITY_ADJUSTMENT[normalize_intensity(intensity)][0]
 
 
+# --- Domain periodization (phase 7, ADR-0071) ----------------------------------------------
+#
+# The block's own data picks the template, and nothing else does: not the athlete's profile
+# goal, not the planned day's domain. A template keyed only by an athlete goal (Powerlifting,
+# OlympicLifts, Grip, HalfMarathon, FullMarathon) stays reference data until a block can say
+# that it periodizes for that goal.
+
+#: Block goals whose block reaches an authored template. Keys are ``BlockGoal`` values
+#: (pinned by a test). Sprinting has no template, so a sprint-primary Running block is generic.
+_BLOCK_TEMPLATES: dict[str, PlanTemplate] = {
+    "Running": _TEMPLATES["Running"],
+    "Calisthenics": _TEMPLATES["Calisthenics"],
+}
+
+_RECOVERY_BLOCKS = frozenset({BlockType.DELOAD, BlockType.TAPER})
+_GENERIC_TAPER = PhaseEnvelope("taper", 0.55, 6.0, 8.0)
+_GENERIC_DELOAD = PhaseEnvelope("deload", 0.5, 5.0, 6.5)
+SPRINTING = "Sprinting"
+
+
+def periodization_goal(block_goal: str | None, modality_mix: Mapping[str, Any] | None) -> str | None:
+    """The goal a block periodizes for, from the block's own data only.
+
+    A Running block whose modality mix is SPRINT-PRIMARY — sprinting strictly the largest
+    share, e.g. ``{"sprinting": 1}`` — periodizes for Sprinting, which has no template, so it
+    gets the generic envelope rather than a distance runner's base / threshold / race shape.
+    ``{"running": 0.6, "sprinting": 0.4}`` is still a Running block. Every caller of the
+    envelope derives its goal here, so the prescriber, load sizing and the projection agree.
+    """
+    if block_goal == "Running" and _sprint_primary(modality_mix):
+        return SPRINTING
+    return block_goal
+
+
+def _sprint_primary(modality_mix: Mapping[str, Any] | None) -> bool:
+    weights: dict[str, float] = {}
+    for key, value in (modality_mix or {}).items():
+        try:
+            weights[str(key).strip().lower()] = float(value)
+        except (TypeError, ValueError):
+            continue
+    sprint = weights.pop("sprinting", None)
+    return sprint is not None and sprint > 0 and all(sprint > w for w in weights.values())
+
+
+def _recovery_week(wk: int, weeks: int, deload_n: int) -> str | None:
+    """The block's own recovery calendar: taper in the final week (3+ week blocks), else a
+    deload every ``deload_n`` weeks. The same rule the generic envelope has always used."""
+    if wk >= weeks and weeks >= 3:
+        return "taper"
+    if deload_n and wk % deload_n == 0:
+        return "deload"
+    return None
+
+
+def _template_recovery(template: PlanTemplate | None, kind: str, source: str) -> PhaseEnvelope:
+    generic = _GENERIC_TAPER if kind == "taper" else _GENERIC_DELOAD
+    wanted = BlockType.TAPER if kind == "taper" else BlockType.DELOAD
+    block = next((b for b in (template.blocks if template else []) if b.block_type == wanted), None)
+    if block is None:
+        return replace(generic, source=source)
+    low, high = block.target_rpe_range
+    return PhaseEnvelope(kind, block.volume_modifier, low, high, source=source)
+
+
+def _template_working_phase(
+    template: PlanTemplate, wk: int, weeks: int, deload_n: int, source: str
+) -> PhaseEnvelope:
+    """The template phase for a WORKING week, fitted proportionally over working weeks.
+
+    Recovery weeks are removed from the block first, so a deload never advances the athlete
+    through the template: the n-th of N working weeks samples the MIDDLE of its share of the
+    template's T non-recovery weeks, ``ceil((n - 1/2) x T / N)``, so each phase keeps its share
+    of the block (sampling the end of each share would push phases early). With N == T it is
+    the identity. An engineering interpretation of an authored template onto a block of any
+    length, not a physiological claim.
+    """
+    working = [w for w in range(1, weeks + 1) if _recovery_week(w, weeks, deload_n) is None]
+    ordinal = working.index(wk) + 1 if wk in working else len(working)
+    progression = [b for b in template.blocks if b.block_type not in _RECOVERY_BLOCKS]
+    total = sum(b.duration_weeks for b in progression)
+    target = max(1, math.ceil((ordinal - 0.5) * total / max(1, len(working))))
+    cumulative = 0
+    chosen = progression[-1]
+    for block in progression:
+        cumulative += block.duration_weeks
+        if target <= cumulative:
+            chosen = block
+            break
+    low, high = chosen.target_rpe_range
+    return PhaseEnvelope(chosen.block_type.value, chosen.volume_modifier, low, high, source=source)
+
+
 def periodization_envelope(
     duration_weeks: int,
     week_number: int,
@@ -570,30 +673,30 @@ def periodization_envelope(
     intensity: str | None = None,
     *,
     goal: str | None = None,
-    domain: str | None = None,
 ) -> PhaseEnvelope:
-    """Resolve a block week to its periodization envelope (ADR-0029).
+    """Resolve a block week to its periodization envelope (ADR-0029, ADR-0071).
 
-    A generic accumulation → intensification → peak progression with periodic
-    deloads and an end taper. The prescriber applies ``volume_modifier`` to the
-    session and targets ``rpe_low..rpe_high``; state may pull the prescription
-    *down* within this envelope but never above it.
-
-    ``goal`` (the block's goal) and ``domain`` (the planned day's canonical domain) are the
-    inputs a domain-specific envelope resolves from (phase 7). This stays the ONE entry point:
-    every caller passes them here rather than choosing a template beside it.
+    The ONE entry point. ``goal`` is the block's periodization goal
+    (:func:`periodization_goal`). A block goal with an authored template gets that template's
+    bands, fitted over its working weeks; every other goal gets the generic accumulation →
+    intensification → peak progression. Either way the block's own calendar decides WHEN a
+    week is a deload or the taper. The prescriber applies ``volume_modifier`` to the session
+    and targets ``rpe_low..rpe_high``; state may pull the prescription *down* within this
+    envelope but never above it.
     """
-    del goal, domain  # phase 7.0: plumbed, not yet consulted
     weeks = max(1, int(duration_weeks))
     wk = max(1, int(week_number))
     deload_n = max(0, int(deload_every_n_weeks))
+    template = _BLOCK_TEMPLATES.get(goal) if goal else None
+    source = goal.lower() if template is not None and goal else GENERIC_PERIODIZATION
 
     # Recovery weeks ignore the preference entirely: a deload the athlete can talk their way
     # out of is not a deload, and a taper exists to arrive fresh.
-    if wk >= weeks and weeks >= 3:
-        return PhaseEnvelope("taper", 0.55, 6.0, 8.0)
-    if deload_n and wk % deload_n == 0:
-        return PhaseEnvelope("deload", 0.5, 5.0, 6.5)
+    recovery = _recovery_week(wk, weeks, deload_n)
+    if recovery is not None:
+        return _template_recovery(template, recovery, source)
+    if template is not None:
+        return _with_intensity(_template_working_phase(template, wk, weeks, deload_n, source), intensity)
 
     frac = wk / weeks
     if frac <= 0.4:
@@ -616,9 +719,8 @@ def _with_intensity(envelope: PhaseEnvelope, intensity: str | None) -> PhaseEnve
     _, rpe_shift = _INTENSITY_ADJUSTMENT[normalize_intensity(intensity)]
     if rpe_shift == 0.0:
         return envelope
-    return PhaseEnvelope(
-        envelope.phase,
-        envelope.volume_modifier,
-        max(1.0, min(INTENSITY_RPE_CEILING, envelope.rpe_low + rpe_shift)),
-        max(1.0, min(INTENSITY_RPE_CEILING, envelope.rpe_high + rpe_shift)),
+    return replace(
+        envelope,
+        rpe_low=max(1.0, min(INTENSITY_RPE_CEILING, envelope.rpe_low + rpe_shift)),
+        rpe_high=max(1.0, min(INTENSITY_RPE_CEILING, envelope.rpe_high + rpe_shift)),
     )
