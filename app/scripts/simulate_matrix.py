@@ -42,9 +42,14 @@ corrections to #1:
   prescriber's own ``plan:session_replaced=`` code), and ``redirect`` for a readiness /
   safety session that is not a library template.
 
+Matrix #3 (phase-6 exit) adds the six HYROX and CrossFit planned days, each as an active
+HYROX or CrossFit block passes it. Before phase 6, three of them bound no template and two
+bound one with no exercise slots.
+
 Run:
     uv run python -m app.scripts.simulate_matrix
     uv run python -m app.scripts.simulate_matrix --grid phase-5         --out docs/simulations/phase-5.md --title "Simulation matrix #2 — phase 5 exit"
+    uv run python -m app.scripts.simulate_matrix --grid phase-6         --out docs/simulations/phase-6.md --title "Simulation matrix #3 — phase 6 exit"
 """
 from __future__ import annotations
 
@@ -122,6 +127,18 @@ PHASE_5_GOALS: dict[str, tuple[str, str, str, dict[str, float]]] = {
     "potentiation": ("Power", "power", "Strength Potentiation", {}),
 }
 
+#: The phase-6 grid: the phase-5 grid plus every HYROX and CrossFit planned day
+#: (``planning_service._DEFAULT_TEMPLATES``), with the goal an active block passes.
+PHASE_6_GOALS: dict[str, tuple[str, str, str, dict[str, float]]] = {
+    **PHASE_5_GOALS,
+    "hyrox_strength_endurance": ("Hyrox", "mixed", "Strength Endurance", {}),
+    "hyrox_running_functional": ("Hyrox", "mixed", "Running + Functional", {}),
+    "hyrox_simulation": ("Hyrox", "mixed", "Hyrox Simulation", {}),
+    "crossfit_strength_skill": ("CrossFit", "mixed", "Strength + Skill", {}),
+    "crossfit_metcon": ("CrossFit", "mixed", "MetCon", {}),
+    "crossfit_engine_work": ("CrossFit", "mixed", "Engine Work", {}),
+}
+
 
 def _catalog() -> list[CatalogExercise]:
     """The movement catalog as plain data, from the seeder source: no database."""
@@ -149,6 +166,7 @@ def _catalog() -> list[CatalogExercise]:
 GRIDS: dict[str, tuple[dict[str, tuple[str, str, str, dict[str, float]]], list[CatalogExercise] | None]] = {
     "phase-1": ({label: (*spec, {}) for label, spec in GOALS.items()}, None),
     "phase-5": (PHASE_5_GOALS, _catalog()),
+    "phase-6": (PHASE_6_GOALS, _catalog()),
 }
 
 WORKLOADS = ("easy", "medium", "hard")
@@ -424,8 +442,9 @@ def render(cells: list[Cell], title: str = "Simulation matrix #1 — phase 1 exi
             lines.append(f"| {label} | {light:.2f} | {heavy:.2f} | {verdict} |")
         lines += [
             "",
-            "v1 already orders these correctly and is uncalibrated, so the fix is phase 8B/8C",
-            "activation rather than another change to the dose law.",
+            "v1 orders this example correctly and is uncalibrated, so for it the fix is phase",
+            "8B/8C activation rather than another change to the dose law. The example is a",
+            "Strength log: it does not show how v1 orders any other flagged session.",
         ]
 
     lines += [
