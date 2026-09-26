@@ -29,6 +29,7 @@ from typing import Any, Literal
 from app.logic.candidate_library import get_templates, score_template
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
+    WorkloadVolume,
 )
 from app.logic.constraint_engine.candidate import (
     overall_readiness as _readiness,
@@ -511,8 +512,12 @@ def _apply_intensity_sets(
     domain: str,
     *,
     is_recovery_week: bool,
+    workload_volume: WorkloadVolume = "scaled",
 ) -> None:
     """Move working sets by the block's workload preference, and always say what happened.
+
+    A session whose template declares ``workload_volume="fixed"`` keeps its authored volume:
+    its volume is the protocol, not a knob (the phase-5 potentiation primer).
 
     Every no-op is reported with its reason. A preference that silently does nothing is the
     defect this whole slice exists to avoid: the athlete chose "hard" and is owed either more
@@ -523,6 +528,8 @@ def _apply_intensity_sets(
     reason: str | None = None
     if is_recovery_week:
         reason = "recovery-week"
+    elif workload_volume == "fixed":
+        reason = "fixed-volume"
     elif domain not in INTENSITY_SET_DOMAINS:
         reason = f"no-set-targets:{domain}"
 
@@ -1413,6 +1420,7 @@ def _recommend_next_session(
         intensity,
         session_domain or _candidate_domain(str(goal)),
         is_recovery_week=_is_recovery_week(block, week_n, weeks_total),
+        workload_volume=scored[0].workload_volume,
     )
 
     if rx.why:

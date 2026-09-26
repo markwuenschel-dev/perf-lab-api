@@ -279,3 +279,77 @@ def test_a_fatigued_threshold_day_still_yields_to_readiness(
 
     assert scored[0].branch_id not in THRESHOLD_IDS, [c.branch_id for c in scored]
     assert _plan_codes(rx) == ["plan:session_replaced=running_threshold(readiness)"]
+
+
+# ── the potentiation primer has fixed volume ─────────────────────────────────
+
+LEVELS = ("easy", "medium", "hard")
+
+
+def _with_workload(
+    catalog: list[CatalogExercise], goal: str, domain: str, category: str, level: str
+) -> WorkoutPrescription:
+    """A working week (2 of 8, not a deload) so the workload step actually runs."""
+    return recommend_next_session(
+        _healthy(), goal=goal,  # type: ignore[arg-type]
+        catalog=catalog,
+        block_context={
+            "block_goal": goal, "session_domain": domain, "session_category": category,
+            "week_number": 2, "duration_weeks": 8, "deload_every_n_weeks": 4,
+            "intensity": level,
+        },
+    )
+
+
+@pytest.mark.parametrize("level", LEVELS)
+def test_every_workload_keeps_the_authored_three_rounds(
+    catalog_snapshot: list[CatalogExercise], level: str
+) -> None:
+    """Extra rounds change the fatigue / potentiation balance rather than making the same
+    session harder, so the generic ±1-set step skips the primer and says why."""
+    rx = _with_workload(
+        catalog_snapshot, "Power", "power", STRENGTH_POTENTIATION_CATEGORY, level
+    )
+
+    assert [(e.name, e.sets, e.reps) for e in rx.exercises] == [
+        ("Back Squat", 3, "2"), ("Broad Jump", 3, "3"),
+    ]
+    if level != "medium":
+        assert rx.why is not None
+        assert f"block:intensity={level}(no-op:fixed-volume)" in rx.why.constraints_applied
+
+
+def test_the_primer_structure_is_identical_at_every_workload(
+    catalog_snapshot: list[CatalogExercise],
+) -> None:
+    """Squat 2, jump 3, the jump's quality stop and recovery note: all unchanged, and no load
+    compensation either (no e1RM here, so the squat keeps its authored note)."""
+    medium, *others = (
+        _with_workload(catalog_snapshot, "Power", "power", STRENGTH_POTENTIATION_CATEGORY, lv)
+        for lv in ("medium", "easy", "hard")
+    )
+
+    assert all(rx.structure == medium.structure for rx in others)
+    assert medium.structure is not None
+    squat, jump = medium.structure
+    assert isinstance(squat, StrengthBlock) and isinstance(jump, StrengthBlock)
+    assert (squat.exercise, squat.sets, squat.reps) == ("Back Squat", 3, "2")
+    assert (jump.exercise, jump.sets, jump.reps) == ("Broad Jump", 3, "3")
+    assert "Stop or regress if jump quality clearly drops" in (jump.load_note or "")
+    assert "Full recovery" in (jump.load_note or "") and "Full recovery" in (squat.load_note or "")
+
+
+@pytest.mark.parametrize(
+    ("goal", "domain", "category"),
+    [("Power", "power", "Power Development"), ("Strength", "strength", "Max Strength")],
+)
+def test_other_strength_and_power_sessions_still_scale_by_one_set(
+    catalog_snapshot: list[CatalogExercise], goal: str, domain: str, category: str
+) -> None:
+    easy, medium, hard = (
+        _with_workload(catalog_snapshot, goal, domain, category, lv) for lv in LEVELS
+    )
+
+    base = [e.sets or 0 for e in medium.exercises]
+    assert [e.sets for e in easy.exercises] == [max(1, s - 1) for s in base]
+    assert [e.sets for e in hard.exercises] == [s + 1 for s in base]

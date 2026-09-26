@@ -23,6 +23,7 @@ from dataclasses import dataclass, field, replace
 from app.domain.vectors import FatigueState, TissueState
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
+    WorkloadVolume,
     overall_readiness,
 )
 from app.logic.exercise_slot import ExerciseSlot
@@ -139,6 +140,10 @@ class CandidateTemplate:
     scoring: ScoringSpec = field(kw_only=True)
     # Requirement-based movement slots — see class docstring.
     exercise_slots: list[ExerciseSlot] = field(default_factory=lambda: [])
+    # "scaled" (default): the block's easy/medium/hard preference moves working sets. "fixed":
+    # the authored volume is the session, and the generic scaler skips it (phase 5). A declared
+    # property of the session, so no code path keys on a template id.
+    workload_volume: WorkloadVolume = "scaled"
 
 
 # ---------------------------------------------------------------------------
@@ -477,13 +482,21 @@ POWER_POTENTIATION_TEMPLATES: list[CandidateTemplate] = [
         type=STRENGTH_POTENTIATION_CATEGORY,
         focus="3 rounds: Back Squat ×2 (heavy, no grinding) → Broad Jump ×3 — full recovery "
               "between every set",
-        rationale="Contrast pairing: a heavy squat primes the jumps that follow. Low volume on "
-                  "purpose, because accumulated fatigue cancels the potentiation.",
+        rationale="Contrast pairing: a heavy squat primes the jumps that follow. Fixed-volume "
+                  "primer: additional rounds may increase fatigue and undermine the intended "
+                  "potentiation effect, so workload-specific progression is left to the "
+                  "periodization layer.",
         branch_id="power_potentiation",
         duration_min=45,
         goal_alignment=0.9,
         tags=["squat_pattern"],
         domain="power",
+        # Three rounds is the authored protocol, not a claimed optimum. What the evidence does
+        # support is that conditioning-activity volume and recovery shift the fatigue /
+        # potentiation balance (Xu et al. 2025), so "hard = another heavy round" is not a safe
+        # generic progression. Neither sets nor load move with the workload preference; phase
+        # 7 owns primer-specific progression.
+        workload_volume="fixed",
         scoring=ScoringSpec(
             state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
             tissue_axes=("knee", "hip"), covers_weak_points=True,
@@ -1386,4 +1399,5 @@ def score_template(
     candidate = _score_from_spec(t, state, kpi, r)
     candidate.exercise_slots = t.exercise_slots
     candidate.domain = t.domain
+    candidate.workload_volume = t.workload_volume
     return candidate

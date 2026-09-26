@@ -21,15 +21,15 @@ is a generic redirect.
 
 **Findings carried forward.**
 
-1. **Workload changes the potentiation primer's volume.** easy / medium / hard prescribe 4 / 6 /
-   8 sets. The live workload step adds or removes a working set on every strength block, and
-   `power_potentiation` is strength-shaped. The session was specified as 3 × (2 squat + 3
-   jumps), low volume on purpose. Undecided.
+1. **Resolved: workload no longer changes the potentiation primer's volume.** It prescribes
+   3 × (2 squat + 3 jumps) at easy, medium and hard. The template declares
+   `workload_volume="fixed"`, and the generic ±1-set step skips it and reports
+   `block:intensity=<level>(no-op:fixed-volume)`. Sets and load stay fixed; primer-specific
+   progression is phase 7. (The first run of this matrix showed 4 / 6 / 8 sets.)
 2. **Endurance days do not change with workload.** Their duration and repetitions are fixed.
    Expected: endurance difficulty is deferred (5.5, calibration backlog C5).
-3. **easy > hard DOSE on potentiation.** It is the known v0 density inversion (explained
-   below), now also visible on a strength-shaped power day. v1 orders it correctly; the fix is
-   8B/8C.
+3. **easy > hard DOSE** remains only on the strength day: the known v0 density inversion,
+   explained below. v1 orders it correctly; the fix is 8B/8C.
 4. **Outside this grid (the fatigued rows here are 55, below the redirect threshold of 60).**
    At CNS fatigue 70 the readiness redirect `readiness_cns_aerobic_shift` still wins some
    planned days, and it prescribes Air Squat / Push-up / Lunges from the equipment fallback: it
@@ -55,22 +55,16 @@ path: baseline capacities from `state_service._BASELINE_CAPACITIES`, the session
 - production dose model: **v0** (`app/logic/dose_model.py`; v1 is shadow-only until phase 8C)
 - cells: **144** (3 experience × 2 freshness × 8 goal/day × 3 workload)
 - cells with a per-cell flag: **0**
-- cross-cell findings: **12**
+- cross-cell findings: **6**
 
 ## Findings
 
 - **easy > hard DOSE: novice/fresh/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: novice/fresh/potentiation — 3.70 vs 1.72**
 - **easy > hard DOSE: novice/fatigued/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: novice/fatigued/potentiation — 3.70 vs 1.72**
 - **easy > hard DOSE: intermediate/fresh/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: intermediate/fresh/potentiation — 3.70 vs 1.72**
 - **easy > hard DOSE: intermediate/fatigued/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: intermediate/fatigued/potentiation — 3.70 vs 1.72**
 - **easy > hard DOSE: advanced/fresh/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: advanced/fresh/potentiation — 3.70 vs 1.72**
 - **easy > hard DOSE: advanced/fatigued/strength — 4.09 vs 2.23**
-- **easy > hard DOSE: advanced/fatigued/potentiation — 3.70 vs 1.72**
 
 ### Why easy carries more dose than hard, in production
 
@@ -112,9 +106,9 @@ activation rather than another change to the dose law.
 | novice | fresh | recovery | easy | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.309 | +36.30 |
 | novice | fresh | recovery | medium | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.309 | +36.30 |
 | novice | fresh | recovery | hard | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.309 | +36.30 |
-| novice | fresh | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 4 | 52 | 3.70 | +0.605 | +32.81 |
+| novice | fresh | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.461 | +20.79 |
 | novice | fresh | potentiation | medium | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.461 | +20.79 |
-| novice | fresh | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 8 | 52 | 1.72 | +0.375 | +14.37 |
+| novice | fresh | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.461 | +20.79 |
 | novice | fatigued | strength | easy | Max Strength | Back Squat, Hip Thrust | 6 | 75 | 4.09 | +0.161 | -14.28 |
 | novice | fatigued | strength | medium | Max Strength | Back Squat, Hip Thrust | 8 | 75 | 2.89 | +0.109 | -25.40 |
 | novice | fatigued | strength | hard | Max Strength | Back Squat, Hip Thrust | 10 | 75 | 2.23 | +0.077 | -31.75 |
@@ -136,9 +130,9 @@ activation rather than another change to the dose law.
 | novice | fatigued | recovery | easy | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.230 | -15.58 |
 | novice | fatigued | recovery | medium | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.230 | -15.58 |
 | novice | fatigued | recovery | hard | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.230 | -15.58 |
-| novice | fatigued | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 4 | 52 | 3.70 | +0.264 | -19.06 |
+| novice | fatigued | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.168 | -31.09 |
 | novice | fatigued | potentiation | medium | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.168 | -31.09 |
-| novice | fatigued | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 8 | 52 | 1.72 | +0.110 | -37.51 |
+| novice | fatigued | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.168 | -31.09 |
 | intermediate | fresh | strength | easy | Max Strength | Back Squat, Hip Thrust | 6 | 75 | 4.09 | +0.321 | +37.60 |
 | intermediate | fresh | strength | medium | Max Strength | Back Squat, Hip Thrust | 8 | 75 | 2.89 | +0.235 | +26.48 |
 | intermediate | fresh | strength | hard | Max Strength | Back Squat, Hip Thrust | 10 | 75 | 2.23 | +0.182 | +20.13 |
@@ -160,9 +154,9 @@ activation rather than another change to the dose law.
 | intermediate | fresh | recovery | easy | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.140 | +36.30 |
 | intermediate | fresh | recovery | medium | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.140 | +36.30 |
 | intermediate | fresh | recovery | hard | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.140 | +36.30 |
-| intermediate | fresh | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 4 | 52 | 3.70 | +0.436 | +32.81 |
+| intermediate | fresh | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.292 | +20.79 |
 | intermediate | fresh | potentiation | medium | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.292 | +20.79 |
-| intermediate | fresh | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 8 | 52 | 1.72 | +0.205 | +14.37 |
+| intermediate | fresh | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.292 | +20.79 |
 | intermediate | fatigued | strength | easy | Max Strength | Back Squat, Hip Thrust | 6 | 75 | 4.09 | -0.009 | -14.28 |
 | intermediate | fatigued | strength | medium | Max Strength | Back Squat, Hip Thrust | 8 | 75 | 2.89 | -0.060 | -25.40 |
 | intermediate | fatigued | strength | hard | Max Strength | Back Squat, Hip Thrust | 10 | 75 | 2.23 | -0.093 | -31.75 |
@@ -184,9 +178,9 @@ activation rather than another change to the dose law.
 | intermediate | fatigued | recovery | easy | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.061 | -15.58 |
 | intermediate | fatigued | recovery | medium | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.061 | -15.58 |
 | intermediate | fatigued | recovery | hard | Active Recovery | Easy Run | 1 | 34 | 3.06 | +0.061 | -15.58 |
-| intermediate | fatigued | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 4 | 52 | 3.70 | +0.095 | -19.06 |
+| intermediate | fatigued | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | -0.001 | -31.09 |
 | intermediate | fatigued | potentiation | medium | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | -0.001 | -31.09 |
-| intermediate | fatigued | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 8 | 52 | 1.72 | -0.060 | -37.51 |
+| intermediate | fatigued | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | -0.001 | -31.09 |
 | advanced | fresh | strength | easy | Max Strength | Back Squat, Hip Thrust | 6 | 75 | 4.09 | +0.055 | +37.60 |
 | advanced | fresh | strength | medium | Max Strength | Back Squat, Hip Thrust | 8 | 75 | 2.89 | -0.031 | +26.48 |
 | advanced | fresh | strength | hard | Max Strength | Back Squat, Hip Thrust | 10 | 75 | 2.23 | -0.084 | +20.13 |
@@ -208,9 +202,9 @@ activation rather than another change to the dose law.
 | advanced | fresh | recovery | easy | Active Recovery | Easy Run | 1 | 34 | 3.06 | -0.126 | +36.30 |
 | advanced | fresh | recovery | medium | Active Recovery | Easy Run | 1 | 34 | 3.06 | -0.126 | +36.30 |
 | advanced | fresh | recovery | hard | Active Recovery | Easy Run | 1 | 34 | 3.06 | -0.126 | +36.30 |
-| advanced | fresh | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 4 | 52 | 3.70 | +0.170 | +32.81 |
+| advanced | fresh | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.026 | +20.79 |
 | advanced | fresh | potentiation | medium | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.026 | +20.79 |
-| advanced | fresh | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 8 | 52 | 1.72 | -0.060 | +14.37 |
+| advanced | fresh | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | +0.026 | +20.79 |
 | advanced | fatigued | strength | easy | Max Strength | Back Squat, Hip Thrust | 6 | 75 | 4.09 | -0.275 | -14.28 |
 | advanced | fatigued | strength | medium | Max Strength | Back Squat, Hip Thrust | 8 | 75 | 2.89 | -0.326 | -25.40 |
 | advanced | fatigued | strength | hard | Max Strength | Back Squat, Hip Thrust | 10 | 75 | 2.23 | -0.358 | -31.75 |
@@ -232,6 +226,6 @@ activation rather than another change to the dose law.
 | advanced | fatigued | recovery | easy | Active Recovery | Easy Run | 1 | 34 | 3.06 | -0.205 | -15.58 |
 | advanced | fatigued | recovery | medium | Active Recovery | Easy Run | 1 | 34 | 3.06 | -0.205 | -15.58 |
 | advanced | fatigued | recovery | hard | Active Recovery | Easy Run | 1 | 34 | 3.06 | -0.205 | -15.58 |
-| advanced | fatigued | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 4 | 52 | 3.70 | -0.171 | -19.06 |
+| advanced | fatigued | potentiation | easy | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | -0.267 | -31.09 |
 | advanced | fatigued | potentiation | medium | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | -0.267 | -31.09 |
-| advanced | fatigued | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 8 | 52 | 1.72 | -0.326 | -37.51 |
+| advanced | fatigued | potentiation | hard | Strength Potentiation | Back Squat, Broad Jump | 6 | 52 | 2.38 | -0.267 | -31.09 |

@@ -9,10 +9,13 @@ candidate *generators* (in prescriber.py) and the template *validators*
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from app.logic.exercise_slot import ExerciseSlot
 from app.schemas.state import UnifiedStateVector
+
+#: May the block's workload preference change a session's volume? See SessionCandidate.
+WorkloadVolume = Literal["scaled", "fixed"]
 
 
 @dataclass
@@ -62,6 +65,11 @@ class SessionCandidate:
     # readiness redirects in app.logic.prescriber._readiness_redirect) — those
     # never match an objective's domain-emphasis boost (Phase 4a).
     domain: str = ""
+
+    # Whether the block's workload preference may change this session's volume, carried over
+    # from the source CandidateTemplate. "fixed" is an authored protocol whose volume IS the
+    # session (the phase-5 potentiation primer): the generic ±1-set step skips it and says so.
+    workload_volume: WorkloadVolume = "scaled"
 
 
 # Default scoring weights (can be overridden per use case)
