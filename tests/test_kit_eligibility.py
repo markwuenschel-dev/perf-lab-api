@@ -35,15 +35,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 #: (domain, planned category, kit) -> today's dishonest outcome. Shrinks to empty in phase 9.
 KNOWN_GAPS: dict[tuple[str, str, str], str] = {
-    # 9.4 (a)+(b): no filler and no partial session remain. These supported home cells are
-    # honestly "unavailable" until their kit variants exist (9.4c).
-    ("strength", "Max Strength", "home"): "unavailable",
-    ("strength", "Strength — Volume", "home"): "unavailable",
-    ("strength", "Accessory Focus", "home"): "unavailable",
-    ("hypertrophy", "High Volume Upper", "home"): "unavailable",
-    ("hypertrophy", "High Volume Lower", "home"): "unavailable",
-    ("hypertrophy", "Accessory / Isolation", "home"): "unavailable",
-    ("hypertrophy", "High Volume", "home"): "unavailable",
+    # Empty since phase 9.4c: every planned day x kit is honest for a fresh athlete. The
+    # dict stays so a regression has to be added here, visibly, to pass.
 }
 
 #: Planned days a full gym supports but an athlete who configured equipment IN THE WEB APP

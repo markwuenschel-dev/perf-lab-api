@@ -136,3 +136,113 @@ def test_logging_against_an_unavailable_plan_seeds_nothing(catalog) -> None:
     seeded = _seed_exercises_from_prescription(log, planned)
     assert seeded.exercises == []
     assert seeded is log
+
+
+# ── phase 9.4c: kit variants ─────────────────────────────────────────────────────────
+
+HOME = ["dumbbells", "kettlebell", "pullup_bar"]
+
+
+@pytest.mark.parametrize(
+    ("goal", "domain", "category", "variant"),
+    [
+        ("Strength", "strength", "Strength — Volume", "strength_volume_home"),
+        ("Hypertrophy", "hypertrophy", "High Volume Upper", "hyp_upper_split_home"),
+        ("Hypertrophy", "hypertrophy", "High Volume Lower", "hyp_high_vol_home"),
+        ("Hypertrophy", "hypertrophy", "Accessory / Isolation", "hyp_maintenance_home"),
+        ("Power", "power", "Neural Priming", "power_neural_prime_jumps"),
+    ],
+)
+def test_a_home_kit_gets_the_named_variant_and_says_equipment(
+    catalog, goal, domain, category, variant
+) -> None:
+    rx = _prescribe(catalog, goal, domain, category, HOME)
+    assert rx.why is not None
+    assert rx.why.prescription_branch == variant
+    assert any(c.startswith("plan:session_replaced=") and c.endswith("(equipment)")
+               for c in rx.why.constraints_applied)
+    assert rx.why.session_unavailable is None
+    # Visibly a fallback version: the rationale says so (the title is rebuilt from the
+    # resolved exercises, so the authored focus is not where it shows).
+    assert rx.rationale.startswith("Home-kit version (ADR-0072)")
+
+
+@pytest.mark.parametrize("week", [1, 2, 3, 4])
+@pytest.mark.parametrize("equipment", [None, "full_gym"])
+def test_a_kit_variant_never_reaches_an_athlete_who_can_do_the_primary(
+    catalog, week, equipment
+) -> None:
+    """A variant is a candidate only when its primary cannot be done, so it can never tie
+    with, or rotate against, its primary (week rotation, phase 7.2)."""
+    from app.logic.kit_support import KIT_SUPPORT  # noqa: F401  (documents the kit contract)
+    from app.scripts.kit_matrix import bindings
+
+    kit = (sorted({e for ex in catalog for e in ex.equipment_required if e})
+           if equipment == "full_gym" else None)
+    level_key, _ = sm.EXPERIENCE["intermediate"]
+    for domain, category, _binding in bindings():
+        goal = {"strength": "Strength", "hypertrophy": "Hypertrophy", "power": "Power"}.get(domain)
+        if goal is None:
+            continue
+        rx = recommend_next_session(
+            sm._state(level_key, *sm.FRESHNESS["fresh"]), goal=goal,  # type: ignore[arg-type]
+            catalog=catalog, available_equipment=kit,
+            block_context={"block_goal": goal, "session_category": category,
+                           "session_domain": domain, "week_number": week,
+                           "duration_weeks": 8, "deload_every_n_weeks": 4},
+        )
+        assert rx.why is not None
+        assert not (rx.why.prescription_branch or "").endswith(("_home", "_jumps")), (
+            category, week, rx.why.prescription_branch)
+
+
+@pytest.mark.parametrize("equipment", [None, "full_gym"])
+def test_a_kit_variant_is_not_even_a_candidate_while_its_primary_can_be_done(
+    catalog, equipment
+) -> None:
+    """Stronger than "never wins": a variant ties its primary's score, so today a stable sort
+    hides it, but any future score term that differs (novelty for a repeated branch, say)
+    would hand a full-gym athlete the home version. It must not be in the pool at all."""
+    from app.logic.candidate_library import template_by_branch
+    from app.scripts.kit_matrix import bindings
+
+    kit = (sorted({e for ex in catalog for e in ex.equipment_required if e})
+           if equipment == "full_gym" else None)
+    level_key, _ = sm.EXPERIENCE["intermediate"]
+    for domain, category, _binding in bindings():
+        goal = {"strength": "Strength", "hypertrophy": "Hypertrophy", "power": "Power"}.get(domain)
+        if goal is None:
+            continue
+        pool: list[Any] = []
+        recommend_next_session(
+            sm._state(level_key, *sm.FRESHNESS["fresh"]), goal=goal,  # type: ignore[arg-type]
+            catalog=catalog, available_equipment=kit, candidate_log_out=pool,
+            block_context={"block_goal": goal, "session_category": category,
+                           "session_domain": domain, "week_number": 2,
+                           "duration_weeks": 8, "deload_every_n_weeks": 4},
+        )
+        variants = [c.branch_id for c in pool
+                    if (t := template_by_branch(c.branch_id)) and t.kit_fallback_for]
+        assert variants == [], (category, variants)
+
+
+def test_unilateral_reps_say_per_side() -> None:
+    from app.logic.candidate_library import template_by_branch
+
+    t = template_by_branch("hyp_high_vol_home")
+    assert t is not None
+    reps = {s.exercise: s.reps for s in t.exercise_slots}
+    assert reps["Split Squat"] == "12 each side"
+    assert reps["Walking Lunge"] == "15 each side"
+
+
+def test_home_variants_never_assume_a_bench() -> None:
+    """The catalog does not model a bench, and a home kit does not guarantee one, so a home
+    variant must not pin a movement that needs one (DB Bench Press, rear-foot-elevated
+    Bulgarian Split Squat). Their floor / flat equivalents are used instead."""
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+
+    needs_bench = {"Dumbbell Bench Press", "Bulgarian Split Squat", "Incline Dumbbell Press"}
+    pinned = {s.exercise for pool in GOAL_TEMPLATE_LIBRARY.values() for t in pool
+              if t.kit_fallback_for for s in t.exercise_slots}
+    assert not pinned & needs_bench

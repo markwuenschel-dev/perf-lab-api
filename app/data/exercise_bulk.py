@@ -393,6 +393,10 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ("Hanging Knee Raise", "Calisthenics", "core", ["core", "hip_flexors"], [], ["pullup_bar"], "bodyweight", 0.3, 0.2, ["core_stability"]),
         ("Hanging Leg Raise", "Calisthenics", "core", ["core", "hip_flexors"], ["lats"], ["pullup_bar"], "bodyweight", 0.45, 0.25, ["core_stability"]),
         ("Split Squat", "Hypertrophy", "single_leg", ["quads", "glutes"], ["hamstrings"], ["dumbbells"], "dumbbell", 0.4, 0.4, ["single_leg", "anterior_chain"], False, None, True),
+        # Phase 9.4c: home isolation for hyp_maintenance_home. Their own "isolation" pattern,
+        # which no slot selects by pattern: reachable only by exact pin.
+        ("Dumbbell Lateral Raise", "Hypertrophy", "isolation", ["shoulders"], [], ["dumbbells"], "dumbbell", 0.2, 0.1, ["isolation"], False, None, False),
+        ("Standing Dumbbell Calf Raise", "Hypertrophy", "isolation", ["calves"], [], ["dumbbells"], "dumbbell", 0.15, 0.2, ["isolation"], False, None, False),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags, *rest in gap_fill:
         bm = rest[0] if len(rest) > 0 else False

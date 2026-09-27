@@ -167,6 +167,9 @@ def test_phase_9_catalog_rows_are_chosen_only_by_the_templates_that_pin_them(cat
         "Snatch Pull": {"wl_strength_pulls"},
         "Wrist Mobility Circles": {"grip_recovery"},
         "Finger Extensor Opening": {"grip_recovery"},
+        # Phase 9.4c home isolation rows: exact pins only (their own "isolation" pattern).
+        "Dumbbell Lateral Raise": {"hyp_maintenance_home"},
+        "Standing Dumbbell Calf Raise": {"hyp_maintenance_home"},
     }
     chosen_by: dict[str, set[str]] = {name: set() for name in owners}
     for pool in GOAL_TEMPLATE_LIBRARY.values():

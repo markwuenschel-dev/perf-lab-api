@@ -183,3 +183,20 @@ def test_a_family_can_express_a_fixed_volume_circuit_session() -> None:
     assert (primary.workload_volume, home.workload_volume) == ("fixed", "fixed")
     assert primary.circuit is circuit and home.circuit is circuit
     assert (primary.kit_fallback_for, home.kit_fallback_for) == (None, "t_primary")
+
+
+def test_a_kit_variant_is_for_the_same_athletes_as_its_primary() -> None:
+    """ADR-0072: a kit variant adapts the equipment, never who the session is for. Its
+    eligibility gates must be the primary's. Checked as "declares the same gates": the
+    predicates are lambdas and cannot be compared by value, so each carried gate is a copy."""
+    from app.logic.candidate_library import template_by_branch
+
+    variants = [(v, f) for f in WORKOUT_FAMILIES for v in f.variants if v.kit_fallback_for]
+    assert variants, "phase 9.4c declares kit variants"
+    for variant, family in variants:
+        primary = next(v for v in family.variants if v.branch_id == variant.kit_fallback_for)
+        assert template_by_branch(variant.kit_fallback_for) is not None
+        for gate in ("state_eligible", "kpi_eligible", "goal_eligible"):
+            assert (getattr(variant, gate) is None) == (getattr(primary, gate) is None), (
+                variant.branch_id, gate,
+            )

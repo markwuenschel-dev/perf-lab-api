@@ -405,6 +405,19 @@ STRENGTH_VOLUME_FAMILY = WorkoutFamily(
             rationale="Volume accumulation with controlled intensity — good for fatigued states.",
             branch_id="strength_volume",
         ),
+        # Phase 9.4c: the home implementation of the same volume-strength intent. Goblet Squat
+        # is the front-loaded squat a dumbbell/kettlebell kit supports; the row is PINNED like
+        # the primary's. All numbers AUTHORED.
+        FamilyVariant(
+            branch_id="strength_volume_home",
+            rationale="Home-kit version (ADR-0072): the athlete's equipment cannot do the gym session. Front-loaded squat volume and a pinned row, capped at RPE 7.",
+            focus="Goblet Squat 4×6 @ RPE ≤7 + Dumbbell Row 3×10 (home version)",
+            exercise_slots=(
+                ExerciseSlot(sets="4", reps="6", exercise="Goblet Squat", rpe_cap=7.0),
+                ExerciseSlot(sets="3", reps="10", exercise="Dumbbell Row"),
+            ),
+            kit_fallback_for="strength_volume",
+        ),
     ),
 )
 
@@ -438,6 +451,21 @@ HYP_HIGH_VOL_FAMILY = WorkoutFamily(
             rationale="Metabolic stress and mechanical tension with high proximity to failure.",
             branch_id="hyp_high_vol",
         ),
+        # Phase 9.4c: unilateral lower-body volume. Reps are PER SIDE, said in the prescription
+        # itself, so no logging or UI code has to guess. Split Squat, not Bulgarian: the rear-foot
+        # elevation needs a bench or box that the catalog does not model and a home kit does not
+        # guarantee. All numbers AUTHORED.
+        FamilyVariant(
+            branch_id="hyp_high_vol_home",
+            rationale="Home-kit version (ADR-0072): the athlete's equipment cannot do the gym session. Lower-body volume near failure with dumbbells.",
+            focus="Split Squat 4×12/side + Walking Lunge 3×15/side + DB RDL 3×12 near failure (home version)",
+            exercise_slots=(
+                ExerciseSlot(sets="4", reps="12 each side", exercise="Split Squat"),
+                ExerciseSlot(sets="3", reps="15 each side", exercise="Walking Lunge"),
+                ExerciseSlot(sets="3", reps="12", exercise="DB RDL"),
+            ),
+            kit_fallback_for="hyp_high_vol",
+        ),
     ),
 )
 
@@ -464,6 +492,19 @@ HYP_MAINTENANCE_FAMILY = WorkoutFamily(
         FamilyVariant(
             rationale="Residual fatigue present — accumulate volume without overreaching.",
             branch_id="hyp_maintenance",
+        ),
+        # Phase 9.4c: the isolation day stays an isolation day: one upper and one lower
+        # single-joint movement, the primary's 3x10 capped at RPE 7. Exercise identities are new
+        # (two catalog rows), workload magnitudes are not.
+        FamilyVariant(
+            branch_id="hyp_maintenance_home",
+            rationale="Home-kit version (ADR-0072): the athlete's equipment cannot do the gym session. Upper and lower isolation with dumbbells.",
+            focus="Dumbbell Lateral Raise 3×10 + Standing Dumbbell Calf Raise 3×10 @ RPE 7 (home version)",
+            exercise_slots=(
+                ExerciseSlot(sets="3", reps="10", exercise="Dumbbell Lateral Raise", rpe_cap=7.0),
+                ExerciseSlot(sets="3", reps="10", exercise="Standing Dumbbell Calf Raise", rpe_cap=7.0),
+            ),
+            kit_fallback_for="hyp_maintenance",
         ),
     ),
 )
@@ -499,6 +540,23 @@ HYP_UPPER_SPLIT_FAMILY = WorkoutFamily(
             # Only when reasonably fresh — keeps hyp_maintenance the pick under elevated
             # muscular fatigue (see tests/test_prescriber_exercise_selection.py).
             state_eligible=lambda s: s.fatigue_f.muscular < 55.0,
+        ),
+        # Phase 9.4c: dumbbell pressing and rowing. DB Floor Press, not DB Bench Press: the
+        # catalog does not model a bench, and a home kit does not guarantee one, so "dumbbells
+        # present" must not imply a bench. All numbers AUTHORED (the primary's scheme).
+        FamilyVariant(
+            branch_id="hyp_upper_split_home",
+            # The primary's fatigue gate, carried over: a kit variant adapts the equipment,
+            # never who the session is for.
+            state_eligible=lambda s: s.fatigue_f.muscular < 55.0,
+            rationale="Home-kit version (ADR-0072): the athlete's equipment cannot do the gym session. Upper-body tension and volume with dumbbells only.",
+            focus="DB Floor Press 4×10 + Dumbbell Row 4×10 + Dumbbell Shoulder Press 3×12 (home version)",
+            exercise_slots=(
+                ExerciseSlot(sets="4", reps="10", exercise="DB Floor Press"),
+                ExerciseSlot(sets="4", reps="10", exercise="Dumbbell Row"),
+                ExerciseSlot(sets="3", reps="12", exercise="Dumbbell Shoulder Press"),
+            ),
+            kit_fallback_for="hyp_upper_split",
         ),
     ),
 )
@@ -556,6 +614,18 @@ POWER_NEURAL_PRIME_FAMILY = WorkoutFamily(
         FamilyVariant(
             rationale="Brief neural exposures — maintain power quality under partial fatigue.",
             branch_id="power_neural_prime",
+        ),
+        # Phase 9.4c: the throw needs a med ball, so this version is jumps only. An explicit,
+        # named content reduction, not a partial realization of the primary. Capped at RPE 6.
+        FamilyVariant(
+            branch_id="power_neural_prime_jumps",
+            rationale="Home-kit version (ADR-0072): the athlete's equipment cannot do the gym session. Jumps only: the throw needs a med ball you haven't listed.",
+            focus="Jumps only (Low Volume, Long Rest) @ RPE 6 (no med ball)",
+            exercise_slots=(
+                ExerciseSlot(sets="4", reps="3", movement_pattern="jump", modality="Power",
+                             rpe_cap=6.0),
+            ),
+            kit_fallback_for="power_neural_prime",
         ),
     ),
 )

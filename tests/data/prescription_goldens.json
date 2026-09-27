@@ -1051,6 +1051,88 @@
     "type": "High Volume Hypertrophy",
     "workload_volume": "scaled"
   },
+  "hypertrophy/hyp_high_vol_home": {
+    "circuit": null,
+    "duration_min": 75,
+    "focus": "Split Squat 4\u00d712/side + Walking Lunge 3\u00d715/side + DB RDL 3\u00d712 near failure (home version)",
+    "goal_alignment": 1.0,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 1.0,
+      "tissue_axes": [
+        "knee",
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Split Squat",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "12 each side",
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
+      },
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Walking Lunge",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "15 each side",
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
+      },
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "DB RDL",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "12",
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
+      }
+    ],
+    "tags": [
+      "anterior_chain",
+      "posterior_chain"
+    ],
+    "type": "High Volume Hypertrophy",
+    "workload_volume": "scaled"
+  },
   "hypertrophy/hyp_maintenance": {
     "circuit": null,
     "duration_min": 45,
@@ -1089,6 +1171,63 @@
         "e1rm_code": null,
         "endurance": null,
         "exercise": "Leg Curl",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "10",
+        "rpe_cap": 7.0,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
+      }
+    ],
+    "tags": [],
+    "type": "Maintenance Volume",
+    "workload_volume": "scaled"
+  },
+  "hypertrophy/hyp_maintenance_home": {
+    "circuit": null,
+    "duration_min": 45,
+    "focus": "Dumbbell Lateral Raise 3\u00d710 + Standing Dumbbell Calf Raise 3\u00d710 @ RPE 7 (home version)",
+    "goal_alignment": 0.7,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.4,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Dumbbell Lateral Raise",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "10",
+        "rpe_cap": 7.0,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
+      },
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Standing Dumbbell Calf Raise",
         "load_note": null,
         "load_type": null,
         "max_skill_demand": null,
@@ -1180,6 +1319,85 @@
         "rpe_cap": null,
         "sets": "3",
         "skill_target": 0.4,
+        "sport_domain": null
+      }
+    ],
+    "tags": [],
+    "type": "Upper Body Hypertrophy",
+    "workload_volume": "scaled"
+  },
+  "hypertrophy/hyp_upper_split_home": {
+    "circuit": null,
+    "duration_min": 60,
+    "focus": "DB Floor Press 4\u00d710 + Dumbbell Row 4\u00d710 + Dumbbell Shoulder Press 3\u00d712 (home version)",
+    "goal_alignment": 0.9,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.6,
+      "tissue_axes": [
+        "shoulder",
+        "lumbar"
+      ],
+      "tissue_weight": 0.5
+    },
+    "slot_count": 3,
+    "slots": [
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "DB Floor Press",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "10",
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
+      },
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Dumbbell Row",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "10",
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
+      },
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Dumbbell Shoulder Press",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "12",
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
         "sport_domain": null
       }
     ],
@@ -2263,6 +2481,44 @@
         "reps": "3",
         "rpe_cap": 6.0,
         "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
+      }
+    ],
+    "tags": [],
+    "type": "Neural Priming",
+    "workload_volume": "scaled"
+  },
+  "power/power_neural_prime_jumps": {
+    "circuit": null,
+    "duration_min": 30,
+    "focus": "Jumps only (Low Volume, Long Rest) @ RPE 6 (no med ball)",
+    "goal_alignment": 0.7,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "cns",
+      "fatigue_weight": 0.5,
+      "tissue_axes": [],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 1,
+    "slots": [
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "jump",
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "3",
+        "rpe_cap": 6.0,
+        "sets": "4",
         "skill_target": null,
         "sport_domain": null
       }
@@ -3799,6 +4055,65 @@
         "e1rm_code": null,
         "endurance": null,
         "exercise": "Barbell Row",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "10",
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
+      }
+    ],
+    "tags": [],
+    "type": "Strength \u2014 Volume",
+    "workload_volume": "scaled"
+  },
+  "strength/strength_volume_home": {
+    "circuit": null,
+    "duration_min": 55,
+    "focus": "Goblet Squat 4\u00d76 @ RPE \u22647 + Dumbbell Row 3\u00d710 (home version)",
+    "goal_alignment": 0.8,
+    "scoring": {
+      "fatigue_axes": [],
+      "fatigue_axis": "muscular",
+      "fatigue_weight": 0.7,
+      "tissue_axes": [
+        "hip"
+      ],
+      "tissue_weight": 1.0
+    },
+    "slot_count": 2,
+    "slots": [
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Goblet Squat",
+        "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
+        "reps": "6",
+        "rpe_cap": 7.0,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
+      },
+      {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Dumbbell Row",
         "load_note": null,
         "load_type": null,
         "max_skill_demand": null,
