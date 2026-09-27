@@ -43,8 +43,8 @@ KNOWN_GAPS: dict[tuple[str, str, str], str] = {
 #: cannot reach, because the picker cannot express a tag the day needs. Known unsupported UI
 #: configurations, not passes: separate PR A2 (web equipment tags) empties this.
 UI_UNSUPPORTED: dict[tuple[str, str], str] = {
-    ("mixed", "Hyrox Simulation"): "unavailable",
-    ("mixed", "Running + Functional"): "unavailable",
+    # Empty since the web picker offers every catalog tag (tests/
+    # test_equipment_picker_matches_catalog.py keeps it that way).
 }
 
 
