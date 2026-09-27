@@ -113,3 +113,85 @@ def test_overview_counts_users_range_and_missing_build_identity() -> None:
 
 def test_the_report_says_it_authorizes_nothing() -> None:
     assert "authorizes nothing" in format_report(summarize([_row()]))
+
+
+# --- census -----------------------------------------------------------------------------
+
+from datetime import timedelta  # noqa: E402
+
+from app.logic.dose_fit_policy import LoggedSession  # noqa: E402
+from app.scripts.dose_shadow_report import census, format_census  # noqa: E402
+
+
+def _history_for(user: int, n: int, *, first_wl: int, version: str = "v1.2", **over: Any):
+    t0 = datetime(2026, 9, 1, 8, 0, tzinfo=UTC)
+    sessions, rows = [], []
+    for i in range(n):
+        wl = first_wl + i
+        at = t0 + timedelta(days=2 * i)
+        sessions.append(LoggedSession(workout_log_id=wl, user_id=user, at=at, session_rpe=6.0))
+        rows.append(
+            _row(
+                user_id=user,
+                workout_log_id=wl,
+                session_at=at,
+                v1_model_version=version,
+                v1_density_basis="sets_per_elapsed_minute",
+                **over,
+            )
+        )
+    return rows, sessions
+
+
+def test_the_production_census_of_2026_09_27_reports_nothing_to_fit() -> None:
+    # EC2 on 2026-09-27: one athlete, one workout log, one shadow row, no next session.
+    rows, sessions = _history_for(1, 1, first_wl=1, version="v1")
+    real = census(rows, sessions, seeded_user_ids=[])["real"]["by_v1_model_version"]["v1"]
+    assert real["eligible_rows"] == 1
+    assert real["labelled_pairs"] == 0
+    assert real["athletes_holdout_capable"] == 0
+    assert real["athletes_with_at_least_n_eligible_sessions"]["2"] == 0
+    assert real["eligible_rows_by_pair_status"] == {"no_next_session": 1}
+
+
+def test_seeded_athletes_are_never_pooled_with_real_ones() -> None:
+    real_rows, real_s = _history_for(1, 6, first_wl=1)
+    seed_rows, seed_s = _history_for(2, 20, first_wl=100)
+    out = census([*real_rows, *seed_rows], [*real_s, *seed_s], seeded_user_ids=[2])
+    assert out["real"]["athletes"] == 1 and out["seeded"]["athletes"] == 1
+    assert out["real"]["by_v1_model_version"]["v1.2"]["labelled_pairs"] == 6 - 3 - 1
+    assert out["seeded"]["by_v1_model_version"]["v1.2"]["athletes_holdout_capable"] == 1
+    assert out["real"]["by_v1_model_version"]["v1.2"]["athletes_holdout_capable"] == 0
+
+
+def test_model_versions_are_counted_separately() -> None:
+    a, sa = _history_for(1, 5, first_wl=1, version="v1.1")
+    b, sb = _history_for(1, 5, first_wl=50, version="v1.2")
+    versions = census([*a, *b], [*sa, *sb], seeded_user_ids=[])["real"]["by_v1_model_version"]
+    assert set(versions) == {"v1.1", "v1.2"}
+    assert versions["v1.1"]["rows"] == versions["v1.2"]["rows"] == 5
+
+
+def test_ineligible_rows_are_tiered_and_never_paired() -> None:
+    rows, sessions = _history_for(1, 6, first_wl=1)
+    rows[4]["v1_density_basis"] = "prescribed_timed_work_over_elapsed"
+    rows[3]["v0_volume_used_fabricated_sets"] = True
+    v = census(rows, sessions, seeded_user_ids=[])["real"]["by_v1_model_version"]["v1.2"]
+    assert v["rows_by_fit_tier"] == {"eligible": 4, "fabricated_sets": 1, "prescribed_proxy": 1}
+    # Rows 4 and 5 (wl 4, 5) would have been labelled; only eligible rows count as pairs.
+    assert v["labelled_pairs"] == 0
+    assert sum(v["eligible_rows_by_pair_status"].values()) == 4
+
+
+def test_a_row_without_a_workout_log_is_counted_as_unlinked() -> None:
+    rows, sessions = _history_for(1, 1, first_wl=1)
+    rows[0]["workout_log_id"] = None
+    v = census(rows, sessions, seeded_user_ids=[])["real"]["by_v1_model_version"]["v1.2"]
+    assert v["eligible_rows_by_pair_status"] == {"unlinked_workout_log": 1}
+
+
+def test_census_text_names_the_policy_and_the_causal_baseline() -> None:
+    rows, sessions = _history_for(1, 2, first_wl=1)
+    text = format_census(census(rows, sessions, seeded_user_ids=[]))
+    assert "fit policy fit-policy-" in text
+    assert "causal baseline" in text
