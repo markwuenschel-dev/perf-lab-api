@@ -8101,7 +8101,7 @@
             "type": "string"
           },
           "model_version": {
-            "default": "v0.6",
+            "default": "v0.7",
             "description": "Prescription engine version",
             "title": "Model Version",
             "type": "string"

@@ -342,6 +342,8 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ("Pallof Press", "Strength", "core", ["core"], ["shoulders"], ["cable"], "cable", 0.35, 0.2, ["core_stability", "rotation"]),
         ("Hanging L-Sit", "Calisthenics", "core", ["core", "hip_flexors"], ["lats"], ["pullup_bar"], "bodyweight", 0.72, 0.25, ["core_stability", "gymnastics_skill"]),
         ("Med Ball Slam", "Power", "mixed", ["core", "lats"], ["shoulders"], ["wall_ball"], "reps", 0.42, 0.45, ["work_capacity", "power"]),
+        # Phase 9.1: a true ballistic THROW (released, horizontal), for neural priming.
+        ("Med Ball Chest Pass", "Power", "push_horizontal", ["chest", "triceps"], ["shoulders", "core"], ["wall_ball"], "reps", 0.30, 0.25, ["power", "plyometric"]),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags in midline:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags))

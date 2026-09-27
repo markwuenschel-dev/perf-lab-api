@@ -37,8 +37,6 @@ ROOT = Path(__file__).resolve().parents[1]
 KNOWN_GAPS: dict[tuple[str, str, str], str] = {
     ("strength", "Max Strength", "home"): "filler",
     ("strength", "Max Strength", "bodyweight"): "filler",
-    ("strength", "Strength — Volume", "unconfigured"): "filler",
-    ("strength", "Strength — Volume", "full_gym"): "filler",
     ("strength", "Strength — Volume", "home"): "filler",
     ("strength", "Strength — Volume", "bodyweight"): "filler",
     ("strength", "Accessory Focus", "home"): "filler",
@@ -47,18 +45,16 @@ KNOWN_GAPS: dict[tuple[str, str, str], str] = {
     ("hypertrophy", "High Volume Upper", "bodyweight"): "filler",
     ("hypertrophy", "High Volume Lower", "home"): "partial",
     ("hypertrophy", "High Volume Lower", "bodyweight"): "filler",
-    ("hypertrophy", "Accessory / Isolation", "unconfigured"): "filler",
-    ("hypertrophy", "Accessory / Isolation", "full_gym"): "filler",
     ("hypertrophy", "Accessory / Isolation", "home"): "filler",
     ("hypertrophy", "Accessory / Isolation", "bodyweight"): "filler",
     ("hypertrophy", "High Volume", "home"): "partial",
     ("hypertrophy", "High Volume", "bodyweight"): "filler",
     ("power", "Power Development", "home"): "partial",
     ("power", "Power Development", "bodyweight"): "partial",
-    ("power", "Neural Priming", "unconfigured"): "filler",
-    ("power", "Neural Priming", "full_gym"): "filler",
-    ("power", "Neural Priming", "home"): "filler",
-    ("power", "Neural Priming", "bodyweight"): "filler",
+    # 9.1: the jump realizes; the chest pass needs a med ball (wall_ball). 9.4 adds the
+    # jump-only variant.
+    ("power", "Neural Priming", "home"): "partial",
+    ("power", "Neural Priming", "bodyweight"): "partial",
     ("power", "Strength Potentiation", "home"): "filler",
     ("power", "Strength Potentiation", "bodyweight"): "filler",
     ("powerlifting", "SBD Strength", "home"): "filler",
@@ -99,6 +95,7 @@ KNOWN_GAPS: dict[tuple[str, str, str], str] = {
 #: cannot reach, because the picker cannot express a tag the day needs. Known unsupported UI
 #: configurations, not passes: separate PR A2 (web equipment tags) empties this.
 UI_UNSUPPORTED: dict[tuple[str, str], str] = {
+    ("power", "Neural Priming"): "partial",
     ("mixed", "Hyrox Simulation"): "filler",
     ("mixed", "Running + Functional"): "filler",
 }

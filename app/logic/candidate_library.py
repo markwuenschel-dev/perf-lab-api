@@ -324,6 +324,13 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         tags=[],
         domain="strength",
         state_eligible=lambda s: s.habit_strength < 0.45,
+        # Phase 9.1: the focus text, encoded. Sets and reps are AUTHORED (the text names the
+        # movements only).
+        exercise_slots=[
+            ExerciseSlot(sets="3", reps="5", exercise="Box Squat"),
+            ExerciseSlot(sets="3", reps="5", exercise="Trap Bar Deadlift"),
+            ExerciseSlot(sets="3", reps="8", exercise="Med Ball Slam"),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axis="muscular",
@@ -342,6 +349,13 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.8,
         tags=[],
         domain="strength",
+        # Phase 9.1: the focus text, encoded. Front Squat 4x6 capped at RPE 7 is the text.
+        # The pull is PINNED so a weak-point ranking cannot swap it; Barbell Row 3x10 is
+        # AUTHORED (the text says only "Accessory Pull").
+        exercise_slots=[
+            ExerciseSlot(sets="4", reps="6", exercise="Front Squat", rpe_cap=7.0),
+            ExerciseSlot(sets="3", reps="10", exercise="Barbell Row"),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: max(0.3, 1.0 - s.fatigue_f.muscular / 100.0),
             fatigue_axis="muscular",
@@ -382,6 +396,13 @@ HYPERTROPHY_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.7,
         tags=[],
         domain="hypertrophy",
+        # Phase 9.1: the focus text, encoded: machine isolation 3x10 capped at RPE 7, one
+        # upper and one lower. Pinned rather than selected by pattern, because "machine +
+        # squat" also matches Leg Press, a compound lift. The two movements are AUTHORED.
+        exercise_slots=[
+            ExerciseSlot(sets="3", reps="10", exercise="Pec Deck", rpe_cap=7.0),
+            ExerciseSlot(sets="3", reps="10", exercise="Leg Curl", rpe_cap=7.0),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axis="muscular", fatigue_weight=0.4, habit_mult=0.5,
@@ -446,6 +467,13 @@ POWER_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.7,
         tags=[],
         domain="power",
+        # Phase 9.1: the focus text, encoded: a jump and a THROW, low volume, capped at RPE 6.
+        # The throw is a Med Ball Chest Pass (a ballistic release), not a slam, whose
+        # direction and intent differ. 4x3 and 3x3 are AUTHORED ("low volume").
+        exercise_slots=[
+            ExerciseSlot(sets="4", reps="3", movement_pattern="jump", modality="Power", rpe_cap=6.0),
+            ExerciseSlot(sets="3", reps="3", exercise="Med Ball Chest Pass", rpe_cap=6.0),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: max(0.4, 1.0 - s.fatigue_f.cns / 100.0),
             fatigue_weight=0.5, habit_mult=0.6,
