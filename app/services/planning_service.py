@@ -75,8 +75,24 @@ _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
 
 
 def _default_template_for_goal(goal: BlockGoal, sessions_per_week: int) -> list[WeeklyTemplateSlot]:
-    slots = _DEFAULT_TEMPLATES.get(goal) or _DEFAULT_TEMPLATES[BlockGoal.STRENGTH]
-    return slots[:sessions_per_week]
+    """The goal's default week with exactly ``sessions_per_week`` sessions (1-7).
+
+    Every goal authors 3 days. Up to 3 sessions keeps the authored days (unchanged). Beyond
+    that, each extra session repeats the authored categories in order, on the first free day
+    of ``_WEEK_DAY_ORDER`` (the modality-mix path's spacing): no category and no spacing rule
+    is invented. Returned in day order, because ``create_block_with_sessions`` treats the
+    last slot as the benchmark day.
+    """
+    authored = _DEFAULT_TEMPLATES.get(goal) or _DEFAULT_TEMPLATES[BlockGoal.STRENGTH]
+    if sessions_per_week <= len(authored):
+        return authored[:sessions_per_week]
+    used = {s.day_of_week for s in authored}
+    free_days = [d for d in _WEEK_DAY_ORDER if d not in used]
+    extras = [
+        authored[i % len(authored)].model_copy(update={"day_of_week": day})
+        for i, day in enumerate(free_days[: sessions_per_week - len(authored)])
+    ]
+    return sorted([*authored, *extras], key=lambda s: s.day_of_week)
 
 
 # Canonical domain → a representative weekly slot (category, modality).
