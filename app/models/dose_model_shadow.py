@@ -66,6 +66,20 @@ class DoseModelShadowLog(Base):
     # the workout family as the planner named it. None for unplanned sessions.
     planned_domain: Mapped[str | None] = mapped_column(String(40), nullable=True)
     planned_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # --- who the athlete was and what the planner asked for (a047, phase 8.2) ------------
+    # Coverage dimensions for a fit. Null on rows written before a047.
+    # athlete_profiles.experience_level at ingest; null when the athlete has no profile.
+    experience_level: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The EFFECTIVE easy/medium/hard of the linked session's block: an unset preference is
+    # "medium", because that is what the prescriber applied (planning.normalize_intensity).
+    # Null only when no block was linked (an unplanned session has no workload preference).
+    workload_preference: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # True when workload_preference came from the default rather than the athlete's choice.
+    workload_preference_defaulted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # The linked prescription's why.prescription_branch: the PRESCRIBER BRANCH id — a
+    # template's branch_id on the goal path, a safety/readiness path id otherwise. Not a
+    # template id (why.template_id is a coaching-program template, a different thing).
+    prescription_branch: Mapped[str | None] = mapped_column(String(80), nullable=True)
     duration_minutes: Mapped[float] = mapped_column(Float, nullable=False)
     session_rpe: Mapped[float] = mapped_column(Float, nullable=False)
     # The work representation that was actually reported — None where it was not.

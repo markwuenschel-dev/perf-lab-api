@@ -18,15 +18,19 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic import dose_engine_v1
 from app.logic.dose_model import NOT_MODELLED, DensityMeasurement
+from app.logic.planning import normalize_intensity
 from app.logic.state_update_v0 import STATE_UPDATE_MODEL_VERSION
 from app.models.dose_model_shadow import DoseModelShadowLog
+from app.models.mesocycle import MesocycleBlock
+from app.models.user import AthleteProfile
 from app.schemas.prescription import PRESCRIPTION_ENGINE_VERSION
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workout_structure import WorkoutStructure
@@ -52,6 +56,26 @@ def _state_before(state: UnifiedStateVector) -> dict[str, Any]:
         "tissue": state.tissue_t.model_dump(),
         "habit_strength": state.habit_strength,
     }
+
+
+def workload_preference(raw: str | None) -> tuple[str, bool]:
+    """The block's EFFECTIVE workload preference, and whether it came from the default.
+
+    A fit must see what the prescriber applied: an unset (or unrecognised) preference is
+    applied as medium (``planning.normalize_intensity``), so it is recorded as medium, with
+    the default flagged rather than left as a null a model would have to interpret.
+    """
+    effective = normalize_intensity(raw)
+    return effective, (raw or "").strip().lower() != effective
+
+
+def prescription_branch_of(content: Mapping[str, Any] | None) -> str | None:
+    """``why.prescription_branch`` of stored prescribed content, when it is a string."""
+    why: object = content.get("why") if content else None
+    if not isinstance(why, Mapping):
+        return None
+    branch: object = cast(Mapping[str, object], why).get("prescription_branch")
+    return branch if isinstance(branch, str) and branch else None
 
 
 _STRUCTURE = TypeAdapter(WorkoutStructure)
@@ -115,6 +139,10 @@ def build_shadow_row(
     planned_category: str | None = None,
     n_set_rows: int = 0,
     density_provenance: dict[str, Any] | None = None,
+    experience_level: str | None = None,
+    workload_preference: str | None = None,
+    workload_preference_defaulted: bool | None = None,
+    prescription_branch: str | None = None,
 ) -> DoseModelShadowLog:
     """Pure construction of one shadow row. Separated so it is testable without a database.
 
@@ -144,6 +172,10 @@ def build_shadow_row(
         modality=log.modality,
         planned_domain=planned_domain,
         planned_category=planned_category,
+        experience_level=experience_level,
+        workload_preference=workload_preference,
+        workload_preference_defaulted=workload_preference_defaulted,
+        prescription_branch=prescription_branch,
         duration_minutes=log.duration_minutes,
         session_rpe=log.session_rpe,
         reported_sets=log.estimated_sets,
@@ -184,16 +216,38 @@ async def record_dose_model_shadow(
     planned_category: str | None = None,
     n_set_rows: int = 0,
     linked_prescription: Mapping[str, Any] | None = None,
+    planned_block_id: int | None = None,
+    prescription_branch: str | None = None,
 ) -> None:
     """Compute v1 for this workout and persist it beside v0 (best-effort, capture-only).
 
     ``v0_dose`` is the dose production ALREADY computed — passed in, never recomputed, so the
     row compares v1 against exactly what drove the athlete's state. ``linked_prescription``
     is the prescribed content of an EXPLICITLY linked planned session, or None.
+
+    ``planned_block_id`` / ``prescription_branch`` describe the MATCHED planned session (the
+    same match that sets ``planned_domain``). The athlete's level and the block's workload
+    preference are read here, inside the best-effort block, so a failed lookup costs the
+    shadow row and never the workout.
     """
     async with best_effort_write(
         db, f"dose model shadow (user {user_id}, workout {workout_log_id})"
     ):
+        experience_level = (
+            await db.execute(
+                select(AthleteProfile.experience_level).where(AthleteProfile.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+        workload: str | None = None
+        workload_defaulted: bool | None = None
+        if planned_block_id is not None:
+            raw = (
+                await db.execute(
+                    select(MesocycleBlock.intensity).where(MesocycleBlock.id == planned_block_id)
+                )
+            ).scalar_one_or_none()
+            workload, workload_defaulted = workload_preference(raw)
+
         prescribed_density, provenance = resolve_prescribed_density(log, linked_prescription)
         v1_dose = dose_engine_v1.calculate_stress_dose(
             log, external_intensity=external_intensity, prescribed_density=prescribed_density
@@ -211,5 +265,9 @@ async def record_dose_model_shadow(
                 planned_category=planned_category,
                 n_set_rows=n_set_rows,
                 density_provenance=provenance,
+                experience_level=experience_level,
+                workload_preference=workload,
+                workload_preference_defaulted=workload_defaulted,
+                prescription_branch=prescription_branch,
             )
         )

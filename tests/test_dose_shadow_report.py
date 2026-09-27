@@ -195,3 +195,15 @@ def test_census_text_names_the_policy_and_the_causal_baseline() -> None:
     text = format_census(census(rows, sessions, seeded_user_ids=[]))
     assert "fit policy fit-policy-" in text
     assert "causal baseline" in text
+
+
+def test_coverage_names_why_a_context_value_is_absent() -> None:
+    rows, sessions = _history_for(1, 3, first_wl=1)
+    rows[0].update(experience_level="advanced", workload_preference="medium",
+                   workload_preference_defaulted=True, prescription_branch="strength_max")
+    rows[1].update(experience_level="advanced", workload_preference="hard",
+                   workload_preference_defaulted=False, prescription_branch="strength_max")
+    cov = census(rows, sessions, seeded_user_ids=[])["real"]["by_v1_model_version"]["v1.2"]["coverage"]
+    assert set(cov["workload_preference"]) == {"medium (default)", "hard", "no_block_or_pre_a047"}
+    assert set(cov["experience_level"]) == {"advanced", "no_profile_or_pre_a047"}
+    assert "null" not in str(cov).lower()

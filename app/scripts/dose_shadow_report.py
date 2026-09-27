@@ -57,6 +57,10 @@ REPORT_COLUMNS: tuple[str, ...] = (
     "modality",
     "planned_domain",
     "planned_category",
+    "experience_level",
+    "workload_preference",
+    "workload_preference_defaulted",
+    "prescription_branch",
     "duration_minutes",
     "reported_sets",
     "ratio_v1_v0",
@@ -186,12 +190,24 @@ CAPTURE_FIELDS: tuple[str, ...] = (
     "planned_category",
     "reported_sets",
     "code_version",
+    # a047 (phase 8.2). Null on every row written before that migration.
+    "experience_level",
+    "workload_preference",
+    "prescription_branch",
 )
 
 #: Coverage dimensions: how the eligible rows spread across what a fit must generalise over.
 COVERAGE: dict[str, Callable[[Mapping[str, Any]], str]] = {
     "modality": lambda r: str(r.get("modality") or "unknown"),
     "planned_category": lambda r: str(r.get("planned_category") or "unplanned"),
+    # Absent values are named for WHY they are absent, never a bare "null" bucket.
+    "experience_level": lambda r: str(r.get("experience_level") or "no_profile_or_pre_a047"),
+    "workload_preference": lambda r: (
+        f"{r['workload_preference']} (default)"
+        if r.get("workload_preference") and r.get("workload_preference_defaulted")
+        else str(r.get("workload_preference") or "no_block_or_pre_a047")
+    ),
+    "prescription_branch": lambda r: str(r.get("prescription_branch") or "unplanned_or_pre_a047"),
 }
 
 DEPTH_THRESHOLDS: tuple[int, ...] = (2, 3, 5, 10)
