@@ -54,7 +54,7 @@ const btnGhost =
 // Status → user-facing word + colour. "insufficient" (no baseline yet) reads as
 // "building baseline" rather than an invented judgement.
 const LOAD_STATUS: Record<TrainingLoadMetrics["status"], { label: string; color: string }> = {
-  optimal: { label: "optimal", color: "text-good" },
+  optimal: { label: "in range", color: "text-good" },
   low: { label: "low", color: "text-warn" },
   high: { label: "high", color: "text-hot" },
   insufficient: { label: "building baseline", color: "text-faint" },
@@ -432,7 +432,7 @@ function TrainingLoadCard({ load }: { load: ReturnType<typeof loadSection> }) {
             showMarker={load.acwr.kind === "value"}
           />
           <div className="mt-[7px] font-mono text-[10px] leading-none text-dim">
-            sweet spot {load.sweetSpot.value.low}–{load.sweetSpot.value.high}
+            heuristic band {load.sweetSpot.value.low}–{load.sweetSpot.value.high}
           </div>
         </>
       )}

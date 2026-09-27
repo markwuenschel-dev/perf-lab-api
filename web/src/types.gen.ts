@@ -3707,7 +3707,11 @@ export interface components {
         };
         /**
          * TrainingLoadMetrics
-         * @description Acute:chronic workload ratio vs the 0.8-1.3 sweet spot.
+         * @description Acute:chronic workload ratio against a 0.8-1.3 reference band.
+         *
+         *     The band is an unvalidated heuristic: a training-load rule of thumb that this engine has
+         *     never checked against injury outcomes. It is not an injury-risk predictor; ``status`` only
+         *     says where the ratio sits relative to the band.
          *
          *     ``acute`` is the 7-day summed load; ``chronic`` is the average *weekly*
          *     load over 28 days (28-day sum / 4). ``acwr`` = acute / chronic. All three
@@ -3722,7 +3726,7 @@ export interface components {
             acute?: number | null;
             /**
              * Acwr
-             * @description acute(7d) / chronic(28d avg weekly) load ratio
+             * @description acute(7d) / chronic(28d avg weekly) load ratio. Descriptive only, not a validated injury-risk predictor
              */
             acwr?: number | null;
             /**
@@ -3732,16 +3736,19 @@ export interface components {
             chronic?: number | null;
             /**
              * Status
+             * @description Where acwr sits relative to the heuristic 0.8-1.3 band; 'optimal' means inside the band, not a validated safe range
              * @enum {string}
              */
             status: "insufficient" | "low" | "optimal" | "high";
             /**
              * Sweet Spot High
+             * @description Upper edge of the unvalidated heuristic band
              * @default 1.3
              */
             sweet_spot_high: number;
             /**
              * Sweet Spot Low
+             * @description Lower edge of the unvalidated heuristic band
              * @default 0.8
              */
             sweet_spot_low: number;

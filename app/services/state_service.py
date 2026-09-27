@@ -1116,6 +1116,12 @@ async def process_new_workout(
     # shadow runs after them. Plain values survive; attribute access on an expired row would not.
     shadow_planned_domain = planned_session.domain if planned_session is not None else None
     shadow_planned_category = planned_session.category if planned_session is not None else None
+    shadow_planned_block_id = planned_session.block_id if planned_session is not None else None
+    from app.services.dose_model_shadow_service import prescription_branch_of
+
+    shadow_prescription_branch = prescription_branch_of(
+        planned_session.prescribed_content if planned_session is not None else None
+    )
     shadow_state_before = current_state.model_copy(deep=True)
     shadow_n_set_rows = len(set_rows)
 
@@ -1220,6 +1226,8 @@ async def process_new_workout(
         external_intensity=session_external_intensity,
         planned_domain=shadow_planned_domain,
         planned_category=shadow_planned_category,
+        planned_block_id=shadow_planned_block_id,
+        prescription_branch=shadow_prescription_branch,
         n_set_rows=shadow_n_set_rows,
         # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as
         # this athlete's above) may lend the prescription's structure to v1's density. The

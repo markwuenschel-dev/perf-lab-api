@@ -52,7 +52,11 @@ class ReadinessOut(BaseModel):
 
 
 class TrainingLoadMetrics(BaseModel):
-    """Acute:chronic workload ratio vs the 0.8-1.3 sweet spot.
+    """Acute:chronic workload ratio against a 0.8-1.3 reference band.
+
+    The band is an unvalidated heuristic: a training-load rule of thumb that this engine has
+    never checked against injury outcomes. It is not an injury-risk predictor; ``status`` only
+    says where the ratio sits relative to the band.
 
     ``acute`` is the 7-day summed load; ``chronic`` is the average *weekly*
     load over 28 days (28-day sum / 4). ``acwr`` = acute / chronic. All three
@@ -60,12 +64,23 @@ class TrainingLoadMetrics(BaseModel):
     baseline (``status == "insufficient"``).
     """
 
-    acwr: float | None = Field(None, description="acute(7d) / chronic(28d avg weekly) load ratio")
+    acwr: float | None = Field(
+        None,
+        description=(
+            "acute(7d) / chronic(28d avg weekly) load ratio. Descriptive only, not a "
+            "validated injury-risk predictor"
+        ),
+    )
     acute: float | None = Field(None, description="7-day summed training load")
     chronic: float | None = Field(None, description="28-day average weekly training load")
-    status: Literal["insufficient", "low", "optimal", "high"]
-    sweet_spot_low: float = 0.8
-    sweet_spot_high: float = 1.3
+    status: Literal["insufficient", "low", "optimal", "high"] = Field(
+        description=(
+            "Where acwr sits relative to the heuristic 0.8-1.3 band; 'optimal' means inside "
+            "the band, not a validated safe range"
+        ),
+    )
+    sweet_spot_low: float = Field(0.8, description="Lower edge of the unvalidated heuristic band")
+    sweet_spot_high: float = Field(1.3, description="Upper edge of the unvalidated heuristic band")
 
 
 class AdherenceMetrics(BaseModel):

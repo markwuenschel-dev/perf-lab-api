@@ -44,6 +44,8 @@ _CLAMP_TOL = 1e-6
 
 @dataclass
 class EvalReport:
+    n_train_rows: int
+    n_train_athletes: int
     n_test_rows: int
     n_test_athletes: int
     mae_default: float
@@ -102,16 +104,30 @@ def _row_abs_errors(
     return np.abs(y_te - pred), y_te
 
 
-def evaluate(
-    frame: pd.DataFrame, *, artifact: dict[str, Any] | None = None, holdout_frac: float = 0.25
-) -> EvalReport:
-    """Fit on held-in athletes, score the held-out athletes, and return the gate report."""
+def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
+    """Split by athlete, fit on the held-in athletes ONLY, score the held-out athletes.
+
+    There is no way to pass in a prior trained elsewhere: one trained on the whole frame has
+    seen the held-out athletes, and its "held-out" error would be a training error.
+    """
+    return evaluate_and_fit(frame, holdout_frac=holdout_frac)[0]
+
+
+def evaluate_and_fit(
+    frame: pd.DataFrame, *, holdout_frac: float = 0.25
+) -> tuple[EvalReport, dict[str, Any]]:
+    """:func:`evaluate`, also returning the prior it scored: fitted on held-in athletes only.
+
+    That prior, not a refit on every athlete, is what a calibration artifact may carry: its
+    held-out result is the evidence for exactly those coefficients.
+    """
     from app.engine.parameter_overrides import apply_parameter_overrides
 
-    if artifact is None:
-        artifact = train(frame)
-
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
+    overlap = set(train_df[GROUP_COLUMN]) & set(test_df[GROUP_COLUMN])
+    if overlap:  # grouped_time_split guarantees this; checked, not trusted
+        raise ValueError(f"athletes in both partitions: {sorted(overlap)}")
+    artifact = train(train_df)
     default_p = default_parameters()
     calibrated_p = apply_parameter_overrides(default_p, artifact, allow_shadow=True)
 
@@ -139,7 +155,9 @@ def evaluate(
     if saturation_fraction > MAX_SATURATION_FRACTION:
         reasons.append(f"saturation {saturation_fraction:.3f} > {MAX_SATURATION_FRACTION}")
 
-    return EvalReport(
+    report = EvalReport(
+        n_train_rows=len(train_df),
+        n_train_athletes=int(train_df[GROUP_COLUMN].nunique()),
         n_test_rows=len(test_df),
         n_test_athletes=int(test_df[GROUP_COLUMN].nunique()),
         mae_default=round(mae_default, 4),
@@ -150,13 +168,13 @@ def evaluate(
         verdict="promote" if not reasons else "stay_shadow",
         reasons=reasons,
     )
+    return report, artifact
 
 
 def main() -> None:
     # Self-contained: evaluate a freshly trained prior on a deterministic synthetic frame.
     frame = build_frame(synthesize_sessions())
-    artifact = train(frame)
-    report = evaluate(frame, artifact=artifact)
+    report = evaluate(frame)
     print(json.dumps(report.as_dict(), indent=2))
     print(f"\nVERDICT: {report.verdict}")
 

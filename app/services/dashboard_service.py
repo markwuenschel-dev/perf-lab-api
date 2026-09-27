@@ -31,6 +31,8 @@ CHRONIC_DAYS = 28
 # A meaningful chronic baseline needs history predating the acute window;
 # below this span the acute:chronic ratio is dominated by a few recent days.
 MIN_HISTORY_DAYS = 14
+# ACWR reference band: a training-load rule of thumb, never validated against injury
+# outcomes in this engine. It classifies the ratio for display; it predicts nothing.
 SWEET_SPOT_LOW = 0.8
 SWEET_SPOT_HIGH = 1.3
 ADHERENCE_WINDOW_DAYS = 28

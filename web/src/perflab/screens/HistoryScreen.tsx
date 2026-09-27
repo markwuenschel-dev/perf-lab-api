@@ -18,13 +18,14 @@ function fmtLoad(v: number): string {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`;
 }
 
-/** Acute:chronic workload ratio band. Optimal 0.8–1.3 is the injury-risk sweet
- *  spot from the training-load literature; below detrains, above ramps risk. */
+/** Acute:chronic workload ratio band. 0.8–1.3 is a common training-load rule of
+ *  thumb, not a validated injury-risk predictor: the labels say where the ratio
+ *  sits, never a risk the engine has measured. */
 function acwrBand(r: number): { label: string; color: string } {
-  if (r < 0.8) return { label: "Detraining", color: "var(--color-info)" };
-  if (r <= 1.3) return { label: "Optimal", color: "var(--color-good)" };
+  if (r < 0.8) return { label: "Low", color: "var(--color-info)" };
+  if (r <= 1.3) return { label: "In range", color: "var(--color-good)" };
   if (r <= 1.5) return { label: "Ramping", color: "#e0a33a" };
-  return { label: "Spike risk", color: "var(--color-hot)" };
+  return { label: "Spike", color: "var(--color-hot)" };
 }
 
 /** Map a ratio onto the gauge's 0.5–2.0 visual scale (band edges 0.8/1.3/1.5
@@ -33,7 +34,7 @@ const acwrPos = (r: number): number => Math.max(2, Math.min(98, ((r - 0.5) / 1.5
 
 // Load balance (ACWR) — reads the same weekly buckets the chart draws, so the
 // gauge literally reflects the bars beside it: acute = this week, chronic = the
-// trailing 4-week (28d) average. The band says whether that ramp is safe.
+// trailing 4-week (28d) average. The band is a rule of thumb, not a safety check.
 function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute: number; chronic: number }) {
   const band = acwr != null ? acwrBand(acwr) : null;
   return (
@@ -83,7 +84,7 @@ function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute:
             <span className="absolute -translate-x-1/2" style={{ left: "66.7%" }}>1.5</span>
           </div>
           <p className="mt-4 text-[11px] font-medium leading-[1.45] text-faint">
-            The 7-day vs 28-day workload ratio — is this week's load safe and progressing. The green band builds fitness without an injury-linked spike.
+            The 7-day vs 28-day workload ratio. The bands are a common rule of thumb, not a validated injury predictor.
           </p>
         </>
       )}

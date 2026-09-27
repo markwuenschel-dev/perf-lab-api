@@ -1,7 +1,7 @@
 // Marker-on-a-track gauges — consolidates the three "a knob on a bar" widgets
 // that were each hand-rolled: the SessionPlayer HR gauge (`zones`), the FieldTest
 // speed↔endurance bipolar meter (`diverging`, two poles + neutral gray midpoint),
-// and the Overview ACWR sweet-spot meter (`band`, a highlighted safe region).
+// and the Overview ACWR reference-band meter (`band`, a highlighted heuristic range).
 // (Design note: these live here rather than as Meter variants because a Meter is a
 // label·track·value row, whereas these are positional gauges.)
 import { useVizTheme } from "./useVizTheme";

@@ -53,6 +53,13 @@ RUN useradd --create-home --uid 1000 appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
+# The commit this image was built from, recorded as `code_version` on shadow rows
+# (app/services/dose_model_shadow_service.py). scripts/deploy.sh passes it with --build-arg;
+# a build without it leaves the variable empty, which the service reads as "unknown".
+# Declared after the dependency layers so a new SHA only rebuilds what follows.
+ARG APP_BUILD_SHA=""
+ENV APP_BUILD_SHA=${APP_BUILD_SHA}
+
 EXPOSE 8000
 
 # Migrate (must succeed), then seed the catalog (idempotent + fault-tolerant, so a `;` — a

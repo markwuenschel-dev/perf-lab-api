@@ -529,10 +529,38 @@ def calculate_stress_dose(
         * (F ** p.dose_rho)
     )
 
+    # The density axis's own base, when the density variables name the work it compresses
+    # (v1.2, C2b). Same factors as ``base`` except the volume term: ``log1p`` of the WORK, so
+    # elapsed time reaches the density axis only through Δ. ``None`` (v0 always) keeps the
+    # shared ``base``; the product is written out rather than derived from ``base`` so v0's
+    # arithmetic, and therefore every replayed state, is untouched.
+    density_base: float | None = None
+    if variables.density_axis_volume is not None:
+        work = variables.density_axis_volume(log, volume_sets, density_measurement, p)
+        if work is not None:
+            density_base = (
+                w_phi
+                * math.log1p(work)
+                * (ext.value ** p.dose_alpha)
+                * (Delta ** p.dose_beta)
+                * (N ** p.dose_gamma)
+                * (F ** p.dose_rho)
+            )
+
     # ------------------------------------------------------------------
     # Build 6-axis dose vector (modality-shaped)
     # ------------------------------------------------------------------
-    six = _shape_six(base, log.modality, intensity_u, Delta, F, phi_adapt, energy_mix, p)
+    six = _shape_six(
+        base,
+        log.modality,
+        intensity_u,
+        Delta,
+        F,
+        phi_adapt,
+        energy_mix,
+        p,
+        density_base=density_base,
+    )
 
     # Human-factor gain (ADR-0049). An unknown wellness input contributes the identity
     # penalty 1.0 and is labelled ``neutral_missing`` with zero confidence — never the
@@ -606,6 +634,12 @@ class DoseVariables:
     #: own fabricated fallback (max(3, duration/12)) straight into V; v1 counts only sets that
     #: were reported, in modalities where sets are the unit of work.
     volume_sets: Callable[[WorkoutLog, float], tuple[float, str]]
+    #: (log, volume_sets, session density, params) -> the WORK the density axis compresses, or
+    #: None to use the shared base. v0 never sets it: its density axis is ``base · m · Δ``,
+    #: and ``base`` grows with elapsed time through V (C2b, frozen for replay). v1.2 sets it.
+    density_axis_volume: (
+        Callable[[WorkoutLog, float, DensityMeasurement, EngineParameters], float | None] | None
+    ) = None
 
 
 # ---------------------------------------------------------------------------
@@ -739,8 +773,12 @@ def _shape_six(
     phi_adapt: dict[str, float],
     energy_mix: dict[str, float],
     p: EngineParameters | None = None,
+    *,
+    density_base: float | None = None,
 ) -> StressDoseSix:
     p = p or default_parameters()
+    # The density axis scales its own base when one is given (v1.2); otherwise the shared one.
+    d_base = base if density_base is None else density_base
     em_aerobic = energy_mix.get("aerobic", 0.33)
     em_glycolytic = energy_mix.get("glycolytic", 0.33)
     skill_phi = phi_adapt.get("skill", 0.15)
@@ -751,7 +789,7 @@ def _shape_six(
         return StressDoseSix(
             volume=base * m["volume"] * (em_aerobic + 0.4),
             intensity=base * m["intensity"] * intensity_u,
-            density=base * m["density"] * Delta,
+            density=d_base * m["density"] * Delta,
             impact=base * m["impact"] * max(intensity_u, 0.4),
             skill=base * m["skill"],
             metabolic=base * m["metabolic"] * (em_aerobic + em_glycolytic),
@@ -761,7 +799,7 @@ def _shape_six(
         return StressDoseSix(
             volume=base * m["volume"],
             intensity=base * m["intensity"] * intensity_u,
-            density=base * m["density"] * Delta,
+            density=d_base * m["density"] * Delta,
             impact=base * m["impact"] * F,
             skill=base * m["skill"] * max(skill_phi, 0.1),
             metabolic=base * m["metabolic"] * (em_glycolytic + 0.2),
@@ -770,7 +808,7 @@ def _shape_six(
     return StressDoseSix(
         volume=base * m["volume"],
         intensity=base * m["intensity"] * intensity_u,
-        density=base * m["density"] * Delta,
+        density=d_base * m["density"] * Delta,
         impact=base * m["impact"],
         skill=base * m["skill"],
         metabolic=base * m["metabolic"],

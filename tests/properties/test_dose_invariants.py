@@ -145,9 +145,9 @@ def test_negative_external_intensity_is_refused_at_the_boundary() -> None:
 # ── density direction ─────────────────────────────────────────────────────────
 
 @pytest.mark.xfail(
-    reason="C2b (docs/calibration-backlog.md): v0 reads density as MINUTES PER SET, and v1 — "
-    "whose density INPUT is correct — still scales the density AXIS by a base that grows with "
-    "duration, so this does not clear at 8C activation",
+    reason="C2b (docs/calibration-backlog.md): v0 is FROZEN for replay — it reads density as "
+    "MINUTES PER SET and scales the density axis by a base that grows with duration. Fixed in "
+    "v1.2 (tests/properties/test_v1_density_axis.py); v0 keeps the defect by design",
     strict=True,
 )
 @given(
@@ -167,8 +167,9 @@ def test_same_work_in_less_elapsed_time_is_denser(
 
 
 @pytest.mark.xfail(
-    reason="C2b (docs/calibration-backlog.md): adding rest is stretching the session, and the "
-    "density axis grows with duration under v0 and v1 alike — does not clear at 8C activation",
+    reason="C2b (docs/calibration-backlog.md): v0 is FROZEN for replay — adding rest stretches "
+    "the session and its density axis grows with duration. Fixed in v1.2 "
+    "(tests/properties/test_v1_density_axis.py); v0 keeps the defect by design",
     strict=True,
 )
 @given(

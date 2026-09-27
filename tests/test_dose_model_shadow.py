@@ -114,7 +114,7 @@ def test_every_row_names_the_models_and_the_chronology_that_produced_it() -> Non
     row = _row(_log())
 
     assert row.v0_model_version == "v0"
-    assert row.v1_model_version == "v1.1"
+    assert row.v1_model_version == "v1.2"
     assert row.state_update_model == STATE_UPDATE_MODEL_VERSION
     assert row.prescription_engine_version
     assert row.decision_impact == "none_shadow_only"
@@ -194,3 +194,150 @@ async def test_a_shadow_failure_never_breaks_logging_a_workout(async_db, monkeyp
     assert rows == []
     logged = (await async_db.execute(select(WorkoutLogORM))).scalars().all()
     assert len(logged) == 1, "the workout itself must still be recorded"
+
+
+# ── a047: level, workload preference, prescription branch (phase 8.2) ─────────────────
+
+def test_the_stored_prescription_branch_is_a_template_branch_id_on_the_goal_path() -> None:
+    """Settles what a047 captures before the column is frozen. ``why.prescription_branch``
+    is the prescriber branch: on an ordinary planned day it IS a library template's
+    ``branch_id``, and it survives the ``prescribed_content`` round trip. (On safety and
+    readiness paths it names that path instead, which is why the column is not called
+    ``template_id``; ``why.template_id`` is a coaching-program template, a different thing.)"""
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+    from app.logic.prescriber import recommend_next_session
+    from app.scripts import simulate_matrix as sm
+
+    library = {t.branch_id for pool in GOAL_TEMPLATE_LIBRARY.values() for t in pool}
+    level_key, _ = sm.EXPERIENCE["intermediate"]
+    for goal, domain, category in sm.GOALS.values():
+        rx = recommend_next_session(
+            sm._state(level_key, *sm.FRESHNESS["fresh"]),
+            goal=goal,  # type: ignore[arg-type]
+            catalog=sm._catalog(),
+            block_context={
+                "block_goal": goal, "session_category": category, "session_domain": domain,
+                "week_number": 2, "duration_weeks": 8, "deload_every_n_weeks": 4,
+            },
+        )
+        stored = svc.prescription_branch_of(rx.to_prescribed_content())
+        assert rx.why is not None and stored == rx.why.prescription_branch
+        assert stored in library, (goal, stored)
+        assert stored != rx.why.template_id
+
+
+@pytest.mark.parametrize(
+    ("raw", "effective", "defaulted"),
+    [
+        (None, "medium", True),
+        ("", "medium", True),
+        ("hard", "hard", False),
+        ("  Easy ", "easy", False),
+        ("medium", "medium", False),
+        ("extreme", "medium", True),
+    ],
+)
+def test_workload_preference_is_the_effective_value_with_the_default_flagged(
+    raw, effective, defaulted
+) -> None:
+    assert svc.workload_preference(raw) == (effective, defaulted)
+
+
+def test_prescription_branch_of_reads_only_a_string_branch() -> None:
+    assert svc.prescription_branch_of({"why": {"prescription_branch": "run_z2_base"}}) == "run_z2_base"
+    assert svc.prescription_branch_of({"why": {"prescription_branch": ""}}) is None
+    assert svc.prescription_branch_of({"why": {"prescription_branch": 3}}) is None
+    assert svc.prescription_branch_of({"why": "prose"}) is None
+    assert svc.prescription_branch_of({}) is None
+    assert svc.prescription_branch_of(None) is None
+
+
+def test_context_columns_travel_through_row_construction() -> None:
+    row = _row(
+        _log(), experience_level="advanced", workload_preference="hard",
+        workload_preference_defaulted=False, prescription_branch="strength_max",
+    )
+    assert (row.experience_level, row.workload_preference) == ("advanced", "hard")
+    assert row.workload_preference_defaulted is False
+    assert row.prescription_branch == "strength_max"
+
+
+async def _planned(db, user: User, *, intensity: str | None, branch: str | None):
+    from datetime import date
+
+    from app.models.mesocycle import (
+        BlockGoal,
+        BlockStatus,
+        MesocycleBlock,
+        PlannedSession,
+        SessionStatus,
+    )
+
+    block = MesocycleBlock(
+        user_id=user.id, goal=BlockGoal.STRENGTH, status=BlockStatus.ACTIVE,
+        duration_weeks=4, start_date=date.today(), weekly_template=[], intensity=intensity,
+    )
+    db.add(block)
+    await db.commit()
+    await db.refresh(block)
+    content = {"exercises": [], "why": {"prescription_branch": branch}} if branch else None
+    session = PlannedSession(
+        block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
+        day_of_week=1, category="Max Strength", modality="strength",
+        status=SessionStatus.PENDING, prescribed_content=content,
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+async def _only_row(db, user_id: int) -> DoseModelShadowLog:
+    rows = (
+        await db.execute(select(DoseModelShadowLog).where(DoseModelShadowLog.user_id == user_id))
+    ).scalars().all()
+    assert len(rows) == 1
+    return rows[0]
+
+
+@pytest.mark.asyncio
+async def test_ingest_records_level_effective_workload_and_branch(async_db) -> None:
+    from app.models.user import AthleteProfile
+
+    unset = await _user(async_db, "ctx-unset@test.com")
+    async_db.add(AthleteProfile(user_id=unset.id, experience_level="advanced"))
+    await async_db.commit()
+    hard = await _user(async_db, "ctx-hard@test.com")
+    s_unset = await _planned(async_db, unset, intensity=None, branch="strength_max")
+    s_hard = await _planned(async_db, hard, intensity="hard", branch="strength_volume")
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    await process_new_workout(async_db, unset.id, _log(timestamp=now, planned_session_id=s_unset.id))
+    await process_new_workout(async_db, hard.id, _log(timestamp=now, planned_session_id=s_hard.id))
+
+    a = await _only_row(async_db, unset.id)
+    assert a.experience_level == "advanced"
+    # An unset block preference is what the prescriber applied as medium: recorded as such.
+    assert (a.workload_preference, a.workload_preference_defaulted) == ("medium", True)
+    assert a.prescription_branch == "strength_max"
+
+    b = await _only_row(async_db, hard.id)
+    assert b.experience_level is None  # no athlete profile: unknown, not a default level
+    assert (b.workload_preference, b.workload_preference_defaulted) == ("hard", False)
+    assert b.prescription_branch == "strength_volume"
+
+
+@pytest.mark.asyncio
+async def test_an_unplanned_session_has_a_level_but_no_workload_or_branch(async_db) -> None:
+    from app.models.user import AthleteProfile
+
+    user = await _user(async_db, "ctx-unplanned@test.com")
+    async_db.add(AthleteProfile(user_id=user.id, experience_level="intermediate"))
+    await async_db.commit()
+    await process_new_workout(async_db, user.id, _log())
+
+    row = await _only_row(async_db, user.id)
+    assert row.experience_level == "intermediate"
+    assert row.workload_preference is None
+    assert row.workload_preference_defaulted is None
+    assert row.prescription_branch is None

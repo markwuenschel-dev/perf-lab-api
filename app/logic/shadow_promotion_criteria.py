@@ -187,23 +187,31 @@ CRITERIA: Final[dict[str, SubsystemCriteria]] = {
         service_module="app.services.dose_model_shadow_service",
         adr="phase 8 of the engine-coherence plan (8A capture / 8B fit / 8C activate)",
         calibration=_missing(
-            "phase 8B: v1's density variable changed meaning, so dose_beta and every "
-            "density-dependent coefficient must be re-fit against logged sessions this service "
-            "captures. The synthetic grid (app/scripts/compare_dose_models.py) shows where the "
-            "models diverge; it is not calibration and must not be fitted against. The named "
-            "questions a fit must resolve are recorded in docs/calibration-backlog.md — C1 "
-            "intensity insensitivity (a heavier bar at fixed sets moves dose 1.02x in BOTH "
-            "engines), C2 density re-fit, C3 endurance has no density input yet"
+            "phase 8B, NOT RUN: the pipeline exists (real frame "
+            "app.ml.dose_calibration.build_training_frame.load_shadow_frame; artifact + receipt "
+            "app.ml.dose_calibration.calibrate.build_calibration_artifact), but the production "
+            "census of 2026-09-27 found 1 athlete, 1 shadow row and 0 label-able pairs "
+            "(docs/simulations/phase-8.md). Re-run app.scripts.dose_shadow_report; a fit waits "
+            "for usable pairs, athletes, depth per athlete and athletes that can be held out "
+            "independently. The synthetic grid (app/scripts/compare_dose_models.py) is not "
+            "calibration and must not be fitted against. Open questions a fit must resolve: "
+            "docs/calibration-backlog.md C1 (intensity insensitivity), C2 (density re-fit), "
+            "C3 (endurance density input)"
         ),
         replay=_missing(
-            "v1 has no replay harness; stored states replay under v0 (ekf_replay pins v0), and "
-            "8C needs held-out longitudinal replay of v1 before activation"
+            "athlete-grouped held-out EVALUATION exists (app.ml.dose_calibration.evaluate: fits "
+            "on held-in athletes only, scores held-out ones), but there is no longitudinal "
+            "replay of v1 state trajectories; stored states replay under v0 (ekf_replay pins v0)"
         ),
         promotion_path=_done(
-            "app.logic.dose_model.select_production_dose_model",
-            "activation requires a calibration identifier in the DOSE_MODELS registry, and "
-            "every live caller resolves through it via app.logic.dose_engine — enforced by "
-            "tests/test_production_dose_pinning.py rather than by convention",
+            "app.logic.dose_calibration_artifact.verify_calibration_artifact",
+            "activation (app.logic.dose_model.resolve_production_dose_model) fails closed "
+            "unless the registry names a committed artifact whose bytes hash to a pinned "
+            "sha256 and whose receipt matches the live model version, feature schema, fit "
+            "policy and pairing rule, came from the real shadow log, and passed "
+            "athlete-grouped held-out validation. Parameters come only from those bytes. Every "
+            "live caller resolves through app.logic.dose_engine, enforced by "
+            "tests/test_production_dose_pinning.py",
         ),
         canary=_missing(_NO_CANARY),
         rollback=_missing(

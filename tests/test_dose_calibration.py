@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.engine.parameter_overrides import (
     apply_parameter_overrides,
@@ -56,9 +57,11 @@ def test_build_frame_columns_and_no_leakage() -> None:
     for feat in COMPONENT_FEATURES:
         assert np.isfinite(frame[feat].to_numpy(dtype=float)).all()
 
-    # Label is a per-athlete residual: mean ~ 0 within each athlete.
-    per_athlete_mean = frame.groupby(GROUP_COLUMN)[LABEL_COLUMN].mean().abs().max()
-    assert per_athlete_mean < 1e-6
+    # The label is causal: next RPE minus the mean of STRICTLY EARLIER sessions, so it is
+    # not forced to average zero per athlete the way a full-trajectory demean would be.
+    recomputed = frame["next_session_rpe"] - frame["causal_baseline_rpe"]
+    assert np.allclose(frame[LABEL_COLUMN], recomputed)
+    assert (frame["pair_status"] == "labelled").all()
 
 
 def test_train_emits_loader_accepted_artifact() -> None:
@@ -106,7 +109,7 @@ def test_placeholder_artifact_is_zero_change() -> None:
 
 def test_evaluate_returns_well_formed_verdict() -> None:
     frame = _frame()
-    report = evaluate(frame, artifact=train(frame))
+    report = evaluate(frame)
     d = report.as_dict()
     assert report.verdict in {"promote", "stay_shadow"}
     assert d["n_test_rows"] > 0
@@ -126,3 +129,67 @@ def test_planted_signal_moves_weights_off_default() -> None:
         for k, v in defaults.items()
     )
     assert moved
+
+
+
+def test_a_label_never_changes_when_later_sessions_are_added() -> None:
+    """Appending future sessions must leave every earlier label untouched (causal)."""
+    sessions = synthesize_sessions(n_athletes=4, n_sessions=20, planted=True, seed=5)
+    short = sessions.groupby(GROUP_COLUMN).head(12)
+    a = build_frame(short).set_index(["user_id", "date"])[LABEL_COLUMN]
+    b = build_frame(sessions).set_index(["user_id", "date"])[LABEL_COLUMN]
+    common = a.index.intersection(b.index)
+    # The last labelled row of each short history gains nothing; every other shared row
+    # must be identical.
+    assert len(common) > 0
+    assert np.allclose(a.loc[common], b.loc[common])
+
+
+def test_evaluation_never_trains_on_a_held_out_athlete(monkeypatch) -> None:
+    """The prior evaluate() scores must be fitted without the test athletes."""
+    import app.ml.dose_calibration.evaluate as ev
+
+    frame = _frame()
+    seen: list[set[int]] = []
+    real_train = ev.train
+
+    def spy(train_frame: pd.DataFrame, **kw):
+        seen.append(set(train_frame[GROUP_COLUMN]))
+        return real_train(train_frame, **kw)
+
+    monkeypatch.setattr(ev, "train", spy)
+    report = ev.evaluate(frame)
+    _, test_df = ev.grouped_time_split(frame)
+    assert len(seen) == 1
+    assert seen[0].isdisjoint(set(test_df[GROUP_COLUMN]))
+    assert report.n_train_athletes + report.n_test_athletes == frame[GROUP_COLUMN].nunique()
+
+
+def test_the_fit_standardizes_the_features_it_is_given() -> None:
+    """Scaling a held-out athlete's raw volumes must not change the fitted response."""
+    from app.ml.dose_calibration.train import fit_component_response
+
+    frame = _frame()
+    base = fit_component_response(frame)
+    # The fit sees only the frame it is given: its coefficients are expressed in that
+    # frame's own standardization, so they are scale-free.
+    scaled = frame.copy()
+    for feat in COMPONENT_FEATURES:
+        scaled[feat] = scaled[feat] * 7.0
+    again = fit_component_response(scaled)
+    for feat in COMPONENT_FEATURES:
+        assert again["coefficients"][feat] == pytest.approx(base["coefficients"][feat], abs=1e-9)
+
+
+def test_the_frame_recomputes_doses_with_v1_and_never_fabricates_sets() -> None:
+    from app.logic import dose_engine_v1
+    from app.ml.dose_calibration.build_training_frame import build_log, modeled_dose_scalar
+
+    frame = _frame()
+    row = frame.iloc[0].copy()
+    six = dose_engine_v1.calculate_stress_dose(build_log(row), default_parameters()).dose_six
+    assert modeled_dose_scalar(row, default_parameters()) == pytest.approx(
+        six.volume + six.intensity + six.density + six.impact + six.skill + six.metabolic
+    )
+    row["sets_eff"] = np.nan
+    assert build_log(row).estimated_sets is None

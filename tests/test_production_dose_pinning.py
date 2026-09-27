@@ -34,7 +34,7 @@ PINNED_IMPORTERS: dict[str, str] = {
     "app/logic/dose_engine_v1.py": "v1 reuses the v0 law through the DoseVariables seam",
     "app/logic/dose_routing.py": "ADR-0054 shadow routing, calibrated against v0 bases",
     "app/logic/dose_routing_calibration.py": "calibrates the v0 routing split",
-    "app/ml/dose_calibration/build_training_frame.py": "the fitted artifact is v0-fitted",
+    "app/ml/dose_calibration/build_training_frame.py": "8.4: recomputes doses with v1, the model being calibrated",
     "app/ml/q10_confidence/ekf_replay.py": "replays STORED history under the engine that made it",
     "app/services/dose_model_shadow_service.py": "8A: computes v1 beside v0, never applied",
     "app/scripts/compare_dose_models.py": "offline v0/v1 comparison matrix",

@@ -4,8 +4,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
+from sqlalchemy import select
 
 from app.logic.ekf.wellness_input import build_wellness_shadow_input
+from app.models.dose_model_shadow import DoseModelShadowLog
 from app.models.mpc_shadow import MpcShadowLog
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.recovery_shadow import RecoveryShadowLog
@@ -34,6 +36,36 @@ async def test_empty_athlete_has_all_sections_null(async_db):
     assert summary["mpc"] is None
     assert summary["personalization"] is None
     assert summary["recovery"] is None
+    assert summary["dose_model"] is None
+
+
+async def test_the_dose_model_section_never_pools_versions(async_db):
+    from app.schemas.workouts import WorkoutLog
+    from app.services.state_service import process_new_workout
+
+    user = await _mk_user(async_db, "shadow-dose@test.com")
+    for day in (1, 3):
+        await process_new_workout(async_db, user.id, WorkoutLog(
+            timestamp=datetime(2026, 9, day, 8, 0), modality="Strength", duration_minutes=50.0,
+            session_rpe=7.0, estimated_sets=18.0, total_volume_load=7000.0,
+        ))
+    # An older-version row: counted, but its ratio must not join the latest version's.
+    first = (await async_db.execute(
+        select(DoseModelShadowLog).where(DoseModelShadowLog.user_id == user.id)
+        .order_by(DoseModelShadowLog.id)
+    )).scalars().first()
+    first.v1_model_version = "v1.1"
+    first.ratio_v1_v0 = 99.0
+    await async_db.commit()
+
+    d = (await athlete_shadow_summary(async_db, user.id))["dose_model"]
+    assert d["n_rows"] == 2
+    assert d["rows_by_v1_model_version"] == {"v1.1": 1, "v1.2": 1}
+    assert d["rows_by_fit_tier"] == {"eligible": 2}
+    assert d["latest_version_ratio"]["n"] == 1
+    assert d["latest_version_ratio"]["max"] != 99.0
+    assert d["latest"]["v1_model_version"] == "v1.2"
+    assert d["decision_impact"] == "none_shadow_only"
 
 
 async def test_summary_aggregates_every_subsystem(async_db):

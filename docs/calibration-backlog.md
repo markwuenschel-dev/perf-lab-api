@@ -105,6 +105,58 @@ as temporal compression will be misled.
 `base`'s duration term, or the invariants restated against `density_value`. This is a dose-law
 question, deliberately not addressed in the workout-family refactor (phase 4).
 
+**Status (phase 8.3, 2026-09-27): FIXED in v1 as `v1.2` for the density axis. v0 is frozen and
+keeps the defect by design, so replayed states stay reproducible.**
+
+- **Established first: the inversion is a saturation effect.** Across 2018 grid pairs at fixed
+  work (3–30 sets, 10–300 min, stretched ×1.25/1.5/2) with both Δ strictly inside
+  (floor, cap), v1.1 produced **0** inversions. Every falsifying case had Δ at a bound, where Δ
+  cannot fall to offset the duration term in `base`. That is exactly the fast session the axis
+  exists to reward.
+- **The repair.**
+  - v1 names the work the density axis compresses, `work_volume_component`
+    (`app/logic/dose_engine_v1.py`), built from work inputs only:
+    - sets-per-elapsed-minute: reported working sets plus external load, weighted as V weights
+      them;
+    - timed-work densities: the timed WORK minutes (`value × elapsed`) plus load;
+    - not modelled: `None`.
+  - It is deliberately NOT defined as "V without its duration term", so a later change to V
+    (C1) cannot silently change its meaning.
+  - The density axis becomes `density_base · m["density"] · Δ`, where `density_base` has the
+    same factors as `base` with `log1p(work)` in place of `log1p(V)`.
+  - It is injected through `DoseVariables.density_axis_volume`, which v0 never sets. The v0
+    output fingerprint over a 2700-case grid is identical before and after.
+- **What now holds** (`tests/properties/test_v1_density_axis.py`):
+  - at fixed work, elapsed time reaches the density axis only through Δ;
+  - shortening elapsed time never lowers the axis, and strictly raises it unless both
+    sessions' Δ sit at the same bound (the clamp means "no further credit", so they tie);
+  - lengthening never raises it;
+  - both phase-0 density invariants pass against v1.
+- **What does NOT hold, stated precisely:**
+  - The other five axes are not invariant to elapsed time at fixed work. They still carry
+    `log1p(V)` (duration is a term of V, C1) and `Δ^β`.
+  - The fix leaves them bit-identical to v1.1. The only other output that moves is the legacy
+    `d_met_systemic`, which is computed from the density axis.
+- **Before/after:**
+
+| session | Δ | density axis v1.1 | density axis v1.2 | six-axis total v1.1 | six-axis total v1.2 |
+|---|---|---|---|---|---|
+| Strength, 20 sets in 20 min (Δ at cap) | 2.50 | 1.816 | 1.775 | 4.752 | 4.711 |
+| Strength, 20 sets in 40 min (Δ at cap) | 2.50 | 1.852 | 1.775 | 4.848 | 4.771 |
+| Strength, 12 sets in 30 min | 2.00 | 1.121 | 1.064 | 3.388 | 3.331 |
+| Strength, 12 sets in 90 min | 0.67 | 0.149 | 0.132 | 1.056 | 1.038 |
+| Hypertrophy, 16 sets in 60 min, RPE 8 | 1.33 | 0.669 | 0.636 | 2.827 | 2.794 |
+| Running 45 min, 30 min prescribed work | 0.67 | 0.095 | 0.086 | 1.251 | 1.241 |
+| Running 45 min, no linked prescription | not modelled | 0.206 | 0.206 | 1.871 | 1.871 |
+
+  External load: 6000 kg (rows 1–2), 4000 kg (3–4), 8000 kg (5), none for the runs. RPE 7 unless
+  stated. The first two rows are the C2b case: v1.1
+  scored the slower session denser (1.852 > 1.816); v1.2 scores them equal.
+- **For 8B:** v1.1 and v1.2 shadow rows differ in their density axis and must never be pooled
+  in one fit (`v1_model_version`). The synthetic comparison `docs/simulations/dose-v0-v1.md`
+  was regenerated. Its v1/v0 ratios move by under 2% (the Strength median goes 1.86× → 1.83×), and the count of controlled
+  inversions stays at 375: those come from the density input and V, not from the axis.
+
 ---
 
 ## C4 · Tissue-penalty magnitude is a hand-set guess

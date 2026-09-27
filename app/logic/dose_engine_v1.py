@@ -28,8 +28,9 @@ existing floor/cap keep their meaning.
 
 **The fitted parameters do NOT carry over.** ``dose_beta`` was set against ``minutes_per_set``;
 replacing ``x`` with ``1/x`` is not a sign flip, it changes the response surface nonlinearly.
-The exponent and every density-dependent coefficient must be re-fit (phase 8), and
-``app/engine/parameter_overrides.py`` refuses to apply a v0-fitted dose artifact here.
+The exponent and every density-dependent coefficient must be re-fit (phase 8). Activation
+(``app/logic/dose_calibration_artifact.py``) refuses any artifact whose receipt was not fitted
+for ``DOSE_MODEL_VERSION``, so a v0-fitted (or v1.1-fitted) artifact cannot run here.
 
 **v0 is not deleted.** It stays frozen so historical states remain reproducible under the
 engine that produced them; only new dose computations use this module.
@@ -289,16 +290,64 @@ def prescribed_work_density(work_seconds: float, elapsed_minutes: float) -> Dens
     )
 
 
-#: The corrected density variable, injected into the shared dose law. "v1.1" since phase 5.4:
-#: v1 can now take a prescribed-work density for endurance sessions, so doses from here on
-#: are recorded as such. Without a prescribed density the numbers are identical to "v1".
+# ---------------------------------------------------------------------------
+# The density axis compresses WORK, not the session (phase 8.3, C2b)
+# ---------------------------------------------------------------------------
+#
+# Every axis of the shared law is ``base · m[axis] · …`` and ``base`` carries ``log1p(V)``,
+# where V includes elapsed minutes. So up to v1.1 a longer session at identical work raised
+# the density axis whenever Δ could not fall to compensate — at a saturated Δ, which is
+# exactly the fast session density exists to reward (calibration-backlog.md C2b). v1.2 gives
+# the density axis its own volume term, the WORK the session did, so elapsed time reaches it
+# only through Δ. The other five axes keep the shared base (they still see duration through
+# V; that is C1, a separate question).
+
+
+def work_volume_component(
+    log: WorkoutLog, volume_sets: float, density: DensityMeasurement, p: EngineParameters
+) -> float | None:
+    """The work a measured density compresses, in V's units; ``None`` when density is not modelled.
+
+    Built from WORK inputs only, per density basis, never as "V without its duration term":
+    V's composition can change (C1) without this quantity silently changing meaning.
+
+    * **Sets per elapsed minute** — the reported working sets and the external volume load,
+      weighted as V weights them. Elapsed time is not an input.
+    * **Timed work over elapsed** (prescribed, or performed once it exists) — the timed WORK
+      minutes, ``value · elapsed``, weighted as V weights minutes, plus any external load.
+      Recovery, warmup and cooldown are excluded: they are the denominator, not the work.
+    * **Not modelled** — ``None``: there is no density to shape, and the axis keeps the shared
+      base exactly as before.
+    """
+    vw = p.dose_volume_weights
+    load = log.total_volume_load or 0.0
+    if density.value is None:
+        return None
+    if density.basis == "sets_per_elapsed_minute":
+        return vw["volume_load"] * load + vw["sets"] * volume_sets
+    if density.basis in ("prescribed_timed_work_over_elapsed", "performed_timed_work_over_elapsed"):
+        work_minutes = density.value * log.duration_minutes
+        return vw["duration"] * work_minutes + vw["volume_load"] * load
+    return None
+
+
+#: The corrected density variable, injected into the shared dose law.
+#: "v1.1" (phase 5.4): v1 takes a prescribed-work density for endurance sessions.
+#: "v1.2" (phase 8.3): the density AXIS is built from ``work_volume_component`` (C2b). Only
+#: the density axis (and the legacy ``d_met_systemic`` read from it) differs from v1.1, and
+#: only where density is modelled. v1.1 and v1.2 rows must never be pooled in one fit.
 WORK_PER_TIME_DENSITY = DoseVariables(
     name="v1_work_per_elapsed_time",
-    version="v1.1",
+    version="v1.2",
     session=session_density,
     entry=exercise_density_proxy,
     volume_sets=reported_volume_sets,
+    density_axis_volume=work_volume_component,
 )
+
+
+#: The version this module computes; the activation gate compares an artifact's receipt to it.
+DOSE_MODEL_VERSION: str = WORK_PER_TIME_DENSITY.version
 
 
 def calculate_stress_dose(
