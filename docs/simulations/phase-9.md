@@ -82,16 +82,16 @@ became full-body GPP through a silent general-pool fallback.
 | mixed | Running + Functional | ✓ `run_functional_lunges` | ✓ `run_functional_lunges` | ∅ | ∅ |
 | mixed | Strength + Skill | ✓ `cf_strength_skill_deadlift` | ✓ `cf_strength_skill_deadlift` | ∅ | ∅ |
 | calisthenics | Skill & Straight-Arm Strength | ✓ `cal_skill` | ✓ `cal_skill` | ✓ `cal_skill` | ✓ `cal_skill` |
-| calisthenics | Bodyweight Strength | ✓ `cal_strength` | ✓ `cal_strength` | ✓ `cal_strength` | ✓ `cal_strength` |
-| calisthenics | Gymnastics Conditioning | ✓ `cal_conditioning` | ✓ `cal_conditioning` | ✓ `cal_conditioning` | ↻ `cal_strength` |
+| calisthenics | Bodyweight Strength | ✓ `cal_strength` | ✓ `cal_strength` | ✓ `cal_strength` | ↻ `cal_skill` |
+| calisthenics | Gymnastics Conditioning | ✓ `cal_conditioning` | ✓ `cal_conditioning` | ✓ `cal_conditioning` | ↻ `cal_skill` |
 | gymnastics | Gymnastics Skill | ✓ `gym_skill` | ✓ `gym_skill` | ✓ `gym_skill` | ✓ `gym_skill` |
 | grip | Grip & Support | ✓ `grip_main` | ✓ `grip_main` | ✓ `grip_main` | ↻ `grip_recovery` |
-| general | Full-Body GPP | ✓ `gpp_balanced` | ✓ `gpp_balanced` | ✓ `gpp_balanced` | ✓ `gpp_balanced` |
+| general | Full-Body GPP | ✓ `gpp_balanced` | ✓ `gpp_balanced` | ✓ `gpp_balanced` | ↻ `gpp_mobility` |
 | general | Active Recovery | ✓ `gpp_mobility` | ✓ `gpp_mobility` | ✓ `gpp_mobility` | ✓ `gpp_mobility` |
-| general | Aerobic + Strength | ✓ `gpp_strength_foundation` | ✓ `gpp_strength_foundation` | ↻ `gpp_balanced` | ↻ `gpp_balanced` |
-| general | Strength Preservation | ✓ `gpp_strength_foundation` | ✓ `gpp_strength_foundation` | ↻ `gpp_balanced` | ↻ `gpp_balanced` |
-| general | Metabolic Conditioning | ✓ `gpp_conditioning` | ✓ `gpp_conditioning` | ↻ `gpp_balanced` | ↻ `gpp_balanced` |
-| conditioning | Metabolic Conditioning | ✓ `gpp_conditioning` | ✓ `gpp_conditioning` | ↻ `gpp_balanced` | ↻ `gpp_balanced` |
+| general | Aerobic + Strength | ✓ `gpp_strength_foundation` | ✓ `gpp_strength_foundation` | ↻ `gpp_balanced` | ↻ `gpp_mobility` |
+| general | Strength Preservation | ✓ `gpp_strength_foundation` | ✓ `gpp_strength_foundation` | ↻ `gpp_balanced` | ↻ `gpp_mobility` |
+| general | Metabolic Conditioning | ✓ `gpp_conditioning` | ✓ `gpp_conditioning` | ↻ `gpp_balanced` | ↻ `gpp_mobility` |
+| conditioning | Metabolic Conditioning | ✓ `gpp_conditioning` | ✓ `gpp_conditioning` | ↻ `gpp_balanced` | ↻ `gpp_mobility` |
 
 144 cells, 0 not honest.
 
@@ -119,6 +119,14 @@ often impossible?" is a query.
   fake a barbell pattern.
 - **The catalog does not model benches.** Home variants use DB Floor Press and flat Split
   Squat, and a test forbids a kit variant from pinning a bench movement.
+- **Catalog correction, 2026-09-27 (after the live check).** Six rows listed no equipment and so
+  were offered to bodyweight-only athletes "by omission": Chest-to-Bar Pull-Up and five
+  strongman lifts and carries. They now declare their implement. As a result a bodyweight
+  athlete's Full-Body GPP (which only worked by prescribing a bar-less Chest-to-Bar Pull-Up and
+  a keg-less Keg Carry) is honestly replaced by `gpp_mobility` on General / Conditioning days,
+  and Bodyweight Strength (a pull needs a bar) by `cal_skill`. The matrix above is re-rendered
+  (88 followed, 25 replaced, 31 unavailable, 0 not
+  honest). A bar-free GPP variant is a candidate for phase 9b.
 - **Replacements that shift emphasis.** Some in-domain replacements are stated but change
   emphasis: GPP conditioning or strength-preservation days at home become Full-Body GPP, and
   Gymnastics Conditioning at bodyweight becomes Bodyweight Strength. They are honest by the

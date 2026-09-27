@@ -149,7 +149,7 @@ def bulk_exercises() -> list[dict[str, Any]]:
 
     # Gymnastics / calisthenics
     gym: list[_BaseRow] = [
-        ("Chest-to-Bar Pull-Up", "Calisthenics", "pull_vertical", ["lats", "biceps"], [], [], "bodyweight", 0.55, 0.35, ["pull_vertical", "gymnastics_skill"]),
+        ("Chest-to-Bar Pull-Up", "Calisthenics", "pull_vertical", ["lats", "biceps"], [], ["pullup_bar"], "bodyweight", 0.55, 0.35, ["pull_vertical", "gymnastics_skill"]),
         ("Bar Muscle-Up (Strict Progression)", "Calisthenics", "pull_vertical", ["lats", "triceps"], ["core"], ["pullup_bar"], "bodyweight", 0.92, 0.45, ["gymnastics_skill", "transition_skill", "false_grip"]),
         ("Ring Muscle-Up (False Grip Progression)", "Calisthenics", "pull_vertical", ["lats", "shoulders"], ["core"], ["rings"], "bodyweight", 0.95, 0.45, ["gymnastics_skill", "ring_support", "false_grip"]),
         ("Ring Support Hold", "Calisthenics", "push_vertical", ["shoulders", "triceps"], ["core"], ["rings"], "time", 0.55, 0.2, ["ring_support", "gymnastics_skill"]),
@@ -291,13 +291,13 @@ def bulk_exercises() -> list[dict[str, Any]]:
     )
 
     strongman: list[_BaseRow] = [
-        ("Atlas Stone Load", "Power", "hinge", ["hips", "back"], ["grip"], [], "reps", 0.88, 0.85, ["grip", "support", "start_strength"]),
-        ("Log Clean and Press", "Power", "push_vertical", ["shoulders", "legs"], ["core"], [], "reps", 0.82, 0.7, ["power", "bracing"]),
-        ("Yoke Walk", "Strength", "carry", ["back", "legs"], ["core"], [], "distance", 0.75, 0.75, ["support", "bracing"]),
+        ("Atlas Stone Load", "Power", "hinge", ["hips", "back"], ["grip"], ["atlas_stone"], "reps", 0.88, 0.85, ["grip", "support", "start_strength"]),
+        ("Log Clean and Press", "Power", "push_vertical", ["shoulders", "legs"], ["core"], ["log_bar"], "reps", 0.82, 0.7, ["power", "bracing"]),
+        ("Yoke Walk", "Strength", "carry", ["back", "legs"], ["core"], ["yoke"], "distance", 0.75, 0.75, ["support", "bracing"]),
         ("Circus Dumbbell Press", "Strength", "push_vertical", ["shoulders"], ["core"], ["dumbbells"], "dumbbell", 0.9, 0.55, ["lockout_strength"]),
-        ("Tire Flip", "Power", "hinge", ["hips", "back"], [], [], "reps", 0.7, 0.8, ["hip_hinge", "power"]),
+        ("Tire Flip", "Power", "hinge", ["hips", "back"], [], ["tire"], "reps", 0.7, 0.8, ["hip_hinge", "power"]),
         ("Sandbag to Shoulder", "Power", "hinge", ["hips", "back"], ["grip"], ["sandbag"], "reps", 0.78, 0.7, ["grip", "hip_hinge"]),
-        ("Keg Carry", "Conditioning", "carry", ["grip", "core"], ["legs"], [], "distance", 0.65, 0.55, ["grip", "support"]),
+        ("Keg Carry", "Conditioning", "carry", ["grip", "core"], ["legs"], ["keg"], "distance", 0.65, 0.55, ["grip", "support"]),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags in strongman:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags, sport_domains=["strongman"]))
