@@ -349,12 +349,13 @@ def template_resolves(
     An authored slotted template is atomic, as a circuit is: every slot must be realized, or
     it is not this session. Emitting the subset that resolved would prescribe a different
     session under the planned one's name. Unconfigured equipment keeps its permissive meaning
-    (nothing is filtered), and with no catalog there is nothing to check.
+    (nothing is filtered), and with no catalog there is nothing to check. An EMPTY catalog is
+    no catalog: it is our missing data, never evidence about the athlete's equipment.
     """
     if not circuit_resolves(slots, circuit, catalog, available_equipment):
         return False
     equipment = equipment_set(available_equipment)
-    if catalog is None or equipment is None or not slots:
+    if not catalog or equipment is None or not slots:
         return True
     return all(
         r.chosen is not None

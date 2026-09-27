@@ -246,3 +246,19 @@ def test_home_variants_never_assume_a_bench() -> None:
     pinned = {s.exercise for pool in GOAL_TEMPLATE_LIBRARY.values() for t in pool
               if t.kit_fallback_for for s in t.exercise_slots}
     assert not pinned & needs_bench
+
+
+@pytest.mark.parametrize("empty", [None, []])
+def test_no_catalog_is_never_reported_as_the_athletes_equipment(empty) -> None:
+    """An unloaded or empty catalog is OUR missing data. Telling the athlete their equipment
+    cannot do the session would be false, so it keeps the pre-phase-9 behaviour."""
+    level_key, _ = sm.EXPERIENCE["intermediate"]
+    rx = recommend_next_session(
+        sm._state(level_key, *sm.FRESHNESS["fresh"]), goal="Strength",
+        catalog=empty, available_equipment=["barbell"],
+        block_context={"block_goal": "Strength", "session_category": "Max Strength",
+                       "session_domain": "strength", "week_number": 2,
+                       "duration_weeks": 8, "deload_every_n_weeks": 4},
+    )
+    assert rx.type != "Equipment Unavailable"
+    assert rx.why is not None and rx.why.session_unavailable is None

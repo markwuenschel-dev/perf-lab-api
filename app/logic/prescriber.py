@@ -1394,7 +1394,8 @@ def _recommend_next_session(
         scored, _score_with_context, planned, int(block.get("week_number") or 0)
     )
 
-    if not scored and catalog is not None and equipment_set(available_equipment) is not None:
+    # An empty catalog is no catalog (our missing data), never grounds for "unavailable".
+    if not scored and catalog and equipment_set(available_equipment) is not None:
         # The athlete's equipment ruled out every in-domain session (ADR-0072). Stated, zero
         # work; never the general pool below, which would be generic filler under this day.
         return _equipment_unavailable_prescription(
