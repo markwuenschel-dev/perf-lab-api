@@ -124,7 +124,24 @@ often impossible?" is a query.
   Gymnastics Conditioning at bodyweight becomes Bodyweight Strength. They are honest by the
   matrix and candidates for variety work in phase 9b.
 
-## Live check
+## Live check (EC2, 2026-09-27)
 
-Not deployed yet. After deploy, append a read-only live check: one SELECT, then in-memory
-prescribing against the production catalog.
+Release `4f32518` (PR #256, a two-parent merge of `56f2e53` and `6054cb7`) was deployed with
+`./scripts/deploy.sh 4f325187d313b816db6ce48ace861fb234680480`:
+
+- the box's source is at `4f32518`, clean;
+- the schema is unchanged at `a047_dose_shadow_context` (head); phase 9 has no migration;
+- external `/ping` returns 200, and so does internal `/ping`;
+- the image carries `APP_BUILD_SHA=4f325187…`, and `PRESCRIPTION_ENGINE_VERSION` is `v0.7`;
+- the production catalog grew from 263 to **269** rows. The six phase-9 rows (Med Ball Chest
+  Pass, Snatch Pull, Wrist Mobility Circles, Finger Extensor Opening, Dumbbell Lateral Raise,
+  Standing Dumbbell Calf Raise) were seeded on boot.
+
+The same 144-cell matrix was then run inside the container against the **production**
+catalog. It was one `READ ONLY` catalog SELECT, then in-memory prescribing, with nothing
+written. The result: 90 followed, 23 replaced, 31 unavailable, **0 not honest**, identical
+to the matrix above. All five kit variants are in use.
+
+Not exercised: the authenticated route end to end with a real account, which would write a
+user and a block to the production database. The same seam is covered by the database tests
+(`tests/test_planned_session_binding.py`, `tests/test_equipment_unavailable.py`).
