@@ -157,6 +157,10 @@ class CandidateTemplate:
     # Phase 6.1: slots performed as one circuit under a scheme. None: every slot is its own
     # block, as before.
     circuit: CircuitSpec | None = None
+    # Phase 9: an EQUIPMENT variant of another template (its branch_id). Eligible only when
+    # that primary cannot be realized with the athlete's equipment, and never rotates with it
+    # (ADR-0072: adaptation changes the implementation, never the intent).
+    kit_fallback_for: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +186,9 @@ class FamilyVariant:
     #: Overrides the family's slots when the variant's work is shaped differently (one
     #: continuous tempo vs four intervals). None inherits the family's.
     exercise_slots: tuple[ExerciseSlot, ...] | None = None
+    #: Phase 9: this variant is the equipment adaptation of the named member (a branch_id of
+    #: the same family). See ``CandidateTemplate.kit_fallback_for``.
+    kit_fallback_for: str | None = None
 
 
 @dataclass(frozen=True)
@@ -206,6 +213,9 @@ class WorkoutFamily:
     scoring: ScoringSpec
     exercise_slots: tuple[ExerciseSlot, ...]
     variants: tuple[FamilyVariant, ...]
+    #: Phase 9: sessions expressible as families include fixed-volume and circuit designs.
+    workload_volume: WorkloadVolume = "scaled"
+    circuit: CircuitSpec | None = None
 
     def expand(self) -> list[CandidateTemplate]:
         return [
@@ -226,6 +236,9 @@ class WorkoutFamily:
                 exercise_slots=list(
                     self.exercise_slots if v.exercise_slots is None else v.exercise_slots
                 ),
+                workload_volume=self.workload_volume,
+                circuit=self.circuit,
+                kit_fallback_for=v.kit_fallback_for,
             )
             for v in self.variants
         ]
@@ -273,247 +286,317 @@ def _weak_point_coverage(
 # Template lists — static content per domain
 # ---------------------------------------------------------------------------
 
+STRENGTH_MAX_FAMILY = WorkoutFamily(
+    family_id="strength_max",
+    type="Max Strength",
+    focus="Back Squat 5×3 @ RPE 8 + Romanian Deadlift 3×5",
+    duration_min=65,
+    goal_alignment=1.0,
+    tags=("squat_pattern", "hip_hinge"),
+    domain="strength",
+    exercise_slots=(
+        ExerciseSlot(sets="5", reps="3", movement_pattern="squat", load_type="barbell",
+                     modality="Strength", skill_target=0.70,
+                     prefer_tags=("squat_pattern",)),
+        ExerciseSlot(sets="3", reps="5", movement_pattern="hinge", load_type="barbell",
+                     prefer_tags=("posterior_chain",)),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * (s.capacity_x.max_strength / 100.0 + 0.3),
+        fatigue_axis="cns",
+        tissue_axes=("lumbar", "knee"),
+        covers_weak_points=True,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Primary strength stimulus — high-tension, low-rep compound work.",
+            branch_id="strength_max",
+        ),
+    ),
+)
+
+STRENGTH_SKILL_ACQ_FAMILY = WorkoutFamily(
+    family_id="strength_skill_acq",
+    type="Skill Acquisition",
+    focus="Goblet Squats 3×8 (Tempo 3-1-1) + Box Squat Technique",
+    duration_min=45,
+    goal_alignment=0.75,
+    tags=("squat_pattern", "barbell_technique"),
+    domain="strength",
+    # Phase 9.2: the focus text, encoded. Goblet Squat 3x8 at tempo 3-1-1 is the text;
+    # Box Squat 3x5 for technique is AUTHORED (the text names the movement only).
+    exercise_slots=(
+        ExerciseSlot(sets="3", reps="8", exercise="Goblet Squat",
+                     load_note="Tempo 3-1-1: 3 s down, 1 s pause, 1 s up"),
+        ExerciseSlot(sets="3", reps="5", exercise="Box Squat",
+                     load_note="Technique: light load, sit back to the box"),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: 0.9,
+        fatigue_axis="cns",
+        fatigue_weight=0.5,
+        covers_weak_points=True,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Motor pattern priority — quality reps before load progression.",
+            branch_id="strength_skill_acq",
+            state_eligible=lambda s: s.skill_state.get("squat", 0.0) < 0.55,
+        ),
+    ),
+)
+
+STRENGTH_VARIETY_FAMILY = WorkoutFamily(
+    family_id="strength_variety",
+    type="Strength — Variety",
+    focus="Box Squats + Trap Bar Deadlift + Medicine Ball Slams",
+    duration_min=45,
+    goal_alignment=0.7,
+    tags=(),
+    domain="strength",
+    # Phase 9.1: the focus text, encoded. Sets and reps are AUTHORED (the text names the
+    # movements only).
+    exercise_slots=(
+        ExerciseSlot(sets="3", reps="5", exercise="Box Squat"),
+        ExerciseSlot(sets="3", reps="5", exercise="Trap Bar Deadlift"),
+        ExerciseSlot(sets="3", reps="8", exercise="Med Ball Slam"),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r,
+        fatigue_axis="muscular",
+        fatigue_weight=0.5,
+        tissue_axes=("lumbar",),
+        tissue_weight=0.5,
+        habit_fixed=0.8,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Habit strength low — enjoyable variation to sustain adherence.",
+            branch_id="strength_variety",
+            state_eligible=lambda s: s.habit_strength < 0.45,
+        ),
+    ),
+)
+
+STRENGTH_VOLUME_FAMILY = WorkoutFamily(
+    family_id="strength_volume",
+    type="Strength — Volume",
+    focus="Front Squat 4×6 @ RPE 6–7 + Accessory Pull",
+    duration_min=55,
+    goal_alignment=0.8,
+    tags=(),
+    domain="strength",
+    # Phase 9.1: the focus text, encoded. Front Squat 4x6 capped at RPE 7 is the text.
+    # The pull is PINNED so a weak-point ranking cannot swap it; Barbell Row 3x10 is
+    # AUTHORED (the text says only "Accessory Pull").
+    exercise_slots=(
+        ExerciseSlot(sets="4", reps="6", exercise="Front Squat", rpe_cap=7.0),
+        ExerciseSlot(sets="3", reps="10", exercise="Barbell Row"),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: max(0.3, 1.0 - s.fatigue_f.muscular / 100.0),
+        fatigue_axis="muscular",
+        fatigue_weight=0.7,
+        tissue_axes=("hip",),
+        habit_mult=0.5,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Volume accumulation with controlled intensity — good for fatigued states.",
+            branch_id="strength_volume",
+        ),
+    ),
+)
+
 STRENGTH_TEMPLATES: list[CandidateTemplate] = [
-    CandidateTemplate(
-        type="Max Strength",
-        focus="Back Squat 5×3 @ RPE 8 + Romanian Deadlift 3×5",
-        rationale="Primary strength stimulus — high-tension, low-rep compound work.",
-        branch_id="strength_max",
-        duration_min=65,
-        goal_alignment=1.0,
-        tags=["squat_pattern", "hip_hinge"],
-        domain="strength",
-        exercise_slots=[
-            ExerciseSlot(sets="5", reps="3", movement_pattern="squat", load_type="barbell",
-                         modality="Strength", skill_target=0.70,
-                         prefer_tags=("squat_pattern",)),
-            ExerciseSlot(sets="3", reps="5", movement_pattern="hinge", load_type="barbell",
-                         prefer_tags=("posterior_chain",)),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (s.capacity_x.max_strength / 100.0 + 0.3),
-            fatigue_axis="cns",
-            tissue_axes=("lumbar", "knee"),
-            covers_weak_points=True,
-        ),
-    ),
-    CandidateTemplate(
-        type="Skill Acquisition",
-        focus="Goblet Squats 3×8 (Tempo 3-1-1) + Box Squat Technique",
-        rationale="Motor pattern priority — quality reps before load progression.",
-        branch_id="strength_skill_acq",
-        duration_min=45,
-        goal_alignment=0.75,
-        tags=["squat_pattern", "barbell_technique"],
-        domain="strength",
-        state_eligible=lambda s: s.skill_state.get("squat", 0.0) < 0.55,
-        # Phase 9.2: the focus text, encoded. Goblet Squat 3x8 at tempo 3-1-1 is the text;
-        # Box Squat 3x5 for technique is AUTHORED (the text names the movement only).
-        exercise_slots=[
-            ExerciseSlot(sets="3", reps="8", exercise="Goblet Squat",
-                         load_note="Tempo 3-1-1: 3 s down, 1 s pause, 1 s up"),
-            ExerciseSlot(sets="3", reps="5", exercise="Box Squat",
-                         load_note="Technique: light load, sit back to the box"),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: 0.9,
-            fatigue_axis="cns",
-            fatigue_weight=0.5,
-            covers_weak_points=True,
-        ),
-    ),
-    CandidateTemplate(
-        type="Strength — Variety",
-        focus="Box Squats + Trap Bar Deadlift + Medicine Ball Slams",
-        rationale="Habit strength low — enjoyable variation to sustain adherence.",
-        branch_id="strength_variety",
-        duration_min=45,
-        goal_alignment=0.7,
-        tags=[],
-        domain="strength",
-        state_eligible=lambda s: s.habit_strength < 0.45,
-        # Phase 9.1: the focus text, encoded. Sets and reps are AUTHORED (the text names the
-        # movements only).
-        exercise_slots=[
-            ExerciseSlot(sets="3", reps="5", exercise="Box Squat"),
-            ExerciseSlot(sets="3", reps="5", exercise="Trap Bar Deadlift"),
-            ExerciseSlot(sets="3", reps="8", exercise="Med Ball Slam"),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r,
-            fatigue_axis="muscular",
-            fatigue_weight=0.5,
-            tissue_axes=("lumbar",),
-            tissue_weight=0.5,
-            habit_fixed=0.8,
-        ),
-    ),
-    CandidateTemplate(
-        type="Strength — Volume",
-        focus="Front Squat 4×6 @ RPE 6–7 + Accessory Pull",
-        rationale="Volume accumulation with controlled intensity — good for fatigued states.",
-        branch_id="strength_volume",
-        duration_min=55,
-        goal_alignment=0.8,
-        tags=[],
-        domain="strength",
-        # Phase 9.1: the focus text, encoded. Front Squat 4x6 capped at RPE 7 is the text.
-        # The pull is PINNED so a weak-point ranking cannot swap it; Barbell Row 3x10 is
-        # AUTHORED (the text says only "Accessory Pull").
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="6", exercise="Front Squat", rpe_cap=7.0),
-            ExerciseSlot(sets="3", reps="10", exercise="Barbell Row"),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: max(0.3, 1.0 - s.fatigue_f.muscular / 100.0),
-            fatigue_axis="muscular",
-            fatigue_weight=0.7,
-            tissue_axes=("hip",),
-            habit_mult=0.5,
-        ),
-    ),
+    *STRENGTH_MAX_FAMILY.expand(),
+    *STRENGTH_SKILL_ACQ_FAMILY.expand(),
+    *STRENGTH_VARIETY_FAMILY.expand(),
+    *STRENGTH_VOLUME_FAMILY.expand(),
 ]
+
+HYP_HIGH_VOL_FAMILY = WorkoutFamily(
+    family_id="hyp_high_vol",
+    type="High Volume Hypertrophy",
+    focus="Leg Press 4×12 + Hack Squat 3×15 + Leg Curl 3×12 near failure",
+    duration_min=75,
+    goal_alignment=1.0,
+    tags=("anterior_chain", "posterior_chain"),
+    domain="hypertrophy",
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * (1.0 - s.fatigue_f.muscular / 100.0),
+        fatigue_axis="muscular", tissue_axes=("knee", "hip"),
+        covers_weak_points=True,
+    ),
+    exercise_slots=(
+        ExerciseSlot(sets="4", reps="12", movement_pattern="squat", modality="Hypertrophy"),
+        ExerciseSlot(sets="3", reps="15", movement_pattern="squat", modality="Hypertrophy"),
+        ExerciseSlot(sets="3", reps="12", movement_pattern="hinge", modality="Hypertrophy"),
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Metabolic stress and mechanical tension with high proximity to failure.",
+            branch_id="hyp_high_vol",
+        ),
+    ),
+)
+
+HYP_MAINTENANCE_FAMILY = WorkoutFamily(
+    family_id="hyp_maintenance",
+    type="Maintenance Volume",
+    focus="Machine Isolation 3×10 @ RPE 7 — upper / lower split",
+    duration_min=45,
+    goal_alignment=0.7,
+    tags=(),
+    domain="hypertrophy",
+    # Phase 9.1: the focus text, encoded: machine isolation 3x10 capped at RPE 7, one
+    # upper and one lower. Pinned rather than selected by pattern, because "machine +
+    # squat" also matches Leg Press, a compound lift. The two movements are AUTHORED.
+    exercise_slots=(
+        ExerciseSlot(sets="3", reps="10", exercise="Pec Deck", rpe_cap=7.0),
+        ExerciseSlot(sets="3", reps="10", exercise="Leg Curl", rpe_cap=7.0),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r,
+        fatigue_axis="muscular", fatigue_weight=0.4, habit_mult=0.5,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Residual fatigue present — accumulate volume without overreaching.",
+            branch_id="hyp_maintenance",
+        ),
+    ),
+)
+
+HYP_UPPER_SPLIT_FAMILY = WorkoutFamily(
+    family_id="hyp_upper_split",
+    type="Upper Body Hypertrophy",
+    focus="Bench Press 4×10 + Barbell Row 4×10 + Dumbbell Shoulder Press 3×12 near failure",
+    duration_min=60,
+    goal_alignment=0.9,
+    tags=(),
+    domain="hypertrophy",
+    exercise_slots=(
+        ExerciseSlot(sets="4", reps="10", movement_pattern="push_horizontal",
+                     load_type="barbell", skill_target=0.5),
+        ExerciseSlot(sets="4", reps="10", movement_pattern="pull_horizontal",
+                     load_type="barbell", skill_target=0.5),
+        ExerciseSlot(sets="3", reps="12", movement_pattern="push_vertical",
+                     load_type="dumbbell", modality="Hypertrophy", skill_target=0.4),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * (1.0 - s.fatigue_f.muscular / 100.0 * 0.5),
+        fatigue_axis="muscular",
+        fatigue_weight=0.6,
+        tissue_axes=("shoulder", "lumbar"),
+        tissue_weight=0.5,
+        habit_mult=0.8,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Upper-body mechanical tension and volume — complements the lower-body-biased high-volume day.",
+            branch_id="hyp_upper_split",
+            # Only when reasonably fresh — keeps hyp_maintenance the pick under elevated
+            # muscular fatigue (see tests/test_prescriber_exercise_selection.py).
+            state_eligible=lambda s: s.fatigue_f.muscular < 55.0,
+        ),
+    ),
+)
 
 HYPERTROPHY_TEMPLATES: list[CandidateTemplate] = [
-    CandidateTemplate(
-        type="High Volume Hypertrophy",
-        focus="Leg Press 4×12 + Hack Squat 3×15 + Leg Curl 3×12 near failure",
-        rationale="Metabolic stress and mechanical tension with high proximity to failure.",
-        branch_id="hyp_high_vol",
-        duration_min=75,
-        goal_alignment=1.0,
-        tags=["anterior_chain", "posterior_chain"],
-        domain="hypertrophy",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.muscular / 100.0),
-            fatigue_axis="muscular", tissue_axes=("knee", "hip"),
-            covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="12", movement_pattern="squat", modality="Hypertrophy"),
-            ExerciseSlot(sets="3", reps="15", movement_pattern="squat", modality="Hypertrophy"),
-            ExerciseSlot(sets="3", reps="12", movement_pattern="hinge", modality="Hypertrophy"),
-        ],
-    ),
-    CandidateTemplate(
-        type="Maintenance Volume",
-        focus="Machine Isolation 3×10 @ RPE 7 — upper / lower split",
-        rationale="Residual fatigue present — accumulate volume without overreaching.",
-        branch_id="hyp_maintenance",
-        duration_min=45,
-        goal_alignment=0.7,
-        tags=[],
-        domain="hypertrophy",
-        # Phase 9.1: the focus text, encoded: machine isolation 3x10 capped at RPE 7, one
-        # upper and one lower. Pinned rather than selected by pattern, because "machine +
-        # squat" also matches Leg Press, a compound lift. The two movements are AUTHORED.
-        exercise_slots=[
-            ExerciseSlot(sets="3", reps="10", exercise="Pec Deck", rpe_cap=7.0),
-            ExerciseSlot(sets="3", reps="10", exercise="Leg Curl", rpe_cap=7.0),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r,
-            fatigue_axis="muscular", fatigue_weight=0.4, habit_mult=0.5,
-        ),
-    ),
-    CandidateTemplate(
-        type="Upper Body Hypertrophy",
-        focus="Bench Press 4×10 + Barbell Row 4×10 + Dumbbell Shoulder Press 3×12 near failure",
-        rationale="Upper-body mechanical tension and volume — complements the lower-body-biased high-volume day.",
-        branch_id="hyp_upper_split",
-        duration_min=60,
-        goal_alignment=0.9,
-        tags=[],
-        domain="hypertrophy",
-        # Only when reasonably fresh — keeps hyp_maintenance the pick under elevated
-        # muscular fatigue (see tests/test_prescriber_exercise_selection.py).
-        state_eligible=lambda s: s.fatigue_f.muscular < 55.0,
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="10", movement_pattern="push_horizontal",
-                         load_type="barbell", skill_target=0.5),
-            ExerciseSlot(sets="4", reps="10", movement_pattern="pull_horizontal",
-                         load_type="barbell", skill_target=0.5),
-            ExerciseSlot(sets="3", reps="12", movement_pattern="push_vertical",
-                         load_type="dumbbell", modality="Hypertrophy", skill_target=0.4),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.muscular / 100.0 * 0.5),
-            fatigue_axis="muscular",
-            fatigue_weight=0.6,
-            tissue_axes=("shoulder", "lumbar"),
-            tissue_weight=0.5,
-            habit_mult=0.8,
-        ),
-    ),
+    *HYP_HIGH_VOL_FAMILY.expand(),
+    *HYP_MAINTENANCE_FAMILY.expand(),
+    *HYP_UPPER_SPLIT_FAMILY.expand(),
 ]
 
+POWER_MAIN_FAMILY = WorkoutFamily(
+    family_id="power_main",
+    type="Power Development",
+    focus="Hang Power Clean 5×3 @ RPE 6–7 + Box Jumps 4×4 (full recovery)",
+    duration_min=50,
+    goal_alignment=1.0,
+    tags=("hip_hinge",),
+    domain="power",
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
+        tissue_axes=("knee", "ankle"), covers_weak_points=True,
+    ),
+    exercise_slots=(
+        ExerciseSlot(sets="5", reps="3", movement_pattern="hinge", modality="Power", load_type="barbell"),
+        ExerciseSlot(sets="4", reps="4", movement_pattern="jump", modality="Power"),
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="High-velocity compound work — power requires neural freshness.",
+            branch_id="power_main",
+        ),
+    ),
+)
+
+POWER_NEURAL_PRIME_FAMILY = WorkoutFamily(
+    family_id="power_neural_prime",
+    type="Neural Priming",
+    focus="Jumps / Throws (Low Volume, Long Rest) @ RPE 6",
+    duration_min=30,
+    goal_alignment=0.7,
+    tags=(),
+    domain="power",
+    # Phase 9.1: the focus text, encoded: a jump and a THROW, low volume, capped at RPE 6.
+    # The throw is a Med Ball Chest Pass (a ballistic release), not a slam, whose
+    # direction and intent differ. 4x3 and 3x3 are AUTHORED ("low volume").
+    exercise_slots=(
+        ExerciseSlot(sets="4", reps="3", movement_pattern="jump", modality="Power", rpe_cap=6.0),
+        ExerciseSlot(sets="3", reps="3", exercise="Med Ball Chest Pass", rpe_cap=6.0),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: max(0.4, 1.0 - s.fatigue_f.cns / 100.0),
+        fatigue_weight=0.5, habit_mult=0.6,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Brief neural exposures — maintain power quality under partial fatigue.",
+            branch_id="power_neural_prime",
+        ),
+    ),
+)
+
+POWER_REACTIVE_FAMILY = WorkoutFamily(
+    family_id="power_reactive",
+    type="Reactive Power",
+    focus="Lateral Bounds + Broad Jumps + Rotational Med Ball Work — multi-directional plyometrics",
+    duration_min=40,
+    goal_alignment=0.85,
+    tags=(),
+    domain="power",
+    exercise_slots=(
+        ExerciseSlot(sets="4", reps="4 each side", movement_pattern="jump",
+                     sport_domain="running", skill_target=0.55, prefer_tags=("plyometric",)),
+        ExerciseSlot(sets="4", reps="4", movement_pattern="jump",
+                     sport_domain="running", skill_target=0.55,
+                     prefer_tags=("plyometric", "power")),
+        ExerciseSlot(sets="3", reps="8-10", movement_pattern="core",
+                     max_skill_demand=0.45, prefer_tags=("rotation",)),
+    ),
+    scoring=ScoringSpec(
+        state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.7),
+        fatigue_axis="cns",
+        fatigue_weight=0.8,
+        tissue_axes=("knee", "ankle", "hip"),
+        tissue_weight=0.6,
+        habit_mult=0.8,
+    ),
+    variants=(
+        FamilyVariant(
+            rationale="Multi-planar reactive strength — complements the sagittal-only jump work in the main session.",
+            branch_id="power_reactive",
+        ),
+    ),
+)
+
 POWER_TEMPLATES: list[CandidateTemplate] = [
-    CandidateTemplate(
-        type="Power Development",
-        focus="Hang Power Clean 5×3 @ RPE 6–7 + Box Jumps 4×4 (full recovery)",
-        rationale="High-velocity compound work — power requires neural freshness.",
-        branch_id="power_main",
-        duration_min=50,
-        goal_alignment=1.0,
-        tags=["hip_hinge"],
-        domain="power",
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0),
-            tissue_axes=("knee", "ankle"), covers_weak_points=True,
-        ),
-        exercise_slots=[
-            ExerciseSlot(sets="5", reps="3", movement_pattern="hinge", modality="Power", load_type="barbell"),
-            ExerciseSlot(sets="4", reps="4", movement_pattern="jump", modality="Power"),
-        ],
-    ),
-    CandidateTemplate(
-        type="Neural Priming",
-        focus="Jumps / Throws (Low Volume, Long Rest) @ RPE 6",
-        rationale="Brief neural exposures — maintain power quality under partial fatigue.",
-        branch_id="power_neural_prime",
-        duration_min=30,
-        goal_alignment=0.7,
-        tags=[],
-        domain="power",
-        # Phase 9.1: the focus text, encoded: a jump and a THROW, low volume, capped at RPE 6.
-        # The throw is a Med Ball Chest Pass (a ballistic release), not a slam, whose
-        # direction and intent differ. 4x3 and 3x3 are AUTHORED ("low volume").
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="3", movement_pattern="jump", modality="Power", rpe_cap=6.0),
-            ExerciseSlot(sets="3", reps="3", exercise="Med Ball Chest Pass", rpe_cap=6.0),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: max(0.4, 1.0 - s.fatigue_f.cns / 100.0),
-            fatigue_weight=0.5, habit_mult=0.6,
-        ),
-    ),
-    CandidateTemplate(
-        type="Reactive Power",
-        focus="Lateral Bounds + Broad Jumps + Rotational Med Ball Work — multi-directional plyometrics",
-        rationale="Multi-planar reactive strength — complements the sagittal-only jump work in the main session.",
-        branch_id="power_reactive",
-        duration_min=40,
-        goal_alignment=0.85,
-        tags=[],
-        domain="power",
-        exercise_slots=[
-            ExerciseSlot(sets="4", reps="4 each side", movement_pattern="jump",
-                         sport_domain="running", skill_target=0.55, prefer_tags=("plyometric",)),
-            ExerciseSlot(sets="4", reps="4", movement_pattern="jump",
-                         sport_domain="running", skill_target=0.55,
-                         prefer_tags=("plyometric", "power")),
-            ExerciseSlot(sets="3", reps="8-10", movement_pattern="core",
-                         max_skill_demand=0.45, prefer_tags=("rotation",)),
-        ],
-        scoring=ScoringSpec(
-            state_fit=lambda s, r: r * (1.0 - s.fatigue_f.cns / 100.0 * 0.7),
-            fatigue_axis="cns",
-            fatigue_weight=0.8,
-            tissue_axes=("knee", "ankle", "hip"),
-            tissue_weight=0.6,
-            habit_mult=0.8,
-        ),
-    ),
+    *POWER_MAIN_FAMILY.expand(),
+    *POWER_NEURAL_PRIME_FAMILY.expand(),
+    *POWER_REACTIVE_FAMILY.expand(),
 ]
 
 #: The power block's Strength Potentiation day (phase 5.6), reachable on that day only
@@ -1525,6 +1608,18 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
 
 #: Every family whose members are in the pool. Pool = expanded families + remaining literals.
 WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (
+    # Phase 9.3: every strength, hypertrophy and power design is a family, so an equipment
+    # variant (9.4) is a FamilyVariant, not another literal.
+    STRENGTH_MAX_FAMILY,
+    STRENGTH_SKILL_ACQ_FAMILY,
+    STRENGTH_VARIETY_FAMILY,
+    STRENGTH_VOLUME_FAMILY,
+    HYP_HIGH_VOL_FAMILY,
+    HYP_MAINTENANCE_FAMILY,
+    HYP_UPPER_SPLIT_FAMILY,
+    POWER_MAIN_FAMILY,
+    POWER_NEURAL_PRIME_FAMILY,
+    POWER_REACTIVE_FAMILY,
     SBD_STRENGTH_FAMILY,
     RUN_AEROBIC_FAMILY,
     RUN_THRESHOLD_FAMILY,

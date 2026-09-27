@@ -28,7 +28,7 @@ from app.logic.candidate_library import (
 #: What a variant may set. Everything else a member carries comes from its family.
 VARIANT_FIELDS = {
     "branch_id", "rationale", "kpi_eligible", "state_eligible", "goal_eligible", "focus",
-    "exercise_slots",
+    "exercise_slots", "kit_fallback_for",
 }
 #: Variant fields that override a family field when set; None inherits the family's value.
 OVERRIDES = {"focus", "exercise_slots"}
@@ -67,7 +67,7 @@ def test_members_differ_only_in_what_their_variant_declares(family: WorkoutFamil
     members = family.expand()
     shared = {
         "type", "focus", "duration_min", "goal_alignment", "tags", "domain", "scoring",
-        "exercise_slots",
+        "exercise_slots", "workload_volume", "circuit",
     }
 
     for member, variant in zip(members, family.variants, strict=True):
@@ -155,3 +155,31 @@ def test_a_variant_focus_overrides_only_its_own_member() -> None:
 
     assert tempo.focus == RUN_THRESHOLD_FAMILY.focus
     assert intervals.focus.startswith("4×5 min")
+
+
+def test_a_family_can_express_a_fixed_volume_circuit_session() -> None:
+    """Phase 9.3: fixed-volume and circuit designs are families too; expand carries both, and
+    a kit variant keeps its primary's identity in ``kit_fallback_for``."""
+    from app.logic.candidate_library import CircuitSpec, ScoringSpec
+    from app.logic.exercise_slot import ExerciseSlot
+    from app.schemas.workout_structure import CircuitStation, FixedRoundsScheme
+
+    circuit = CircuitSpec(
+        scheme=FixedRoundsScheme(rounds=3),
+        stations=(CircuitStation(exercise="", reps=5),),
+    )
+    family = WorkoutFamily(
+        family_id="t", domain="mixed", type="T", focus="F", duration_min=30,
+        goal_alignment=0.5, tags=(), scoring=ScoringSpec(state_fit=lambda s, r: r),
+        exercise_slots=(ExerciseSlot(sets="3", reps="5", movement_pattern="squat"),),
+        variants=(
+            FamilyVariant(branch_id="t_primary", rationale="r"),
+            FamilyVariant(branch_id="t_home", rationale="r", kit_fallback_for="t_primary"),
+        ),
+        workload_volume="fixed",
+        circuit=circuit,
+    )
+    primary, home = family.expand()
+    assert (primary.workload_volume, home.workload_volume) == ("fixed", "fixed")
+    assert primary.circuit is circuit and home.circuit is circuit
+    assert (primary.kit_fallback_for, home.kit_fallback_for) == (None, "t_primary")
