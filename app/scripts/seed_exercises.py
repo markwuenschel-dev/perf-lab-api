@@ -455,6 +455,40 @@ _E1RM_CODE_BY_EXERCISE = {
 }
 
 
+#: Rows whose REQUIRED EQUIPMENT was corrected after they reached a database. The seed above
+#: is insert-only (it skips a name that exists), so without this an existing environment keeps
+#: the old, wrong requirement forever. These six listed none, so they were offered to
+#: bodyweight-only athletes "by omission" (ADR-0072: equipment adaptation must be honest).
+#: The source rows in exercise_bulk.py are the truth; this only names which ones to re-apply.
+EQUIPMENT_CORRECTED: frozenset[str] = frozenset({
+    "Chest-to-Bar Pull-Up",
+    "Atlas Stone Load",
+    "Log Clean and Press",
+    "Yoke Walk",
+    "Tire Flip",
+    "Keg Carry",
+})
+
+
+def equipment_corrections(
+    source_rows: list[dict[str, Any]], existing: dict[str, list[str] | None]
+) -> dict[str, list[str]]:
+    """Name -> corrected equipment, for listed rows whose stored requirement differs.
+
+    Pure, so the rule is testable without a database. Idempotent: an already-correct row
+    produces nothing.
+    """
+    out: dict[str, list[str]] = {}
+    for row in source_rows:
+        name = row["name"]
+        if name not in EQUIPMENT_CORRECTED or name not in existing:
+            continue
+        wanted = list(row.get("equipment_required") or [])
+        if sorted(existing[name] or []) != sorted(wanted):
+            out[name] = wanted
+    return out
+
+
 async def seed() -> None:
     combined = EXERCISES + bulk_exercises()
     async with AsyncSessionLocal() as db:
@@ -477,10 +511,24 @@ async def seed() -> None:
                 row.e1rm_benchmark_code = code
                 enriched += 1
 
+        # Idempotent equipment corrections for rows that predate them (see EQUIPMENT_CORRECTED).
+        stored = {
+            row.name: row
+            for row in (
+                await db.execute(select(Exercise).where(Exercise.name.in_(EQUIPMENT_CORRECTED)))
+            ).scalars().all()
+        }
+        fixes = equipment_corrections(
+            combined, {name: row.equipment_required for name, row in stored.items()}
+        )
+        for name, equipment in fixes.items():
+            stored[name].equipment_required = equipment
+
         await db.commit()
         print(
             f"Exercise seed: inserted {inserted} new rows "
-            f"({len(combined)} in catalog); enriched {enriched} e1RM code(s)."
+            f"({len(combined)} in catalog); enriched {enriched} e1RM code(s); "
+            f"corrected equipment on {len(fixes)} row(s)."
         )
 
 
