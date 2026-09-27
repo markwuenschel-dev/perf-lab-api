@@ -1,47 +1,81 @@
-"""Build the dose-law calibration training frame (Rail 1, shadow-only).
+"""Build the dose-law calibration training frame (phase 8.4).
 
-Turns a per-(athlete, session) workout log into a supervised frame for learning WEAK
-POPULATION PRIORS on the session dose-law weights (``dose_volume_weights`` and the
-``dose_shape_six_by_modality`` multipliers). Each row carries the raw volume-proxy
-COMPONENTS the weights act on (session duration, external volume load, sets), the
-engine's CURRENTLY-MODELED dose for that session (via ``calculate_stress_dose`` — so the
-calibration is measured against the production dose law, not a re-derivation), and a
-NEXT-SESSION outcome proxy the dose is supposed to track.
+Turns logged sessions into a supervised frame for learning WEAK POPULATION PRIORS on the
+session dose-law weights (``dose_volume_weights`` and the ``dose_shape_six_by_modality``
+multipliers). Each row carries the raw volume-proxy COMPONENTS the weights act on, the
+session fields needed to recompute the dose, the dose v1 models for it, and a label.
 
-Outcome proxy (label)
-  Next-session ``session_rpe`` residual (per-athlete demeaned). The hypothesis a dose
-  law encodes is "a bigger session today leaves more residual fatigue, so the next
-  session costs more perceived effort". The label is therefore the athlete's next
-  logged session RPE, demeaned per athlete so the model learns each athlete's WITHIN-
-  person dose→cost response rather than cross-athlete RPE-reporting styles. Only genuine
-  next sessions within ``MAX_SESSION_GAP_DAYS`` produce a label; larger gaps (the residual
-  fatigue has cleared) yield no label and are dropped.
+Label: CAUSAL, from ``app/logic/dose_fit_policy.py``
+  The athlete's next logged session RPE (1-4 days later), centred on the mean RPE of that
+  athlete's sessions strictly BEFORE this one. A full-trajectory mean would hand a held-out
+  athlete's future RPEs to the evaluation; the policy never looks forward, and a session
+  without enough earlier history has no label. The same module drives the production
+  census (``app/scripts/dose_shadow_report.py``), so the census and the frame count the
+  same pairs.
 
-Data source
-  The production-equivalent path is the workout-logs table joined to each athlete's next
-  logged session. There is no first-party dose CSV yet, so ``synthesize_sessions`` emits a
-  deterministic SYNTHETIC stand-in that keeps this pipeline runnable and testable without a
-  DB (analogous to the Q2 recovery CSV). SYNTHETIC data is good only for learning the
-  SHAPE of weak priors, never effect magnitudes — which is exactly why the emitted artifact
-  is ``shadow_only`` (see ``model_card``).
+Dose model: v1, at the version the running code implements
+  Doses are recomputed with ``dose_engine_v1`` (not v0: the density variable changed). A
+  frame is built for exactly ONE ``v1_model_version``, and it must be the version this code
+  computes: rows captured under v1.1 cannot be recomputed as v1.2, and the two are never
+  pooled.
+
+Features: raw, standardized at fit time
+  The component columns are raw magnitudes. Standardization happens inside the fit, on the
+  training partition only, so held-out athletes never shape the scaling.
+
+Data sources
+  ``load_shadow_frame`` reads the 8A shadow log: eligible rows only (``fit_tier``, which
+  consults ``density_fit_eligible``), real athletes only unless ``allow_seeded``. Its
+  manifest records the source, versions, pairing rule, exclusions and a fingerprint of the
+  frame, and an artifact fitted from it carries that manifest into activation
+  (``app/logic/dose_model.py``).
+  ``synthesize_sessions`` is a deterministic SYNTHETIC stand-in for tests: shape only,
+  never effect sizes, and never activatable.
 """
 from __future__ import annotations
 
-from typing import Any
+import hashlib
+import json
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pandas as pd
 
 from app.engine.parameters import EngineParameters, default_parameters
-
-# Pinned to dose engine v0 on purpose: the fitted artifact is v0-fitted; phase 8 re-fits against v1 (the density variable changed).
-from app.logic.dose_engine_v0 import calculate_stress_dose
+from app.logic import dose_engine_v1
+from app.logic.dose_fit_policy import (
+    FIT_POLICY_VERSION,
+    LoggedSession,
+    fit_tier,
+    is_seeded_email,
+    pair_sessions,
+    pairing_rule,
+)
 from app.ml.common.splits import grouped_time_split as _grouped_time_split
 from app.schemas.workouts import WorkoutLog
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+#: Bump on ANY change to what a frame row contains or how a feature is computed.
+#: 1 (implicit, before phase 8): v0 doses, fabricated set fallback, full-trajectory demeaned
+#: label, features z-scored over the whole frame. 2: v1 doses, reported sets only, causal
+#: label from the fit policy, raw features standardized at fit time.
+FEATURE_SCHEMA_VERSION = "dose-features-2"
+
 GROUP_COLUMN = "user_id"
+SESSION_ID_COLUMN = "workout_log_id"
 LABEL_COLUMN = "label"
 DOSE_COLUMN = "modeled_dose_default"
+#: The v1 total recorded at ingest (shadow rows only), to measure recompute fidelity.
+INGEST_DOSE_COLUMN = "v1_dose_ingest"
+
+DATA_SOURCE_SHADOW = "dose_model_shadow_log"
+DATA_SOURCE_SEEDED = "seeded"
+DATA_SOURCE_SYNTHETIC = "synthetic"
 
 # The volume-proxy components the ``dose_volume_weights`` act on, and the weight each maps
 # to. These are the model features; a learned coefficient on a component becomes a weak
@@ -68,15 +102,12 @@ MODALITY_TO_SHAPE: dict[str, str] = {
     "Mixed": "strength",
 }
 
-# Only consecutive-enough sessions carry a residual-fatigue signal; a longer layoff has
-# cleared it, so the next session's RPE no longer reflects today's dose.
-MAX_SESSION_GAP_DAYS = 4
-
 # Session columns needed both for the linear fit and to REBUILD a WorkoutLog so the dose
 # can be recomputed under calibrated parameters.
 _SESSION_FIELDS: tuple[str, ...] = (
     "modality", "duration_minutes", "session_rpe", "total_volume_load",
-    "estimated_sets", "novelty", "avg_rir", "sleep_quality", "life_stress_inverse",
+    "estimated_sets", "distance_meters", "novelty", "avg_rir", "sleep_quality",
+    "life_stress_inverse",
 )
 
 # Features that are FORBIDDEN because they leak the label or are measured post-outcome.
@@ -84,6 +115,7 @@ _SESSION_FIELDS: tuple[str, ...] = (
 # t+1, is measured AFTER the dose being calibrated and would leak the answer.
 FORBIDDEN_FEATURES: dict[str, str] = {
     "session_rpe_next": "the label itself — next-session RPE",
+    "next_session_rpe": "the label's raw value — next-session RPE",
     "modeled_dose_next": "modeled dose of session t+1 — post-outcome by construction",
     "duration_minutes_next": "next-session (t+1) field — measured after the outcome window",
     "total_volume_load_next": "next-session (t+1) field — post-outcome",
@@ -93,12 +125,8 @@ FORBIDDEN_FEATURES: dict[str, str] = {
 }
 
 
-def _sets_effective(row: pd.Series) -> float:
-    """Sets used by the dose law: ``estimated_sets`` or the engine's duration fallback."""
-    est = row.get("estimated_sets")
-    if est is not None and not (isinstance(est, float) and np.isnan(est)):
-        return float(est)
-    return max(3.0, float(row["duration_minutes"]) / 12.0)
+def _missing(val: object) -> bool:
+    return val is None or (isinstance(val, float) and np.isnan(val))
 
 
 def _wellness(row: pd.Series, field: str) -> float | None:
@@ -114,32 +142,41 @@ def _wellness(row: pd.Series, field: str) -> float | None:
     dosed with a labelled neutral; zero is rejected as corrupt.
     """
     val = row.get(field)
-    if val is None or (isinstance(val, float) and np.isnan(val)):
+    if _missing(val):
         return None
     return float(val)
 
 
+def _optional(row: pd.Series, field: str) -> float | None:
+    val = row.get(field)
+    return None if _missing(val) else float(val)
+
+
 def build_log(row: pd.Series) -> WorkoutLog:
-    """Rebuild a minimal ``WorkoutLog`` from a frame row for dose recomputation."""
-    rir = row.get("avg_rir")
-    rir_val = None if rir is None or (isinstance(rir, float) and np.isnan(rir)) else float(rir)
+    """Rebuild a minimal ``WorkoutLog`` from a frame row for dose recomputation.
+
+    Sets are the REPORTED count or ``None``: v1 never fabricates a set count, so neither
+    does the frame (the v0-era ``max(3, duration/12)`` fallback is gone).
+    """
+    novelty = _optional(row, "novelty")
     return WorkoutLog(
         timestamp=pd.Timestamp(row["date"]).to_pydatetime(),
         modality=row["modality"],
         duration_minutes=float(row["duration_minutes"]),
         session_rpe=float(row["session_rpe"]),
-        total_volume_load=float(row.get("total_volume_load") or 0.0),
-        estimated_sets=float(row["sets_eff"]),
-        novelty=float(row.get("novelty") or 1.0),
-        avg_rir=rir_val,
+        total_volume_load=_optional(row, "total_volume_load") or 0.0,
+        distance_meters=_optional(row, "distance_meters") or 0.0,
+        estimated_sets=_optional(row, "sets_eff"),
+        novelty=1.0 if novelty is None else novelty,
+        avg_rir=_optional(row, "avg_rir"),
         sleep_quality=_wellness(row, "sleep_quality"),
         life_stress_inverse=_wellness(row, "life_stress_inverse"),
     )
 
 
 def modeled_dose_scalar(row: pd.Series, params: EngineParameters) -> float:
-    """Total six-axis session dose under ``params`` — the engine's modeled dose magnitude."""
-    dose = calculate_stress_dose(build_log(row), params)
+    """Total six-axis session dose under ``params``, by dose model v1."""
+    dose = dose_engine_v1.calculate_stress_dose(build_log(row), params)
     six = dose.dose_six
     return float(six.volume + six.intensity + six.density + six.impact + six.skill + six.metabolic)
 
@@ -149,43 +186,288 @@ def modeled_doses(frame: pd.DataFrame, params: EngineParameters) -> np.ndarray:
     return np.array([modeled_dose_scalar(row, params) for _, row in frame.iterrows()], dtype=float)
 
 
-def build_frame(sessions: pd.DataFrame) -> pd.DataFrame:
-    """Build the supervised dose-calibration frame from per-session workout logs.
+def _labelled(candidates: pd.DataFrame, sessions: Iterable[LoggedSession]) -> pd.DataFrame:
+    """Attach the causal label to candidate rows; keep only labelled pairs.
 
-    Returns one row per (athlete, session) that has a valid next-session label, carrying
-    the standardized component features, the raw session fields (for dose recomputation),
-    the default modeled dose, and the per-athlete-residualized next-session RPE label.
+    ``candidates`` has one row per session that MAY enter the fit (``SESSION_ID_COLUMN``
+    keyed). ``sessions`` is every logged session of those athletes: the next session and the
+    baseline come from all of them, not only from eligible rows.
+    """
+    pairs = pair_sessions(sessions)
+    df = candidates.copy()
+    status = [
+        pairs[int(i)].status if int(i) in pairs else "unlinked_workout_log"
+        for i in df[SESSION_ID_COLUMN]
+    ]
+    df["pair_status"] = status
+    df["next_session_rpe"] = [
+        pairs[int(i)].next_session_rpe if int(i) in pairs else None
+        for i in df[SESSION_ID_COLUMN]
+    ]
+    df["causal_baseline_rpe"] = [
+        pairs[int(i)].causal_baseline_rpe if int(i) in pairs else None
+        for i in df[SESSION_ID_COLUMN]
+    ]
+    df[LABEL_COLUMN] = [
+        pairs[int(i)].label if int(i) in pairs else None for i in df[SESSION_ID_COLUMN]
+    ]
+    return df
+
+
+def _finish(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep labelled rows, sort, and add the raw component features and the default dose."""
+    out = df[df["pair_status"] == "labelled"].copy()
+    out[LABEL_COLUMN] = out[LABEL_COLUMN].astype(float)
+    out = out.sort_values([GROUP_COLUMN, "date", SESSION_ID_COLUMN]).reset_index(drop=True)
+    out["sets_eff"] = out["estimated_sets"]
+    for feat, src in _COMPONENT_SOURCE.items():
+        # Raw magnitudes; the fit standardizes on its training partition. An unreported
+        # component is 0 work of that kind, which is what V itself uses.
+        out[feat] = out[src].astype(float).fillna(0.0)
+    out[DOSE_COLUMN] = modeled_doses(out, default_parameters()) if len(out) else []
+    return out
+
+
+def build_frame(sessions: pd.DataFrame) -> pd.DataFrame:
+    """Frame from a per-session table (the synthetic stand-in and tests).
+
+    Every session is both a candidate row and part of the athlete's history. Sessions get a
+    stable id from ``SESSION_ID_COLUMN`` when present, else their row position.
     """
     df = sessions.copy()
     df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values([GROUP_COLUMN, "date"]).reset_index(drop=True)
-    df["sets_eff"] = df.apply(_sets_effective, axis=1)
+    if SESSION_ID_COLUMN not in df.columns:
+        df[SESSION_ID_COLUMN] = np.arange(1, len(df) + 1)
+    for col in _SESSION_FIELDS:
+        if col not in df.columns:
+            df[col] = None
+    logged = [
+        LoggedSession(
+            workout_log_id=int(i),
+            user_id=int(u),
+            at=pd.Timestamp(t).to_pydatetime(),
+            session_rpe=float(r),
+        )
+        for i, u, t, r in zip(
+            df[SESSION_ID_COLUMN], df[GROUP_COLUMN], df["date"], df["session_rpe"], strict=True
+        )
+    ]
+    return _finish(_labelled(df, logged))
 
-    # --- Modeled dose under the current (default) engine weights ---
-    df[DOSE_COLUMN] = modeled_doses(df, default_parameters())
 
-    # --- Label: next logged session's RPE, consecutive-enough sessions only ---
-    rpe_next = df.groupby(GROUP_COLUMN)["session_rpe"].shift(-1)
-    date_next = df.groupby(GROUP_COLUMN)["date"].shift(-1)
-    gap_days = (date_next - df["date"]).dt.days
-    next_rpe = rpe_next.where((gap_days >= 1) & (gap_days <= MAX_SESSION_GAP_DAYS))
+# --- The real frame: the 8A shadow log -------------------------------------------------
 
-    keep_cols = [GROUP_COLUMN, "date", "sets_eff", DOSE_COLUMN, *_SESSION_FIELDS]
-    out = df[keep_cols].copy()
-    out["next_session_rpe"] = next_rpe
-    out = out[out["next_session_rpe"].notna()].reset_index(drop=True)
 
-    # Residualize the label per athlete (remove each athlete's mean next-session RPE).
-    athlete_mean = out.groupby(GROUP_COLUMN)["next_session_rpe"].transform("mean")
-    out[LABEL_COLUMN] = out["next_session_rpe"] - athlete_mean
+class ShadowFrameError(ValueError):
+    """The shadow frame was asked for something this code cannot build honestly."""
 
-    # --- Component features: population z-score so ridge coefficients are comparable ---
-    for feat, src in _COMPONENT_SOURCE.items():
-        raw = out[src].astype(float)
-        std = float(raw.std(ddof=0)) or 1.0
-        out[feat] = (raw - float(raw.mean())) / std
 
-    return out
+@dataclass(frozen=True)
+class ShadowFrame:
+    frame: pd.DataFrame
+    #: What the frame is: source, versions, pairing rule, exclusions, fingerprint. An
+    #: artifact fitted from it carries this into activation.
+    manifest: dict[str, Any]
+
+
+def frame_fingerprint(frame: pd.DataFrame) -> str:
+    """sha256 over the rows a fit learns from, in a canonical order and precision."""
+    cols = [GROUP_COLUMN, SESSION_ID_COLUMN, LABEL_COLUMN, *_COMPONENT_SOURCE.values(),
+            *_SESSION_FIELDS]
+    present = [c for c in dict.fromkeys(cols) if c in frame.columns]
+    ordered = frame.sort_values([GROUP_COLUMN, SESSION_ID_COLUMN])[present]
+
+    def canon(v: object) -> object:
+        if _missing(v):
+            return None
+        if isinstance(v, (int, np.integer)):
+            return int(v)
+        if isinstance(v, (float, np.floating)):
+            return round(float(v), 9)
+        return str(v)
+
+    rows = [[canon(v) for v in r] for r in ordered.itertuples(index=False, name=None)]
+    payload = json.dumps({"columns": present, "rows": rows}, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _pairs_per_athlete(frame: pd.DataFrame) -> dict[str, float | int | None]:
+    if frame.empty:
+        return {"min": None, "median": None, "max": None}
+    counts = frame.groupby(GROUP_COLUMN).size()
+    return {
+        "min": int(counts.min()),
+        "median": float(counts.median()),
+        "max": int(counts.max()),
+    }
+
+
+def _recompute_fidelity(frame: pd.DataFrame) -> dict[str, Any]:
+    """How far the frame's recomputed default dose sits from the dose recorded at ingest.
+
+    The frame rebuilds a session from its logged fields; the ingest dose also saw exercise
+    phi vectors, per-set external intensity and novelty, which are not all persisted. A fit
+    nudges weights on the RECOMPUTED dose, so the gap is reported, never assumed zero.
+    """
+    if frame.empty or INGEST_DOSE_COLUMN not in frame.columns:
+        return {"n": 0, "median_abs_rel_diff": None, "max_abs_rel_diff": None}
+    ingest = frame[INGEST_DOSE_COLUMN].astype(float).to_numpy()
+    recomputed = frame[DOSE_COLUMN].astype(float).to_numpy()
+    ok = ingest > 0
+    if not ok.any():
+        return {"n": 0, "median_abs_rel_diff": None, "max_abs_rel_diff": None}
+    rel = np.abs(recomputed[ok] / ingest[ok] - 1.0)
+    return {
+        "n": int(ok.sum()),
+        "median_abs_rel_diff": round(float(np.median(rel)), 6),
+        "max_abs_rel_diff": round(float(np.max(rel)), 6),
+        "not_persisted": ["novelty", "exercise_phi", "per_set_external_intensity"],
+    }
+
+
+def build_shadow_frame(
+    shadow_rows: Iterable[Mapping[str, Any]],
+    sessions: Iterable[LoggedSession],
+    emails: Mapping[int, str | None],
+    *,
+    model_version: str,
+    allow_seeded: bool = False,
+) -> ShadowFrame:
+    """Pure core of :func:`load_shadow_frame`: select, exclude, label, fingerprint.
+
+    ``shadow_rows`` carry shadow-log columns plus the workout log's ``avg_rir``,
+    ``sleep_quality`` and ``life_stress_inverse``. ``sessions`` are ALL logged sessions of
+    the athletes concerned. ``emails`` maps user id to email (seeded detection).
+    """
+    live = dose_engine_v1.WORK_PER_TIME_DENSITY.version
+    if model_version != live:
+        raise ShadowFrameError(
+            f"frame requested for v1_model_version {model_version!r}, but this code computes "
+            f"{live!r}: rows from another version cannot be recomputed here, and versions are "
+            "never pooled in one fit."
+        )
+
+    excluded: dict[str, int] = {}
+
+    def drop(reason: str) -> None:
+        excluded[reason] = excluded.get(reason, 0) + 1
+
+    kept: list[dict[str, Any]] = []
+    any_seeded = False
+    for r in shadow_rows:
+        if r.get("v1_model_version") != model_version:
+            drop("other_v1_model_version")
+            continue
+        tier = fit_tier(
+            v0_volume_used_fabricated_sets=bool(r.get("v0_volume_used_fabricated_sets")),
+            v1_density_basis=r.get("v1_density_basis"),
+        )
+        if tier != "eligible":
+            drop(f"tier:{tier}")
+            continue
+        if r.get("workout_log_id") is None:
+            drop("unlinked_workout_log")
+            continue
+        seeded = is_seeded_email(emails.get(int(r["user_id"])))
+        if seeded and not allow_seeded:
+            drop("seeded_account")
+            continue
+        any_seeded = any_seeded or seeded
+        kept.append(
+            {
+                GROUP_COLUMN: int(r["user_id"]),
+                SESSION_ID_COLUMN: int(r["workout_log_id"]),
+                "date": pd.Timestamp(cast(datetime, r["session_at"])),
+                "modality": r["modality"],
+                "duration_minutes": float(r["duration_minutes"]),
+                "session_rpe": float(r["session_rpe"]),
+                "total_volume_load": r.get("total_volume_load"),
+                "estimated_sets": r.get("reported_sets"),
+                "distance_meters": r.get("distance_meters"),
+                "novelty": None,
+                "avg_rir": r.get("avg_rir"),
+                "sleep_quality": r.get("sleep_quality"),
+                "life_stress_inverse": r.get("life_stress_inverse"),
+                INGEST_DOSE_COLUMN: r.get("v1_total"),
+            }
+        )
+
+    columns = [GROUP_COLUMN, SESSION_ID_COLUMN, "date", *_SESSION_FIELDS, INGEST_DOSE_COLUMN]
+    candidates = pd.DataFrame(kept, columns=columns)
+    labelled = _labelled(candidates, sessions)
+    for status, n in labelled["pair_status"].value_counts().items():
+        if status != "labelled":
+            excluded[f"pair:{status}"] = int(n)
+    frame = _finish(labelled)
+
+    source = DATA_SOURCE_SEEDED if any_seeded else DATA_SOURCE_SHADOW
+    manifest: dict[str, Any] = {
+        "data_source": source,
+        "model_version": model_version,
+        "fit_policy_version": FIT_POLICY_VERSION,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "pairing_rule": pairing_rule(),
+        "split_unit": GROUP_COLUMN,
+        "n_rows": int(len(frame)),
+        "n_athletes": int(frame[GROUP_COLUMN].nunique()) if len(frame) else 0,
+        "pairs_per_athlete": _pairs_per_athlete(frame),
+        "excluded": dict(sorted(excluded.items())),
+        "recompute_fidelity": _recompute_fidelity(frame),
+        "frame_fingerprint": frame_fingerprint(frame),
+    }
+    return ShadowFrame(frame=frame, manifest=manifest)
+
+
+async def load_shadow_frame(
+    db: AsyncSession, *, model_version: str, allow_seeded: bool = False
+) -> ShadowFrame:
+    """The real training frame: one ``v1_model_version`` of the 8A shadow log.
+
+    Read-only. Excludes every row the fit policy excludes (``fit_tier`` →
+    ``density_fit_eligible``), seeded accounts unless ``allow_seeded`` (which tags the
+    manifest ``data_source="seeded"``, never activatable), and every pair without a causal
+    label.
+    """
+    from sqlalchemy import select
+
+    from app.models.dose_model_shadow import DoseModelShadowLog
+    from app.models.user import User
+    from app.models.workout_log import WorkoutLog as WorkoutLogORM
+
+    shadow_cols = [
+        DoseModelShadowLog.user_id, DoseModelShadowLog.workout_log_id,
+        DoseModelShadowLog.session_at, DoseModelShadowLog.v1_model_version,
+        DoseModelShadowLog.v1_density_basis, DoseModelShadowLog.v0_volume_used_fabricated_sets,
+        DoseModelShadowLog.modality, DoseModelShadowLog.duration_minutes,
+        DoseModelShadowLog.session_rpe, DoseModelShadowLog.total_volume_load,
+        DoseModelShadowLog.reported_sets, DoseModelShadowLog.distance_meters,
+        DoseModelShadowLog.v1_total,
+        WorkoutLogORM.avg_rir, WorkoutLogORM.sleep_quality, WorkoutLogORM.life_stress_inverse,
+    ]
+    result = await db.execute(
+        select(*shadow_cols)
+        .outerjoin(WorkoutLogORM, WorkoutLogORM.id == DoseModelShadowLog.workout_log_id)
+        .where(DoseModelShadowLog.v1_model_version == model_version)
+    )
+    rows = [dict(m) for m in result.mappings().all()]
+    user_ids = sorted({int(r["user_id"]) for r in rows})
+    if not user_ids:
+        return build_shadow_frame([], [], {}, model_version=model_version,
+                                  allow_seeded=allow_seeded)
+
+    logged = await db.execute(
+        select(WorkoutLogORM.id, WorkoutLogORM.user_id, WorkoutLogORM.session_timestamp,
+               WorkoutLogORM.session_rpe)
+        .where(WorkoutLogORM.user_id.in_(user_ids))
+    )
+    sessions = [
+        LoggedSession(workout_log_id=i, user_id=u, at=t, session_rpe=float(rpe))
+        for i, u, t, rpe in logged.all()
+    ]
+    users = await db.execute(select(User.id, User.email).where(User.id.in_(user_ids)))
+    emails = {int(uid): email for uid, email in users.all()}
+    return build_shadow_frame(rows, sessions, emails, model_version=model_version,
+                              allow_seeded=allow_seeded)
 
 
 def grouped_time_split(
@@ -193,14 +475,13 @@ def grouped_time_split(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split holding out whole athletes (grouped) while preserving per-athlete time order.
 
-    Athletes are partitioned by id so no athlete appears in both train and test — this
-    prevents the per-athlete residualization from leaking across the split. Binds this
+    Athletes are partitioned by id so no athlete appears in both train and test. Binds this
     pipeline's constants to ``app.ml.common.splits.grouped_time_split``.
     """
     return _grouped_time_split(
         frame,
         group_column=GROUP_COLUMN,
-        order_columns=("date",),
+        order_columns=("date", SESSION_ID_COLUMN),
         holdout_frac=holdout_frac,
     )
 

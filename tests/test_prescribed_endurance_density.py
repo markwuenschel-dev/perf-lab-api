@@ -11,7 +11,6 @@ and default exclusion from calibration fitting.
 """
 from __future__ import annotations
 
-import ast
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, get_args
@@ -180,25 +179,6 @@ def test_the_prescribed_proxy_is_excluded_from_fitting_by_default() -> None:
     assert density_fit_eligible("sets_per_elapsed_minute")
     assert not density_fit_eligible(None)
     assert not density_fit_eligible("some_future_basis")
-
-
-def test_calibration_code_reading_the_shadow_log_consults_the_fit_policy() -> None:
-    """A policy nothing consults is documentation. Any module under app/ml that reads the
-    dose shadow log must reference ``density_fit_eligible``. Vacuous today (no loader exists);
-    it fires the day 8B adds one."""
-    offenders = []
-    for path in (ROOT / "app" / "ml").rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        names = {
-            n.id if isinstance(n, ast.Name) else n.attr
-            for n in ast.walk(ast.parse(text))
-            if isinstance(n, ast.Name | ast.Attribute)
-        }
-        reads_log = "DoseModelShadowLog" in names or "dose_model_shadow_log" in text
-        if reads_log and "density_fit_eligible" not in names:
-            offenders.append(str(path.relative_to(ROOT)))
-
-    assert not offenders, offenders
 
 
 def test_every_density_basis_fits_the_shadow_column() -> None:

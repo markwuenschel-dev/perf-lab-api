@@ -169,8 +169,9 @@ NOT_MODELLED = DensityMeasurement(value=None, basis="not_applicable")
 # Encoded now, so 8B does not have to remember it. A prescribed-structure proxy measures the
 # PLAN, not the athlete, so it is excluded by default. It stays useful for shadow diagnostics
 # and model development, and a fit can opt in deliberately once adherence is demonstrated.
-# Every consumer of the dose shadow log under app/ml must consult ``density_fit_eligible``;
-# tests/test_density_fit_policy.py enforces that.
+# Every consumer of the dose shadow log under app/ml must consult it, directly or through
+# ``app.logic.dose_fit_policy.fit_tier``; tests/test_density_fit_policy.py enforces that
+# structurally and behaviourally (the first consumer is the 8.4 training frame).
 
 DENSITY_FIT_ELIGIBILITY: dict[str, bool] = {
     "sets_per_elapsed_minute": True,

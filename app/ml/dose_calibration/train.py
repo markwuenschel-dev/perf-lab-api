@@ -32,7 +32,7 @@ from sklearn.linear_model import Ridge
 from app.engine.parameters import default_parameters
 from app.ml.common.artifact import write_validated_artifact
 from app.ml.common.model_selection import select_alpha_grouped_cv
-from app.ml.common.standardize import standardize_label
+from app.ml.common.standardize import standardize_columns, standardize_label
 from app.ml.dose_calibration.build_training_frame import (
     COMPONENT_FEATURES,
     COMPONENT_TO_WEIGHT,
@@ -67,8 +67,13 @@ _DEFAULT_ARTIFACT_PATH = (
 
 
 def fit_component_response(frame: pd.DataFrame) -> dict[str, Any]:
-    """Fit the aggregate ridge response of the label on the volume components."""
-    x = frame.loc[:, list(COMPONENT_FEATURES)].to_numpy(dtype=float)
+    """Fit the aggregate ridge response of the label on the volume components.
+
+    The components arrive RAW and are standardized here, on the frame being fitted — the
+    training partition when called from evaluation — so held-out athletes never shape the
+    scaling the coefficients are expressed in.
+    """
+    x, _, _ = standardize_columns(frame, COMPONENT_FEATURES)
     y_std, _, _ = standardize_label(frame[LABEL_COLUMN])
     groups = frame[GROUP_COLUMN].to_numpy()
     n_groups = int(np.unique(groups).size)
@@ -163,7 +168,7 @@ def train(frame: pd.DataFrame, *, source: str = "synthetic:dose-sessions") -> di
             "modality_slope_global": modality_cal["global"],
             "n_rows": fit["n_rows"],
             "n_athletes": fit["n_athletes"],
-            "label": "next-session RPE residual (per-athlete demeaned)",
+            "label": "next-session RPE minus the causal baseline (dose_fit_policy)",
             "population_priors": True,
             "max_weight_nudge": _MAX_WEIGHT_NUDGE,
             "max_shape_nudge": _MAX_SHAPE_NUDGE,
@@ -202,19 +207,18 @@ def _outcome_map_mae(
     return float(np.mean(np.abs(y_te - pred)))
 
 
-def holdout_mae(
-    frame: pd.DataFrame, artifact: dict[str, Any], *, holdout_frac: float = 0.25
-) -> tuple[float, float]:
+def holdout_mae(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> tuple[float, float]:
     """MAE of the CALIBRATED dose vs the DEFAULT dose at predicting the outcome (held out).
 
-    A 1-D ridge maps the modeled dose to the standardized next-session-RPE residual; the
-    dose is recomputed under both the default weights and the artifact's calibrated weights
-    via the engine. Returns ``(mae_calibrated, mae_default)`` — calibration helps iff the
-    former is smaller.
+    The prior is trained on the held-in athletes ONLY, then both doses are scored on the
+    held-out athletes. A 1-D ridge maps the modeled dose to the standardized label; the dose
+    is recomputed under both the default weights and the calibrated weights via the engine.
+    Returns ``(mae_calibrated, mae_default)`` — calibration helps iff the former is smaller.
     """
     from app.engine.parameter_overrides import apply_parameter_overrides
 
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
+    artifact = train(train_df)
     y_tr, y_mean, y_std = standardize_label(train_df[LABEL_COLUMN])
     y_te = (test_df[LABEL_COLUMN].to_numpy(dtype=float) - y_mean) / y_std
 
@@ -242,8 +246,7 @@ def main() -> None:
     artifact = placeholder_artifact()
     out = write_artifact(artifact)
     frame = build_frame(synthesize_sessions())
-    trained = train(frame)
-    mae_cal, mae_def = holdout_mae(frame, trained)
+    mae_cal, mae_def = holdout_mae(frame)
     print(MODEL_CARD)
     print(f"\nwrote placeholder artifact -> {out}")
     print(f"holdout MAE calibrated={mae_cal:.4f} default={mae_def:.4f} (on a synthetic frame)")
