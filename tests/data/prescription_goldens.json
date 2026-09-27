@@ -1,5 +1,6 @@
 {
   "calisthenics/cal_conditioning": {
+    "circuit": null,
     "duration_min": 35,
     "focus": "Push-up / Pull-up / Step-Up Circuit \u2014 high-rep bodyweight conditioning",
     "goal_alignment": 0.8,
@@ -16,28 +17,69 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "bodyweight",
+        "max_skill_demand": 0.4,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12-15",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "bodyweight",
+        "max_skill_demand": 0.5,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "pull_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "8-10",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "bodyweight",
+        "max_skill_demand": 0.45,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "single_leg",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12 each side",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": 0.4,
+        "sport_domain": null
       }
     ],
     "tags": [],
-    "type": "Calisthenics Conditioning"
+    "type": "Calisthenics Conditioning",
+    "workload_volume": "scaled"
   },
   "calisthenics/cal_skill": {
+    "circuit": null,
     "duration_min": 55,
     "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
     "goal_alignment": 1.0,
@@ -55,25 +97,53 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "time",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20-30s",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "time",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20-30s",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "gymnastics_skill",
       "overhead_stability"
     ],
-    "type": "Gymnastics Skill"
+    "type": "Gymnastics Skill",
+    "workload_volume": "scaled"
   },
   "calisthenics/cal_strength": {
+    "circuit": null,
     "duration_min": 50,
     "focus": "Pull-ups / Dips / Push-up Variations + Skill Progressions",
     "goal_alignment": 1.0,
@@ -99,31 +169,72 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "pull_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "6-10",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.5,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "8-12",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "bodyweight",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "10-15",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "pull_vertical",
       "push_vertical"
     ],
-    "type": "Bodyweight Strength"
+    "type": "Bodyweight Strength",
+    "workload_volume": "scaled"
   },
   "general/gpp_balanced": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Full-Body Circuit @ RPE 6\u20137 \u2014 Squat / Pull / Push / Carry",
     "goal_alignment": 0.9,
@@ -171,34 +282,90 @@
     "slot_count": 4,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": 0.45,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "squat",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "10",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.3,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "pull_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "8",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.5,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "bodyweight",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "carry",
+        "pattern_family": null,
+        "prefer_tags": [
+          "carry"
+        ],
         "reps": "40m",
-        "requirements": [],
-        "sets": "2"
+        "rpe_cap": null,
+        "sets": "2",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [],
-    "type": "General Physical Prep"
+    "type": "General Physical Prep",
+    "workload_volume": "scaled"
   },
   "general/gpp_conditioning": {
+    "circuit": null,
     "duration_min": 40,
     "focus": "Bike Intervals + Row Intervals + Plank Circuit \u2014 mixed aerobic engine work",
     "goal_alignment": 0.85,
@@ -212,30 +379,71 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Conditioning",
+        "movement_pattern": "bike",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "15-20 min steady",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Conditioning",
+        "movement_pattern": "row",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "10 min steady",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": 0.35,
+        "min_skill_demand": null,
+        "modality": "Strength",
+        "movement_pattern": "core",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "30-45s",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base"
     ],
-    "type": "General Conditioning"
+    "type": "General Conditioning",
+    "workload_volume": "scaled"
   },
   "general/gpp_mobility": {
+    "circuit": null,
     "duration_min": 30,
     "focus": "Hip Mobility Flow + Single-Leg Control + Calf/Ankle Work",
     "goal_alignment": 0.65,
@@ -252,31 +460,76 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": 0.5,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "single_leg",
+        "pattern_family": null,
+        "prefer_tags": [
+          "hip_mobility"
+        ],
         "reps": "8-10 each side",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": 0.35,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "core",
+        "pattern_family": null,
+        "prefer_tags": [
+          "hip_mobility"
+        ],
         "reps": "30-45s each side",
-        "requirements": [],
-        "sets": "2"
+        "rpe_cap": null,
+        "sets": "2",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": 0.3,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "single_leg",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12-15 each side",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "ankle_mobility",
       "hip_mobility"
     ],
-    "type": "General Mobility & Movement Quality"
+    "type": "General Mobility & Movement Quality",
+    "workload_volume": "scaled"
   },
   "general/gpp_strength_foundation": {
+    "circuit": null,
     "duration_min": 50,
     "focus": "Back Squat 3\u00d75 + Romanian Deadlift 3\u00d75 + Bench Press 3\u00d75 \u2014 loaded basics",
     "goal_alignment": 0.85,
@@ -293,31 +546,74 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Strength",
+        "movement_pattern": "squat",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "5",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.7,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [
+          "posterior_chain"
+        ],
         "reps": "5",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.5,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Strength",
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "5",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.5,
+        "sport_domain": null
       }
     ],
     "tags": [
       "hip_hinge",
       "squat_pattern"
     ],
-    "type": "General Strength Foundation"
+    "type": "General Strength Foundation",
+    "workload_volume": "scaled"
   },
   "grip/grip_crush_pinch": {
+    "circuit": null,
     "duration_min": 30,
     "focus": "Gripper Crush Work + Pinch Block Hold + Thick-Bar Deadlift \u2014 max grip strength",
     "goal_alignment": 0.95,
@@ -334,30 +630,73 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Strength",
+        "movement_pattern": "pull_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "6-8",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": 0.35,
+        "sport_domain": "grip"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "carry",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20-30s",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.52,
+        "sport_domain": "grip"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [
+          "thick_bar"
+        ],
         "reps": "4-6",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.72,
+        "sport_domain": null
       }
     ],
     "tags": [
       "grip"
     ],
-    "type": "Grip Strength"
+    "type": "Grip Strength",
+    "workload_volume": "scaled"
   },
   "grip/grip_main": {
+    "circuit": null,
     "duration_min": 35,
     "focus": "Farmer Carries + Dead Hangs + Pinch Block Hold + Crush Work @ RPE 7\u20138",
     "goal_alignment": 1.0,
@@ -374,24 +713,54 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "carry",
+        "pattern_family": null,
+        "prefer_tags": [
+          "grip"
+        ],
         "reps": "40m",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "time",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "pull_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "30-45s",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "grip"
     ],
-    "type": "Grip & Support"
+    "type": "Grip & Support",
+    "workload_volume": "scaled"
   },
   "grip/grip_recovery": {
+    "circuit": null,
     "duration_min": 20,
     "focus": "Light Wrist Mobility + Finger Flexor Rehab Circles",
     "goal_alignment": 0.5,
@@ -405,9 +774,11 @@
     "slot_count": 0,
     "slots": [],
     "tags": [],
-    "type": "Grip Recovery"
+    "type": "Grip Recovery",
+    "workload_volume": "scaled"
   },
   "gymnastics/gym_skill": {
+    "circuit": null,
     "duration_min": 55,
     "focus": "Handstand Progressions + Ring Support Hold + Shaping Drills",
     "goal_alignment": 1.0,
@@ -425,25 +796,53 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "time",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20-30s",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "time",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20-30s",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "gymnastics_skill",
       "overhead_stability"
     ],
-    "type": "Gymnastics Skill"
+    "type": "Gymnastics Skill",
+    "workload_volume": "scaled"
   },
   "gymnastics/gym_strength": {
+    "circuit": null,
     "duration_min": 55,
     "focus": "Weighted Ring Dips + Chest-to-Bar Pull-Ups + Strict Toes-to-Bar",
     "goal_alignment": 0.95,
@@ -461,31 +860,78 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "pull_vertical",
+        "pattern_family": null,
+        "prefer_tags": [
+          "gymnastics_skill"
+        ],
         "reps": "5-8",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.55,
+        "sport_domain": "gymnastics"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "push_vertical",
+        "pattern_family": null,
+        "prefer_tags": [
+          "gymnastics_skill"
+        ],
         "reps": "6-10",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.82,
+        "sport_domain": "gymnastics"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Calisthenics",
+        "movement_pattern": "core",
+        "pattern_family": null,
+        "prefer_tags": [
+          "gymnastics_skill"
+        ],
         "reps": "8-10",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.6,
+        "sport_domain": "gymnastics"
       }
     ],
     "tags": [
       "gymnastics_skill",
       "overhead_stability"
     ],
-    "type": "Gymnastics Strength"
+    "type": "Gymnastics Strength",
+    "workload_volume": "scaled"
   },
   "hypertrophy/hyp_high_vol": {
+    "circuit": null,
     "duration_min": 75,
     "focus": "Leg Press 4\u00d712 + Hack Squat 3\u00d715 + Leg Curl 3\u00d712 near failure",
     "goal_alignment": 1.0,
@@ -502,31 +948,72 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Hypertrophy",
+        "movement_pattern": "squat",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Hypertrophy",
+        "movement_pattern": "squat",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "15",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Hypertrophy",
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "anterior_chain",
       "posterior_chain"
     ],
-    "type": "High Volume Hypertrophy"
+    "type": "High Volume Hypertrophy",
+    "workload_volume": "scaled"
   },
   "hypertrophy/hyp_maintenance": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Machine Isolation 3\u00d710 @ RPE 7 \u2014 upper / lower split",
     "goal_alignment": 0.7,
@@ -540,9 +1027,11 @@
     "slot_count": 0,
     "slots": [],
     "tags": [],
-    "type": "Maintenance Volume"
+    "type": "Maintenance Volume",
+    "workload_volume": "scaled"
   },
   "hypertrophy/hyp_upper_split": {
+    "circuit": null,
     "duration_min": 60,
     "focus": "Bench Press 4\u00d710 + Barbell Row 4\u00d710 + Dumbbell Shoulder Press 3\u00d712 near failure",
     "goal_alignment": 0.9,
@@ -559,28 +1048,208 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "10",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.5,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "pull_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "10",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.5,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "dumbbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Hypertrophy",
+        "movement_pattern": "push_vertical",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "12",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.4,
+        "sport_domain": null
       }
     ],
     "tags": [],
-    "type": "Upper Body Hypertrophy"
+    "type": "Upper Body Hypertrophy",
+    "workload_volume": "scaled"
   },
   "hyrox_simulation/hyrox_half_sim_a": {
+    "circuit": {
+      "first_slot": 0,
+      "label": "HYROX Half Simulation \u2014 A",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "for_time",
+        "rounds": 1,
+        "time_cap_sec": null
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 50.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 50.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 80.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 50,
     "focus": "For time: 4 x (1 km run -> station), race order: SkiErg / Sled Push / Sled Pull / Burpee Broad Jump",
     "goal_alignment": 1.0,
@@ -606,61 +1275,306 @@
     "slot_count": 8,
     "slots": [
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "SkiErg",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1000 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Sled Push",
         "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "50 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Sled Pull",
         "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "50 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Burpee Broad Jump",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "80 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "work_capacity"
     ],
-    "type": "HYROX Half Simulation \u2014 A"
+    "type": "HYROX Half Simulation \u2014 A",
+    "workload_volume": "fixed"
   },
   "hyrox_simulation/hyrox_half_sim_b": {
+    "circuit": {
+      "first_slot": 0,
+      "label": "HYROX Half Simulation \u2014 B",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "for_time",
+        "rounds": 1,
+        "time_cap_sec": null
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 200.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 100.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": 100,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 50,
     "focus": "For time: 4 x (1 km run -> station), race order: Rowing (Ergometer) / Farmer Carry / Sandbag Lunges / Wall Ball",
     "goal_alignment": 1.0,
@@ -686,61 +1600,167 @@
     "slot_count": 8,
     "slots": [
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Rowing (Ergometer)",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1000 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Farmer Carry",
         "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "200 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Sandbag Lunges",
         "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "100 m",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Wall Ball",
         "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "100",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "work_capacity"
     ],
-    "type": "HYROX Half Simulation \u2014 B"
+    "type": "HYROX Half Simulation \u2014 B",
+    "workload_volume": "fixed"
   },
   "mixed/metcon_engine": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Zone 2 Bike 20 min + Short Threshold Intervals (4\u00d72 min @ RPE 8)",
     "goal_alignment": 0.8,
@@ -754,25 +1774,88 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": 1200,
+          "intensity_basis": "zone",
+          "intensity_target": 2.0,
+          "kind": "continuous",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "bike",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20 min Zone 2",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "intensity_basis": "rpe",
+          "intensity_target": 8.0,
+          "kind": "interval",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "quality_stop": null,
+          "recovery_after_last_rep": false,
+          "recovery_duration_sec": 120,
+          "recovery_type": "easy",
+          "repetitions": 4,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": [],
+          "work_distance_m": null,
+          "work_duration_sec": 120
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "bike",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "2 min @ RPE 8 / 2 min easy spin",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
     ],
-    "type": "Engine Work"
+    "type": "Engine Work",
+    "workload_volume": "scaled"
   },
   "mixed/metcon_mixed_modal": {
+    "circuit": null,
     "duration_min": 40,
     "focus": "Row / Bike / KB Swings \u2014 AMRAP intervals @ sustainable pace",
     "goal_alignment": 1.0,
@@ -788,31 +1871,130 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Conditioning",
+        "movement_pattern": "row",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "2 min @ sustainable pace",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Conditioning",
+        "movement_pattern": "bike",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "2 min @ sustainable pace",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "kettlebell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20 reps",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "work_capacity"
     ],
-    "type": "Metabolic Conditioning"
+    "type": "Metabolic Conditioning",
+    "workload_volume": "scaled"
   },
   "mixed/mixed_strength_endurance": {
+    "circuit": {
+      "first_slot": 0,
+      "label": "Strength Endurance",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "rounds",
+        "rounds": 5
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": 8,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": 8,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": 8,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 45,
     "focus": "Compound lifts in circuit \u2014 moderate load, short rest (e.g. 5\u00d78 @ RPE 7)",
     "goal_alignment": 0.9,
@@ -828,31 +2010,72 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "8",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": 7.0,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Overhead Press",
         "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "8",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": 7.0,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Barbell Row",
         "load_note": "About RPE 7: moderate load, a few reps in reserve. Move to the next station with short transitions; rest as available.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "8",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": 7.0,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "max_strength",
       "work_capacity"
     ],
-    "type": "Strength Endurance"
+    "type": "Strength Endurance",
+    "workload_volume": "fixed"
   },
   "power/power_main": {
+    "circuit": null,
     "duration_min": 50,
     "focus": "Hang Power Clean 5\u00d73 @ RPE 6\u20137 + Box Jumps 4\u00d74 (full recovery)",
     "goal_alignment": 1.0,
@@ -869,24 +2092,52 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "jump",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "4",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "hip_hinge"
     ],
-    "type": "Power Development"
+    "type": "Power Development",
+    "workload_volume": "scaled"
   },
   "power/power_neural_prime": {
+    "circuit": null,
     "duration_min": 30,
     "focus": "Jumps / Throws (Low Volume, Long Rest) @ RPE 6",
     "goal_alignment": 0.7,
@@ -900,9 +2151,11 @@
     "slot_count": 0,
     "slots": [],
     "tags": [],
-    "type": "Neural Priming"
+    "type": "Neural Priming",
+    "workload_volume": "scaled"
   },
   "power/power_reactive": {
+    "circuit": null,
     "duration_min": 40,
     "focus": "Lateral Bounds + Broad Jumps + Rotational Med Ball Work \u2014 multi-directional plyometrics",
     "goal_alignment": 0.85,
@@ -920,28 +2173,118 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "jump",
+        "pattern_family": null,
+        "prefer_tags": [
+          "plyometric"
+        ],
         "reps": "4 each side",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.55,
+        "sport_domain": "running"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "jump",
+        "pattern_family": null,
+        "prefer_tags": [
+          "plyometric",
+          "power"
+        ],
         "reps": "4",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.55,
+        "sport_domain": "running"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": 0.45,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "core",
+        "pattern_family": null,
+        "prefer_tags": [
+          "rotation"
+        ],
         "reps": "8-10",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [],
-    "type": "Reactive Power"
+    "type": "Reactive Power",
+    "workload_volume": "scaled"
   },
   "power_potentiation/power_potentiation": {
+    "circuit": {
+      "first_slot": 0,
+      "label": "Contrast pair",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "rounds",
+        "rounds": 3
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": 2,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": 3,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 45,
     "focus": "3 rounds: Back Squat \u00d72 (heavy, no grinding) \u2192 Broad Jump \u00d73 \u2014 full recovery between every set",
     "goal_alignment": 0.9,
@@ -958,24 +2301,55 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": "Primer, not a strength set: no grinding reps. Full recovery before the jumps.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "2",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": "Maximal intent. Stop or regress if jump quality clearly drops. Full recovery before the next round.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "jump",
+        "pattern_family": null,
+        "prefer_tags": [
+          "plyometric",
+          "power"
+        ],
         "reps": "3",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "squat_pattern"
     ],
-    "type": "Strength Potentiation"
+    "type": "Strength Potentiation",
+    "workload_volume": "fixed"
   },
   "powerlifting/pl_accessory": {
+    "circuit": null,
     "duration_min": 65,
     "focus": "Paused Squat 3\u00d74 + Close-Grip Bench + Romanian Deadlift 3\u00d76",
     "goal_alignment": 0.8,
@@ -991,22 +2365,63 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Strength",
+        "movement_pattern": "squat",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "4",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "push_horizontal",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "6",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [
+          "posterior_chain"
+        ],
         "reps": "6",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
@@ -1014,9 +2429,11 @@
       "push_horizontal",
       "squat_pattern"
     ],
-    "type": "Accessory Focus"
+    "type": "Accessory Focus",
+    "workload_volume": "scaled"
   },
   "powerlifting/pl_sbd_main": {
+    "circuit": null,
     "duration_min": 80,
     "focus": "Squat / Bench / Deadlift \u2014 top sets + 3\u20134 back-off sets",
     "goal_alignment": 1.0,
@@ -1042,28 +2459,80 @@
     "slot_count": 4,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3-5",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_bench",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3-5",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_deadlift",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3-5",
-        "requirements": [],
-        "sets": "2"
+        "rpe_cap": null,
+        "sets": "2",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "6-8",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
@@ -1071,9 +2540,11 @@
       "push_horizontal",
       "squat_pattern"
     ],
-    "type": "SBD Strength"
+    "type": "SBD Strength",
+    "workload_volume": "scaled"
   },
   "powerlifting/pl_sbd_main_volume": {
+    "circuit": null,
     "duration_min": 80,
     "focus": "Squat / Bench / Deadlift \u2014 top sets + 3\u20134 back-off sets",
     "goal_alignment": 1.0,
@@ -1099,28 +2570,80 @@
     "slot_count": 4,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3-5",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_bench",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3-5",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_deadlift",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3-5",
-        "requirements": [],
-        "sets": "2"
+        "rpe_cap": null,
+        "sets": "2",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": true,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "6-8",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
@@ -1128,9 +2651,11 @@
       "push_horizontal",
       "squat_pattern"
     ],
-    "type": "SBD Strength"
+    "type": "SBD Strength",
+    "workload_volume": "scaled"
   },
   "running/run_threshold": {
+    "circuit": null,
     "duration_min": 50,
     "focus": "Tempo Run 20 min @ RPE 7\u20138 + Progression Miles",
     "goal_alignment": 0.9,
@@ -1156,19 +2681,51 @@
     "slot_count": 1,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": 1200,
+          "intensity_basis": "rpe",
+          "intensity_target": null,
+          "kind": "continuous",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Running",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [
+          "lactate_threshold"
+        ],
         "reps": "20 min @ RPE 7\u20138",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
     ],
-    "type": "Threshold Work"
+    "type": "Threshold Work",
+    "workload_volume": "scaled"
   },
   "running/run_threshold_ff": {
+    "circuit": null,
     "duration_min": 50,
     "focus": "4\u00d75 min @ threshold pace (RPE 8) / 2 min easy recovery",
     "goal_alignment": 0.9,
@@ -1194,19 +2751,56 @@
     "slot_count": 1,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "intensity_basis": "rpe",
+          "intensity_target": 8.0,
+          "kind": "interval",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "quality_stop": null,
+          "recovery_after_last_rep": false,
+          "recovery_duration_sec": 120,
+          "recovery_type": "easy",
+          "repetitions": 4,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": [],
+          "work_distance_m": null,
+          "work_duration_sec": 300
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Running",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [
+          "lactate_threshold"
+        ],
         "reps": "5 min @ threshold pace (RPE 8) / 2 min easy",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": 0.5,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "lactate_threshold"
     ],
-    "type": "Threshold Work"
+    "type": "Threshold Work",
+    "workload_volume": "scaled"
   },
   "running/run_z2_base": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Easy\u2013Moderate Run @ Zone 2 (conversational pace)",
     "goal_alignment": 1.0,
@@ -1232,19 +2826,49 @@
     "slot_count": 1,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "intensity_basis": "zone",
+          "intensity_target": 2.0,
+          "kind": "continuous",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Running",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "30-40 min conversational pace",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "running_economy"
     ],
-    "type": "Aerobic Base"
+    "type": "Aerobic Base",
+    "workload_volume": "scaled"
   },
   "running/run_z2_base_threshold": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Easy\u2013Moderate Run @ Zone 2 (conversational pace)",
     "goal_alignment": 1.0,
@@ -1270,19 +2894,91 @@
     "slot_count": 1,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "intensity_basis": "zone",
+          "intensity_target": 2.0,
+          "kind": "continuous",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Running",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "30-40 min conversational pace",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "running_economy"
     ],
-    "type": "Aerobic Base"
+    "type": "Aerobic Base",
+    "workload_volume": "scaled"
   },
   "running_functional/run_functional_lunges": {
+    "circuit": {
+      "first_slot": 0,
+      "label": "Running + Functional \u2014 Lunges",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "rounds",
+        "rounds": 4
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 25.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 40,
     "focus": "4 rounds: 1 km run -> 25 m Sandbag Lunges",
     "goal_alignment": 1.0,
@@ -1308,25 +3004,95 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Sandbag Lunges",
         "load_note": "Your HYROX division's standard load. Your division isn't recorded yet, so no weight is set here.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "25 m",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "work_capacity"
     ],
-    "type": "Running + Functional \u2014 Lunges"
+    "type": "Running + Functional \u2014 Lunges",
+    "workload_volume": "fixed"
   },
   "running_functional/run_functional_ski": {
+    "circuit": {
+      "first_slot": 0,
+      "label": "Running + Functional \u2014 Ski",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "rounds",
+        "rounds": 4
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 1000.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": 250.0,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 40,
     "focus": "4 rounds: 1 km run -> 250 m SkiErg",
     "goal_alignment": 1.0,
@@ -1352,25 +3118,53 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": true,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Run",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "1 km",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "SkiErg",
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "250 m",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base",
       "work_capacity"
     ],
-    "type": "Running + Functional \u2014 Ski"
+    "type": "Running + Functional \u2014 Ski",
+    "workload_volume": "fixed"
   },
   "running_recovery/run_recovery": {
+    "circuit": null,
     "duration_min": 30,
     "focus": "Very Easy Run 20\u201330 min @ Zone 1",
     "goal_alignment": 0.6,
@@ -1396,18 +3190,50 @@
     "slot_count": 1,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "intensity_basis": "zone",
+          "intensity_target": 1.0,
+          "kind": "continuous",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Running",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [
+          "aerobic_base"
+        ],
         "reps": "20-30 min very easy (Zone 1)",
-        "requirements": [],
-        "sets": "1"
+        "rpe_cap": null,
+        "sets": "1",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "aerobic_base"
     ],
-    "type": "Active Recovery"
+    "type": "Active Recovery",
+    "workload_volume": "scaled"
   },
   "sprinting/run_speed_endurance": {
+    "circuit": null,
     "duration_min": 40,
     "focus": "6\u00d7300m @ ~90% Effort (Full Recovery) + Bounding Drill Primer",
     "goal_alignment": 0.9,
@@ -1424,22 +3250,93 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "intensity_basis": null,
+          "intensity_target": null,
+          "kind": "interval",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "quality_stop": null,
+          "recovery_after_last_rep": false,
+          "recovery_duration_sec": null,
+          "recovery_type": null,
+          "repetitions": 3,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": [],
+          "work_distance_m": null,
+          "work_duration_sec": null
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20-30m build-up",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": 0.55,
+        "sport_domain": "running"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "intensity_basis": null,
+          "intensity_target": null,
+          "kind": "interval",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "quality_stop": null,
+          "recovery_after_last_rep": false,
+          "recovery_duration_sec": null,
+          "recovery_type": null,
+          "repetitions": 6,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": [],
+          "work_distance_m": 300.0,
+          "work_duration_sec": null
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Running",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [
+          "lactate_threshold",
+          "running_economy"
+        ],
         "reps": "300m @ ~90% effort, full recovery",
-        "requirements": [],
-        "sets": "6"
+        "rpe_cap": null,
+        "sets": "6",
+        "skill_target": 0.4,
+        "sport_domain": null
       }
     ],
     "tags": [],
-    "type": "Speed Endurance"
+    "type": "Speed Endurance",
+    "workload_volume": "scaled"
   },
   "sprinting/run_sprint": {
+    "circuit": null,
     "duration_min": 35,
     "focus": "Acceleration 3\u00d730 m + Max-Velocity Flys 4\u00d720 m (full recovery)",
     "goal_alignment": 1.0,
@@ -1456,24 +3353,92 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "intensity_basis": null,
+          "intensity_target": null,
+          "kind": "interval",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "quality_stop": null,
+          "recovery_after_last_rep": false,
+          "recovery_duration_sec": null,
+          "recovery_type": null,
+          "repetitions": 3,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": [],
+          "work_distance_m": 30.0,
+          "work_duration_sec": null
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "30m",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": {
+          "activity": null,
+          "display_reps": null,
+          "display_sets": null,
+          "intensity_basis": null,
+          "intensity_target": null,
+          "kind": "interval",
+          "label": null,
+          "load_explanation": null,
+          "load_note": null,
+          "quality_stop": null,
+          "recovery_after_last_rep": false,
+          "recovery_duration_sec": null,
+          "recovery_type": null,
+          "repetitions": 4,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": [],
+          "work_distance_m": 20.0,
+          "work_duration_sec": null
+        },
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "run",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20m",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "running_economy"
     ],
-    "type": "Speed"
+    "type": "Speed",
+    "workload_volume": "scaled"
   },
   "strength/strength_max": {
+    "circuit": null,
     "duration_min": 65,
     "focus": "Back Squat 5\u00d73 @ RPE 8 + Romanian Deadlift 3\u00d75",
     "goal_alignment": 1.0,
@@ -1490,25 +3455,57 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Strength",
+        "movement_pattern": "squat",
+        "pattern_family": null,
+        "prefer_tags": [
+          "squat_pattern"
+        ],
         "reps": "3",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": 0.7,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": "hinge",
+        "pattern_family": null,
+        "prefer_tags": [
+          "posterior_chain"
+        ],
         "reps": "5",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "hip_hinge",
       "squat_pattern"
     ],
-    "type": "Max Strength"
+    "type": "Max Strength",
+    "workload_volume": "scaled"
   },
   "strength/strength_skill_acq": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Goblet Squats 3\u00d78 (Tempo 3-1-1) + Box Squat Technique",
     "goal_alignment": 0.75,
@@ -1525,9 +3522,11 @@
       "barbell_technique",
       "squat_pattern"
     ],
-    "type": "Skill Acquisition"
+    "type": "Skill Acquisition",
+    "workload_volume": "scaled"
   },
   "strength/strength_variety": {
+    "circuit": null,
     "duration_min": 45,
     "focus": "Box Squats + Trap Bar Deadlift + Medicine Ball Slams",
     "goal_alignment": 0.7,
@@ -1543,9 +3542,11 @@
     "slot_count": 0,
     "slots": [],
     "tags": [],
-    "type": "Strength \u2014 Variety"
+    "type": "Strength \u2014 Variety",
+    "workload_volume": "scaled"
   },
   "strength/strength_volume": {
+    "circuit": null,
     "duration_min": 55,
     "focus": "Front Squat 4\u00d76 @ RPE 6\u20137 + Accessory Pull",
     "goal_alignment": 0.8,
@@ -1561,9 +3562,54 @@
     "slot_count": 0,
     "slots": [],
     "tags": [],
-    "type": "Strength \u2014 Volume"
+    "type": "Strength \u2014 Volume",
+    "workload_volume": "scaled"
   },
   "strength_skill/cf_strength_skill_deadlift": {
+    "circuit": {
+      "first_slot": 1,
+      "label": "Skill EMOM",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "emom",
+        "interval_sec": 60,
+        "intervals": 10
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 50,
     "focus": "Deadlift 3x5 -> EMOM 10: Double Unders / Toes to Bar",
     "goal_alignment": 1.0,
@@ -1589,31 +3635,115 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_deadlift",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "5",
-        "requirements": [],
-        "sets": "3"
+        "rpe_cap": null,
+        "sets": "3",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Double Unders",
         "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20\u201330 unbroken; stop before repeated misses",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Toes to Bar",
         "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "4\u20136 clean; stop before form or rhythm breaks",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "hip_hinge",
       "max_strength"
     ],
-    "type": "Strength + Skill \u2014 Deadlift"
+    "type": "Strength + Skill \u2014 Deadlift",
+    "workload_volume": "fixed"
   },
   "strength_skill/cf_strength_skill_squat": {
+    "circuit": {
+      "first_slot": 1,
+      "label": "Skill EMOM",
+      "scales_with_workload": false,
+      "scheme": {
+        "format": "emom",
+        "interval_sec": 60,
+        "intervals": 10
+      },
+      "stations": [
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        },
+        {
+          "display_reps": null,
+          "display_sets": null,
+          "distance_m": null,
+          "duration_sec": null,
+          "e1rm_basis_kg": null,
+          "exercise": "",
+          "load_explanation": null,
+          "load_note": null,
+          "load_target_kg": null,
+          "percent_e1rm": null,
+          "reps": null,
+          "rpe_cap": null,
+          "transition_sec": null,
+          "weak_point_tags": []
+        }
+      ]
+    },
     "duration_min": 50,
     "focus": "Squat 5x3 -> EMOM 10: Double Unders / Toes to Bar",
     "goal_alignment": 1.0,
@@ -1639,31 +3769,72 @@
     "slot_count": 3,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": "pl_e1rm_squat",
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Double Unders",
         "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "20\u201330 unbroken; stop before repeated misses",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": "Toes to Bar",
         "load_note": "Complete only as many quality reps as allow substantial rest before the next minute; regress the movement rather than training through repeated technical failure.",
+        "load_type": null,
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": null,
+        "movement_pattern": null,
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "4\u20136 clean; stop before form or rhythm breaks",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": null
       }
     ],
     "tags": [
       "max_strength",
       "squat_pattern"
     ],
-    "type": "Strength + Skill \u2014 Squat"
+    "type": "Strength + Skill \u2014 Squat",
+    "workload_volume": "fixed"
   },
   "weightlifting/wl_strength_pulls": {
+    "circuit": null,
     "duration_min": 55,
     "focus": "Snatch Pull + Deadlift from Deficit 4\u00d74 @ RPE 7",
     "goal_alignment": 0.75,
@@ -1691,9 +3862,11 @@
       "hip_hinge",
       "posterior_chain"
     ],
-    "type": "Strength Pulls"
+    "type": "Strength Pulls",
+    "workload_volume": "scaled"
   },
   "weightlifting/wl_technique_cj": {
+    "circuit": null,
     "duration_min": 65,
     "focus": "Clean & Jerk Drills + Hang Variations @ RPE 6\u20137",
     "goal_alignment": 1.0,
@@ -1710,24 +3883,54 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "mixed",
+        "pattern_family": null,
+        "prefer_tags": [
+          "power"
+        ],
         "reps": "2",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": "weightlifting"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "mixed",
+        "pattern_family": null,
+        "prefer_tags": [],
         "reps": "3",
-        "requirements": [],
-        "sets": "4"
+        "rpe_cap": null,
+        "sets": "4",
+        "skill_target": null,
+        "sport_domain": "weightlifting"
       }
     ],
     "tags": [
       "olympic_lifting"
     ],
-    "type": "Weightlifting Technique"
+    "type": "Weightlifting Technique",
+    "workload_volume": "scaled"
   },
   "weightlifting/wl_technique_snatch": {
+    "circuit": null,
     "duration_min": 65,
     "focus": "Snatch Complex + Power Snatch 5\u00d72 @ RPE 6\u20137",
     "goal_alignment": 1.0,
@@ -1744,21 +3947,52 @@
     "slot_count": 2,
     "slots": [
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "mixed",
+        "pattern_family": null,
+        "prefer_tags": [
+          "power"
+        ],
         "reps": "2",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": "weightlifting"
       },
       {
+        "allow_repeat": false,
+        "e1rm_code": null,
+        "endurance": null,
+        "exercise": null,
         "load_note": null,
+        "load_type": "barbell",
+        "max_skill_demand": null,
+        "min_skill_demand": null,
+        "modality": "Power",
+        "movement_pattern": "mixed",
+        "pattern_family": null,
+        "prefer_tags": [
+          "power"
+        ],
         "reps": "2",
-        "requirements": [],
-        "sets": "5"
+        "rpe_cap": null,
+        "sets": "5",
+        "skill_target": null,
+        "sport_domain": "weightlifting"
       }
     ],
     "tags": [
       "olympic_lifting"
     ],
-    "type": "Weightlifting Technique"
+    "type": "Weightlifting Technique",
+    "workload_volume": "scaled"
   }
 }
