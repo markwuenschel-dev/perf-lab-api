@@ -74,25 +74,51 @@ _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
 }
 
 
+def _spread_days(n: int) -> list[int]:
+    """``n`` distinct weekdays (1-7) spread as evenly as the 7-day week allows: day
+    ``1 + floor(i * 7 / n + 1/2)`` for the i-th session. 4 -> 1,3,5,6; 5 -> 1,2,4,5,7;
+    6 -> 1,2,3,5,6,7; 7 -> every day."""
+    return [1 + int(i * 7 / n + 0.5) for i in range(n)]
+
+
 def _default_template_for_goal(goal: BlockGoal, sessions_per_week: int) -> list[WeeklyTemplateSlot]:
     """The goal's default week with exactly ``sessions_per_week`` sessions (1-7).
 
-    Every goal authors 3 days. Up to 3 sessions keeps the authored days (unchanged). Beyond
-    that, each extra session repeats the authored categories in order, on the first free day
-    of ``_WEEK_DAY_ORDER`` (the modality-mix path's spacing): no category and no spacing rule
-    is invented. Returned in day order, because ``create_block_with_sessions`` treats the
-    last slot as the benchmark day.
+    Every goal authors 3 days. Up to 3 sessions keeps the authored days, unchanged.
+
+    Beyond that (user decision, 2026-09-27): preserve the relative order of the authored
+    categories, and distribute the repeats as evenly as practical. A deterministic spacing
+    rule, not sport-specific periodization, and no claim of physiological optimality:
+
+    1. **Counts.** Balanced: each authored category gets ``n // 3`` sessions, and the first
+       ``n % 3`` in authored order get one more.
+    2. **Order.** The copies are laid out category by category, in authored order, filling
+       the even session positions first (0, 2, 4, ...), then the odd ones. Neighbouring
+       sessions then never share a category, including the wrap from the week's last session
+       to the next week's first. That holds whenever it is possible at all, i.e. when no
+       category needs more than ``n // 2`` sessions, which balanced counts over 3 categories
+       always satisfy for n = 4..7. The first occurrences keep the authored order.
+    3. **Days.** ``_spread_days``: evenly spaced weekdays, sorted, because
+       ``create_block_with_sessions`` treats the last slot as the benchmark day. Authored days
+       may move for 4+ sessions.
+
+    Strength, 5 sessions: Max, Volume, Max, Accessory, Volume on days 1, 2, 4, 5, 7.
     """
     authored = _DEFAULT_TEMPLATES.get(goal) or _DEFAULT_TEMPLATES[BlockGoal.STRENGTH]
-    if sessions_per_week <= len(authored):
-        return authored[:sessions_per_week]
-    used = {s.day_of_week for s in authored}
-    free_days = [d for d in _WEEK_DAY_ORDER if d not in used]
-    extras = [
-        authored[i % len(authored)].model_copy(update={"day_of_week": day})
-        for i, day in enumerate(free_days[: sessions_per_week - len(authored)])
+    n = sessions_per_week
+    if n <= len(authored):
+        return authored[:n]
+    k = len(authored)
+    copies = [slot for i, slot in enumerate(authored) for _ in range(n // k + (i < n % k))]
+    positions = [*range(0, n, 2), *range(1, n, 2)]
+    ordered: list[WeeklyTemplateSlot | None] = [None] * n
+    for pos, slot in zip(positions, copies, strict=True):
+        ordered[pos] = slot
+    return [
+        slot.model_copy(update={"day_of_week": day})
+        for slot, day in zip(ordered, _spread_days(n), strict=True)
+        if slot is not None
     ]
-    return sorted([*authored, *extras], key=lambda s: s.day_of_week)
 
 
 # Canonical domain → a representative weekly slot (category, modality).
