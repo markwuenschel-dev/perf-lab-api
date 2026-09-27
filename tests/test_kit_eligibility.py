@@ -114,3 +114,11 @@ def test_every_binding_slug_has_a_plan_label() -> None:
     """``plan:session_replaced=<slug>`` renders "Another planning rule was applied." without one."""
     missing = sorted({b.slug for _, _, b in bindings()} - set(_PLAN_SLOTS))
     assert missing == []
+
+
+def test_the_committed_phase_9_matrix_is_what_the_code_produces(matrix: list[KitOutcome]) -> None:
+    """docs/simulations/phase-9.md is the exit record; it must not drift from the code."""
+    from app.scripts.kit_matrix import render
+
+    doc = (ROOT / "docs/simulations/phase-9.md").read_text(encoding="utf-8")
+    assert render(matrix) in doc
