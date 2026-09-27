@@ -1607,6 +1607,11 @@ GENERAL_TEMPLATES: list[CandidateTemplate] = [
 # ---------------------------------------------------------------------------
 
 #: Every family whose members are in the pool. Pool = expanded families + remaining literals.
+def template_by_branch(branch_id: str) -> CandidateTemplate | None:
+    """The library template with this branch id, from any pool (ids are unique)."""
+    return _TEMPLATE_BY_BRANCH.get(branch_id)
+
+
 WORKOUT_FAMILIES: tuple[WorkoutFamily, ...] = (
     # Phase 9.3: every strength, hypertrophy and power design is a family, so an equipment
     # variant (9.4) is a FamilyVariant, not another literal.
@@ -1645,6 +1650,10 @@ GOAL_TEMPLATE_LIBRARY: dict[str, list[CandidateTemplate]] = {
     "calisthenics": CALISTHENICS_TEMPLATES,
     "grip": GRIP_TEMPLATES,
     "general": GENERAL_TEMPLATES,
+}
+
+_TEMPLATE_BY_BRANCH: dict[str, CandidateTemplate] = {
+    t.branch_id: t for pool in GOAL_TEMPLATE_LIBRARY.values() for t in pool
 }
 
 

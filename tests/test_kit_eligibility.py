@@ -35,69 +35,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 #: (domain, planned category, kit) -> today's dishonest outcome. Shrinks to empty in phase 9.
 KNOWN_GAPS: dict[tuple[str, str, str], str] = {
-    ("strength", "Max Strength", "home"): "filler",
-    ("strength", "Max Strength", "bodyweight"): "filler",
-    ("strength", "Strength — Volume", "home"): "filler",
-    ("strength", "Strength — Volume", "bodyweight"): "filler",
-    ("strength", "Accessory Focus", "home"): "filler",
-    ("strength", "Accessory Focus", "bodyweight"): "filler",
-    ("hypertrophy", "High Volume Upper", "home"): "partial",
-    ("hypertrophy", "High Volume Upper", "bodyweight"): "filler",
-    ("hypertrophy", "High Volume Lower", "home"): "partial",
-    ("hypertrophy", "High Volume Lower", "bodyweight"): "filler",
-    ("hypertrophy", "Accessory / Isolation", "home"): "filler",
-    ("hypertrophy", "Accessory / Isolation", "bodyweight"): "filler",
-    ("hypertrophy", "High Volume", "home"): "partial",
-    ("hypertrophy", "High Volume", "bodyweight"): "filler",
-    ("power", "Power Development", "home"): "partial",
-    ("power", "Power Development", "bodyweight"): "partial",
-    # 9.1: the jump realizes; the chest pass needs a med ball (wall_ball). 9.4 adds the
-    # jump-only variant.
-    ("power", "Neural Priming", "home"): "partial",
-    ("power", "Neural Priming", "bodyweight"): "partial",
-    ("power", "Strength Potentiation", "home"): "filler",
-    ("power", "Strength Potentiation", "bodyweight"): "filler",
-    ("powerlifting", "SBD Strength", "home"): "filler",
-    ("powerlifting", "SBD Strength", "bodyweight"): "filler",
-    ("powerlifting", "Accessory Focus", "home"): "filler",
-    ("powerlifting", "Accessory Focus", "bodyweight"): "filler",
-    ("weightlifting", "Weightlifting Technique", "home"): "filler",
-    ("weightlifting", "Weightlifting Technique", "bodyweight"): "filler",
-    ("mixed", "MetCon", "home"): "partial",
-    ("mixed", "MetCon", "bodyweight"): "partial",
-    ("mixed", "Metabolic Conditioning", "home"): "partial",
-    ("mixed", "Metabolic Conditioning", "bodyweight"): "partial",
-    ("mixed", "Mixed Modal", "home"): "partial",
-    ("mixed", "Mixed Modal", "bodyweight"): "partial",
-    ("mixed", "Engine Work", "home"): "filler",
-    ("mixed", "Engine Work", "bodyweight"): "filler",
-    ("mixed", "Strength Endurance", "home"): "partial",
-    ("mixed", "Strength Endurance", "bodyweight"): "partial",
-    ("mixed", "Hyrox Simulation", "home"): "filler",
-    ("mixed", "Hyrox Simulation", "bodyweight"): "filler",
-    ("mixed", "Running + Functional", "home"): "filler",
-    ("mixed", "Running + Functional", "bodyweight"): "filler",
-    ("mixed", "Strength + Skill", "home"): "filler",
-    ("mixed", "Strength + Skill", "bodyweight"): "filler",
-    ("calisthenics", "Gymnastics Conditioning", "bodyweight"): "partial",
-    ("grip", "Grip & Support", "bodyweight"): "partial",
-    ("general", "Aerobic + Strength", "home"): "filler",
-    ("general", "Aerobic + Strength", "bodyweight"): "filler",
-    ("general", "Strength Preservation", "home"): "filler",
-    ("general", "Strength Preservation", "bodyweight"): "filler",
-    ("general", "Metabolic Conditioning", "home"): "partial",
-    ("general", "Metabolic Conditioning", "bodyweight"): "partial",
-    ("conditioning", "Metabolic Conditioning", "home"): "partial",
-    ("conditioning", "Metabolic Conditioning", "bodyweight"): "partial",
+    # 9.4 (a)+(b): no filler and no partial session remain. These supported home cells are
+    # honestly "unavailable" until their kit variants exist (9.4c).
+    ("strength", "Max Strength", "home"): "unavailable",
+    ("strength", "Strength — Volume", "home"): "unavailable",
+    ("strength", "Accessory Focus", "home"): "unavailable",
+    ("hypertrophy", "High Volume Upper", "home"): "unavailable",
+    ("hypertrophy", "High Volume Lower", "home"): "unavailable",
+    ("hypertrophy", "Accessory / Isolation", "home"): "unavailable",
+    ("hypertrophy", "High Volume", "home"): "unavailable",
 }
 
 #: Planned days a full gym supports but an athlete who configured equipment IN THE WEB APP
 #: cannot reach, because the picker cannot express a tag the day needs. Known unsupported UI
 #: configurations, not passes: separate PR A2 (web equipment tags) empties this.
 UI_UNSUPPORTED: dict[tuple[str, str], str] = {
-    ("power", "Neural Priming"): "partial",
-    ("mixed", "Hyrox Simulation"): "filler",
-    ("mixed", "Running + Functional"): "filler",
+    ("mixed", "Hyrox Simulation"): "unavailable",
+    ("mixed", "Running + Functional"): "unavailable",
 }
 
 

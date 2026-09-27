@@ -4632,6 +4632,63 @@
         "title": "PlannedSessionRead",
         "type": "object"
       },
+      "PlannedSessionUnavailable": {
+        "description": "Today's planned session could not be fulfilled with the athlete's equipment (ADR-0072).\n\nStructured so \"which planned sessions are most often impossible?\" is a query, not a prose\nparse. Present only on a zero-work Equipment Unavailable prescription.",
+        "properties": {
+          "missing_equipment": {
+            "description": "Equipment tags the planned session needs that the athlete has not listed.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Equipment",
+            "type": "array"
+          },
+          "planned_branch_ids": {
+            "description": "The templates that would have satisfied it.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Planned Branch Ids",
+            "type": "array"
+          },
+          "planned_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Category"
+          },
+          "planned_domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Domain"
+          },
+          "planned_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The planned slot's stable slug (planned_session_slots).",
+            "title": "Planned Slug"
+          }
+        },
+        "title": "PlannedSessionUnavailable",
+        "type": "object"
+      },
       "PlannedSessionUpdateRequest": {
         "properties": {
           "scheduled_date": {
@@ -4828,6 +4885,17 @@
             ],
             "description": "Template-aligned fit score vs twin state (0\u20131)",
             "title": "Score"
+          },
+          "session_unavailable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannedSessionUnavailable"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only when today's planned session could not be fulfilled with the athlete's equipment and nothing was prescribed in its place (zero work)."
           },
           "source_alignment": {
             "description": "Human-readable: templates + primitives + models",
