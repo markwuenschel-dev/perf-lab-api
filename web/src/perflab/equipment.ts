@@ -12,20 +12,40 @@
 // `equipment_preference` is a separate thing kept deliberately apart (docs/PRESCRIBER_LOGIC.md):
 // a tie-break among exercises the athlete can already do, which can neither add nor remove one.
 
-/** Equipment tags the catalog actually requires (app/data/exercise_bulk.py, seed_exercises.py). */
+/**
+ * Equipment tags the catalog actually requires (app/data/exercise_bulk.py, seed_exercises.py).
+ *
+ * EVERY tag the catalog requires must be offered here: an exercise is kept only when all of its
+ * required tags are selected, so a tag missing from this list makes those exercises unreachable
+ * for anyone who configures equipment (tests/test_equipment_picker_matches_catalog.py fails on
+ * drift in either direction). Grouped: free weights, loaded implements, machines, bodyweight
+ * apparatus, conditioning.
+ */
 export const EQUIPMENT_TAGS: { tag: string; label: string }[] = [
   { tag: "barbell", label: "Barbell" },
+  { tag: "plates", label: "Weight plates" },
+  { tag: "trap_bar", label: "Trap bar" },
   { tag: "dumbbells", label: "Dumbbells" },
   { tag: "kettlebell", label: "Kettlebells" },
+  { tag: "sandbag", label: "Sandbag" },
+  { tag: "wall_ball", label: "Wall ball" },
+  { tag: "vest", label: "Weight vest" },
+  { tag: "gripper", label: "Hand grippers" },
   { tag: "machine", label: "Machines" },
   { tag: "cable", label: "Cable machine" },
+  { tag: "band", label: "Resistance band" },
   { tag: "pullup_bar", label: "Pull-up bar" },
   { tag: "box", label: "Plyo box" },
   { tag: "rings", label: "Rings" },
   { tag: "parallettes", label: "Parallettes" },
+  { tag: "rope", label: "Climbing rope" },
+  { tag: "ab_wheel", label: "Ab wheel" },
   { tag: "jump_rope", label: "Jump rope" },
+  { tag: "battle_ropes", label: "Battle ropes" },
   { tag: "rower", label: "Rower" },
+  { tag: "skierg", label: "SkiErg" },
   { tag: "bike", label: "Bike" },
+  { tag: "assault_bike", label: "Air bike" },
   { tag: "sled", label: "Sled" },
 ];
 
