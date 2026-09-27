@@ -98,26 +98,26 @@ def test_slots_fall_back_to_the_equipment_map_without_a_catalog(catalog_snapshot
 
 
 def test_empty_slot_template_reaches_equipment_map_end_to_end(catalog_snapshot):
-    """Full-stack guard: a real winning template with EMPTY exercise_slots must
-    reach the equipment map through the whole recommend_next_session pipeline
-    (scoring -> sort -> finalize -> exercise selection), not just via the
-    _exercise_list_for_candidate unit above.
+    """Full-stack guard on the equipment map, which phase 9 narrowed.
 
-    We steer the Hypertrophy pool to `hyp_maintenance` (its slot-less template)
-    with elevated muscular fatigue. If a future dev populates hyp_maintenance's
-    exercise_slots, this test goes red — that is intentional: pick a different
-    slot-less template rather than deleting the coverage.
+    There is no slot-less library template left (45/45 slotted, phase 9.2), and a slotted
+    template is atomic under configured equipment (9.4): it is prescribed whole or not at all.
+    So the map is reached end to end only without a catalog (a pure-logic caller). With the
+    catalog, the same athlete gets hyp_maintenance's own isolation work.
     """
     s = _neutral_state(muscular=70.0)
-    rx = recommend_next_session(
-        s, goal="Hypertrophy", available_equipment=["barbell", "pullup_bar"],
-        catalog=catalog_snapshot,
+    pure = recommend_next_session(
+        s, goal="Hypertrophy", available_equipment=["barbell", "pullup_bar"], catalog=None,
     )
-    assert rx.type == "Maintenance Volume"  # hyp_maintenance won (slot-less)
-    names = [e.name for e in rx.exercises]
+    names = [e.name for e in pure.exercises]
     # Names come from _EQUIPMENT_EXERCISE_MAP["barbell"] + ["pullup_bar"], not slots.
     assert "Back Squat" in names
     assert "Pull-up" in names
+
+    whole = recommend_next_session(s, goal="Hypertrophy", available_equipment=None,
+                                   catalog=catalog_snapshot)
+    assert whole.type == "Maintenance Volume"
+    assert [e.name for e in whole.exercises] == ["Pec Deck", "Leg Curl"]
 
 
 # ---------------------------------------------------------------------------
@@ -189,13 +189,17 @@ def _needs(catalog) -> dict[str, set[str]]:
 
 def test_accessories_respect_the_equipment_the_athlete_listed(catalog_snapshot):
     """Accessories come from hard-coded name lists and used to skip the availability check."""
+    # Barbell + dumbbells: hyp_upper_split is whole with it (since 9.4 a template is
+    # prescribed whole or not at all), so accessories are appended and filtered.
+    kit = {"barbell", "dumbbells"}
     rx = recommend_next_session(
         _neutral_state(), goal="Hypertrophy", catalog=catalog_snapshot,
-        available_equipment=["barbell"], block_context=ACCESSORY_BLOCK,
+        available_equipment=sorted(kit), block_context=ACCESSORY_BLOCK,
     )
     needs = _needs(catalog_snapshot)
     accessories = [e.name for e in rx.exercises if e.load_note == ACCESSORY_NOTE]
-    assert all(name in needs and needs[name] <= {"barbell"} for name in accessories), accessories
+    assert accessories, "a whole session gets its accessories"
+    assert all(name in needs and needs[name] <= kit for name in accessories), accessories
     skipped = [c for c in rx.why.constraints_applied if c.startswith("equipment:accessories_skipped=")]  # type: ignore[union-attr]
     assert len(skipped) == 1 and int(skipped[0].split("=")[1]) > 0
 

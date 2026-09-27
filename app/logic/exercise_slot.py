@@ -338,6 +338,52 @@ def circuit_resolves(
     return all(r.chosen is not None for r in resolutions)
 
 
+def template_resolves(
+    slots: Sequence[ExerciseSlot],
+    circuit: CircuitSpec | None,
+    catalog: list[CatalogExercise] | None,
+    available_equipment: Sequence[str] | None,
+) -> bool:
+    """Can this authored session be performed, whole, with this equipment? (ADR-0072)
+
+    An authored slotted template is atomic, as a circuit is: every slot must be realized, or
+    it is not this session. Emitting the subset that resolved would prescribe a different
+    session under the planned one's name. Unconfigured equipment keeps its permissive meaning
+    (nothing is filtered), and with no catalog there is nothing to check. An EMPTY catalog is
+    no catalog: it is our missing data, never evidence about the athlete's equipment.
+    """
+    if not circuit_resolves(slots, circuit, catalog, available_equipment):
+        return False
+    equipment = equipment_set(available_equipment)
+    if not catalog or equipment is None or not slots:
+        return True
+    return all(
+        r.chosen is not None
+        for r in resolve_slots(list(slots), catalog, available_equipment=equipment)
+    )
+
+
+def missing_equipment(
+    slots: Sequence[ExerciseSlot],
+    catalog: list[CatalogExercise],
+    available_equipment: Sequence[str] | None,
+) -> list[str]:
+    """Equipment the session's unrealized slots would need: what each slot resolves to with
+    no equipment filter, minus what the athlete listed. Sorted; empty when nothing is missing.
+    """
+    equipment = equipment_set(available_equipment) or frozenset()
+    have = equipment | _ALWAYS_AVAILABLE
+    needed: set[str] = set()
+    filtered = resolve_slots(list(slots), catalog, available_equipment=equipment or None)
+    unfiltered = resolve_slots(list(slots), catalog)
+    for got, ideal in zip(filtered, unfiltered, strict=True):
+        if got.chosen is None and ideal.chosen is not None:
+            needed |= {
+                e.strip().lower() for e in ideal.chosen.equipment_required if e and e.strip()
+            } - have
+    return sorted(needed)
+
+
 def resolve_slots(
     slots: list[ExerciseSlot],
     catalog: list[CatalogExercise],

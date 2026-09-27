@@ -269,9 +269,9 @@ def test_the_template_inventory() -> None:
     templates = [t for _, t in _templates()]
     ids = Counter(t.branch_id for t in templates)
 
-    assert len(templates) == 45
-    assert sum(1 for t in templates if t.exercise_slots) == 38
-    assert sum(1 for t in templates if not t.exercise_slots) == 7
+    assert len(templates) == 50
+    assert sum(1 for t in templates if t.exercise_slots) == 50
+    assert sum(1 for t in templates if not t.exercise_slots) == 0
     # 13 before phase 4.2; the other 24 were scored by branch_id-keyed domain functions.
     assert all(t.scoring is not None for t in templates)
     # Phase 4.4 renamed the calisthenics copy of gym_skill to cal_skill; no id is shared now.
@@ -280,6 +280,12 @@ def test_the_template_inventory() -> None:
     # owned days (45 / 36 slotted), and gave metcon_engine its authored bike session
     # (37 slotted, 8 slot-less), and mixed_strength_endurance its three-lift circuit
     # (38 slotted, 7 slot-less: every remaining slot-less template is outside phase 6).
+    # Phase 9.1 slotted the four bound on planned days (strength_volume, strength_variety,
+    # hyp_maintenance, power_neural_prime): 42 slotted, 3 slot-less. Phase 9.2 slotted the
+    # last three (strength_skill_acq, wl_strength_pulls, grip_recovery): 45 / 45 / 0.
+    # Phase 9.4c added five kit variants as family members (strength_volume_home,
+    # hyp_upper_split_home, hyp_high_vol_home, hyp_maintenance_home,
+    # power_neural_prime_jumps): 50 / 50 / 0.
     assert not {branch for branch, n in ids.items() if n > 1}
 
 

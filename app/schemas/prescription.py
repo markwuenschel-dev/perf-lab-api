@@ -37,7 +37,7 @@ __all__ = ["LoadExplanation", "LoadExplanationReason"]
 #: ``openapi.json`` carries it as the schema default, so a bump needs all three updated
 #: together. ``test_prescription_engine_version_is_assigned_not_defaulted`` pins the Python
 #: half of that coupling.
-PRESCRIPTION_ENGINE_VERSION = "v0.6"
+PRESCRIPTION_ENGINE_VERSION = "v0.7"
 
 
 class ValidationSummary(BaseModel):
@@ -210,6 +210,27 @@ class AppliedConstraint(BaseModel):
     )
 
 
+class PlannedSessionUnavailable(BaseModel):
+    """Today's planned session could not be fulfilled with the athlete's equipment (ADR-0072).
+
+    Structured so "which planned sessions are most often impossible?" is a query, not a prose
+    parse. Present only on a zero-work Equipment Unavailable prescription.
+    """
+
+    planned_domain: str | None = None
+    planned_category: str | None = None
+    planned_slug: str | None = Field(
+        default=None, description="The planned slot's stable slug (planned_session_slots)."
+    )
+    planned_branch_ids: list[str] = Field(
+        default_factory=lambda: [], description="The templates that would have satisfied it."
+    )
+    missing_equipment: list[str] = Field(
+        default_factory=lambda: [],
+        description="Equipment tags the planned session needs that the athlete has not listed.",
+    )
+
+
 class PrescriptionExplanation(BaseModel):
     """Why this session — state drivers, constraints, sources."""
 
@@ -276,6 +297,13 @@ class PrescriptionExplanation(BaseModel):
         description="Human-readable: templates + primitives + models",
     )
     template_id: str | None = None
+    session_unavailable: PlannedSessionUnavailable | None = Field(
+        default=None,
+        description=(
+            "Set only when today's planned session could not be fulfilled with the athlete's "
+            "equipment and nothing was prescribed in its place (zero work)."
+        ),
+    )
     prescription_branch: str | None = Field(
         default=None,
         description="Internal prescriber branch id (safety, readiness, goal path)",

@@ -252,18 +252,18 @@ def test_fatigued_state_produces_different_prescription_than_fresh(catalog_snaps
 
 
 def test_equipment_aware_exercises_fallback_to_bodyweight(catalog_snapshot):
-    # Hypertrophy + elevated muscular fatigue resolves to the `hyp_maintenance`
-    # template, which carries NO exercise_slots — so exercise selection falls
-    # through to the equipment map, and with no equipment configured that is the
-    # bodyweight trio. Asserting the actual names (not just len>0) so this test
-    # can't silently pass if the equipment path breaks. (A goal whose winning
-    # template HAS slots, e.g. Strength→strength_max, would bypass this path.)
+    # Phase 9.1 slotted `hyp_maintenance`, so with the catalog it prescribes its own
+    # isolation work, never the bodyweight trio. The equipment map now serves only a caller
+    # with NO catalog (pure logic), and with no equipment configured that is the
+    # bodyweight trio. Asserting the actual names so neither path can silently change.
     s = _state(muscular=70.0)
     rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=None,
         catalog=catalog_snapshot,
     )
-    assert [e.name for e in rx.exercises] == ["Air Squat", "Push-up", "Lunges"]
-    assert any("equipment:fallback_bodyweight" in c for c in (rx.why.constraints_applied if rx.why else []))
+    assert [e.name for e in rx.exercises] == ["Pec Deck", "Leg Curl"]
+    pure = recommend_next_session(s, goal="Hypertrophy", available_equipment=None, catalog=None)
+    assert [e.name for e in pure.exercises] == ["Air Squat", "Push-up", "Lunges"]
+    assert any("equipment:fallback_bodyweight" in c for c in (pure.why.constraints_applied if pure.why else []))
 
 
 def test_equipment_aware_exercises_use_available_equipment(catalog_snapshot):
@@ -304,10 +304,12 @@ def test_bodyweight_only_selects_differently_from_unconfigured(catalog_snapshot)
         ex.name: {e for e in ex.equipment_required if e not in ("bodyweight", "none", "")}
         for ex in catalog_snapshot
     }
-    unconfigured = recommend_next_session(_healthy_state(), goal="Strength", available_equipment=[],
+    # General, not Strength: since phase 9.4 a bodyweight-only athlete has no whole strength
+    # session and gets an explicit Equipment Unavailable (test_equipment_unavailable.py).
+    unconfigured = recommend_next_session(_healthy_state(), goal="General", available_equipment=[],
         catalog=catalog_snapshot,
     )
-    bodyweight = recommend_next_session(_healthy_state(), goal="Strength", available_equipment=["bodyweight"],
+    bodyweight = recommend_next_session(_healthy_state(), goal="General", available_equipment=["bodyweight"],
         catalog=catalog_snapshot,
     )
     assert _equipment_codes(unconfigured) == ["equipment:unconfigured"]
@@ -318,7 +320,9 @@ def test_bodyweight_only_selects_differently_from_unconfigured(catalog_snapshot)
 
 def test_bodyweight_fallback_is_labelled_only_when_the_bodyweight_list_was_used(catalog_snapshot):
     """Configured equipment that matches no equipment-map key really does get the bodyweight list."""
-    s = _state(muscular=70.0)  # hyp_maintenance: no slots, so the equipment map runs
+    # Elevated muscular fatigue: with only rings, no hypertrophy session is whole (9.4), and
+    # the slot-less readiness redirect is what runs the equipment map.
+    s = _state(muscular=70.0)
     rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=["rings"],
         catalog=catalog_snapshot,
     )

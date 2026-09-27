@@ -55,6 +55,8 @@ EXAMPLES: dict[str, str] = {
     "safety:override=": "safety:override=safety_regional_tissue",
     cl.PLAN_FOLLOWED_PREFIX: "plan:session_followed=hyp_upper_split",
     cl.PLAN_REPLACED_PREFIX: "plan:session_replaced=hypertrophy_upper(readiness)",
+    cl.PLAN_UNAVAILABLE_PREFIX: "plan:session_unavailable=weightlifting_technique",
+    cl.EQUIPMENT_UNAVAILABLE_PREFIX: "equipment:unavailable=barbell,wall_ball",
     cl.EQUIPMENT_UNCONFIGURED: cl.EQUIPMENT_UNCONFIGURED,
     cl.EQUIPMENT_FILTERED: cl.EQUIPMENT_FILTERED,
     cl.EQUIPMENT_BODYWEIGHT_ONLY: cl.EQUIPMENT_BODYWEIGHT_ONLY,

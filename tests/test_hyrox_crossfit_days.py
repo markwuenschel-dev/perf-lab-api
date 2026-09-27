@@ -201,11 +201,16 @@ def test_a_missing_sled_makes_half_a_ineligible_not_partial(
 def test_without_a_complete_half_the_day_is_visibly_replaced(
     catalog_snapshot: list[CatalogExercise], equipment: list[str]
 ) -> None:
-    """One station short of each half: no simulation, and never part of one."""
+    """One station short of each half: no simulation, and never part of one.
+
+    Phase 9.4 (ADR-0072): no mixed session survives this kit either, so the day is explicitly
+    unavailable (zero work). Before 9.4 it was "replaced" by the general pool's GPP, which was
+    filler under a HYROX day's name."""
     rx, scored = _day(catalog_snapshot, HYROX_SIMULATION_CATEGORY, equipment=equipment)
     assert not {c.branch_id for c in scored} & {"hyrox_half_sim_a", "hyrox_half_sim_b"}
     (code,) = _plan_codes(rx)
-    assert code.startswith("plan:session_replaced=hyrox_simulation")
+    assert code == "plan:session_unavailable=hyrox_simulation"
+    assert rx.type == "Equipment Unavailable" and rx.exercises == []
     assert not any(isinstance(b, CircuitBlock) for b in rx.structure or [])
 
 
@@ -421,7 +426,9 @@ def test_strength_endurance_without_a_barbell_is_visibly_replaced(
     rx, scored = _day(catalog_snapshot, "Strength Endurance", equipment=["dumbbells"])
     assert "mixed_strength_endurance" not in {c.branch_id for c in scored}
     (code,) = _plan_codes(rx)
-    assert code.startswith("plan:session_replaced=mixed_strength_endurance")
+    # Phase 9.4: no mixed session is whole with dumbbells alone, so explicitly unavailable.
+    assert code == "plan:session_unavailable=mixed_strength_endurance"
+    assert rx.exercises == []
     assert not any(isinstance(b, CircuitBlock) for b in rx.structure or [])
 
 

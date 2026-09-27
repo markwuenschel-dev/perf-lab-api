@@ -2740,6 +2740,34 @@ export interface components {
             /** Workout Log Id */
             workout_log_id?: number | null;
         };
+        /**
+         * PlannedSessionUnavailable
+         * @description Today's planned session could not be fulfilled with the athlete's equipment (ADR-0072).
+         *
+         *     Structured so "which planned sessions are most often impossible?" is a query, not a prose
+         *     parse. Present only on a zero-work Equipment Unavailable prescription.
+         */
+        PlannedSessionUnavailable: {
+            /**
+             * Missing Equipment
+             * @description Equipment tags the planned session needs that the athlete has not listed.
+             */
+            missing_equipment?: string[];
+            /**
+             * Planned Branch Ids
+             * @description The templates that would have satisfied it.
+             */
+            planned_branch_ids?: string[];
+            /** Planned Category */
+            planned_category?: string | null;
+            /** Planned Domain */
+            planned_domain?: string | null;
+            /**
+             * Planned Slug
+             * @description The planned slot's stable slug (planned_session_slots).
+             */
+            planned_slug?: string | null;
+        };
         /** PlannedSessionUpdateRequest */
         PlannedSessionUpdateRequest: {
             /** Scheduled Date */
@@ -2831,6 +2859,8 @@ export interface components {
              * @description Template-aligned fit score vs twin state (0–1)
              */
             score?: number | null;
+            /** @description Set only when today's planned session could not be fulfilled with the athlete's equipment and nothing was prescribed in its place (zero work). */
+            session_unavailable?: components["schemas"]["PlannedSessionUnavailable"] | null;
             /**
              * Source Alignment
              * @description Human-readable: templates + primitives + models
@@ -4227,7 +4257,7 @@ export interface components {
             /**
              * Model Version
              * @description Prescription engine version
-             * @default v0.6
+             * @default v0.7
              */
             model_version: string;
             /** Rationale */

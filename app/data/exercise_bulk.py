@@ -342,6 +342,8 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ("Pallof Press", "Strength", "core", ["core"], ["shoulders"], ["cable"], "cable", 0.35, 0.2, ["core_stability", "rotation"]),
         ("Hanging L-Sit", "Calisthenics", "core", ["core", "hip_flexors"], ["lats"], ["pullup_bar"], "bodyweight", 0.72, 0.25, ["core_stability", "gymnastics_skill"]),
         ("Med Ball Slam", "Power", "mixed", ["core", "lats"], ["shoulders"], ["wall_ball"], "reps", 0.42, 0.45, ["work_capacity", "power"]),
+        # Phase 9.1: a true ballistic THROW (released, horizontal), for neural priming.
+        ("Med Ball Chest Pass", "Power", "push_horizontal", ["chest", "triceps"], ["shoulders", "core"], ["wall_ball"], "reps", 0.30, 0.25, ["power", "plyometric"]),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags in midline:
         out.append(_row(name, mod, mp, p, s, eq, lt, sk, im, tags))
@@ -358,6 +360,10 @@ def bulk_exercises() -> list[dict[str, Any]]:
     prehab: list[_VariantRow] = [
         ("Cossack Squat", "Strength", "single_leg", ["adductors", "quads"], ["glutes"], [], "bodyweight", 0.52, 0.3, ["hip_mobility", "squat_pattern"]),
         ("90/90 Hip Switch", "Strength", "core", ["hip_flexors", "adductors"], [], [], "time", 0.3, 0.1, ["hip_mobility"]),
+        # Phase 9.2: no-equipment grip recovery. Their own "mobility" pattern, which no slot
+        # selects by pattern, so no other session can pick them up.
+        ("Wrist Mobility Circles", "Strength", "mobility", ["forearms"], [], [], "reps", 0.1, 0.05, ["mobility", "grip_recovery"]),
+        ("Finger Extensor Opening", "Strength", "mobility", ["fingers", "forearms"], [], [], "reps", 0.1, 0.05, ["mobility", "grip_recovery"]),
         ("Jefferson Curl", "Strength", "hinge", ["hamstrings", "erectors"], [], [], "bodyweight", 0.55, 0.35, ["posterior_chain", "hip_hinge"]),
         ("Tibialis Raise", "Hypertrophy", "single_leg", ["tibialis_anterior"], [], [], "bodyweight", 0.2, 0.15, ["running_economy", "structural"]),
         ("Single-Leg Calf Raise (Loaded)", "Hypertrophy", "single_leg", ["calves"], [], [], "bodyweight", 0.25, 0.3, ["running_economy", "structural"], False, None, True),
@@ -387,6 +393,10 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ("Hanging Knee Raise", "Calisthenics", "core", ["core", "hip_flexors"], [], ["pullup_bar"], "bodyweight", 0.3, 0.2, ["core_stability"]),
         ("Hanging Leg Raise", "Calisthenics", "core", ["core", "hip_flexors"], ["lats"], ["pullup_bar"], "bodyweight", 0.45, 0.25, ["core_stability"]),
         ("Split Squat", "Hypertrophy", "single_leg", ["quads", "glutes"], ["hamstrings"], ["dumbbells"], "dumbbell", 0.4, 0.4, ["single_leg", "anterior_chain"], False, None, True),
+        # Phase 9.4c: home isolation for hyp_maintenance_home. Their own "isolation" pattern,
+        # which no slot selects by pattern: reachable only by exact pin.
+        ("Dumbbell Lateral Raise", "Hypertrophy", "isolation", ["shoulders"], [], ["dumbbells"], "dumbbell", 0.2, 0.1, ["isolation"], False, None, False),
+        ("Standing Dumbbell Calf Raise", "Hypertrophy", "isolation", ["calves"], [], ["dumbbells"], "dumbbell", 0.15, 0.2, ["isolation"], False, None, False),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags, *rest in gap_fill:
         bm = rest[0] if len(rest) > 0 else False
@@ -522,6 +532,10 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ("Pendlay Row", "Strength", "pull_horizontal", ["upper_back", "lats"], ["biceps", "erectors"], ["barbell"], "barbell", 0.55, 0.45, ["pull_horizontal", "posterior_chain"], []),
         ("Sandbag Lunges", "Strength", "single_leg", ["quads", "glutes"], ["core"], ["sandbag"], "bodyweight", 0.45, 0.5, ["single_leg", "hyrox"], ["hyrox"], True),
         ("Sumo Deadlift High Pull", "Strength", "hinge", ["hamstrings", "glutes", "traps"], ["shoulders"], ["barbell"], "barbell", 0.55, 0.55, ["hip_hinge", "posterior_chain"], []),
+        # Phase 9.2: the snatch-grip pull to full extension, for the Strength Pulls day. Strength
+        # modality on purpose: as "Power" it out-ranked Hang Power Clean in power_main (simpler
+        # first) and silently changed that session.
+        ("Snatch Pull", "Strength", "hinge", ["hamstrings", "glutes", "traps"], ["erectors", "forearms"], ["barbell"], "barbell", 0.6, 0.5, ["weightlifting", "hip_hinge", "posterior_chain"], ["weightlifting"]),
         ("Wall Sit", "Strength", "squat", ["quads"], ["glutes"], [], "time", 0.15, 0.15, ["squat_pattern"], []),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags, sd, *rest in strength_vocab:

@@ -26,7 +26,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from app.logic.candidate_library import get_templates, score_template
+from app.logic.candidate_library import get_templates, score_template, template_by_branch
 from app.logic.constraint_engine.candidate import (
     SessionCandidate,
     WorkloadVolume,
@@ -52,10 +52,12 @@ from app.logic.exercise_slot import (
     CatalogExercise,
     CircuitSpec,
     ExerciseSlot,
-    circuit_resolves,
     equipment_available,
+    equipment_set,
+    missing_equipment,
     preferred_load_types,
     resolve_slots,
+    template_resolves,
 )
 from app.logic.planned_session_slots import SlotBinding, binding_for
 from app.logic.planning import (
@@ -73,6 +75,7 @@ from app.logic.planning_constraints import (
 from app.logic.prescription_finalize import finalize_prescription
 from app.schemas.prescription import (
     ExercisePrescription,
+    PlannedSessionUnavailable,
     WorkoutPrescription,
     circuit_station_for,
     endurance_block_for,
@@ -452,13 +455,93 @@ def _generate_candidates(
         domain, kpi, goal=str(goal), state=state, session_category=session_category,
         category_owns_day=category_owns_day,
     )
-    # An authored circuit is atomic (phase 6.2): a template whose stations do not all resolve
-    # for this athlete is not eligible, rather than emitting part of it.
+    # An authored session is atomic (circuits since phase 6.2, every slotted template since
+    # 9.4, ADR-0072): a template whose slots do not all resolve for this athlete's equipment
+    # is not eligible, rather than emitting part of it under its name.
     templates = [
         t for t in templates
-        if circuit_resolves(t.exercise_slots, t.circuit, catalog, available_equipment)
+        if template_resolves(t.exercise_slots, t.circuit, catalog, available_equipment)
+    ]
+    # An equipment variant exists only for when its primary cannot be done with this kit: with
+    # the primary realizable it is not a candidate, so the two never compete or rotate.
+    templates = [
+        t for t in templates
+        if t.kit_fallback_for is None
+        or not _template_realizable(t.kit_fallback_for, catalog, available_equipment)
     ]
     return [score_template(t, state, kpi, readiness=r) for t in templates]
+
+
+def _template_realizable(
+    branch_id: str,
+    catalog: list[CatalogExercise] | None,
+    available_equipment: Sequence[str] | None,
+) -> bool:
+    """Whether the library template ``branch_id`` can be done, whole, with this equipment."""
+    t = template_by_branch(branch_id)
+    return t is not None and template_resolves(
+        t.exercise_slots, t.circuit, catalog, available_equipment
+    )
+
+
+def _kit_primary(branch_id: str) -> str | None:
+    """The template a kit variant adapts, or None for anything that is not a kit variant."""
+    t = template_by_branch(branch_id)
+    return t.kit_fallback_for if t is not None else None
+
+
+def _equipment_unavailable_prescription(
+    planned: SlotBinding | None,
+    session_domain: str | None,
+    session_category: str | None,
+    catalog: list[CatalogExercise],
+    available_equipment: Sequence[str] | None,
+    state: UnifiedStateVector,
+    goal: TrainingGoal,
+    recent_sessions: list[dict[str, Any]] | None,
+) -> WorkoutPrescription:
+    """Nothing honest survives this athlete's equipment for today (ADR-0072).
+
+    Zero work, stated. Deliberately NOT the general pool and NOT the bodyweight map: either
+    would prescribe a different session under this day's name, the hidden substitution
+    phase 9 removed. Nothing is prescribed in the planned session's place, so the code is
+    ``plan:session_unavailable``, never ``session_replaced``. The planned identity and the
+    missing equipment are carried as structured data, so impossible days can be counted.
+    """
+    missing: set[str] = set()
+    branch_ids = list(planned.branch_ids) if planned is not None else []
+    for branch in branch_ids:
+        t = template_by_branch(branch)
+        if t is not None:
+            missing |= set(missing_equipment(t.exercise_slots, catalog, available_equipment))
+    tags = sorted(missing)
+    label = session_category or "Today's session"
+    rx = WorkoutPrescription(
+        type="Equipment Unavailable",
+        focus=f"{label} needs equipment you haven't listed",
+        rationale=(
+            f"{label} can't be done with the equipment you listed, and no version of it that "
+            "keeps its purpose can. Nothing was prescribed in its place"
+            + (f"; it needs: {', '.join(tags)}." if tags else ".")
+        ),
+        duration_min=0,
+    )
+    out = finalize_prescription(rx, state, goal, "equipment_unavailable", recent_sessions)
+    out.exercises = []
+    out.structure = None
+    if out.why is not None:
+        out.why.expected_outcomes = []
+        if planned is not None:
+            out.why.constraints_applied.append(f"plan:session_unavailable={planned.slug}")
+        out.why.constraints_applied.append(f"equipment:unavailable={','.join(tags)}")
+        out.why.session_unavailable = PlannedSessionUnavailable(
+            planned_domain=session_domain,
+            planned_category=session_category,
+            planned_slug=planned.slug if planned is not None else None,
+            planned_branch_ids=branch_ids,
+            missing_equipment=tags,
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1268,7 +1351,13 @@ def _recommend_next_session(
     # readiness redirect is competing — redirects exist to pull work *down* on a bad day, and
     # the plan must not talk over them. Nothing here can add a candidate the pool lacked.
     if planned is not None and not redirects:
-        planned_candidates = [c for c in all_candidates if c.branch_id in planned.branch_ids]
+        # A kit variant of a planned template is that day's session in another implementation
+        # (phase 9.4), so it belongs to the day's pool too.
+        planned_candidates = [
+            c for c in all_candidates
+            if c.branch_id in planned.branch_ids
+            or _kit_primary(c.branch_id) in planned.branch_ids
+        ]
         if planned_candidates:
             all_candidates = planned_candidates
 
@@ -1304,6 +1393,15 @@ def _recommend_next_session(
     scored = _rotate_variant_family(
         scored, _score_with_context, planned, int(block.get("week_number") or 0)
     )
+
+    # An empty catalog is no catalog (our missing data), never grounds for "unavailable".
+    if not scored and catalog and equipment_set(available_equipment) is not None:
+        # The athlete's equipment ruled out every in-domain session (ADR-0072). Stated, zero
+        # work; never the general pool below, which would be generic filler under this day.
+        return _equipment_unavailable_prescription(
+            planned, session_domain, block.get("session_category"), catalog,
+            available_equipment, state, goal, recent_sessions,
+        )
 
     if not scored:
         # Fallback — should not happen unless generator returns empty
@@ -1347,6 +1445,12 @@ def _recommend_next_session(
             replaced_reason = "validation"
         elif redirects:
             replaced_reason = "readiness"
+        elif _kit_primary(scored[0].branch_id) in planned.branch_ids or not any(
+            _template_realizable(b, catalog, available_equipment) for b in planned.branch_ids
+        ):
+            # The planned session could not be done with this equipment: a kit variant, or
+            # another session of the same domain, was prescribed instead (ADR-0072).
+            replaced_reason = "equipment"
         else:
             replaced_reason = "unavailable"
         if (code := _plan_outcome_code(planned, rx, replaced_reason=replaced_reason)) is not None:

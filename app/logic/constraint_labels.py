@@ -36,6 +36,8 @@ EQUIPMENT_BODYWEIGHT_ONLY = "equipment:bodyweight_only"
 EQUIPMENT_FALLBACK_BODYWEIGHT = "equipment:fallback_bodyweight"
 EQUIPMENT_ACCESSORIES_SKIPPED_PREFIX = "equipment:accessories_skipped="
 EQUIPMENT_PREFERENCE_PREFIX = "equipment:preference="
+#: Phase 9.4: the planned session needs equipment the athlete has not listed (ADR-0072).
+EQUIPMENT_UNAVAILABLE_PREFIX = "equipment:unavailable="
 
 #: A template's circuit could not be built because a station had no exercise (phase 6.1).
 STRUCTURE_CIRCUIT_UNREALIZED = "structure:circuit_unrealized"
@@ -43,6 +45,9 @@ STRUCTURE_CIRCUIT_UNREALIZED = "structure:circuit_unrealized"
 #: Today's planned session was prescribed, or something took precedence over it.
 PLAN_FOLLOWED_PREFIX = "plan:session_followed="
 PLAN_REPLACED_PREFIX = "plan:session_replaced="
+#: Phase 9.4: nothing honest could be prescribed for today's planned session. Distinct from
+#: "replaced": nothing else was prescribed in its place (a zero-work outcome).
+PLAN_UNAVAILABLE_PREFIX = "plan:session_unavailable="
 
 SAFETY_OVERRIDE_PREFIX = "safety:override="
 
@@ -261,6 +266,8 @@ _PLAN_CONSTRAINT = re.compile(
 _SAFETY_OVERRIDE = re.compile(r"^safety:override=(?P<branch>[a-z_]+)$")
 _PLAN_FOLLOWED = re.compile(r"^plan:session_followed=(?P<branch>[a-z_]+)$")
 _PLAN_REPLACED = re.compile(r"^plan:session_replaced=(?P<slug>[a-z_]+)\((?P<reason>[a-z_]+)\)$")
+_PLAN_UNAVAILABLE = re.compile(r"^plan:session_unavailable=(?P<slug>[a-z_]+)$")
+_EQUIPMENT_UNAVAILABLE = re.compile(r"^equipment:unavailable=(?P<tags>[a-z_,]*)$")
 _ACCESSORIES_SKIPPED = re.compile(r"^equipment:accessories_skipped=(?P<count>\d+)$")
 _PREFERENCE = re.compile(r"^equipment:preference=(?P<values>[a-z,]+)\(changed=(?P<count>\d+)\)$")
 _TISSUE_MESSAGE = re.compile(
@@ -291,6 +298,8 @@ CODE_FAMILIES: tuple[str, ...] = (
     "safety:override=",
     PLAN_FOLLOWED_PREFIX,
     PLAN_REPLACED_PREFIX,
+    PLAN_UNAVAILABLE_PREFIX,
+    EQUIPMENT_UNAVAILABLE_PREFIX,
     EQUIPMENT_UNCONFIGURED,
     EQUIPMENT_FILTERED,
     EQUIPMENT_BODYWEIGHT_ONLY,
@@ -456,6 +465,19 @@ def _plan_rule(code: str) -> _Labelled | None:
 
 
 def _equipment(code: str) -> _Labelled | None:
+    if m := _EQUIPMENT_UNAVAILABLE.match(code):
+        tags = [t.replace("_", " ") for t in m["tags"].split(",") if t]
+        if not tags:
+            return (
+                "This session needs equipment you haven't listed.",
+                "equipment",
+                True,
+            )
+        return (
+            f"This session needs equipment you haven't listed: {_join(tags)}.",
+            "equipment",
+            True,
+        )
     if m := _ACCESSORIES_SKIPPED.match(code):
         count = int(m["count"])
         # `count` is every accessory option passed over while filling the requested slots, not
@@ -491,6 +513,7 @@ _PLAN_REPLACED_REASONS: dict[str, str] = {
     "readiness": "today's readiness called for different work",
     "validation": "it did not pass this session's safety checks",
     "unavailable": "it isn't available for you today",
+    "equipment": "it needs equipment you haven't listed, so a version you can do was chosen",
     "arm": "an experiment arm selected the session",
 }
 
@@ -505,6 +528,12 @@ _PLAN_SLOTS: dict[str, str] = {
     "hypertrophy_high_volume": "high-volume day",
     "running_base": "aerobic base run",
     "running_threshold": "threshold run",
+    "running_speed": "speed session",
+    "running_recovery": "recovery run",
+    "power_potentiation": "strength potentiation day",
+    "hyrox_simulation": "HYROX simulation",
+    "hyrox_running_functional": "running and functional day",
+    "crossfit_strength_skill": "strength and skill day",
     "power_development": "power day",
     "power_neural_priming": "neural priming day",
     "powerlifting_sbd": "squat, bench and deadlift day",
@@ -538,6 +567,16 @@ def _plan_session(code: str) -> _Labelled | None:
             return None
         return (
             f"Your plan's {slot} was not prescribed: {reason}.",
+            "plan_rule",
+            True,
+        )
+    if m := _PLAN_UNAVAILABLE.match(code):
+        slot = _PLAN_SLOTS.get(m["slug"])
+        if slot is None:
+            return None
+        return (
+            f"Your plan's {slot} can't be done with the equipment you listed, and no version "
+            "of it can, so nothing was prescribed in its place.",
             "plan_rule",
             True,
         )

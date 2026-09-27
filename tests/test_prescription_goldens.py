@@ -16,6 +16,7 @@ wording rather than prescription.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
@@ -26,14 +27,26 @@ from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
 GOLDEN_PATH = Path(__file__).parent / "data" / "prescription_goldens.json"
 
 
+def _plain(value):
+    """A JSON-stable form of a slot or circuit field (pydantic blocks, dataclasses, tuples)."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    if isinstance(value, (tuple, list)):
+        return [_plain(v) for v in value]
+    return value
+
+
 def _slot_shape(slot) -> dict:
-    """The part of an exercise slot that decides the work, not the wording."""
-    return {
-        "sets": getattr(slot, "sets", None),
-        "reps": getattr(slot, "reps", None),
-        "load_note": getattr(slot, "load_note", None),
-        "requirements": sorted(str(r) for r in getattr(slot, "requirements", ()) or ()),
-    }
+    """EVERY field of an exercise slot: what it selects (pattern, pin, load type, skill
+    target, rpe cap, endurance shape) decides the work as much as sets and reps do.
+
+    Phase 9 repair: this used to record sets, reps, load note and a ``requirements`` attribute
+    that ExerciseSlot does not have, so all 104 recorded slots showed ``[]`` and the selectors
+    were never pinned. Enumerated from the dataclass so a new field cannot slip past.
+    """
+    return {f.name: _plain(getattr(slot, f.name)) for f in dataclasses.fields(slot)}
 
 
 def _scoring_shape(template) -> dict | None:
@@ -64,6 +77,8 @@ def _corpus() -> dict[str, dict]:
                 "tags": sorted(getattr(template, "tags", ()) or ()),
                 "slot_count": len(slots),
                 "slots": [_slot_shape(s) for s in slots],
+                "workload_volume": getattr(template, "workload_volume", None),
+                "circuit": _plain(getattr(template, "circuit", None)),
                 "scoring": _scoring_shape(template),
             }
     return corpus
@@ -96,13 +111,6 @@ def test_the_corpus_covers_every_domain_the_engine_prescribes_for() -> None:
     assert corpus_domains == set(GOAL_TEMPLATE_LIBRARY)
 
 
-@pytest.mark.xfail(
-    reason="phases 7-9: 7 of 45 templates declare no exercise slots (e.g. "
-    "strength_volume; "
-    "the count is pinned by test_scoring_goldens.py), so the prescriber falls back to the "
-    "generic equipment map and prescribes Air Squat, Push-up, Lunges for them",
-    strict=True,
-)
 def test_every_template_prescribes_its_own_exercises() -> None:
     """A template that names no exercises cannot be the thing the athlete was promised."""
     slotless = sorted(key for key, entry in _corpus().items() if entry["slot_count"] == 0)
