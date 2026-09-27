@@ -267,14 +267,20 @@ def test_equipment_aware_exercises_fallback_to_bodyweight(catalog_snapshot):
 
 
 def test_equipment_aware_exercises_use_available_equipment(catalog_snapshot):
-    # Same empty-slot template (`hyp_maintenance`), but with a barbell available
-    # the equipment map supplies the barbell movement block.
+    # The equipment map serves only a caller with NO catalog (ADR-0072): with a barbell listed
+    # it supplies the barbell block. With the catalog, this fatigued athlete's winner is the
+    # Active Recovery readiness redirect, which is exercise-free, never Back Squat / RDL /
+    # Bench (tests/test_readiness_redirect_honest.py).
     s = _state(muscular=70.0)
-    rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=["barbell"],
+    pure = recommend_next_session(s, goal="Hypertrophy", available_equipment=["barbell"],
+        catalog=None,
+    )
+    assert [e.name for e in pure.exercises] == ["Back Squat", "Romanian Deadlift", "Bench Press"]
+    assert any("equipment:filtered" in c for c in (pure.why.constraints_applied if pure.why else []))
+    live = recommend_next_session(s, goal="Hypertrophy", available_equipment=["barbell"],
         catalog=catalog_snapshot,
     )
-    assert [e.name for e in rx.exercises] == ["Back Squat", "Romanian Deadlift", "Bench Press"]
-    assert any("equipment:filtered" in c for c in (rx.why.constraints_applied if rx.why else []))
+    assert not {e.name for e in live.exercises} & {"Back Squat", "Romanian Deadlift", "Bench Press"}
 
 
 # ---------------------------------------------------------------------------
@@ -320,13 +326,18 @@ def test_bodyweight_only_selects_differently_from_unconfigured(catalog_snapshot)
 
 def test_bodyweight_fallback_is_labelled_only_when_the_bodyweight_list_was_used(catalog_snapshot):
     """Configured equipment that matches no equipment-map key really does get the bodyweight list."""
-    # Elevated muscular fatigue: with only rings, no hypertrophy session is whole (9.4), and
-    # the slot-less readiness redirect is what runs the equipment map.
+    # The equipment map runs only without a catalog (ADR-0072), so that is where its labels
+    # are checked. With the catalog, the slot-less readiness redirect is exercise-free and
+    # carries no bodyweight-fallback label.
     s = _state(muscular=70.0)
     rx = recommend_next_session(s, goal="Hypertrophy", available_equipment=["rings"],
-        catalog=catalog_snapshot,
+        catalog=None,
     )
     assert _equipment_codes(rx) == ["equipment:fallback_bodyweight"]
+    live = recommend_next_session(s, goal="Hypertrophy", available_equipment=["rings"],
+        catalog=catalog_snapshot,
+    )
+    assert "equipment:fallback_bodyweight" not in _equipment_codes(live)
 
 
 # ---------------------------------------------------------------------------

@@ -962,8 +962,13 @@ def _select_exercises(
     The equipment codes describe the path that actually ran: the bodyweight fallback is
     reported only when the bodyweight list was used, never merely because nothing was set.
     """
-    if not exercise_slots or catalog is None:
+    # The generic equipment map is not an adaptation of anything (ADR-0072): it serves only a
+    # caller with no catalog loaded (pure logic). With a catalog, a candidate with no slots (a
+    # readiness redirect with no authored content) is exercise-free, never generic filler.
+    if not catalog:
         return _map_selection(available_equipment)
+    if not exercise_slots:
+        return _ExerciseSelection([], [])
 
     # An empty list means "never configured", which is NOT "owns nothing" — see
     # exercise_slot.equipment_available. Only a populated list filters.
@@ -1013,6 +1018,38 @@ def _select_exercises(
         changes,
         tuple(chosen_slots),
     )
+
+
+#: Readiness redirects are not library templates and carry no slots (ADR-0072). Where AUTHORED
+#: library content has the redirect's exact intent, the redirect is prescribed with it, in
+#: preference order (the primary, then its kit variant). Only one redirect has such content:
+#: "Jumps / Throws (Low Volume, Long Rest)" is power_neural_prime's own focus. The other
+#: redirects have none, so they are exercise-free: their focus is the instruction, as the
+#: safety overrides' already is. Nothing is invented and nothing generic is listed.
+_REDIRECT_CONTENT: dict[str, tuple[str, ...]] = {
+    "readiness_peripheral_neural_priming": ("power_neural_prime", "power_neural_prime_jumps"),
+}
+
+
+def _redirect_or_template_slots(
+    candidate: SessionCandidate,
+    catalog: list[CatalogExercise] | None,
+    available_equipment: Sequence[str] | None,
+) -> list[ExerciseSlot]:
+    """The slots the winning candidate is prescribed with.
+
+    A template's own slots; for a readiness redirect, the first authored template with its
+    exact intent that the athlete can do whole (``_REDIRECT_CONTENT``); otherwise none.
+    """
+    if candidate.exercise_slots:
+        return list(candidate.exercise_slots)
+    for branch in _REDIRECT_CONTENT.get(candidate.branch_id, ()):
+        t = template_by_branch(branch)
+        if t is not None and template_resolves(
+            t.exercise_slots, t.circuit, catalog, available_equipment
+        ):
+            return list(t.exercise_slots)
+    return []
 
 
 def _exercise_list_for_candidate(
@@ -1532,8 +1569,9 @@ def _recommend_next_session(
     # Goal-specific exercise payload — prefer the winning template's
     # exercise_slots; equipment map (with bodyweight fallback) only applies
     # when the template doesn't specify slots.
+    winner_slots = _redirect_or_template_slots(scored[0], catalog, available_equipment)
     selection = _select_exercises(
-        scored[0].exercise_slots,
+        winner_slots,
         available_equipment,
         catalog,
         active_weak_points,
