@@ -163,7 +163,7 @@ def test_v1_carries_the_proxy_and_labels_it() -> None:
 
     assert dose.density_basis == "prescribed_timed_work_over_elapsed"
     assert dose.density_value == pytest.approx(20 / 30)
-    assert dose.dose_model_version == "v1.1"
+    assert dose.dose_model_version == "v1.2"
 
 
 # ── calibration policy, encoded now ──────────────────────────────────────────
