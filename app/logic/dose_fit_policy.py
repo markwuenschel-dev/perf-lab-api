@@ -90,8 +90,13 @@ def is_seeded_email(email: str | None) -> bool:
 MIN_SESSION_GAP_DAYS = 1
 #: Beyond this gap the residual fatigue has cleared and the next RPE says nothing about today.
 MAX_SESSION_GAP_DAYS = 4
-#: Earlier sessions needed before an athlete's baseline is usable.
-#: [assumed] 3: the smallest mean that is not dominated by one session. Versioned with the policy.
+#: Minimum 3 strictly prior sessions required to construct the causal athlete baseline.
+#: This is an ENGINEERING FLOOR, not an empirically validated reliability threshold: it only
+#: stops a label being centred on one or two observations. How reliable a person-mean is
+#: depends on the number of observations AND within-athlete variance (ICC), not on a universal
+#: cutoff. Reassess from observed within-athlete variance before 8B fitting (compare baseline
+#: stability at 3 / 5 / 10+ prior sessions). Part of FIT_POLICY_VERSION, so changing it can
+#: never silently re-validate an existing artifact.
 MIN_PRIOR_SESSIONS = 3
 #: Held-out athletes with fewer labelled pairs than this are "sparse" in evaluation
 #: (``app/ml/dose_calibration/evaluate.py``). The census reports how many athletes clear it.

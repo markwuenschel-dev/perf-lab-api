@@ -58,8 +58,17 @@ none could be met, and the pass criterion is set when there is data to judge it 
 ### The label is causal
 
 The label is the next session's RPE (1–4 whole days later) minus the athlete's mean RPE over
-sessions strictly **before** this one, with at least 3 of them. A session without that
-history has no label. It never borrows from the future.
+sessions strictly **before** this one. A session without that history has no label. It never
+borrows from the future.
+
+**Minimum 3 strictly prior sessions are required to construct the causal athlete baseline.**
+This is an engineering floor, not an empirically validated reliability threshold. How
+reliable a person-mean is depends jointly on the number of observations and within-athlete
+variance, and no universal cutoff applies. Reassess it from observed within-athlete variance
+before 8B fitting by comparing baseline stability at 3, 5 and 10+ prior sessions.
+Raising it now would only swap in another arbitrary number and discard the first usable
+data. It is part of `fit-policy-1`, so changing it can never silently re-validate an
+existing artifact.
 
 Centring on the whole trajectory would give a held-out athlete's future RPEs to the
 evaluation. Holding out whole athletes does not remove that optimism.
@@ -109,8 +118,10 @@ The parameters come only from the verified bytes.
 
 ## Known limits, recorded rather than assumed away
 
-- **C1: the other five axes still move with duration at fixed work.** The C2b fix makes the
-  *density* axis depend on elapsed time only through Δ. Volume, intensity, impact, skill and
+- **C1: the other five axes still move with duration at fixed work.** The v1.2 claim is
+  exactly this: relative to v1.1, only the density axis formulation changed, and at fixed
+  work the density axis does not increase with elapsed time, subject to clamping. The C2b
+  fix makes it depend on elapsed time only through Δ. Volume, intensity, impact, skill and
   metabolic still carry `log1p(V)`, whose volume proxy includes duration, and `Δ^β`. They are
   bit-identical to v1.1. Making them duration-invariant is backlog item C1, a separate
   dose-law question, not claimed here.
