@@ -165,6 +165,7 @@ def test_the_manifest_names_every_version_and_fingerprints_the_rows() -> None:
     assert m["feature_schema_version"] == FEATURE_SCHEMA_VERSION
     assert m["pairing_rule"]["baseline"] == "mean_rpe_of_strictly_earlier_sessions"
     assert m["split_unit"] == GROUP_COLUMN
+    assert m["split"] == "athlete_grouped"
     assert (m["n_rows"], m["n_athletes"]) == (3, 1)
     assert m["recompute_fidelity"]["n"] == 3
 

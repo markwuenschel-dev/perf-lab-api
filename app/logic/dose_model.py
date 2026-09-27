@@ -17,12 +17,18 @@ gates production.
 
 Activation is therefore keyed on a CALIBRATION IDENTIFIER, not on a boolean flag: a model with
 no calibration cannot be selected for production even if someone points the setting at it.
+Since phase 8.5 the identifier must also name a committed artifact that passes every check in
+``app/logic/dose_calibration_artifact.py`` (sha256, versions, real data, athlete-grouped
+held-out validation). A non-empty string is no longer enough.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from app.engine.parameters import EngineParameters
 
 
 class DoseModelStatus(Enum):
@@ -50,6 +56,10 @@ class DoseModel:
     calibration: str | None
     module: str
     note: str = ""
+    #: The committed calibration artifact (under app/engine/param_overrides/) and the sha256
+    #: its bytes must hash to. Both are required for any model except the legacy v0.
+    calibration_artifact: str | None = None
+    calibration_sha256: str | None = None
 
     @property
     def is_calibrated(self) -> bool:
@@ -89,12 +99,28 @@ DOSE_MODELS: dict[str, DoseModel] = {
 PRODUCTION_DOSE_MODEL = "v0"
 
 
-def select_production_dose_model(name: str | None = None) -> DoseModel:
-    """The dose model allowed to drive state and recommendations.
+#: The one model allowed to be production without a calibration artifact: v0, whose
+#: coefficients predate the artifact gate and which is retained for replay. Exact pair only.
+LEGACY_CALIBRATIONS: dict[str, str] = {"v0": "legacy_v0"}
+
+
+@dataclass(frozen=True)
+class ProductionDoseModel:
+    model: DoseModel
+    #: The parameters the model runs with: ``None`` for the legacy v0 (engine defaults, as
+    #: always), otherwise parsed from the exact artifact bytes that passed the checks.
+    parameters: EngineParameters | None
+    calibration_sha256: str | None
+
+
+def resolve_production_dose_model(name: str | None = None) -> ProductionDoseModel:
+    """The dose model allowed to drive state and recommendations, with its parameters.
 
     Refuses an uncalibrated model even when explicitly asked for it. A semantically correct
     predictor with inherited coefficients is not a better model — it is an unvalidated one
-    wearing the old model's parameters.
+    wearing the old model's parameters. Any model but the legacy v0 must also carry a
+    calibration artifact that passes ``verify_calibration_artifact``; the first failed check
+    is named in the error.
     """
     key = name or PRODUCTION_DOSE_MODEL
     try:
@@ -111,7 +137,26 @@ def select_production_dose_model(name: str | None = None) -> DoseModel:
         raise UncalibratedModelError(
             f"dose model {model.name!r} is marked experimental and cannot be production."
         )
-    return model
+    if LEGACY_CALIBRATIONS.get(model.name) == model.calibration:
+        return ProductionDoseModel(model=model, parameters=None, calibration_sha256=None)
+
+    from app.logic.dose_calibration_artifact import (
+        CalibrationArtifactError,
+        verify_calibration_artifact,
+    )
+
+    try:
+        verified = verify_calibration_artifact(model)
+    except CalibrationArtifactError as e:
+        raise UncalibratedModelError(str(e)) from e
+    return ProductionDoseModel(
+        model=model, parameters=verified.parameters, calibration_sha256=verified.sha256
+    )
+
+
+def select_production_dose_model(name: str | None = None) -> DoseModel:
+    """The production dose model; see :func:`resolve_production_dose_model` for the checks."""
+    return resolve_production_dose_model(name).model
 
 
 # --- What a density value was measured from -----------------------------------------

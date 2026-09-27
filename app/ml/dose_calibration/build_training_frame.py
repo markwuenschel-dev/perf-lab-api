@@ -47,12 +47,19 @@ import pandas as pd
 from app.engine.parameters import EngineParameters, default_parameters
 from app.logic import dose_engine_v1
 from app.logic.dose_fit_policy import (
+    DATA_SOURCE_SEEDED,
+    DATA_SOURCE_SHADOW,
+    FEATURE_SCHEMA_VERSION,
     FIT_POLICY_VERSION,
+    VALIDATION_SPLIT,
     LoggedSession,
     fit_tier,
     is_seeded_email,
     pair_sessions,
     pairing_rule,
+)
+from app.logic.dose_fit_policy import (
+    DATA_SOURCE_SYNTHETIC as DATA_SOURCE_SYNTHETIC,  # re-exported for the pipeline
 )
 from app.ml.common.splits import grouped_time_split as _grouped_time_split
 from app.schemas.workouts import WorkoutLog
@@ -60,22 +67,12 @@ from app.schemas.workouts import WorkoutLog
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-#: Bump on ANY change to what a frame row contains or how a feature is computed.
-#: 1 (implicit, before phase 8): v0 doses, fabricated set fallback, full-trajectory demeaned
-#: label, features z-scored over the whole frame. 2: v1 doses, reported sets only, causal
-#: label from the fit policy, raw features standardized at fit time.
-FEATURE_SCHEMA_VERSION = "dose-features-2"
-
 GROUP_COLUMN = "user_id"
 SESSION_ID_COLUMN = "workout_log_id"
 LABEL_COLUMN = "label"
 DOSE_COLUMN = "modeled_dose_default"
 #: The v1 total recorded at ingest (shadow rows only), to measure recompute fidelity.
 INGEST_DOSE_COLUMN = "v1_dose_ingest"
-
-DATA_SOURCE_SHADOW = "dose_model_shadow_log"
-DATA_SOURCE_SEEDED = "seeded"
-DATA_SOURCE_SYNTHETIC = "synthetic"
 
 # The volume-proxy components the ``dose_volume_weights`` act on, and the weight each maps
 # to. These are the model features; a learned coefficient on a component becomes a weak
@@ -407,6 +404,7 @@ def build_shadow_frame(
         "fit_policy_version": FIT_POLICY_VERSION,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "pairing_rule": pairing_rule(),
+        "split": VALIDATION_SPLIT,
         "split_unit": GROUP_COLUMN,
         "n_rows": int(len(frame)),
         "n_athletes": int(frame[GROUP_COLUMN].nunique()) if len(frame) else 0,

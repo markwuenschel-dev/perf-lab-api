@@ -26,6 +26,22 @@ from app.logic.dose_model import density_fit_eligible
 #: Bump on ANY change to the rules in this module.
 FIT_POLICY_VERSION = "fit-policy-1"
 
+#: What a training-frame row contains and how its features are computed
+#: (``app/ml/dose_calibration/build_training_frame.py``). Declared here, in pure Python, so the
+#: activation gate can check it in the production image, which has no pandas.
+#: 1 (implicit, before phase 8): v0 doses, fabricated set fallback, full-trajectory demeaned
+#: label, features z-scored over the whole frame. 2: v1 doses, reported sets only, causal
+#: label from this policy, raw features standardized at fit time.
+FEATURE_SCHEMA_VERSION = "dose-features-2"
+
+#: Where a frame's rows came from. Only the first may ever be activated.
+DATA_SOURCE_SHADOW = "dose_model_shadow_log"
+DATA_SOURCE_SEEDED = "seeded"
+DATA_SOURCE_SYNTHETIC = "synthetic"
+
+#: The only validation split an activatable artifact may report: whole athletes held out.
+VALIDATION_SPLIT = "athlete_grouped"
+
 # --- Which rows a fit may learn from ------------------------------------------------------
 
 FitTier = Literal[

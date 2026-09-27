@@ -18,21 +18,29 @@ Here the pin is enforced by construction:
   the declared shadow/replay/calibration paths imports a versioned engine's
   ``calculate_stress_dose`` directly.
 
-Paths that intentionally pin a specific version — replay of stored history, calibration
-frames fitted under v0, the v1 shadow capture — keep importing that version explicitly, each
-with its reason stated in place.
+Paths that intentionally pin a specific version — replay of stored history, the v1
+calibration frame, the v1 shadow capture — keep importing that version explicitly, each with
+its reason stated in place.
 """
 from __future__ import annotations
 
+from functools import partial
 from importlib import import_module
 
-from app.logic.dose_model import select_production_dose_model
+from app.logic.dose_model import resolve_production_dose_model
 
-_PRODUCTION = select_production_dose_model()
+_RESOLVED = resolve_production_dose_model()
+_PRODUCTION = _RESOLVED.model
 _ENGINE = import_module(_PRODUCTION.module)
 
 #: Which dose model production is computing with. Identical to the ``dose_model_version``
 #: every production dose records, and checked against it in tests.
 PRODUCTION_DOSE_MODEL_NAME: str = _PRODUCTION.name
 
-calculate_stress_dose = _ENGINE.calculate_stress_dose
+# The legacy v0 runs on engine defaults, exactly as before the artifact gate. An activated
+# model runs ONLY with the parameters parsed from its verified artifact's bytes.
+calculate_stress_dose = (
+    _ENGINE.calculate_stress_dose
+    if _RESOLVED.parameters is None
+    else partial(_ENGINE.calculate_stress_dose, params=_RESOLVED.parameters)
+)

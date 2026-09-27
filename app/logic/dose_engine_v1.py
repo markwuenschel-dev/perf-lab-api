@@ -28,8 +28,9 @@ existing floor/cap keep their meaning.
 
 **The fitted parameters do NOT carry over.** ``dose_beta`` was set against ``minutes_per_set``;
 replacing ``x`` with ``1/x`` is not a sign flip, it changes the response surface nonlinearly.
-The exponent and every density-dependent coefficient must be re-fit (phase 8), and
-``app/engine/parameter_overrides.py`` refuses to apply a v0-fitted dose artifact here.
+The exponent and every density-dependent coefficient must be re-fit (phase 8). Activation
+(``app/logic/dose_calibration_artifact.py``) refuses any artifact whose receipt was not fitted
+for ``DOSE_MODEL_VERSION``, so a v0-fitted (or v1.1-fitted) artifact cannot run here.
 
 **v0 is not deleted.** It stays frozen so historical states remain reproducible under the
 engine that produced them; only new dose computations use this module.
@@ -343,6 +344,10 @@ WORK_PER_TIME_DENSITY = DoseVariables(
     volume_sets=reported_volume_sets,
     density_axis_volume=work_volume_component,
 )
+
+
+#: The version this module computes; the activation gate compares an artifact's receipt to it.
+DOSE_MODEL_VERSION: str = WORK_PER_TIME_DENSITY.version
 
 
 def calculate_stress_dose(

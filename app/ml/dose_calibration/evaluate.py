@@ -110,6 +110,17 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
     There is no way to pass in a prior trained elsewhere: one trained on the whole frame has
     seen the held-out athletes, and its "held-out" error would be a training error.
     """
+    return evaluate_and_fit(frame, holdout_frac=holdout_frac)[0]
+
+
+def evaluate_and_fit(
+    frame: pd.DataFrame, *, holdout_frac: float = 0.25
+) -> tuple[EvalReport, dict[str, Any]]:
+    """:func:`evaluate`, also returning the prior it scored: fitted on held-in athletes only.
+
+    That prior, not a refit on every athlete, is what a calibration artifact may carry: its
+    held-out result is the evidence for exactly those coefficients.
+    """
     from app.engine.parameter_overrides import apply_parameter_overrides
 
     train_df, test_df = grouped_time_split(frame, holdout_frac=holdout_frac)
@@ -144,7 +155,7 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
     if saturation_fraction > MAX_SATURATION_FRACTION:
         reasons.append(f"saturation {saturation_fraction:.3f} > {MAX_SATURATION_FRACTION}")
 
-    return EvalReport(
+    report = EvalReport(
         n_train_rows=len(train_df),
         n_train_athletes=int(train_df[GROUP_COLUMN].nunique()),
         n_test_rows=len(test_df),
@@ -157,6 +168,7 @@ def evaluate(frame: pd.DataFrame, *, holdout_frac: float = 0.25) -> EvalReport:
         verdict="promote" if not reasons else "stay_shadow",
         reasons=reasons,
     )
+    return report, artifact
 
 
 def main() -> None:
