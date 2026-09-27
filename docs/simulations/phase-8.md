@@ -137,6 +137,55 @@ The parameters come only from the verified bytes.
   improvement, the sparse-athlete subgroup and the saturation fraction. None of them is a
   data-size floor. The receipt records the counts, and the floor is set when 8B has data.
 
-## Census after the phase-8 deploy
+## Census after the phase-8 deploy (EC2, 2026-09-27)
 
-Not deployed yet. Append the re-run census here after the release.
+Release `0954223` (PR #254, a two-parent merge of `c29daf9` and `a5596c0`) was deployed with
+`./scripts/deploy.sh 09542230d58ab86109597e184803e05e542aebd3`:
+
+- the box's source is at `0954223`, clean;
+- the schema is at `a047_dose_shadow_context` (head);
+- external `/ping` returns 200, and so does internal `/ping`;
+- the image carries `APP_BUILD_SHA=09542230…`;
+- `PRESCRIPTION_ENGINE_VERSION` is still `v0.6`, and the shadow `DOSE_MODEL_VERSION` is now `v1.2`.
+
+**Landed census** (`python -m app.scripts.dose_shadow_report --json` in the container):
+
+| | real | seeded |
+|---|---|---|
+| rows | 1 | 0 |
+| athletes | 1 | 0 |
+| rows by `v1_model_version` | `v1`: 1 (pre-release) · `v1.2`: 0 | — |
+| fit tier | eligible 1 | — |
+| labelled pairs | **0** (the one row has no next session) | 0 |
+| athletes with ≥ 2 / 3 / 5 / 10 eligible sessions | 0 / 0 / 0 / 0 | — |
+| athletes that can be held out | 0 | 0 |
+
+The null rates are 1.0 for `code_version`, `experience_level`, `workload_preference`,
+`prescription_branch` and planned domain/category. The one existing row predates both the
+build-SHA plumbing and a047.
+
+**New rows carry the provenance.** One workout was pushed through the real
+`process_new_workout` on production, inside an outer transaction that was then rolled back.
+The session committed only to savepoints, and the one service that opens its own session
+was stubbed out. The row it wrote:
+
+| field | value |
+|---|---|
+| `code_version` | `09542230d58ab86109597e184803e05e542aebd3` |
+| `v1_model_version` | `v1.2` |
+| `v1_density_basis` | `sets_per_elapsed_minute` |
+| `experience_level` | `intermediate` |
+| `workload_preference` | `medium`, with `workload_preference_defaulted = true` |
+| `prescription_branch` | `strength_max` |
+| `decision_impact` | `none_shadow_only` |
+
+A fresh connection then showed nothing had persisted. Before and after: 1 shadow row and
+2 users. The probe account `demo+phase8-postdeploy@perflab.local` was absent.
+
+**Activation is still refused.** `select_production_dose_model("v1")` raises
+`UncalibratedModelError` (experimental, no calibration identifier). Production resolves to v0
+on engine defaults, and the facade is v0's own function.
+
+**Reading.** Zero usable pairs is not a failed phase 8. The collection machinery is ready:
+build identity, capture context and the census are all live. 8B is blocked by the absence of
+representative longitudinal data, not by missing infrastructure.
