@@ -95,3 +95,86 @@ def test_accessory_focus_prescribes_its_variety_session_when_eligible(catalog) -
     variety = next(t for t in GOAL_TEMPLATE_LIBRARY["strength"] if t.branch_id == "strength_variety")
     names = {r.chosen.name for r in resolve_slots(list(variety.exercise_slots), catalog) if r.chosen}
     assert names == {"Box Squat", "Trap Bar Deadlift", "Med Ball Slam"}
+
+
+# ── phase 9.2: the three unbound slot-less templates ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("pool", "branch", "expected"),
+    [
+        ("strength", "strength_skill_acq", {"Goblet Squat": (3, "8"), "Box Squat": (3, "5")}),
+        ("weightlifting", "wl_strength_pulls",
+         {"Snatch Pull": (4, "4"), "Deficit Deadlift": (4, "4")}),
+        ("grip", "grip_recovery",
+         {"Wrist Mobility Circles": (2, "15"), "Finger Extensor Opening": (2, "20")}),
+    ],
+)
+def test_an_unbound_template_names_its_own_movements(catalog, pool, branch, expected) -> None:
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+    from app.logic.exercise_slot import resolve_slots
+
+    template = next(t for t in GOAL_TEMPLATE_LIBRARY[pool] if t.branch_id == branch)
+    resolved = {
+        r.chosen.name: (int(r.slot.sets), r.slot.reps)
+        for r in resolve_slots(list(template.exercise_slots), catalog) if r.chosen
+    }
+    assert resolved == expected
+
+
+def test_grip_recovery_needs_no_equipment(catalog) -> None:
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+    from app.logic.exercise_slot import resolve_slots
+
+    template = next(t for t in GOAL_TEMPLATE_LIBRARY["grip"] if t.branch_id == "grip_recovery")
+    res = resolve_slots(list(template.exercise_slots), catalog,
+                        available_equipment=frozenset({"bodyweight"}))
+    assert all(r.chosen is not None for r in res)
+
+
+def test_the_goblet_squat_tempo_is_carried_in_the_load_note() -> None:
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+
+    template = next(t for t in GOAL_TEMPLATE_LIBRARY["strength"] if t.branch_id == "strength_skill_acq")
+    assert "3-1-1" in (template.exercise_slots[0].load_note or "")
+
+
+def test_new_mobility_rows_cannot_leak_into_other_selectors(catalog) -> None:
+    """The wrist and finger rows use their own ``mobility`` pattern, which no slot selects by
+    pattern, so no other session can pick them up."""
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+
+    patterns = {s.movement_pattern for pool in GOAL_TEMPLATE_LIBRARY.values()
+                for t in pool for s in (t.exercise_slots or [])}
+    assert "mobility" not in patterns
+    rows = [c for c in catalog if c.name in {"Wrist Mobility Circles", "Finger Extensor Opening"}]
+    assert {c.movement_pattern for c in rows} == {"mobility"}
+
+
+def test_phase_9_catalog_rows_are_chosen_only_by_the_templates_that_pin_them(catalog) -> None:
+    """A new row must not change another session by out-ranking an existing movement.
+
+    As "Power", Snatch Pull out-ranked Hang Power Clean in power_main (simpler first) and
+    silently changed that session; it is a Strength row for that reason.
+    """
+    from app.logic.candidate_library import GOAL_TEMPLATE_LIBRARY
+    from app.logic.exercise_slot import resolve_slots
+    from app.logic.kit_support import KITS
+    from app.scripts.kit_matrix import kit_equipment
+
+    owners = {
+        "Med Ball Chest Pass": {"power_neural_prime"},
+        "Snatch Pull": {"wl_strength_pulls"},
+        "Wrist Mobility Circles": {"grip_recovery"},
+        "Finger Extensor Opening": {"grip_recovery"},
+    }
+    chosen_by: dict[str, set[str]] = {name: set() for name in owners}
+    for pool in GOAL_TEMPLATE_LIBRARY.values():
+        for t in pool:
+            for kit in KITS:
+                eq = kit_equipment(kit, catalog)
+                for r in resolve_slots(list(t.exercise_slots or []), catalog,
+                                       available_equipment=frozenset(eq) if eq else None):
+                    if r.chosen is not None and r.chosen.name in owners:
+                        chosen_by[r.chosen.name].add(t.branch_id)
+    assert chosen_by == owners

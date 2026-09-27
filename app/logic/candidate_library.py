@@ -307,6 +307,14 @@ STRENGTH_TEMPLATES: list[CandidateTemplate] = [
         tags=["squat_pattern", "barbell_technique"],
         domain="strength",
         state_eligible=lambda s: s.skill_state.get("squat", 0.0) < 0.55,
+        # Phase 9.2: the focus text, encoded. Goblet Squat 3x8 at tempo 3-1-1 is the text;
+        # Box Squat 3x5 for technique is AUTHORED (the text names the movement only).
+        exercise_slots=[
+            ExerciseSlot(sets="3", reps="8", exercise="Goblet Squat",
+                         load_note="Tempo 3-1-1: 3 s down, 1 s pause, 1 s up"),
+            ExerciseSlot(sets="3", reps="5", exercise="Box Squat",
+                         load_note="Technique: light load, sit back to the box"),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: 0.9,
             fatigue_axis="cns",
@@ -625,6 +633,12 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.75,
         tags=["hip_hinge", "posterior_chain"],
         domain="weightlifting",
+        # Phase 9.2: the focus text, encoded. Snatch Pull + Deficit Deadlift 4x4 capped at
+        # RPE 7 (a new catalog row for the snatch pull).
+        exercise_slots=[
+            ExerciseSlot(sets="4", reps="4", exercise="Snatch Pull", rpe_cap=7.0),
+            ExerciseSlot(sets="4", reps="4", exercise="Deficit Deadlift", rpe_cap=7.0),
+        ],
         scoring=ScoringSpec(
             state_fit=lambda s, r: r,
             fatigue_axes=(("muscular", 1.0), ("cns", 0.5)), tissue_axes=("lumbar",),
@@ -1357,6 +1371,13 @@ GRIP_TEMPLATES: list[CandidateTemplate] = [
         goal_alignment=0.5,
         tags=[],
         domain="grip",
+        # Phase 9.2: the focus text, encoded, with no equipment: wrist mobility and finger
+        # extensor opening (the rehab counter to flexor-dominant grip work). Two new catalog
+        # rows. 2x15 and 2x20 are AUTHORED.
+        exercise_slots=[
+            ExerciseSlot(sets="2", reps="15", exercise="Wrist Mobility Circles"),
+            ExerciseSlot(sets="2", reps="20", exercise="Finger Extensor Opening"),
+        ],
         scoring=ScoringSpec(
             # Clamped to the declared 0-1 range; the +0.3 recovery preference used to push
             # it to 1.3 on a fresh grip, outscoring every correctly-bounded template.

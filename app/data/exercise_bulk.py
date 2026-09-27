@@ -360,6 +360,10 @@ def bulk_exercises() -> list[dict[str, Any]]:
     prehab: list[_VariantRow] = [
         ("Cossack Squat", "Strength", "single_leg", ["adductors", "quads"], ["glutes"], [], "bodyweight", 0.52, 0.3, ["hip_mobility", "squat_pattern"]),
         ("90/90 Hip Switch", "Strength", "core", ["hip_flexors", "adductors"], [], [], "time", 0.3, 0.1, ["hip_mobility"]),
+        # Phase 9.2: no-equipment grip recovery. Their own "mobility" pattern, which no slot
+        # selects by pattern, so no other session can pick them up.
+        ("Wrist Mobility Circles", "Strength", "mobility", ["forearms"], [], [], "reps", 0.1, 0.05, ["mobility", "grip_recovery"]),
+        ("Finger Extensor Opening", "Strength", "mobility", ["fingers", "forearms"], [], [], "reps", 0.1, 0.05, ["mobility", "grip_recovery"]),
         ("Jefferson Curl", "Strength", "hinge", ["hamstrings", "erectors"], [], [], "bodyweight", 0.55, 0.35, ["posterior_chain", "hip_hinge"]),
         ("Tibialis Raise", "Hypertrophy", "single_leg", ["tibialis_anterior"], [], [], "bodyweight", 0.2, 0.15, ["running_economy", "structural"]),
         ("Single-Leg Calf Raise (Loaded)", "Hypertrophy", "single_leg", ["calves"], [], [], "bodyweight", 0.25, 0.3, ["running_economy", "structural"], False, None, True),
@@ -524,6 +528,10 @@ def bulk_exercises() -> list[dict[str, Any]]:
         ("Pendlay Row", "Strength", "pull_horizontal", ["upper_back", "lats"], ["biceps", "erectors"], ["barbell"], "barbell", 0.55, 0.45, ["pull_horizontal", "posterior_chain"], []),
         ("Sandbag Lunges", "Strength", "single_leg", ["quads", "glutes"], ["core"], ["sandbag"], "bodyweight", 0.45, 0.5, ["single_leg", "hyrox"], ["hyrox"], True),
         ("Sumo Deadlift High Pull", "Strength", "hinge", ["hamstrings", "glutes", "traps"], ["shoulders"], ["barbell"], "barbell", 0.55, 0.55, ["hip_hinge", "posterior_chain"], []),
+        # Phase 9.2: the snatch-grip pull to full extension, for the Strength Pulls day. Strength
+        # modality on purpose: as "Power" it out-ranked Hang Power Clean in power_main (simpler
+        # first) and silently changed that session.
+        ("Snatch Pull", "Strength", "hinge", ["hamstrings", "glutes", "traps"], ["erectors", "forearms"], ["barbell"], "barbell", 0.6, 0.5, ["weightlifting", "hip_hinge", "posterior_chain"], ["weightlifting"]),
         ("Wall Sit", "Strength", "squat", ["quads"], ["glutes"], [], "time", 0.15, 0.15, ["squat_pattern"], []),
     ]
     for name, mod, mp, p, s, eq, lt, sk, im, tags, sd, *rest in strength_vocab:

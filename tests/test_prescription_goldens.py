@@ -111,13 +111,6 @@ def test_the_corpus_covers_every_domain_the_engine_prescribes_for() -> None:
     assert corpus_domains == set(GOAL_TEMPLATE_LIBRARY)
 
 
-@pytest.mark.xfail(
-    reason="phase 9.2: 3 of 45 templates declare no exercise slots (e.g. "
-    "wl_strength_pulls; "
-    "the count is pinned by test_scoring_goldens.py), so the prescriber falls back to the "
-    "generic equipment map and prescribes Air Squat, Push-up, Lunges for them",
-    strict=True,
-)
 def test_every_template_prescribes_its_own_exercises() -> None:
     """A template that names no exercises cannot be the thing the athlete was promised."""
     slotless = sorted(key for key, entry in _corpus().items() if entry["slot_count"] == 0)
