@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import CanonicalStateInvalid, normalize_decode_error
 from app.engine.engine_state_codec import EngineStateDecodeError
 from app.logic.constraint_engine import overall_readiness
+from app.logic.prescription_evidence import utc_naive
 from app.logic.wellness_registry import (
     WELLNESS_SIGNAL_REGISTRY,
     coverage_signals,
@@ -416,6 +417,10 @@ async def upsert_wellness_sample(
     so ``created_at`` is preserved exactly as the old in-place update did.
     """
     fields = payload.model_dump(exclude={"date", "source"})
+    # measured_at is stored as naive UTC. An external client (a phone automation, a
+    # provider) sends an offset; convert it rather than fail the insert.
+    if fields.get("measured_at") is not None:
+        fields["measured_at"] = utc_naive(fields["measured_at"])
     stmt = (
         pg_insert(WellnessSample)
         .values(user_id=user_id, date=payload.date, source=payload.source, **fields)

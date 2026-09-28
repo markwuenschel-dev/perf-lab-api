@@ -173,7 +173,7 @@ async def _activity(db: AsyncSession, user_ids: set[int]) -> dict[int, dict[str,
     """Aggregate recent-activity indicators only. No athlete content is read."""
     if not user_ids:
         return {}
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)  # logged_at is naive UTC
     d30, d90 = now - timedelta(days=30), now - timedelta(days=90)
     out: dict[int, dict[str, Any]] = defaultdict(
         lambda: {"workouts_30d": 0, "workouts_90d": 0, "benchmarks_90d": 0, "last_activity": None}
