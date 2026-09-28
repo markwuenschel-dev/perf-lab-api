@@ -3002,6 +3002,110 @@
         "title": "HumanFactorInput",
         "type": "object"
       },
+      "IngestTokenCreate": {
+        "properties": {
+          "label": {
+            "default": "Apple Watch",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "title": "IngestTokenCreate",
+        "type": "object"
+      },
+      "IngestTokenCreated": {
+        "description": "Returned once, at creation: the only time the plaintext ``token`` is ever shown.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "token_prefix": {
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "token_prefix",
+          "created_at",
+          "last_used_at",
+          "token"
+        ],
+        "title": "IngestTokenCreated",
+        "type": "object"
+      },
+      "IngestTokenOut": {
+        "description": "An ingest token as listed: never the secret. ``last_used_at`` is the last successful sync.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "token_prefix": {
+            "title": "Token Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "token_prefix",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "IngestTokenOut",
+        "type": "object"
+      },
       "IntensityContribution": {
         "description": "One exercise's contribution to the session external intensity (ADR-0039).\n\nCarries the intensity value **and its provenance** so the dose is auditable: the\ne1RM denominator that produced a ``relative_load`` reading (value + semantics +\nthe observation it came from), which ladder rung was taken, and the aggregation\nweight (``w = reps \u00b7 load``).",
         "properties": {
@@ -7541,6 +7645,98 @@
         "title": "WeeklyTemplateSlot",
         "type": "object"
       },
+      "WellnessIngestIn": {
+        "additionalProperties": false,
+        "description": "One day's device readings pushed from the athlete's phone (an iOS Shortcut today).\n\nDevice-measured signals only: a phone automation has no business reporting how sore the\nathlete feels. Idempotent on (athlete, date, source), so a retrying automation replaces\nthe day's row instead of adding one.",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The day the readings belong to. Omitted: today (UTC), as readiness counts days.",
+            "title": "Date"
+          },
+          "hrv_metric": {
+            "default": "sdnn",
+            "description": "Apple Watch reports SDNN; never averaged with rMSSD.",
+            "enum": [
+              "rmssd",
+              "sdnn"
+            ],
+            "title": "Hrv Metric",
+            "type": "string"
+          },
+          "hrv_ms": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hrv Ms"
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the readings were taken. Any offset is converted to UTC.",
+            "title": "Measured At"
+          },
+          "resting_hr": {
+            "anyOf": [
+              {
+                "maximum": 250.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resting Hr"
+          },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "maximum": 24.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
+          "source": {
+            "const": "apple_watch",
+            "description": "The pushing device. Ranks below a cloud-synced device on the same day.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "WellnessIngestIn",
+        "type": "object"
+      },
       "WellnessSampleIn": {
         "description": "One acute daily-wellness reading to ingest (manual entry or provider pull).",
         "properties": {
@@ -8479,6 +8675,10 @@
       }
     },
     "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      },
       "OAuth2PasswordBearer": {
         "flows": {
           "password": {
@@ -10973,6 +11173,166 @@
           }
         ],
         "summary": "Ingest Wellness",
+        "tags": [
+          "Wellness"
+        ]
+      }
+    },
+    "/v1/wellness/ingest": {
+      "post": {
+        "operationId": "ingest_pushed_wellness_v1_wellness_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WellnessIngestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WellnessSampleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest Pushed Wellness",
+        "tags": [
+          "Wellness"
+        ]
+      }
+    },
+    "/v1/wellness/ingest-tokens": {
+      "get": {
+        "operationId": "list_ingest_tokens_v1_wellness_ingest_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IngestTokenOut"
+                  },
+                  "title": "Response List Ingest Tokens V1 Wellness Ingest Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Ingest Tokens",
+        "tags": [
+          "Wellness"
+        ]
+      },
+      "post": {
+        "operationId": "create_ingest_token_v1_wellness_ingest_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestTokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Ingest Token",
+        "tags": [
+          "Wellness"
+        ]
+      }
+    },
+    "/v1/wellness/ingest-tokens/{token_id}": {
+      "delete": {
+        "operationId": "revoke_ingest_token_v1_wellness_ingest_tokens__token_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token_id",
+            "required": true,
+            "schema": {
+              "title": "Token Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Revoke Ingest Token",
         "tags": [
           "Wellness"
         ]

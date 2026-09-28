@@ -22,6 +22,7 @@ import { CANONICAL_LIFTS } from "./canonicalLifts";
 import { goalChipsView } from "./goalChipsView";
 import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
 import { ouraRedirectResult, parseServerUtc } from "../wearableSync";
+import { AppleHealthCard } from "./AppleHealthCard";
 import {
   EMPTY_STRENGTH_FORM,
   strengthEvidenceBody,
@@ -1005,6 +1006,7 @@ export function SettingsScreen() {
       </Card>
 
       <WearableConnectCard />
+      <AppleHealthCard />
 
       <Card className="flex items-center justify-between p-[22px]">
         <div>

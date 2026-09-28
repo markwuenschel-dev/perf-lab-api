@@ -900,6 +900,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/wellness/ingest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ingest Pushed Wellness */
+        post: operations["ingest_pushed_wellness_v1_wellness_ingest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wellness/ingest-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Ingest Tokens */
+        get: operations["list_ingest_tokens_v1_wellness_ingest_tokens_get"];
+        put?: never;
+        /** Create Ingest Token */
+        post: operations["create_ingest_token_v1_wellness_ingest_tokens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/wellness/ingest-tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Ingest Token */
+        delete: operations["revoke_ingest_token_v1_wellness_ingest_tokens__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/workouts": {
         parameters: {
             query?: never;
@@ -2150,6 +2202,54 @@ export interface components {
              * @description Athlete report on the 1–10 scale, or null when unknown.
              */
             value?: number | null;
+        };
+        /** IngestTokenCreate */
+        IngestTokenCreate: {
+            /**
+             * Label
+             * @default Apple Watch
+             */
+            label: string;
+        };
+        /**
+         * IngestTokenCreated
+         * @description Returned once, at creation: the only time the plaintext ``token`` is ever shown.
+         */
+        IngestTokenCreated: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Token */
+            token: string;
+            /** Token Prefix */
+            token_prefix: string;
+        };
+        /**
+         * IngestTokenOut
+         * @description An ingest token as listed: never the secret. ``last_used_at`` is the last successful sync.
+         */
+        IngestTokenOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Token Prefix */
+            token_prefix: string;
         };
         /**
          * IntensityContribution
@@ -4000,6 +4100,45 @@ export interface components {
             domain?: string | null;
             /** Modality */
             modality: string;
+        };
+        /**
+         * WellnessIngestIn
+         * @description One day's device readings pushed from the athlete's phone (an iOS Shortcut today).
+         *
+         *     Device-measured signals only: a phone automation has no business reporting how sore the
+         *     athlete feels. Idempotent on (athlete, date, source), so a retrying automation replaces
+         *     the day's row instead of adding one.
+         */
+        WellnessIngestIn: {
+            /**
+             * Date
+             * @description The day the readings belong to. Omitted: today (UTC), as readiness counts days.
+             */
+            date?: string | null;
+            /**
+             * Hrv Metric
+             * @description Apple Watch reports SDNN; never averaged with rMSSD.
+             * @default sdnn
+             * @enum {string}
+             */
+            hrv_metric: "rmssd" | "sdnn";
+            /** Hrv Ms */
+            hrv_ms?: number | null;
+            /**
+             * Measured At
+             * @description When the readings were taken. Any offset is converted to UTC.
+             */
+            measured_at?: string | null;
+            /** Resting Hr */
+            resting_hr?: number | null;
+            /** Sleep Hours */
+            sleep_hours?: number | null;
+            /**
+             * Source
+             * @description The pushing device. Ranks below a cloud-synced device on the same day.
+             * @constant
+             */
+            source: "apple_watch";
         };
         /**
          * WellnessSampleIn
@@ -5968,6 +6107,121 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WellnessSampleOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_pushed_wellness_v1_wellness_ingest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WellnessIngestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WellnessSampleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_ingest_tokens_v1_wellness_ingest_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestTokenOut"][];
+                };
+            };
+        };
+    };
+    create_ingest_token_v1_wellness_ingest_tokens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestTokenCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_ingest_token_v1_wellness_ingest_tokens__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
