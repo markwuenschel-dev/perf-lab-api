@@ -66,19 +66,22 @@ function metricValue(sig: WellnessSignalKey, c: CheckinState): Partial<WellnessS
  * Build the POST /v1/wellness payload honestly:
  * - provided signals carry their value;
  * - unknown-today signals are omitted (→ null server-side: a gap, never imputed);
- * - untracked signals are omitted entirely (not expected).
+ * - untracked signals are omitted entirely (not expected);
+ * - signals a device already measured today are omitted, so a slider's value never
+ *   competes with the wearable's reading (the device row carries them).
  */
 export function buildWellnessSample(
   c: CheckinState,
   modes: Record<WellnessSignalKey, SignalMode>,
   untracked: ReadonlySet<WellnessSignalKey>,
+  deviceCovered: ReadonlySet<WellnessSignalKey> = new Set(),
 ): WellnessSampleIn {
   const out: Partial<WellnessSampleIn> = {
     date: new Date().toISOString().slice(0, 10),
     source: "manual",
   };
   for (const { key } of WELLNESS_SIGNALS) {
-    if (untracked.has(key) || modes[key] === "unknown") continue;
+    if (untracked.has(key) || modes[key] === "unknown" || deviceCovered.has(key)) continue;
     Object.assign(out, metricValue(key, c));
   }
   return out as WellnessSampleIn;

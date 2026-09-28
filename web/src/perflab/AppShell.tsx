@@ -1,5 +1,7 @@
 // src/perflab/AppShell.tsx
+import { useEffect } from "react";
 import type { ComponentType } from "react";
+import { useAuth } from "@/auth/useAuth";
 import { usePerfLab } from "./store";
 import type { Screen } from "./store";
 import { Sidebar } from "./Sidebar";
@@ -21,6 +23,7 @@ import { ExplainDrawer } from "./overlays/ExplainDrawer";
 import { BlockCreateModal } from "./overlays/BlockCreateModal";
 import { ObjectiveCreateModal } from "./overlays/ObjectiveCreateModal";
 import { MacrocycleCreateModal } from "./overlays/MacrocycleCreateModal";
+import { ouraRedirectResult, syncWearableIfStale } from "./wearableSync";
 
 const SCREENS: Partial<Record<Screen, ComponentType>> = {
   overview: OverviewScreen,
@@ -58,8 +61,20 @@ function EmptyState({ screen }: { screen: Screen }) {
 }
 
 export function AppShell() {
-  const { state } = usePerfLab();
+  const { state, actions } = usePerfLab();
   const { screen, fresh } = state;
+  const { token } = useAuth();
+  const { setScreen } = actions;
+
+  // Back from Oura's consent screen: land on Settings, where the card reports the result.
+  useEffect(() => {
+    if (ouraRedirectResult(window.location.search) !== null) setScreen("settings");
+  }, [setScreen]);
+
+  // Pull wearable data when the athlete shows up, if it is stale. No nightly job does this.
+  useEffect(() => {
+    if (token) void syncWearableIfStale(token);
+  }, [token]);
   const showEmpty = fresh && screen !== "assess" && screen !== "onboarding" && screen !== "settings";
   const ScreenComp = SCREENS[screen] ?? OverviewScreen;
 

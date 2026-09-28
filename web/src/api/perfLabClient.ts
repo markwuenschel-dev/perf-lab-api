@@ -39,7 +39,6 @@ import type {
   TodaySessionResponse,
   UnifiedStateVector,
   UserResponse,
-  WearableConnectionOut,
   SessionFeedbackIn,
   SessionFeedbackOut,
   WeeklyTemplateSlot,
@@ -708,21 +707,7 @@ export async function getOuraAuthorizeUrl(token: string): Promise<AuthorizeUrlRe
   return handleResponse<AuthorizeUrlResponse>(res, { sessionOn401: true });
 }
 
-/** Oura: connect via a Personal Access Token (single-user fast path). */
-export async function connectOuraPat(
-  patToken: string,
-  token: string,
-): Promise<WearableConnectionOut> {
-  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
-  const res = await fetch(`${API_V1_BASE}/integrations/oura/connect/pat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(token) },
-    body: JSON.stringify({ token: patToken }),
-  });
-  return handleResponse<WearableConnectionOut>(res, { sessionOn401: true });
-}
-
-/** Oura: pull the athlete's recent data now (the nightly cron does this too). */
+/** Oura: pull the athlete's recent data now (the app also does this when data is stale). */
 export async function syncOura(token: string): Promise<SyncResult> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const res = await fetch(`${API_V1_BASE}/integrations/oura/sync`, {
