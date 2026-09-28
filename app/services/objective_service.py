@@ -6,6 +6,8 @@ unit-testable without a DB session — see tests/test_objective_progress.py.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import TypedDict, cast
 
@@ -16,7 +18,13 @@ from app.logic.domain_vocab import normalize_domain_at_boundary
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.objective import Objective, ObjectiveStatus
-from app.schemas.objective import ObjectiveCreate, ObjectiveRead, ObjectiveUpdate, ProgressBlock
+from app.schemas.objective import (
+    DrivingObjectiveSource,
+    ObjectiveCreate,
+    ObjectiveRead,
+    ObjectiveUpdate,
+    ProgressBlock,
+)
 from app.services import macrocycle_service
 
 # Prescriber taper window (Phase 4a). The nearest upcoming active objective's
@@ -173,6 +181,7 @@ async def to_read_schemas(db: AsyncSession, objectives: list[Objective]) -> list
             target_unit=objective.target_unit,
             target_date=objective.target_date,
             priority=objective.priority,
+            display_rank=objective.display_rank,
             status=objective.status,
             created_at=objective.created_at,
             progress=progress_by_id[objective.id],
@@ -224,6 +233,63 @@ async def list_objectives(
     stmt = stmt.order_by(Objective.priority.asc(), Objective.id.asc())
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+def sort_for_display(objectives: Sequence[Objective]) -> list[Objective]:
+    """The athlete's display order: ``display_rank`` ascending with never-ordered
+    (NULL) objectives last, then ``priority``, then ``id`` — so a new objective lands at
+    the bottom of an ordered list.
+
+    Display only — not a weight (ADR-0061). ``list_objectives`` keeps its priority
+    order and the prescriber's selector never reads ``display_rank``."""
+    return sorted(
+        objectives,
+        key=lambda o: (o.display_rank is None, o.display_rank or 0, o.priority, o.id),
+    )
+
+
+class ObjectiveOrderError(ValueError):
+    """The submitted order does not cover exactly the caller's active objectives."""
+
+
+async def set_display_order(
+    db: AsyncSession, user_id: int, objective_ids: list[int]
+) -> list[Objective]:
+    """Write ``display_rank`` 1..N for the caller's ACTIVE objectives, in one commit.
+
+    ``objective_ids`` must name every active objective of ``user_id`` exactly once —
+    a duplicate, a missing active objective, or an id that is not one of the caller's
+    active objectives (another user's, or achieved/abandoned, or unknown) raises
+    :class:`ObjectiveOrderError` and writes nothing. Display only — not a weight
+    (ADR-0061): ``priority`` is never touched. Returns the objectives in the new order.
+    """
+    active = await list_objectives(db, user_id)
+    active_by_id = {o.id: o for o in active}
+
+    duplicates = sorted({i for i in objective_ids if objective_ids.count(i) > 1})
+    submitted = set(objective_ids)
+    missing = sorted(set(active_by_id) - submitted)
+    unexpected = sorted(submitted - set(active_by_id))
+    problems: list[str] = []
+    if duplicates:
+        problems.append(f"duplicate ids {duplicates}")
+    if missing:
+        problems.append(f"missing active objectives {missing}")
+    if unexpected:
+        problems.append(f"ids that are not your active objectives {unexpected}")
+    if problems:
+        raise ObjectiveOrderError(
+            "objective_ids must list each of your active objectives exactly once: "
+            + "; ".join(problems)
+        )
+
+    for rank, objective_id in enumerate(objective_ids, start=1):
+        active_by_id[objective_id].display_rank = rank
+    await db.commit()
+    ordered = [active_by_id[i] for i in objective_ids]
+    for objective in ordered:
+        await db.refresh(objective)
+    return ordered
 
 
 async def get_objective(db: AsyncSession, user_id: int, objective_id: int) -> Objective | None:
@@ -301,13 +367,41 @@ def signals_from_scan(objectives: list[Objective], today: date | None = None) ->
         nearest = min(upcoming, key=lambda o: cast("date", o.target_date))
         taper = _target_within_taper_window(nearest.target_date, today)
 
-    top = min(objectives, key=lambda o: (o.priority, o.id))
-    return ObjectiveSignals(taper=taper, domain=top.domain)
+    top = top_priority_objective(objectives)
+    return ObjectiveSignals(taper=taper, domain=top.domain if top is not None else None)
+
+
+def top_priority_objective(objectives: Sequence[Objective]) -> Objective | None:
+    """The scan path's driving objective: highest priority (1 = highest), ties broken by
+    lowest ``id`` (earliest created). The athlete's display order plays no part (ADR-0061)."""
+    if not objectives:
+        return None
+    return min(objectives, key=lambda o: (o.priority, o.id))
+
+
+@dataclass(frozen=True)
+class DrivingObjective:
+    """What drives prescription: the chosen objective (None when nothing does), which
+    lever chose it, and the signals derived from it — the same value the prescriber gets
+    from :func:`active_objective_signals`."""
+
+    objective: Objective | None
+    source: DrivingObjectiveSource | None
+    signals: ObjectiveSignals
 
 
 async def active_objective_signals(db: AsyncSession, user_id: int) -> ObjectiveSignals:
-    """``{ taper, domain }`` for the prescriber (both entry points — see
-    app.services.prescription_service and app.api.v1.planning's ``/today``).
+    """``{ taper, domain }`` for the prescriber — the signals half of
+    :func:`resolve_driving_objective`, so ``GET /v1/objectives/driving`` can never
+    disagree with what prescription receives."""
+    return (await resolve_driving_objective(db, user_id)).signals
+
+
+async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingObjective:
+    """The objective that drives prescription, the lever that chose it, and the
+    ``{ taper, domain }`` signals for the prescriber (both entry points — see
+    app.services.prescription_service and app.api.v1.planning's ``/today``). This is the
+    one selector: ``GET /v1/objectives/driving`` reports its ``objective``/``source``.
 
     When the user has an active macrocycle, the signals derive from that
     program's *anchor objective* (the stored goal) — this is the Phase 5
@@ -329,7 +423,9 @@ async def active_objective_signals(db: AsyncSession, user_id: int) -> ObjectiveS
             )
         ).scalars().first()
         if anchor is not None:
-            return signals_from_anchor(anchor)
+            return DrivingObjective(
+                objective=anchor, source="macrocycle_anchor", signals=signals_from_anchor(anchor)
+            )
 
     result = await db.execute(
         select(Objective).where(
@@ -337,4 +433,10 @@ async def active_objective_signals(db: AsyncSession, user_id: int) -> ObjectiveS
             Objective.status == ObjectiveStatus.ACTIVE,
         )
     )
-    return signals_from_scan(list(result.scalars().all()))
+    objectives = list(result.scalars().all())
+    top = top_priority_objective(objectives)
+    return DrivingObjective(
+        objective=top,
+        source="priority" if top is not None else None,
+        signals=signals_from_scan(objectives),
+    )

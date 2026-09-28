@@ -2203,6 +2203,43 @@
         "title": "DomainSummaryOut",
         "type": "object"
       },
+      "DrivingObjectiveRead": {
+        "description": "The objective that actually drives prescription, chosen by the same selector\nthe prescriber's objective signals come from\n(``objective_service.resolve_driving_objective``).\n\n- ``source=\"macrocycle_anchor\"``: the anchor of the earliest-start active macrocycle.\n- ``source=\"priority\"``: no usable anchor, so the highest-priority active objective\n  (priority 1 first, ties by lowest id).\n- both null: nothing drives prescription (no active objectives, no anchor).",
+        "properties": {
+          "objective_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objective Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "macrocycle_anchor",
+                  "priority"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "objective_id",
+          "source"
+        ],
+        "title": "DrivingObjectiveRead",
+        "type": "object"
+      },
       "DurationEstimate": {
         "description": "How much of a session's time is actually known.\n\n``known_seconds`` alone would be a lie by omission: a strength session with rests recorded\nbut no set execution time would report the rest as though it were the whole session. So\nthe unknown parts are named, and ``complete`` says whether the total can be trusted as a\nduration. An incomplete estimate is never rendered as a number of minutes.",
         "properties": {
@@ -3564,6 +3601,83 @@
         "title": "LoadExplanation",
         "type": "object"
       },
+      "MacrocycleBlockSummary": {
+        "description": "One training block under a macrocycle, for the program timeline.\n\nBlocks are generated one at a time and never persisted ahead (ADR-0040), so this\nlists only blocks that exist. ``phase`` is date-derived (``end_date`` before today \u2192\ncompleted, ``start_date`` after today \u2192 upcoming, else current); it is independent of\n``status``, which only changes by a manual PATCH. ``deload_weeks``/``benchmark_weeks``\nare the week numbers whose stored sessions are flagged deload/benchmark.\n``block_taper_week`` is the block-local final-week taper (3+ week blocks), not an\nevent taper (ADR-0061/0065).",
+        "properties": {
+          "benchmark_weeks": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Benchmark Weeks",
+            "type": "array"
+          },
+          "block_taper_week": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Taper Week"
+          },
+          "deload_weeks": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Deload Weeks",
+            "type": "array"
+          },
+          "duration_weeks": {
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "goal": {
+            "$ref": "#/components/schemas/BlockGoal"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "completed",
+              "current",
+              "upcoming"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BlockStatus"
+          }
+        },
+        "required": [
+          "id",
+          "goal",
+          "start_date",
+          "end_date",
+          "duration_weeks",
+          "status",
+          "phase",
+          "deload_weeks",
+          "benchmark_weeks",
+          "block_taper_week"
+        ],
+        "title": "MacrocycleBlockSummary",
+        "type": "object"
+      },
       "MacrocycleCreate": {
         "properties": {
           "objective_id": {
@@ -3594,6 +3708,13 @@
           "block_count": {
             "title": "Block Count",
             "type": "integer"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/MacrocycleBlockSummary"
+            },
+            "title": "Blocks",
+            "type": "array"
           },
           "created_at": {
             "format": "date-time",
@@ -3632,6 +3753,17 @@
             ],
             "title": "Target Date"
           },
+          "unplanned_weeks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unplanned Weeks"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -3656,7 +3788,9 @@
           "objective_label",
           "target_date",
           "block_count",
-          "week_progress"
+          "week_progress",
+          "blocks",
+          "unplanned_weeks"
         ],
         "title": "MacrocycleRead",
         "type": "object"
@@ -3888,6 +4022,23 @@
         "title": "ObjectiveCreate",
         "type": "object"
       },
+      "ObjectiveOrderUpdate": {
+        "description": "``PUT /v1/objectives/order`` body: the caller's ACTIVE objective ids, first to last.\n\nMust cover exactly the caller's active objectives, each once. Writes\n``display_rank`` 1..N \u2014 display only, never ``priority`` (ADR-0061).",
+        "properties": {
+          "objective_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Objective Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "objective_ids"
+        ],
+        "title": "ObjectiveOrderUpdate",
+        "type": "object"
+      },
       "ObjectiveRead": {
         "properties": {
           "benchmark_code": {
@@ -3916,6 +4067,17 @@
               }
             ],
             "title": "Days To Go"
+          },
+          "display_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Rank"
           },
           "domain": {
             "anyOf": [
@@ -3995,6 +4157,7 @@
           "target_unit",
           "target_date",
           "priority",
+          "display_rank",
           "status",
           "created_at",
           "progress",
@@ -10023,6 +10186,7 @@
     },
     "/v1/objectives": {
       "get": {
+        "description": "Objectives in the athlete's display order: ``display_rank`` (never-ordered last),\nthen ``priority``, then ``id``. Display only \u2014 not a weight (ADR-0061).",
         "operationId": "list_objectives_v1_objectives_get",
         "parameters": [
           {
@@ -10118,6 +10282,84 @@
           }
         ],
         "summary": "Create Objective",
+        "tags": [
+          "Objectives"
+        ]
+      }
+    },
+    "/v1/objectives/driving": {
+      "get": {
+        "description": "The objective that actually drives prescription \u2014 resolved by the same selector\nthat produces the prescriber's objective signals, so a \"primary\" badge built on it can\nnever disagree with training. Read-only.",
+        "operationId": "get_driving_objective_v1_objectives_driving_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrivingObjectiveRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Driving Objective",
+        "tags": [
+          "Objectives"
+        ]
+      }
+    },
+    "/v1/objectives/order": {
+      "put": {
+        "description": "Set the display order of the caller's ACTIVE objectives (``display_rank`` 1..N).\n\nDisplay only \u2014 not a weight (ADR-0061): ``priority`` and what drives prescription\nare unchanged. ``objective_ids`` must list every active objective exactly once;\notherwise 400 naming the mismatch (the client should refetch and retry).",
+        "operationId": "set_objective_order_v1_objectives_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjectiveOrderUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ObjectiveRead"
+                  },
+                  "title": "Response Set Objective Order V1 Objectives Order Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Objective Order",
         "tags": [
           "Objectives"
         ]
