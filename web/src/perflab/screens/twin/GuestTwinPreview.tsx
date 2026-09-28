@@ -121,9 +121,9 @@ export function GuestTwinPreview() {
           <div className="mt-[2px] font-mono text-[9px] leading-none text-dim">sample history</div>
         </div>
         <div className="flex flex-none items-center gap-[7px]">
-          <button onClick={() => actions.setTwinDay(clampDay(di - 1))} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft">‹</button>
-          <button onClick={() => actions.setTwinDay(clampDay(di + 1))} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft">›</button>
-          <button onClick={() => actions.setTwinDay(N - 1)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-[#0a0c10]">Today</button>
+          <button onClick={() => actions.setTwinDay(clampDay(di - 1))} className="h-[34px] w-[34px] rounded-[9px] border border-white/[0.07] bg-white/[0.04] text-[15px] leading-none text-soft">‹</button>
+          <button onClick={() => actions.setTwinDay(clampDay(di + 1))} className="h-[34px] w-[34px] rounded-[9px] border border-white/[0.07] bg-white/[0.04] text-[15px] leading-none text-soft">›</button>
+          <button onClick={() => actions.setTwinDay(N - 1)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-canvas">Today</button>
         </div>
       </Card>
 

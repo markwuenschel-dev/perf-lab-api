@@ -26,7 +26,7 @@ import { assertNever, resourceData, type AuthedResource } from "../resource";
 import { Card, MetricBar, Pill, ReadinessRing, SectionLabel, SyncChip, WeakPointTags } from "../ui";
 import { WhyThisSession } from "../prescription/WhyThisSession";
 import { LoadExplanation } from "../prescription/LoadExplanation";
-import { Chart, Line, Marker, useVizTheme } from "../viz";
+import { Chart, Line, Marker, Ring, useVizTheme } from "../viz";
 import { meanFatigue, relativeTime } from "../stateVector";
 import { CapacityView } from "./twin/CapacityView";
 import { GuestTwinPreview } from "./twin/GuestTwinPreview";
@@ -43,6 +43,14 @@ import { readinessColor, readinessNote, readinessWord } from "../readinessPresen
 // carry no fixture data. Every sample-data import (DAYS, CAP_CFG, SKILL_DEFS, …)
 // left with GuestTwinPreview, so this file cannot render a fabricated number.
 
+// Console section-label spec (mono 10px, faint). Applied here as an override
+// rather than by changing the shared SectionLabel default, which every other
+// screen still renders at 11px until its own pass.
+const TWIN_LABEL = "text-[10px] text-faint";
+// Scrubber ‹ › step buttons: hairline border over a faint fill.
+const STEP_BTN =
+  "h-[34px] w-[34px] rounded-[9px] border border-white/[0.07] bg-white/[0.04] text-[15px] leading-none text-soft disabled:opacity-30";
+
 export function TwinScreen() {
   const { token } = useAuth();
   const { state, actions } = usePerfLab();
@@ -55,15 +63,18 @@ export function TwinScreen() {
 
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
-      <ScreenHeaderTwin authed={!isGuest} syncLabel={syncLabel} onLog={actions.openLog} />
+      <ScreenHeaderTwin authed={!isGuest} syncLabel={syncLabel} onLog={actions.openLog} onCheckin={actions.openCheckin} />
 
-      <NextSessionCard />
+      {/* The console rhythm: 18px under the page header, 14px between cards. */}
+      <div className="flex flex-col gap-[14px]">
+        <NextSessionCard />
 
-      {isGuest ? (
-        <GuestTwinPreview />
-      ) : (
-        <AuthedTwinBody historyRes={historyRes} readinessRes={readinessRes} />
-      )}
+        {isGuest ? (
+          <GuestTwinPreview />
+        ) : (
+          <AuthedTwinBody historyRes={historyRes} readinessRes={readinessRes} />
+        )}
+      </div>
     </section>
   );
 }
@@ -142,7 +153,7 @@ function AuthedTwinBody({
         <div className="mx-auto mt-2 max-w-[440px] text-[12.5px] font-medium leading-[1.5] text-mute">
           Log a workout or run a field test to seed your twin — your evolving state vector will appear here.
         </div>
-        <button onClick={actions.openLog} className="mt-4 rounded-[9px] bg-ink px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">
+        <button onClick={actions.openLog} className="mt-4 rounded-[9px] bg-ink px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-canvas">
           Log workout
         </button>
       </Card>
@@ -192,7 +203,7 @@ function AuthedTwinBody({
       {/* time-travel — axis is recorded snapshots, x = ordinal 0..len-1 */}
       <Card className="flex items-center gap-[22px] px-5 py-[15px]">
         <div className="min-w-[118px] flex-none">
-          <SectionLabel className="text-faint">Viewing</SectionLabel>
+          <SectionLabel className={TWIN_LABEL}>Viewing</SectionLabel>
           <div className="mt-[7px] flex items-baseline gap-2">
             <span className="text-[18px] font-bold leading-none text-ink">{vDate}</span>
             {vWhen && <span className="text-[11px] font-medium leading-none text-teal">{vWhen}</span>}
@@ -221,14 +232,14 @@ function AuthedTwinBody({
             className="mt-[2px] w-full cursor-pointer disabled:cursor-default disabled:opacity-40"
             style={{ accentColor: "var(--ac)" }}
           />
-          <div className="mt-[2px] font-mono text-[9px] leading-none text-dim">
+          <div className="mt-[2px] font-mono text-[10px] leading-none text-dim">
             {thin ? "Only one recorded state so far" : "Mean fatigue · oldest → newest recorded state"}
           </div>
         </div>
         <div className="flex flex-none items-center gap-[7px]">
-          <button onClick={() => selectLocal(di - 1)} disabled={thin || di === 0} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft disabled:opacity-30">‹</button>
-          <button onClick={() => selectLocal(di + 1)} disabled={thin || di === len - 1} className="h-[34px] w-[34px] rounded-[9px] border border-white/10 bg-white/[0.03] text-[15px] leading-none text-soft disabled:opacity-30">›</button>
-          <button onClick={() => actions.setSelectedTwinSnapshot(rows[len - 1].snapshot_id)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-[#0a0c10]">Today</button>
+          <button onClick={() => selectLocal(di - 1)} disabled={thin || di === 0} aria-label="Previous recorded state" className={STEP_BTN}>‹</button>
+          <button onClick={() => selectLocal(di + 1)} disabled={thin || di === len - 1} aria-label="Next recorded state" className={STEP_BTN}>›</button>
+          <button onClick={() => actions.setSelectedTwinSnapshot(rows[len - 1].snapshot_id)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-canvas">Today</button>
         </div>
       </Card>
 
@@ -261,19 +272,19 @@ function AuthedTwinBody({
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
         <Card>
           <div className="mb-4 flex items-center justify-between">
-            <SectionLabel>Fatigue · F(t)</SectionLabel>
+            <SectionLabel className={TWIN_LABEL}>Fatigue · F(t)</SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">0 fresh → 100 maxed</div>
           </div>
           <div className="flex flex-col gap-[13px]">
             {FATIGUE_ORDER.map((k) => {
               const v = fatigueOf(k);
-              return <MetricBar key={k} label={k} value={v} pct={v} color={fatigueColor(v)} labelClassName="w-[74px]" valueClassName="w-[26px] text-soft" />;
+              return <MetricBar key={k} label={k} value={v} pct={v} color={fatigueColor(v)} labelClassName="w-[74px]" valueClassName="w-[26px] text-[11px] text-soft" />;
             })}
           </div>
         </Card>
         <Card>
           <div className="mb-4 flex items-center justify-between">
-            <SectionLabel>Tissue load · T(t)</SectionLabel>
+            <SectionLabel className={TWIN_LABEL}>Tissue load · T(t)</SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">local stress, not injury</div>
           </div>
           <TissueBodyMap getT={tissueOf} />
@@ -282,7 +293,7 @@ function AuthedTwinBody({
 
       {/* skills — out of the live view for now (no sim skills for authed) */}
       <Card className="px-[22px] py-5">
-        <SectionLabel>Skill state</SectionLabel>
+        <SectionLabel className={TWIN_LABEL}>Skill state</SectionLabel>
         <div className="mt-3 text-[12.5px] font-medium leading-[1.5] text-mute">
           Skill detail is not available in this live view yet.
         </div>
@@ -310,7 +321,7 @@ function ReadinessCard({
       <Card className="flex items-center gap-[18px]">
         <NeutralRing />
         <div>
-          <SectionLabel className="text-faint">Readiness</SectionLabel>
+          <SectionLabel className={TWIN_LABEL}>Readiness</SectionLabel>
           <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-mute">
             Wellness-adjusted readiness was not recorded for this snapshot.
           </div>
@@ -329,7 +340,7 @@ function ReadinessCard({
       <Card className="flex items-center gap-[18px]">
         <ReadinessRing value={Math.round(canonicalScore)} color={rc} />
         <div>
-          <SectionLabel className="text-faint">Readiness</SectionLabel>
+          <SectionLabel className={TWIN_LABEL}>Readiness</SectionLabel>
           <div className="mt-2 text-[18px] font-bold leading-none" style={{ color: rc }}>{readinessWord(canonicalScore)}</div>
           <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(canonicalScore)}</div>
         </div>
@@ -342,7 +353,7 @@ function ReadinessCard({
     <Card className="flex items-center gap-[18px]">
       <NeutralRing />
       <div>
-        <SectionLabel className="text-faint">Readiness</SectionLabel>
+        <SectionLabel className={TWIN_LABEL}>Readiness</SectionLabel>
         <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-mute">
           {readinessPendingNote(readinessRes)}
         </div>
@@ -372,14 +383,16 @@ function readinessPendingNote(resource: AuthedResource<ReadinessScore>): string 
   }
 }
 
-/** A greyed, non-scored ring shell for historical / unavailable readiness. */
+/**
+ * A greyed, non-scored ring shell for historical / unavailable readiness: the
+ * viz Ring at zero, so the whole circle is the theme track and no arc implies
+ * a value.
+ */
 function NeutralRing() {
   return (
-    <div className="grid h-[118px] w-[118px] flex-none place-items-center rounded-full" style={{ background: "conic-gradient(rgba(255,255,255,.08) 0 100%)" }}>
-      <div className="grid h-[92px] w-[92px] place-items-center rounded-full bg-tile">
-        <span className="font-mono text-[26px] font-semibold leading-none text-dim">—</span>
-      </div>
-    </div>
+    <Ring value={0} color="transparent">
+      <span className="font-mono text-[26px] font-semibold leading-none text-dim">—</span>
+    </Ring>
   );
 }
 
@@ -461,7 +474,7 @@ function NextSessionCard() {
   if (!token) {
     return (
       <Card className="px-5 py-4">
-        <SectionLabel className="text-faint">Recommended next session</SectionLabel>
+        <SectionLabel className={TWIN_LABEL}>Recommended next session</SectionLabel>
         <div className="mt-2 text-[13px] font-medium leading-[1.5] text-mute">
           Sign in to get a live prescription from your twin.
         </div>
@@ -472,7 +485,7 @@ function NextSessionCard() {
   return (
     <Card className="px-[22px] py-5">
       <div className="mb-3 flex items-center justify-between">
-        <SectionLabel>Recommended next session</SectionLabel>
+        <SectionLabel className={TWIN_LABEL}>Recommended next session</SectionLabel>
         <span className="font-mono text-[10px] leading-none text-dim">
           {summary}
         </span>
@@ -486,11 +499,11 @@ function NextSessionCard() {
       {body.kind === "prescription" && (
         <div className="flex flex-col gap-4">
           <div>
-            <div className="text-[20px] font-bold leading-tight text-ink">{body.rx.focus}</div>
-            <div className="mt-1 text-[12.5px] font-medium leading-[1.5] text-mute">{body.rx.rationale}</div>
+            <div className="text-[20px] font-bold leading-[1.2] text-ink">{body.rx.focus}</div>
+            <div className="mt-[6px] text-[12.5px] font-medium leading-[1.5] text-mute">{body.rx.rationale}</div>
           </div>
           {body.rx.exercises && body.rx.exercises.length > 0 && (
-            <div className="flex flex-col gap-2 border-t border-white/[0.06] pt-3">
+            <div className="flex flex-col gap-3 border-t border-white/[0.07] pt-[14px]">
               {body.rx.exercises.map((ex, i) => {
                 const detail = [
                   ex.sets != null && ex.reps != null
@@ -528,7 +541,17 @@ function NextSessionCard() {
   );
 }
 
-function ScreenHeaderTwin({ authed, syncLabel, onLog }: { authed: boolean; syncLabel: string; onLog: () => void }) {
+function ScreenHeaderTwin({
+  authed,
+  syncLabel,
+  onLog,
+  onCheckin,
+}: {
+  authed: boolean;
+  syncLabel: string;
+  onLog: () => void;
+  onCheckin: () => void;
+}) {
   return (
     <header className="flex items-start justify-between gap-5">
       <div>
@@ -536,13 +559,22 @@ function ScreenHeaderTwin({ authed, syncLabel, onLog }: { authed: boolean; syncL
           <h1 className="m-0 text-[25px] font-bold leading-none tracking-[-0.02em] text-ink">Digital Twin</h1>
           <Pill>S(t) · v0.3</Pill>
         </div>
-        <p className="m-0 mt-[9px] max-w-[440px] text-[13.5px] font-medium leading-[1.5] text-mute">
-          Evolving state vector — capacities, fatigue &amp; tissue load.{authed ? "" : " Sample preview until you sign in."}
+        <p className="m-0 mt-[9px] max-w-[470px] text-[13.5px] font-medium leading-[1.5] text-mute">
+          Evolving state vector — capacities, fatigue &amp; tissue load.{" "}
+          {authed ? "Scrub to time-travel recorded snapshots." : "Sample preview until you sign in."}
         </p>
       </div>
-      <div className="flex items-center gap-[9px]">
+      <div className="flex flex-none items-center gap-[9px]">
         <SyncChip label={syncLabel} />
-        <button onClick={onLog} className="rounded-[9px] bg-ink px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Log workout</button>
+        {/* Check-in writes wellness, so it is offered to a signed-in athlete only —
+            the same gate the Overview header uses. */}
+        {authed && (
+          <button onClick={onCheckin} className="rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft">
+            Check in
+          </button>
+        )}
+        {/* Primary action in the accent; the on-accent ink is mode-invariant. */}
+        <button onClick={onLog} className="rounded-[9px] bg-ac px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Log workout</button>
       </div>
     </header>
   );
