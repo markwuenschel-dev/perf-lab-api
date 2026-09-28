@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
-import { usePerfLab, TRAINING_GOALS } from "../store";
+import { usePerfLab, SIM_PRESETS, TRAINING_GOALS, type SimPresetName } from "../store";
 import { Card, Pill, ScreenHeader, SectionLabel, Tile } from "../ui";
-import { Chart, Area, Line, Marker, useVizTheme } from "../viz";
+import { Chart, Area, Line, Marker, Meter, useVizTheme } from "../viz";
 import { COLORS, readinessColor, readinessWord } from "../readinessPresentation";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, type AuthedResource } from "../resource";
@@ -23,11 +23,23 @@ import {
   type ProjectionAxis,
 } from "../projection";
 
-const seg = (active: boolean) =>
+// Console chip: solid accent + glow when selected, faint fill when not. The
+// on-accent ink is mode-invariant, so it stays a literal.
+const chip = (active: boolean) =>
   cn(
-    "flex-1 cursor-pointer rounded-[9px] border px-[6px] py-[10px] text-center text-[12px] font-semibold leading-none transition-colors",
-    active ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-panel text-mute",
+    "cursor-pointer border border-white/[0.07] font-semibold leading-none transition-colors",
+    active
+      ? "bg-ac text-[#0a0c10] shadow-[0_6px_18px_-8px_var(--ac)]"
+      : "bg-white/[0.04] text-soft hover:bg-white/[0.06]",
   );
+const seg = (active: boolean) => cn(chip(active), "flex-1 rounded-[9px] px-[6px] py-[10px] text-center text-[12px]");
+
+// Console section label (mono 10px, faint) — a local override of the shared
+// SectionLabel default, which other screens still render at 11px.
+const LABEL = "text-[10px] text-faint";
+const TILE_LABEL = "font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint";
+
+const PRESET_ORDER: SimPresetName[] = ["maintain", "build", "aggressive"];
 
 const fmtDelta = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(Math.round(n))}`;
 const fmtPct = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(Math.round(n * 100))}%`;
@@ -172,71 +184,81 @@ export function SimulatorScreen() {
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
       <ScreenHeader
-        title="Twin Simulator"
+        title="Simulator"
         badge={<Pill>what-if · X(t) projection</Pill>}
-        subtitle="Run your digital twin forward against a goal. Shape the plan on the left and watch all eight capacity axes, readiness and fatigue respond — measured against simply maintaining."
+        subtitle="Run your twin forward against a goal — all eight capacity axes, readiness and fatigue, measured against simply maintaining."
       >
         {view.preview && <Pill className="border-white/15 bg-white/[0.06] text-mute">preview data</Pill>}
         {view.projecting && (
           <Pill className="border-ac/25 bg-ac/[0.08] text-ac">projecting…</Pill>
         )}
+        {/* Check-in writes wellness: signed-in athletes only, as on Twin and Overview. */}
+        {auth.token != null && (
+          <button onClick={actions.openCheckin} className="rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft">
+            Check in
+          </button>
+        )}
+        <button onClick={actions.openLog} className="rounded-[9px] bg-ac px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Log workout</button>
       </ScreenHeader>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
         {/* ── Controls ── */}
-        <Card className="flex flex-col gap-5 self-start p-[22px]">
+        <Card hover={false} className="flex flex-col gap-5 self-start p-[22px]">
           <div>
-            <SectionLabel className="mb-[11px]">Quick scenarios</SectionLabel>
+            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Quick scenarios</SectionLabel>
             <div className="flex gap-2">
-              {(["maintain", "build", "aggressive"] as const).map((p) => (
-                <div key={p} onClick={() => actions.simPreset(p)} className="flex-1 cursor-pointer rounded-[10px] border border-white/10 bg-white/[0.03] px-[6px] py-[11px] text-center text-[12px] font-semibold capitalize leading-none text-soft">{p}</div>
-              ))}
+              {PRESET_ORDER.map((p) => {
+                // Active only while all three values it sets still match.
+                const cfg = SIM_PRESETS[p];
+                const active = sim.volume === cfg.volume && sim.intensity === cfg.intensity && sim.recovery === cfg.recovery;
+                return (
+                  <button key={p} onClick={() => actions.simPreset(p)} aria-pressed={active} className={cn(chip(active), "flex-1 rounded-[10px] px-[6px] py-[11px] text-center text-[12px]")}>{p}</button>
+                );
+              })}
             </div>
           </div>
-          <div className="h-px bg-white/[0.06]" />
+          <div className="h-px bg-white/[0.07]" />
           <div>
-            <SectionLabel className="mb-[11px]">Goal</SectionLabel>
-            <select
-              value={sim.goal}
-              onChange={(e) => actions.setSim({ goal: e.target.value })}
-              className="w-full cursor-pointer rounded-[10px] border border-white/10 bg-panel px-3 py-[11px] text-[13px] font-semibold leading-none text-soft outline-none focus:border-ac/40"
-              style={{ colorScheme: "dark" }}
-            >
+            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Goal</SectionLabel>
+            {/* Every training goal the backend accepts is offered: the mock's six
+                are its sample subset, and a profile goal like Powerlifting must
+                stay selectable. */}
+            <div role="group" aria-label="Goal" className="flex flex-wrap gap-[7px]">
               {TRAINING_GOALS.map((g) => (
-                <option key={g.value} value={g.value}>{g.label}</option>
+                <button key={g.value} onClick={() => actions.setSim({ goal: g.value })} aria-pressed={sim.goal === g.value} className={cn(chip(sim.goal === g.value), "rounded-[8px] px-[11px] py-[9px] text-[12px]")}>{g.label}</button>
               ))}
-            </select>
+            </div>
             <div className="mt-[7px] font-mono text-[10px] leading-none text-dim">shapes which axes grow</div>
           </div>
           <div>
             <div className="mb-3 flex items-center justify-between">
-              <SectionLabel>Weekly volume</SectionLabel>
+              <SectionLabel className={LABEL}>Weekly volume</SectionLabel>
               <span className="font-mono text-[13px] font-semibold leading-none text-ac">{sim.volume}</span>
             </div>
             <input type="range" min={30} max={90} step={2} value={sim.volume} onChange={(e) => actions.setSim({ volume: +e.target.value })} className="w-full cursor-pointer" style={{ accentColor: "var(--ac)" }} />
             <div className="mt-[6px] flex justify-between font-mono text-[10px] leading-none text-dim"><span>30</span><span>90</span></div>
           </div>
           <div>
-            <SectionLabel className="mb-[11px]">Training intensity</SectionLabel>
+            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Training intensity</SectionLabel>
             <div className="flex gap-2">
               {(["easy", "balanced", "hard"] as const).map((v) => (
-                <div key={v} onClick={() => actions.setSim({ intensity: v })} className={`${seg(sim.intensity === v)} capitalize`}>{v}</div>
+                <button key={v} onClick={() => actions.setSim({ intensity: v })} aria-pressed={sim.intensity === v} className={seg(sim.intensity === v)}>{v}</button>
               ))}
             </div>
           </div>
           <div>
-            <SectionLabel className="mb-[11px]">Recovery emphasis</SectionLabel>
+            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Recovery emphasis</SectionLabel>
             <div className="flex gap-2">
               {(["high", "standard", "minimal"] as const).map((v) => (
-                <div key={v} onClick={() => actions.setSim({ recovery: v })} className={`${seg(sim.recovery === v)} capitalize`}>{v}</div>
+                <button key={v} onClick={() => actions.setSim({ recovery: v })} aria-pressed={sim.recovery === v} className={seg(sim.recovery === v)}>{v}</button>
               ))}
             </div>
           </div>
           <div>
-            <SectionLabel className="mb-[11px]">Horizon</SectionLabel>
+            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Horizon</SectionLabel>
             <div className="flex gap-2">
               {[4, 8, 12, 16].map((wk) => (
-                <div key={wk} onClick={() => actions.setSim({ weeks: wk })} className={seg(sim.weeks === wk)}>{wk} wk</div>
+                <button key={wk} onClick={() => actions.setSim({ weeks: wk })} aria-pressed={sim.weeks === wk} className={seg(sim.weeks === wk)}>{wk} wk</button>
               ))}
             </div>
           </div>
@@ -247,7 +269,7 @@ export function SimulatorScreen() {
           {/* Stat tiles */}
           <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
             <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">End readiness</div>
+              <div className={TILE_LABEL}>End readiness</div>
               <div className="mt-[11px] flex items-baseline gap-[7px]">
                 <span className="font-mono text-[26px] font-semibold leading-none" style={{ color: rColor }}>{endReady}</span>
                 <span className="text-[12px] font-semibold leading-none" style={{ color: rColor }}>{readinessWord(endReady)}</span>
@@ -255,17 +277,17 @@ export function SimulatorScreen() {
               <div className="mt-2 text-[11px] font-medium leading-none text-faint">at week {weeks}</div>
             </Tile>
             <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Peak fatigue</div>
+              <div className={TILE_LABEL}>Peak fatigue</div>
               <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none" style={{ color: peakColor }}>{proj.peak_fatigue}</div>
-              <div className="mt-3 h-[5px] overflow-hidden rounded-full bg-white/[0.08]"><div className="h-full rounded-full transition-all" style={{ width: `${proj.peak_fatigue}%`, background: peakColor }} /></div>
+              <Meter variant="bare" pct={proj.peak_fatigue} color={peakColor} trackClassName="h-[5px]" className="mt-3" />
             </Tile>
             <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Top gain</div>
+              <div className={TILE_LABEL}>Top gain</div>
               <div className="mt-[11px] font-mono text-[19px] font-semibold leading-none text-teal">{topAxis.label}</div>
               <div className="mt-2 text-[11px] font-semibold leading-none text-good">{fmtPct(relGain(topAxis))} vs maintain</div>
             </Tile>
             <Tile className="p-4">
-              <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Plan uplift</div>
+              <div className={TILE_LABEL}>Plan uplift</div>
               <div className="mt-[11px] font-mono text-[26px] font-semibold leading-none text-ink">{fmtPct(avgUplift)}</div>
               <div className="mt-2 text-[11px] font-medium leading-none text-faint">avg across 8 axes</div>
             </Tile>
@@ -274,10 +296,10 @@ export function SimulatorScreen() {
           {/* 8-axis start → projected */}
           <Card className="p-5">
             <div className="mb-[18px] flex items-center justify-between">
-              <SectionLabel>Capacity projection · X(t)</SectionLabel>
+              <SectionLabel className={LABEL}>Capacity projection · X(t)</SectionLabel>
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-soft"><span className="h-[6px] w-4 rounded-[2px] bg-ac" />projected</span>
-                <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="h-[10px] w-[2px] bg-[#6b7280]" />maintain</span>
+                <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="h-[10px] w-[2px] bg-faint" />maintain</span>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-4">
@@ -290,9 +312,9 @@ export function SimulatorScreen() {
                   <div key={a.key}>
                     <div className="mb-2 text-[12px] font-medium leading-none text-mute">{a.label}</div>
                     <div className="font-mono text-[26px] font-semibold leading-none text-ink">{Math.round(a.projected)}</div>
-                    <div className="relative mb-[7px] mt-[11px] h-[6px] overflow-hidden rounded-full bg-white/[0.07]">
+                    <div className="relative mb-[7px] mt-[11px] h-[6px] overflow-hidden rounded-full bg-white/[0.08]">
                       <div className="h-full rounded-full" style={{ width: `${fillPct}%`, background: "linear-gradient(90deg,var(--ac),#a7e36e)" }} />
-                      <div className="absolute top-[-2px] h-[10px] w-[2px] rounded-full bg-[#8b919c]" style={{ left: `calc(${basePct}% - 1px)` }} />
+                      <div className="absolute top-[-2px] h-[10px] w-[2px] rounded-full bg-faint" style={{ left: `calc(${basePct}% - 1px)` }} />
                     </div>
                     <div className="font-mono text-[10px] leading-none" style={{ color: d > 0.5 ? COLORS.good : d < -0.5 ? COLORS.hot : COLORS.dim }}>{fmtDelta(d)} vs maintain</div>
                   </div>
@@ -304,28 +326,28 @@ export function SimulatorScreen() {
           {/* Trajectory: selectable axis vs maintain */}
           <Card className="p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <SectionLabel>Trajectory · {selAxis.label}</SectionLabel>
+              <SectionLabel className={LABEL}>Trajectory · {selAxis.label}</SectionLabel>
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-soft"><span className="h-[3px] w-4 rounded-[2px] bg-ac" />This plan</span>
-                <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="w-4 border-t-2 border-dashed border-[#5a626e]" />Maintain</span>
+                <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="w-4 border-t-2 border-dashed border-faint" />Maintain</span>
               </div>
             </div>
-            <div className="mb-3 flex flex-wrap gap-[6px]">
+            <div className="mb-[14px] flex flex-wrap gap-[6px]">
               {axes.map((a) => (
-                <button key={a.key} onClick={() => setSelKey(a.key)} className={cn("rounded-[7px] border px-[9px] py-[6px] text-[11px] font-semibold leading-none transition-colors", a.key === activeKey ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-white/[0.03] text-mute")}>{a.label}</button>
+                <button key={a.key} onClick={() => setSelKey(a.key)} aria-pressed={a.key === activeKey} className={cn(chip(a.key === activeKey), "rounded-[7px] px-[9px] py-[7px] text-[11px]")}>{a.label}</button>
               ))}
             </div>
             <Chart
               width={520}
-              height={188}
-              padding={{ top: 14, right: 6, bottom: 26, left: 6 }}
+              height={180}
+              padding={{ top: 14, right: 6, bottom: 14, left: 6 }}
               xDomain={[0, weeks]}
               yDomain={[tLo - tPad, tHi + tPad]}
               ariaLabel={`${selAxis.label} trajectory versus maintaining`}
-              className="h-[220px] w-full"
+              className="h-[190px] w-full"
             >
-              <Line data={trajData(selAxis.baseline_series)} color={colors.text.mute} dashed />
-              <Area data={trajData(selAxis.series)} color={accent} />
+              <Line data={trajData(selAxis.baseline_series)} color={colors.text.faint} width={1.6} dashed label="Maintain" />
+              <Area data={trajData(selAxis.series)} color={accent} fillOpacity={0.14} label="This plan" />
               <Marker x={weeks} y={selAxis.projected} color={accent} />
             </Chart>
             <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now · {Math.round(selAxis.start)}</span><span>{weeks} wk · {Math.round(selAxis.projected)}</span></div>
@@ -333,20 +355,20 @@ export function SimulatorScreen() {
 
           {/* Readiness curve */}
           <Card className="p-5">
-            <div className="mb-2 flex items-center justify-between">
-              <SectionLabel>Readiness under this plan</SectionLabel>
+            <div className="mb-[10px] flex items-center justify-between">
+              <SectionLabel className={LABEL}>Readiness under this plan</SectionLabel>
               <span className="font-mono text-[10px] leading-none text-dim">0–100 scale</span>
             </div>
             <Chart
               width={520}
-              height={188}
-              padding={{ top: 14, right: 6, bottom: 26, left: 6 }}
+              height={150}
+              padding={{ top: 10, right: 6, bottom: 10, left: 6 }}
               xDomain={[0, weeks]}
-              yDomain={[20, 100]}
+              yDomain={[0, 100]}
               ariaLabel="Readiness under this plan"
-              className="h-[180px] w-full"
+              className="h-[150px] w-full"
             >
-              <Area data={proj.readiness_series.map((v, i) => [i, v] as [number, number])} color={COLORS.teal} />
+              <Area data={proj.readiness_series.map((v, i) => [i, v] as [number, number])} color={COLORS.teal} fillOpacity={0.14} label="Readiness" />
               <Marker x={weeks} y={endReady} color={COLORS.teal} />
             </Chart>
             <div className="mt-1 flex justify-between font-mono text-[10px] leading-none text-dim"><span>now</span><span>{weeks} wk · {endReady}</span></div>
@@ -366,7 +388,7 @@ export function SimulatorScreen() {
 
           {view.unreachable && (
             <Card hover={false} className="px-5 py-[14px]">
-              <div className="text-[12.5px] font-medium leading-[1.5] text-[#b98a6a]">Couldn't reach the projection service ({view.unreachable}). Showing an illustrative estimate — adjust a control to retry.</div>
+              <div className="text-[12.5px] font-medium leading-[1.5] text-warn">Couldn't reach the projection service ({view.unreachable}). Showing an illustrative estimate — adjust a control to retry.</div>
             </Card>
           )}
         </div>

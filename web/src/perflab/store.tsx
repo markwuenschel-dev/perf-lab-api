@@ -44,6 +44,18 @@ export interface Settings {
  * Ordered general → strength family → conditioning → endurance so the neutral
  * default reads first. Not running-centric on purpose.
  */
+/**
+ * Simulator quick scenarios. Each sets volume + intensity + recovery together;
+ * goal and horizon are left alone. Exported so the screen can show a preset as
+ * active only when all three current values match it.
+ */
+export const SIM_PRESETS = {
+  maintain: { volume: 48, intensity: "balanced", recovery: "standard" },
+  build: { volume: 62, intensity: "balanced", recovery: "standard" },
+  aggressive: { volume: 80, intensity: "hard", recovery: "minimal" },
+} as const;
+export type SimPresetName = keyof typeof SIM_PRESETS;
+
 export const TRAINING_GOALS: { value: string; label: string }[] = [
   { value: "General", label: "General" },
   { value: "Strength", label: "Strength" },
@@ -340,7 +352,7 @@ export interface PerfLabActions {
   openExplain: (key: string) => void;
   closeExplain: () => void;
   setSim: (patch: Partial<SimParams>) => void;
-  simPreset: (name: "maintain" | "build" | "aggressive") => void;
+  simPreset: (name: SimPresetName) => void;
   /** Report on a real planned session. The id is required: without it there is
    *  nothing to write to, and inferring one from what happens to be on screen is
    *  how feedback lands on the wrong session. */
@@ -442,16 +454,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     openExplain: (key) => merge({ explainOpen: true, explainKey: key }),
     closeExplain: () => merge({ explainOpen: false }),
     setSim: (patch) => dispatch({ type: "mergeSim", patch }),
-    simPreset: (name) =>
-      dispatch({
-        type: "mergeSim",
-        patch:
-          name === "maintain"
-            ? { volume: 48, intensity: "balanced", recovery: "standard" }
-            : name === "build"
-              ? { volume: 62, intensity: "balanced", recovery: "standard" }
-              : { volume: 80, intensity: "hard", recovery: "minimal" },
-      }),
+    simPreset: (name) => dispatch({ type: "mergeSim", patch: SIM_PRESETS[name] }),
     openFeedback: (plannedSessionId) =>
       merge({ feedbackOpen: true, feedbackApplied: false, feedbackSessionId: plannedSessionId }),
     closeFeedback: () => merge({ feedbackOpen: false, feedbackSessionId: null }),
