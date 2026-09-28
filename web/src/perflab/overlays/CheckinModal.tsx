@@ -1,8 +1,8 @@
 // src/perflab/overlays/CheckinModal.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
-import { getReadiness, ingestWellness, updateProfile } from "@/api/perfLabClient";
+import { getReadiness, ingestWellness, listWellness, updateProfile } from "@/api/perfLabClient";
 import type { ApiError, ReadinessScore } from "@/types";
 import { usePerfLab } from "../store";
 import { buildCheckin, NOT_REPORTED } from "../sim";
@@ -13,6 +13,14 @@ import {
   type SignalMode,
   type WellnessSignalKey,
 } from "../wellnessSignals";
+import {
+  deviceCoveredSignals,
+  deviceReadingsForDay,
+  sourceLabel,
+  syncWearableIfStale,
+  utcDay,
+  type DeviceReadings,
+} from "../wearableSync";
 import { ReadinessRing } from "../ui";
 import { CloseBtn } from "./LogWorkoutModal";
 
@@ -126,6 +134,28 @@ function SignalControls({
   );
 }
 
+/** A signal the athlete's wearable already measured today: shown, not asked again. */
+function DeviceReading({ signal, device }: { signal: WellnessSignalKey; device: DeviceReadings }) {
+  const v = device.values;
+  const [label, value] =
+    signal === "sleep"
+      ? ["Sleep", `${(v.sleep_hours ?? 0).toFixed(1)} h${v.sleep_quality !== undefined ? ` · quality ${Math.round(v.sleep_quality)}` : ""}`]
+      : signal === "hrv"
+        ? ["HRV (overnight)", `${Math.round(v.hrv_ms ?? 0)} ms`]
+        : ["Resting HR", `${Math.round(v.resting_hr ?? 0)} bpm`];
+  return (
+    <div className="flex items-center justify-between" data-testid={`device-${signal}`}>
+      <span className="font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.12em] text-mute">{label}</span>
+      <span className="flex items-center gap-2">
+        <span className="font-mono text-[13px] font-semibold leading-none text-ink">{value}</span>
+        <span className="rounded-[6px] border border-mint/25 bg-mint/[0.12] px-[6px] py-[4px] font-mono text-[9.5px] font-semibold leading-none tracking-[0.08em] text-[#9ad6c8]">
+          from {sourceLabel(device.source)}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 export function CheckinModal() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
@@ -142,8 +172,31 @@ export function CheckinModal() {
     sleep: "provided", hrv: "provided", rhr: "provided", soreness: "provided", mood: "provided", stress: "provided",
   }));
 
+  // Today's wearable readings. Sync first when stale (the box sleeps overnight, so no
+  // cron does it), then read today's device row. Any failure leaves the sliders in place.
+  const [device, setDevice] = useState<DeviceReadings | null>(null);
+  const open = state.checkinOpen;
+  const token = auth.token;
+  useEffect(() => {
+    if (!open || !token) return;
+    let live = true;
+    void (async () => {
+      await syncWearableIfStale(token);
+      try {
+        const rows = await listWellness(token, 8);
+        if (live) setDevice(deviceReadingsForDay(rows, utcDay(new Date())));
+      } catch {
+        /* the check-in still works by hand */
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [open, token]);
+
   if (!state.checkinOpen) return null;
   const ci = state.checkin;
+  const covered = deviceCoveredSignals(device);
   const sim = buildCheckin(ci);
   const signedIn = !!auth.token;
 
@@ -186,7 +239,7 @@ export function CheckinModal() {
     setSaving(true);
     setSaveError(null);
     try {
-      await ingestWellness(buildWellnessSample(ci, modes, untracked), auth.token);
+      await ingestWellness(buildWellnessSample(ci, modes, untracked, covered), auth.token);
       const r = await getReadiness(auth.token);
       setSaved(r);
       actions.cacheReadiness(r);
@@ -218,6 +271,9 @@ export function CheckinModal() {
         <div className="grid grid-cols-1 md:grid-cols-[1fr_300px]">
           <div className="flex flex-col gap-[20px] border-r border-white/[0.06] p-6">
             {shown.map((s) => (
+              device && covered.has(s.key) ? (
+                <DeviceReading key={s.key} signal={s.key} device={device} />
+              ) : (
               <div key={s.key} className={dim(s.key)}>
                 {s.key === "sleep" && (
                   <>
@@ -268,6 +324,7 @@ export function CheckinModal() {
                   />
                 )}
               </div>
+              )
             ))}
 
             {signedIn && hidden.length > 0 && (

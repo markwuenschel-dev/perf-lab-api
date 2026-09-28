@@ -21,6 +21,7 @@ import { useAuthedResource } from "../useAuthedResource";
 import { CANONICAL_LIFTS } from "./canonicalLifts";
 import { goalChipsView } from "./goalChipsView";
 import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import { ouraRedirectResult, parseServerUtc } from "../wearableSync";
 import {
   EMPTY_STRENGTH_FORM,
   strengthEvidenceBody,
@@ -581,10 +582,10 @@ function PerformanceProfileCard() {
 }
 
 // ── Oura wearable connection (Phase 2) ─────────────────────────────────────
-// Connect Oura via OAuth (opens the provider consent screen) or paste a Personal
-// Access Token. Once connected, the nightly cron pulls daily wellness and "Sync
-// now" pulls on demand. Tokens live encrypted on the backend — the client only
-// ever sees connection status, never a token.
+// Connect Oura via OAuth, the only path Oura supports since it retired Personal Access
+// Tokens (Dec 2025). Once connected, data syncs when the athlete opens the app or the
+// check-in (wearableSync.ts), and "Sync now" pulls on demand. Tokens live encrypted on
+// the backend — the client only ever sees connection status, never a token.
 type WearableBusy = "idle" | "connecting" | "syncing" | "disconnecting";
 
 function WearableConnectCard() {
@@ -592,8 +593,6 @@ function WearableConnectCard() {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<WearableBusy>("idle");
-  const [pat, setPat] = useState("");
-  const [showPat, setShowPat] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -613,6 +612,15 @@ function WearableConnectCard() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Oura's OAuth consent returns the browser to /settings?oura=connected|error.
+  useEffect(() => {
+    const result = ouraRedirectResult(window.location.search);
+    if (result === null) return;
+    if (result === "connected") setNotice("Oura connected. Your data syncs each time you open Perf Lab.");
+    else setError("Oura sign-in didn't complete. Try Connect Oura again.");
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const connected = status?.connected ?? false;
   const conn = status?.connection ?? null;
@@ -645,24 +653,6 @@ function WearableConnectCard() {
     }
   }
 
-  async function onPat() {
-    if (!auth.token || pat.trim().length < 8) return;
-    setBusy("connecting");
-    setError(null);
-    setNotice(null);
-    try {
-      await api.connectOuraPat(pat.trim(), auth.token);
-      setPat("");
-      setShowPat(false);
-      await load();
-      await onSync();
-    } catch (e) {
-      setError((e as ApiError).message ?? "Invalid Oura token");
-    } finally {
-      setBusy("idle");
-    }
-  }
-
   async function onDisconnect() {
     if (!auth.token) return;
     setBusy("disconnecting");
@@ -682,7 +672,7 @@ function WearableConnectCard() {
     <Card className="p-[22px]">
       <SectionLabel className="mb-1">Wearable — Oura</SectionLabel>
       <div className="mb-4 text-[12px] font-medium leading-[1.5] text-mute">
-        Sync HRV, sleep and resting HR nightly to sharpen your readiness.
+        HRV, sleep and resting HR sync each time you open Perf Lab and fill your morning check-in.
       </div>
 
       {!auth.isAuthenticated ? (
@@ -698,7 +688,7 @@ function WearableConnectCard() {
             <span className="text-[11.5px] font-medium text-mute">
               {conn?.auth_type === "pat" ? "Personal token" : "OAuth"}
               {conn?.last_sync_at
-                ? ` · last sync ${new Date(conn.last_sync_at).toLocaleString()}`
+                ? ` · last sync ${parseServerUtc(conn.last_sync_at).toLocaleString()}`
                 : " · not synced yet"}
             </span>
           </div>
@@ -722,43 +712,15 @@ function WearableConnectCard() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void onOAuth()}
-              disabled={busy !== "idle"}
-              className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-[12px] text-[13px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
-            >
-              {busy === "connecting" ? "Connecting…" : "Connect Oura"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPat((v) => !v)}
-              className="text-[12px] font-medium text-mute underline-offset-2 hover:underline"
-            >
-              Use a token instead
-            </button>
-          </div>
-          {showPat && (
-            <div>
-              <input
-                type="password"
-                value={pat}
-                onChange={(e) => setPat(e.target.value)}
-                placeholder="Oura Personal Access Token"
-                className={`${inputCls} max-w-[420px] font-mono`}
-              />
-              <button
-                type="button"
-                onClick={() => void onPat()}
-                disabled={busy !== "idle" || pat.trim().length < 8}
-                className="mt-3 rounded-[11px] border border-white/10 bg-white/[0.03] px-4 py-[10px] text-[12.5px] font-semibold leading-none text-ink disabled:opacity-60"
-              >
-                {busy === "connecting" ? "Connecting…" : "Connect with token"}
-              </button>
-            </div>
-          )}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => void onOAuth()}
+            disabled={busy !== "idle"}
+            className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-5 py-[12px] text-[13px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+          >
+            {busy === "connecting" ? "Connecting…" : "Connect Oura"}
+          </button>
         </div>
       )}
 
