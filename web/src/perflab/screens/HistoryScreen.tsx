@@ -1,6 +1,8 @@
 // src/perflab/screens/HistoryScreen.tsx
 import { useState, type ReactNode } from "react";
 import * as api from "@/api/perfLabClient";
+import { useAuth } from "@/auth/useAuth";
+import { cn } from "@/lib/utils";
 import type { BenchmarkObservationRead, StateHistorySnapshotRead, WellnessSampleOut, WorkoutLogSummary } from "@/types";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
@@ -13,6 +15,10 @@ import { AEROBIC_CEILING, RANGES, RANGE_WEEKS, filterHistoryWindow, weeklyLoad, 
 
 /** Compact load formatter — real volume-load totals run large, so thousands
  *  collapse to "12.4k". */
+// Console section label (mono 10px, faint) — a local override of the shared
+// SectionLabel default, which the not-yet-migrated screens still render at 11px.
+const LABEL = "text-[10px] text-faint";
+
 function fmtLoad(v: number): string {
   if (!Number.isFinite(v)) return "—";
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`;
@@ -22,9 +28,9 @@ function fmtLoad(v: number): string {
  *  thumb, not a validated injury-risk predictor: the labels say where the ratio
  *  sits, never a risk the engine has measured. */
 function acwrBand(r: number): { label: string; color: string } {
-  if (r < 0.8) return { label: "Low", color: "var(--color-info)" };
+  if (r < 0.8) return { label: "Low", color: "var(--color-faint)" };
   if (r <= 1.3) return { label: "In range", color: "var(--color-good)" };
-  if (r <= 1.5) return { label: "Ramping", color: "#e0a33a" };
+  if (r <= 1.5) return { label: "Ramping", color: "var(--color-warn)" };
   return { label: "Spike", color: "var(--color-hot)" };
 }
 
@@ -40,7 +46,7 @@ function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute:
   return (
     <Card className="px-[22px] py-5">
       <div className="mb-3 flex items-center justify-between">
-        <SectionLabel>Load balance</SectionLabel>
+        <SectionLabel className={LABEL}>Load balance</SectionLabel>
         <div className="text-[11px] font-medium leading-none text-dim">acute : chronic</div>
       </div>
       {acwr == null || band == null ? (
@@ -71,7 +77,7 @@ function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute:
           <div className="relative mt-4">
             <div
               className="h-[9px] rounded-[6px]"
-              style={{ background: "linear-gradient(90deg,var(--color-dim) 0 20%,var(--color-good) 20% 53.3%,#e0a33a 53.3% 66.7%,var(--color-hot) 66.7% 100%)" }}
+              style={{ background: "linear-gradient(90deg,var(--color-dim) 0 20%,var(--color-good) 20% 53.3%,var(--color-warn) 53.3% 66.7%,var(--color-hot) 66.7% 100%)" }}
             />
             <div
               className="absolute top-[-2px] h-[13px] w-[2px] rounded-[2px] bg-ink"
@@ -135,7 +141,7 @@ const sourceLabel = (s: string | null | undefined): string =>
 // a failed load rather than inventing a second wording for one failure.
 function VO2maxCard({ resource }: { resource: AuthedResource<BenchmarkObservationRead[]> }) {
   const shell = (inner: ReactNode) => (
-    <Card className="border-mint/[0.18] p-[18px]" style={{ background: "linear-gradient(120deg,#0f1f1c,#111419 60%)" }}>
+    <Card className="border-mint/[0.18] p-[18px]" style={{ background: "linear-gradient(120deg,#0f1f1c,var(--color-tile) 60%)" }}>
       <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-[#9ad6c8]">VO₂max progression</div>
       {inner}
     </Card>
@@ -228,6 +234,7 @@ function AerobicCapacityCard({ resource, latest, windowStart }: {
               )}
             </div>
             <Track pct={pct} background="linear-gradient(90deg,var(--ac),#a7e36e)" className="mt-3 h-[6px]" />
+            <div className="mt-2 font-mono text-[10px] leading-none text-dim">of {AEROBIC_CEILING} axis ceiling</div>
           </>
         );
       }}
@@ -244,7 +251,7 @@ function RecentWellnessCard() {
 
   return (
     <Card className="px-[22px] py-5">
-      <SectionLabel className="mb-2">Recent wellness</SectionLabel>
+      <SectionLabel className={cn(LABEL, "mb-2")}>Recent wellness</SectionLabel>
       <ResourceState
         resource={wellnessRes}
         isEmpty={(rows) => rows.length === 0}
@@ -261,7 +268,7 @@ function RecentWellnessCard() {
               <span>Date</span><span>HRV</span><span>Sleep</span><span>RHR</span><span>Mood</span>
             </div>
             {samples.map((w) => (
-              <div key={w.id} className="grid grid-cols-[1.1fr_1fr_1fr_1fr_1fr] items-center gap-2 border-b border-white/[0.05] py-[12px] last:border-0">
+              <div key={w.id} className="grid grid-cols-[1.1fr_1fr_1fr_1fr_1fr] items-center gap-2 border-b border-white/[0.07] py-[12px] last:border-0">
                 {/* A day can hold several rows — the table is keyed (user, date, source) —
                     so the date alone renders two different sources as two identical rows.
                     The source is what tells them apart. */}
@@ -287,7 +294,7 @@ function RecentWellnessCard() {
 function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObservationRead[]> }) {
   return (
     <Card className="px-[22px] py-5">
-      <SectionLabel className="mb-2">Field test log</SectionLabel>
+      <SectionLabel className={cn(LABEL, "mb-2")}>Field test log</SectionLabel>
       <ResourceState
         resource={resource}
         isEmpty={(rows) => rows.length === 0}
@@ -310,7 +317,7 @@ function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObse
               date: (
                 <span className="font-semibold text-ink">
                   {fmtDay(observation.observed_at)}
-                  {index === 0 && <span className="ml-1 text-[10px] font-medium text-ac">latest</span>}
+                  {index === 0 && <span className="ml-[6px] text-[10px] font-medium text-ac">latest</span>}
                 </span>
               ),
               vo2: (
@@ -333,6 +340,7 @@ function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObse
 
 export function HistoryScreen() {
   const { actions } = usePerfLab();
+  const { token } = useAuth();
   const { accent, colors } = useVizTheme();
   const [range, setRange] = useState<Range>("12w");
 
@@ -395,139 +403,155 @@ export function HistoryScreen() {
   return (
     <section className="flex flex-col gap-[18px] px-[30px] pb-9 pt-[26px]">
       <ScreenHeader title="History" subtitle="How your twin and assessments have moved over your recent training.">
-        <div className="flex gap-[7px] rounded-[9px] border border-white/[0.08] p-[3px]">
-          {RANGES.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setRange(t)}
-              className={`cursor-pointer rounded-[7px] px-[11px] py-[7px] text-[11px] font-semibold leading-none ${t === range ? "bg-ink text-[#0a0c10]" : "text-faint"}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {/* Check-in writes wellness: signed-in athletes only, as on the other console screens. */}
+        {token != null && (
+          <button onClick={actions.openCheckin} className="rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft">
+            Check in
+          </button>
+        )}
+        <button onClick={actions.openLog} className="rounded-[9px] bg-ac px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Log workout</button>
       </ScreenHeader>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
-        <Card className="px-[22px] py-5">
-          <div className="mb-2 flex items-start justify-between">
-            <div>
-              <SectionLabel>Readiness</SectionLabel>
-              <div className="mt-2 flex items-end gap-2">
-                <span className="font-mono text-[30px] font-semibold leading-none text-ink">{latestReadiness ?? "—"}</span>
-                {hDelta && <span className={`mb-1 text-[11px] font-medium leading-none ${hDiff != null && hDiff >= 0 ? "text-good" : "text-hot"}`}>{hDelta}</span>}
-              </div>
-            </div>
-            <div className="text-right font-mono text-[10px] leading-none text-dim">click a point to time-travel</div>
-          </div>
-          <ResourceState
-            resource={historyRes}
-            // A single point cannot draw a trend, so it reads as "not enough
-            // history" — an editorial reading of successful data, which is
-            // exactly what `isEmpty` is for. It closes over `N` rather than
-            // re-filtering so the chart and the header above it always agree.
-            isEmpty={() => N < 2}
-            variant="note"
-            className="flex h-[170px] items-center justify-center"
-            guest={{ body: "Sign in to see your readiness trend." }}
-            loadingContent={{ body: "Loading history…" }}
-            error={{ body: "Couldn't load your history — try again." }}
-            empty={{ body: "Not enough history in this window yet — log training or widen the range." }}
-            staleLabel="Couldn't refresh your history — showing your last loaded trend."
-          >
-            {() => (
-              <Chart
-                width={600}
-                height={180}
-                padding={{ top: 14, right: 10, bottom: 15, left: 10 }}
-                xDomain={[0, N - 1]}
-                yDomain={[20, 100]}
-                ariaLabel="Readiness across the selected window"
-                className="mt-1 h-[170px] w-full"
+      <div className="flex flex-col gap-4">
+        <div className="flex justify-end">
+          <div role="group" aria-label="Range" className="flex gap-[7px] rounded-[9px] border border-white/[0.07] p-[3px]">
+            {RANGES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setRange(t)}
+                aria-pressed={t === range}
+                className={cn(
+                  "cursor-pointer rounded-[7px] px-[11px] py-[7px] text-[11px] font-semibold leading-none transition-colors",
+                  t === range ? "bg-ac text-[#0a0c10] shadow-[0_6px_18px_-8px_var(--ac)]" : "bg-white/[0.04] text-soft hover:bg-white/[0.06]",
+                )}
               >
-                <Axis y yTicks={3} />
-                <Area data={readinessSeries.map((r, i) => [i, r] as [number, number])} color={accent} />
-                <DayMarkers readiness={readinessSeries} onPick={goDay} color={accent} />
-              </Chart>
-            )}
-          </ResourceState>
-        </Card>
-        <div className="flex flex-col gap-4">
-          <VO2maxCard resource={obsRes} />
-          <AerobicCapacityCard resource={historyRes} latest={latestSnap} windowStart={windowStartSnap} />
-        </div>
-      </div>
-
-      <RecentWellnessCard />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-        <Card className="px-[22px] py-5">
-          <div className="mb-4 flex items-center justify-between">
-            <SectionLabel>Weekly training load</SectionLabel>
-            <div className="text-[11px] font-medium leading-none text-dim">volume load · last {weeks} weeks</div>
+                {t}
+              </button>
+            ))}
           </div>
-          <ResourceState
-            resource={workoutsRes}
-            // Logged workouts that all fall outside the selected window are a
-            // successful-but-empty read, not a failed one.
-            isEmpty={() => loadSeries.length === 0}
-            variant="note"
-            className="flex h-[140px] items-center justify-center"
-            guest={{ body: "Sign in to see your training load." }}
-            loadingContent={{ body: "Loading training load…" }}
-            error={{ body: "Couldn't load your training load — try again." }}
-            empty={{ body: "No training logged in this window — log a session or widen the range." }}
-            staleLabel="Couldn't refresh your training load — showing your last loaded weeks."
-          >
-            {() => (
-              <>
-                <div className="mb-4 flex flex-wrap gap-x-7 gap-y-3">
-                  <div>
-                    <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">This week</div>
-                    <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">{fmtLoad(thisWeek)}</div>
-                  </div>
-                  <div>
-                    <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">vs last wk</div>
-                    <div className={`mt-[6px] font-mono text-[22px] font-semibold leading-none ${wowDelta == null ? "text-dim" : wowDelta >= 0 ? "text-good" : "text-hot"}`}>
-                      {wowDelta == null ? "—" : `${wowDelta >= 0 ? "+" : "−"}${Math.abs(wowDelta * 100).toFixed(0)}%`}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">{weeks}-wk avg</div>
-                    <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">{fmtLoad(avgLoad)}</div>
-                  </div>
-                  <div>
-                    <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Peak</div>
-                    <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">
-                      {fmtLoad(peakVal)}<span className="ml-[3px] text-[12px] font-medium text-mute">· W{peakWk}</span>
-                    </div>
-                  </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
+          <Card className="px-[22px] py-5">
+            <div className="mb-2 flex items-start justify-between">
+              <div>
+                <SectionLabel className={LABEL}>Readiness</SectionLabel>
+                <div className="mt-2 flex items-end gap-2">
+                  <span className="font-mono text-[30px] font-semibold leading-none text-ink">{latestReadiness ?? "—"}</span>
+                  {hDelta && <span className={`mb-1 text-[11px] font-medium leading-none ${hDiff != null && hDiff >= 0 ? "text-good" : "text-hot"}`}>{hDelta}</span>}
                 </div>
+              </div>
+              <div className="text-right font-mono text-[10px] leading-none text-dim">click a point to time-travel</div>
+            </div>
+            <ResourceState
+              resource={historyRes}
+              // A single point cannot draw a trend, so it reads as "not enough
+              // history" — an editorial reading of successful data, which is
+              // exactly what `isEmpty` is for. It closes over `N` rather than
+              // re-filtering so the chart and the header above it always agree.
+              isEmpty={() => N < 2}
+              variant="note"
+              className="flex h-[170px] items-center justify-center"
+              guest={{ body: "Sign in to see your readiness trend." }}
+              loadingContent={{ body: "Loading history…" }}
+              error={{ body: "Couldn't load your history — try again." }}
+              empty={{ body: "Not enough history in this window yet — log training or widen the range." }}
+              staleLabel="Couldn't refresh your history — showing your last loaded trend."
+            >
+              {() => (
                 <Chart
                   width={600}
-                  height={100}
-                  padding={{ top: 6, right: 2, bottom: 2, left: 2 }}
-                  yDomain={[0, loadMax]}
-                  ariaLabel={`Weekly training load, last ${weeks} weeks`}
-                  className="h-[100px] w-full"
+                  height={180}
+                  padding={{ top: 14, right: 10, bottom: 15, left: 10 }}
+                  xDomain={[0, N - 1]}
+                  yDomain={[20, 100]}
+                  ariaLabel="Readiness across the selected window"
+                  className="mt-1 h-[170px] w-full"
                 >
-                  <Bars
-                    data={loadSeries.map((v, i) => ({ key: `W${i + 1}`, value: v }))}
-                    color="series"
-                    baseColor={colors.categorical[1]}
-                    emphasisKey={`W${nowIdx + 1}`}
-                  />
+                  <Axis y yTicks={3} />
+                  <Area data={readinessSeries.map((r, i) => [i, r] as [number, number])} color={accent} fillOpacity={0.14} />
+                  <DayMarkers readiness={readinessSeries} onPick={goDay} color={accent} />
                 </Chart>
-                <div className="mt-[10px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>W1</span><span>W{weeks} · now</span></div>
-              </>
-            )}
-          </ResourceState>
-        </Card>
-        <LoadBalanceCard acwr={acwr} acute={thisWeek} chronic={chronic} />
-      </div>
+              )}
+            </ResourceState>
+          </Card>
+          <div className="flex flex-col gap-4">
+            <VO2maxCard resource={obsRes} />
+            <AerobicCapacityCard resource={historyRes} latest={latestSnap} windowStart={windowStartSnap} />
+          </div>
+        </div>
 
-      <FieldTestLogCard resource={obsRes} />
+        <RecentWellnessCard />
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+          <Card className="px-[22px] py-5">
+            <div className="mb-4 flex items-center justify-between">
+              <SectionLabel className={LABEL}>Weekly training load</SectionLabel>
+              <div className="text-[11px] font-medium leading-none text-dim">volume load · last {weeks} weeks</div>
+            </div>
+            <ResourceState
+              resource={workoutsRes}
+              // Logged workouts that all fall outside the selected window are a
+              // successful-but-empty read, not a failed one.
+              isEmpty={() => loadSeries.length === 0}
+              variant="note"
+              className="flex h-[140px] items-center justify-center"
+              guest={{ body: "Sign in to see your training load." }}
+              loadingContent={{ body: "Loading training load…" }}
+              error={{ body: "Couldn't load your training load — try again." }}
+              empty={{ body: "No training logged in this window — log a session or widen the range." }}
+              staleLabel="Couldn't refresh your training load — showing your last loaded weeks."
+            >
+              {() => (
+                <>
+                  <div className="mb-4 flex flex-wrap gap-x-7 gap-y-3">
+                    <div>
+                      <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">This week</div>
+                      <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">{fmtLoad(thisWeek)}</div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">vs last wk</div>
+                      <div className={`mt-[6px] font-mono text-[22px] font-semibold leading-none ${wowDelta == null ? "text-dim" : wowDelta >= 0 ? "text-good" : "text-hot"}`}>
+                        {wowDelta == null ? "—" : `${wowDelta >= 0 ? "+" : "−"}${Math.abs(wowDelta * 100).toFixed(0)}%`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">{weeks}-wk avg</div>
+                      <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">{fmtLoad(avgLoad)}</div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint">Peak</div>
+                      <div className="mt-[6px] font-mono text-[22px] font-semibold leading-none text-ink">
+                        {fmtLoad(peakVal)}<span className="ml-[3px] text-[12px] font-medium text-mute">· W{peakWk}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <Chart
+                    width={600}
+                    height={130}
+                    padding={{ top: 6, right: 2, bottom: 2, left: 2 }}
+                    yDomain={[0, loadMax]}
+                    ariaLabel={`Weekly training load, last ${weeks} weeks`}
+                    className="h-[130px] w-full"
+                  >
+                    <Bars
+                      data={loadSeries.map((v, i) => ({ key: `W${i + 1}`, value: v }))}
+                      color="series"
+                      baseColor={colors.categorical[1]}
+                      emphasisKey={`W${nowIdx + 1}`}
+                    />
+                  </Chart>
+                  <div className="mt-[10px] flex justify-between font-mono text-[9px] leading-none text-dim"><span>W1</span><span className="text-ac">W{weeks} · now</span></div>
+                </>
+              )}
+            </ResourceState>
+          </Card>
+          <LoadBalanceCard acwr={acwr} acute={thisWeek} chronic={chronic} />
+        </div>
+
+        <FieldTestLogCard resource={obsRes} />
+      </div>
     </section>
   );
 }
