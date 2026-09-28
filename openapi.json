@@ -7609,6 +7609,554 @@
         "title": "WeekProgress",
         "type": "object"
       },
+      "WeekReview": {
+        "description": "Week review. ``available=false`` carries a ``reason`` and nothing else is populated\nbeyond ``window`` (when one was resolved).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "counts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeekReviewCounts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "moved": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeekReviewMoved"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_week": {
+            "description": "Already-determined facts about the following week only. Nothing here was re-planned: future sessions are resolved on the day.",
+            "items": {
+              "$ref": "#/components/schemas/WeekReviewNextItem"
+            },
+            "title": "Next Week",
+            "type": "array"
+          },
+          "next_week_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "changes_listed",
+                  "nothing_scheduled_to_change"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'nothing_scheduled_to_change' means no determined fact applies \u2014 NOT that a model checked next week and found nothing to change.",
+            "title": "Next Week Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_active_block",
+                  "no_state",
+                  "state_invalid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/WeekReviewSession"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WeekReviewWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "WeekReview",
+        "type": "object"
+      },
+      "WeekReviewAxisMove": {
+        "description": "One capacity axis across the week. An axis whose end status is ``insufficient`` is\nreported as not measured: its value is an unrefined prior, so no value or delta is given.",
+        "properties": {
+          "axis": {
+            "title": "Axis",
+            "type": "string"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "measured": {
+            "title": "Measured",
+            "type": "boolean"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "status_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status End"
+          },
+          "status_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Start"
+          }
+        },
+        "required": [
+          "axis",
+          "measured"
+        ],
+        "title": "WeekReviewAxisMove",
+        "type": "object"
+      },
+      "WeekReviewCounts": {
+        "properties": {
+          "adherence_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "completed / due \u00d7 100 (dashboard rule); null when nothing is due yet.",
+            "title": "Adherence Pct"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "due": {
+            "description": "Sessions scheduled on or before today \u2014 the adherence denominator.",
+            "title": "Due",
+            "type": "integer"
+          },
+          "modified": {
+            "description": "Subset of completed.",
+            "title": "Modified",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "planned": {
+            "title": "Planned",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "planned",
+          "completed",
+          "skipped",
+          "modified",
+          "pending",
+          "due"
+        ],
+        "title": "WeekReviewCounts",
+        "type": "object"
+      },
+      "WeekReviewMoved": {
+        "description": "State snapshots bracketing the week: the latest state at or before each boundary.\n\n``start_snapshot_at`` is the latest state at or before the week's first instant \u2014 which is\nalso the previous week's end. ``previous_week_start_snapshot_at`` brackets the previous\nweek so its fatigue movement can be compared with this one's.",
+        "properties": {
+          "capacity": {
+            "items": {
+              "$ref": "#/components/schemas/WeekReviewAxisMove"
+            },
+            "title": "Capacity",
+            "type": "array"
+          },
+          "end_snapshot_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Snapshot At"
+          },
+          "mean_fatigue_end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Fatigue End"
+          },
+          "mean_fatigue_previous_week_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Fatigue Previous Week Start"
+          },
+          "mean_fatigue_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Fatigue Start"
+          },
+          "previous_week_start_snapshot_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Week Start Snapshot At"
+          },
+          "start_snapshot_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Snapshot At"
+          }
+        },
+        "title": "WeekReviewMoved",
+        "type": "object"
+      },
+      "WeekReviewNextItem": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "plan",
+              "safety",
+              "assess"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "source": {
+            "description": "block:deload_week | block:benchmark_session | block:ends | adherence:lighter_bias | trigger:<axis>",
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "title",
+          "reason"
+        ],
+        "title": "WeekReviewNextItem",
+        "type": "object"
+      },
+      "WeekReviewSession": {
+        "description": "One planned session whose ``scheduled_date`` falls in the window (moved sessions are\ncounted where they now sit, ADR-0069).",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "feedback_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "SessionFeedback.status, if any.",
+            "title": "Feedback Status"
+          },
+          "felt_rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Session RPE from the linked workout log; null when no log is linked (e.g. a session marked completed by PATCH).",
+            "title": "Felt Rpe"
+          },
+          "followed_as_prescribed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Followed As Prescribed"
+          },
+          "is_benchmark": {
+            "title": "Is Benchmark",
+            "type": "boolean"
+          },
+          "is_deload": {
+            "title": "Is Deload",
+            "type": "boolean"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "modification_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modification Reason"
+          },
+          "modified": {
+            "description": "Completed AND the athlete reported a modification \u2014 the same rule the prescriber's adherence aggregate counts (ADR-0070).",
+            "title": "Modified",
+            "type": "boolean"
+          },
+          "modified_exercises": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified Exercises"
+          },
+          "modified_intensity": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified Intensity"
+          },
+          "modified_volume": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified Volume"
+          },
+          "original_scheduled_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Scheduled Date"
+          },
+          "planned_session_id": {
+            "title": "Planned Session Id",
+            "type": "integer"
+          },
+          "prescribed_rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Max exercise rpe_cap in the stored prescription; null when the session was never prescribed or its prescription names no cap. Never guessed.",
+            "title": "Prescribed Rpe"
+          },
+          "scheduled_date": {
+            "format": "date",
+            "title": "Scheduled Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "week_number": {
+            "description": "The week the session was planned in (unchanged by a move).",
+            "title": "Week Number",
+            "type": "integer"
+          },
+          "workout_log_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workout Log Id"
+          }
+        },
+        "required": [
+          "planned_session_id",
+          "scheduled_date",
+          "week_number",
+          "category",
+          "modality",
+          "status",
+          "is_deload",
+          "is_benchmark",
+          "modified"
+        ],
+        "title": "WeekReviewSession",
+        "type": "object"
+      },
+      "WeekReviewWindow": {
+        "properties": {
+          "block_id": {
+            "title": "Block Id",
+            "type": "integer"
+          },
+          "duration_weeks": {
+            "title": "Duration Weeks",
+            "type": "integer"
+          },
+          "end": {
+            "description": "start + 6 (inclusive).",
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "is_current_week": {
+            "description": "Server-local today falls inside the window.",
+            "title": "Is Current Week",
+            "type": "boolean"
+          },
+          "start": {
+            "description": "block.start_date + (week_number - 1) * 7.",
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "week_number": {
+            "description": "1-indexed week within the block.",
+            "title": "Week Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "block_id",
+          "week_number",
+          "duration_weeks",
+          "start",
+          "end",
+          "is_current_week"
+        ],
+        "title": "WeekReviewWindow",
+        "type": "object"
+      },
       "WeeklyTemplateSlot": {
         "properties": {
           "category": {
@@ -10697,6 +11245,78 @@
           }
         ],
         "summary": "Get Today",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/week-review": {
+      "get": {
+        "description": "One block week in review: its sessions, counts, what the state did, and the facts\nalready determined for the week after. Display-only; reads nothing it could change.\n\nDefaults to the current block's current week. No active block, no state, or state that\nfails strict decoding answer ``200 {available: false, reason}`` \u2014 this surface gates\nnothing, so a decode failure is not a 409 here.",
+        "operationId": "get_week_review_v1_planning_week_review_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "block_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Block Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "week_number",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Week Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Week Review",
         "tags": [
           "Planning"
         ]
