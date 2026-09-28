@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,6 +95,16 @@ def feedback_reports_modification(fb: SessionFeedback | None) -> bool:
         or fb.modified_intensity
         or fb.modified_exercises
     )
+
+
+def trigger_kind(axis: str) -> Literal["safety", "assess"]:
+    """How a firing plan-revision trigger is labelled for the athlete.
+
+    Fatigue and tissue-stress triggers protect the athlete (``safety``). A capacity trigger
+    (``c_*`` — today only low aerobic capacity) says the evidence is thin, which is a
+    measurement question, not a safety one (``assess``).
+    """
+    return "assess" if axis.startswith("c_") else "safety"
 
 
 def week_window(block: MesocycleBlock, week_number: int) -> tuple[date, date]:
@@ -280,7 +290,7 @@ async def _next_week(
             continue
         items.append(
             WeekReviewNextItem(
-                kind="safety",
+                kind=trigger_kind(trig.axis),
                 source=f"trigger:{trig.axis}",
                 title=trig.label,
                 reason=(

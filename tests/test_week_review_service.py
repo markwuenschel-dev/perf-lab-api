@@ -26,6 +26,7 @@ from app.services.week_review_service import (
     WeekReviewNotFound,
     build_week_review,
     prescribed_rpe_cap,
+    trigger_kind,
 )
 
 _asyncio = pytest.mark.asyncio
@@ -168,6 +169,14 @@ def test_private_trigger_name_is_an_alias_of_the_public_one() -> None:
         prescription_finalize._derive_plan_revision_triggers  # pyright: ignore[reportPrivateUsage]
         is prescription_finalize.derive_plan_revision_triggers
     )
+
+
+def test_trigger_kind_separates_capacity_evidence_from_safety() -> None:
+    # Every live trigger axis gets a kind; only the capacity one is a measurement question.
+    axes = [rule.axis for rule in prescription_finalize._DRIVER_RULES]  # pyright: ignore[reportPrivateUsage]
+    kinds = {axis: trigger_kind(axis) for axis in axes}
+    assert kinds.pop("c_met_aerobic") == "assess"
+    assert kinds and set(kinds.values()) == {"safety"}
 
 
 # --- window + joins ------------------------------------------------------------------------
