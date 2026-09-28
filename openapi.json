@@ -4821,6 +4821,206 @@
         "title": "PlannedSessionUpdateRequest",
         "type": "object"
       },
+      "PlannedWeekDay": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "fatigue": {
+            "$ref": "#/components/schemas/PlannedWeekFatigue"
+          },
+          "load": {
+            "title": "Load",
+            "type": "number"
+          },
+          "mean_fatigue": {
+            "title": "Mean Fatigue",
+            "type": "number"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedWeekSession"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "load",
+          "mean_fatigue",
+          "fatigue"
+        ],
+        "title": "PlannedWeekDay",
+        "type": "object"
+      },
+      "PlannedWeekFatigue": {
+        "description": "Modeled per-axis fatigue at the end of a projected day (engine scale).",
+        "properties": {
+          "cns": {
+            "title": "Cns",
+            "type": "number"
+          },
+          "grip": {
+            "title": "Grip",
+            "type": "number"
+          },
+          "metabolic": {
+            "title": "Metabolic",
+            "type": "number"
+          },
+          "muscular": {
+            "title": "Muscular",
+            "type": "number"
+          },
+          "structural": {
+            "title": "Structural",
+            "type": "number"
+          },
+          "tendon": {
+            "title": "Tendon",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cns",
+          "muscular",
+          "metabolic",
+          "structural",
+          "tendon",
+          "grip"
+        ],
+        "title": "PlannedWeekFatigue",
+        "type": "object"
+      },
+      "PlannedWeekProjection": {
+        "description": "Forward projection of the athlete's PENDING planned sessions through the real engine.\n\nDisplay-only (ADR-0073): writes nothing, feeds no scoring or prescription. ``available``\nis false with a ``reason`` when there is no state to start from (``no_state``) or the\nstored state cannot be decoded strictly (``state_invalid``).",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedWeekDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "peak_mean_fatigue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Mean Fatigue"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_state",
+                  "state_invalid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "window": {
+            "$ref": "#/components/schemas/PlannedWeekWindow"
+          }
+        },
+        "required": [
+          "available",
+          "window"
+        ],
+        "title": "PlannedWeekProjection",
+        "type": "object"
+      },
+      "PlannedWeekSession": {
+        "properties": {
+          "basis": {
+            "enum": [
+              "prescribed",
+              "template_estimate"
+            ],
+            "title": "Basis",
+            "type": "string"
+          },
+          "load": {
+            "title": "Load",
+            "type": "number"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "planned_session_id": {
+            "title": "Planned Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "planned_session_id",
+          "modality",
+          "basis",
+          "load"
+        ],
+        "title": "PlannedWeekSession",
+        "type": "object"
+      },
+      "PlannedWeekWindow": {
+        "description": "The projected span. ``block_id``/``week_number`` name the current block week when\ntoday falls inside the most recently created active block; otherwise null.",
+        "properties": {
+          "block_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Id"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "week_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week Number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "PlannedWeekWindow",
+        "type": "object"
+      },
       "PrescriptionConfidence": {
         "description": "How certain the twin is about the state this prescription was built on.\n\nDerived from the live per-axis ``capacity_confidence`` variance via the shared\n``confidence_presentation_policy``. Reported, not yet acted on: nothing in the\nprescriber currently widens or narrows a recommendation based on these bands.",
         "properties": {
@@ -10516,6 +10716,64 @@
           }
         ],
         "summary": "Update Block",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/projection": {
+      "get": {
+        "description": "Pending planned sessions projected forward: sRPE load and modeled fatigue per day.\n\nDisplay-only (ADR-0073): writes nothing and feeds no scoring. Fatigue, not readiness.",
+        "operationId": "get_planned_week_projection_v1_planning_projection_get",
+        "parameters": [
+          {
+            "description": "Last day to project (inclusive). Default: end of the current block week, or today+6 with no active block. Capped at 28 days from today.",
+            "in": "query",
+            "name": "through",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Last day to project (inclusive). Default: end of the current block week, or today+6 with no active block. Capped at 28 days from today.",
+              "title": "Through"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlannedWeekProjection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Planned Week Projection",
         "tags": [
           "Planning"
         ]

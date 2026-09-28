@@ -669,6 +669,28 @@ export interface paths {
         patch: operations["update_block_v1_planning_blocks__block_id__patch"];
         trace?: never;
     };
+    "/v1/planning/projection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Planned Week Projection
+         * @description Pending planned sessions projected forward: sRPE load and modeled fatigue per day.
+         *
+         *     Display-only (ADR-0073): writes nothing and feeds no scoring. Fatigue, not readiness.
+         */
+        get: operations["get_planned_week_projection_v1_planning_projection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/planning/sessions": {
         parameters: {
             query?: never;
@@ -2873,6 +2895,93 @@ export interface components {
             /** Scheduled Date */
             scheduled_date?: string | null;
             status?: components["schemas"]["SessionStatus"] | null;
+        };
+        /** PlannedWeekDay */
+        PlannedWeekDay: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            fatigue: components["schemas"]["PlannedWeekFatigue"];
+            /** Load */
+            load: number;
+            /** Mean Fatigue */
+            mean_fatigue: number;
+            /** Sessions */
+            sessions?: components["schemas"]["PlannedWeekSession"][];
+        };
+        /**
+         * PlannedWeekFatigue
+         * @description Modeled per-axis fatigue at the end of a projected day (engine scale).
+         */
+        PlannedWeekFatigue: {
+            /** Cns */
+            cns: number;
+            /** Grip */
+            grip: number;
+            /** Metabolic */
+            metabolic: number;
+            /** Muscular */
+            muscular: number;
+            /** Structural */
+            structural: number;
+            /** Tendon */
+            tendon: number;
+        };
+        /**
+         * PlannedWeekProjection
+         * @description Forward projection of the athlete's PENDING planned sessions through the real engine.
+         *
+         *     Display-only (ADR-0073): writes nothing, feeds no scoring or prescription. ``available``
+         *     is false with a ``reason`` when there is no state to start from (``no_state``) or the
+         *     stored state cannot be decoded strictly (``state_invalid``).
+         */
+        PlannedWeekProjection: {
+            /** Available */
+            available: boolean;
+            /** Days */
+            days?: components["schemas"]["PlannedWeekDay"][];
+            /** Peak Mean Fatigue */
+            peak_mean_fatigue?: number | null;
+            /** Reason */
+            reason?: ("no_state" | "state_invalid") | null;
+            window: components["schemas"]["PlannedWeekWindow"];
+        };
+        /** PlannedWeekSession */
+        PlannedWeekSession: {
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "prescribed" | "template_estimate";
+            /** Load */
+            load: number;
+            /** Modality */
+            modality: string;
+            /** Planned Session Id */
+            planned_session_id: number;
+        };
+        /**
+         * PlannedWeekWindow
+         * @description The projected span. ``block_id``/``week_number`` name the current block week when
+         *     today falls inside the most recently created active block; otherwise null.
+         */
+        PlannedWeekWindow: {
+            /** Block Id */
+            block_id?: number | null;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Week Number */
+            week_number?: number | null;
         };
         /**
          * PrescriptionConfidence
@@ -5686,6 +5795,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BlockRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_planned_week_projection_v1_planning_projection_get: {
+        parameters: {
+            query?: {
+                /** @description Last day to project (inclusive). Default: end of the current block week, or today+6 with no active block. Capped at 28 days from today. */
+                through?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlannedWeekProjection"];
                 };
             };
             /** @description Validation Error */
