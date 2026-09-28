@@ -40,5 +40,6 @@ from app.models.user import AthleteProfile, User  # noqa: F401
 from app.models.weak_point import WeakPoint  # noqa: F401
 from app.models.wearable_connection import WearableConnection  # noqa: F401
 from app.models.wellness import DailyCheckin, WellnessSample  # noqa: F401
+from app.models.wellness_ingest_token import WellnessIngestToken  # noqa: F401
 from app.models.workout_log import WorkoutLog  # noqa: F401
 from app.models.workout_set_log import WorkoutSetLog  # noqa: F401

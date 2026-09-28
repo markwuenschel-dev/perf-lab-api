@@ -11,7 +11,7 @@ from datetime import date as date_cls
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # --- Readiness / confidence vocabularies (P8; ADR-0052/ADR-0053) -----------------
 ReadinessBand = Literal["low", "moderate", "good", "high"]
@@ -178,3 +178,62 @@ class ReadinessScore(BaseModel):
     wellness_sample: WellnessSampleOut | None = None
     as_of: datetime | None = Field(default=None, description="Timestamp of the modeled state used")
     note: str | None = None
+
+
+# ── Phone-pushed wellness (POST /v1/wellness/ingest) ──────────────────────────────────
+
+
+class WellnessIngestIn(BaseModel):
+    """One day's device readings pushed from the athlete's phone (an iOS Shortcut today).
+
+    Device-measured signals only: a phone automation has no business reporting how sore the
+    athlete feels. Idempotent on (athlete, date, source), so a retrying automation replaces
+    the day's row instead of adding one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["apple_watch"] = Field(
+        description="The pushing device. Ranks below a cloud-synced device on the same day."
+    )
+    date: date_cls | None = Field(
+        default=None,
+        description="The day the readings belong to. Omitted: today (UTC), as readiness counts days.",
+    )
+    measured_at: datetime | None = Field(
+        default=None, description="When the readings were taken. Any offset is converted to UTC."
+    )
+    hrv_ms: float | None = Field(default=None, ge=0.0, le=500.0)
+    hrv_metric: HrvMetric = Field(
+        default="sdnn", description="Apple Watch reports SDNN; never averaged with rMSSD."
+    )
+    resting_hr: float | None = Field(default=None, ge=0.0, le=250.0)
+    sleep_hours: float | None = Field(default=None, ge=0.0, le=24.0)
+
+    @model_validator(mode="after")
+    def _carries_a_reading(self) -> WellnessIngestIn:
+        if self.hrv_ms is None and self.resting_hr is None and self.sleep_hours is None:
+            raise ValueError("send at least one of hrv_ms, resting_hr, sleep_hours")
+        return self
+
+
+class IngestTokenCreate(BaseModel):
+    label: str = Field(default="Apple Watch", min_length=1, max_length=60)
+
+
+class IngestTokenOut(BaseModel):
+    """An ingest token as listed: never the secret. ``last_used_at`` is the last successful sync."""
+
+    id: int
+    label: str
+    token_prefix: str
+    created_at: datetime
+    last_used_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IngestTokenCreated(IngestTokenOut):
+    """Returned once, at creation: the only time the plaintext ``token`` is ever shown."""
+
+    token: str

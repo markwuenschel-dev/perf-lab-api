@@ -33,6 +33,7 @@ from app.api.v1 import (
     simulate,
     weak_points,
     wellness,
+    wellness_ingest,
 )
 from app.api.v1.history import router as history_router
 from app.api.v1.onboard import router as onboard_router
@@ -365,6 +366,7 @@ app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(planning.router, prefix=settings.API_V1_STR)
 app.include_router(wellness.router, prefix=settings.API_V1_STR)
+app.include_router(wellness_ingest.router, prefix=settings.API_V1_STR)
 app.include_router(objectives.router, prefix=settings.API_V1_STR)
 app.include_router(macrocycles.router, prefix=settings.API_V1_STR)
 app.include_router(feedback.router, prefix=settings.API_V1_STR)

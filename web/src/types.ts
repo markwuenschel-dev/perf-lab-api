@@ -134,6 +134,10 @@ export type AuthorizeUrlResponse = Schemas["AuthorizeUrlResponse"];
 export type PatConnectRequest = Schemas["PatConnectRequest"];
 export type SyncResult = Schemas["SyncResult"];
 
+/* ---------- Phone-pushed wellness (Apple Watch via Shortcut: /v1/wellness/ingest*) ---------- */
+export type IngestTokenOut = Schemas["IngestTokenOut"];
+export type IngestTokenCreated = Schemas["IngestTokenCreated"];
+
 /* ---------- Legacy field test (POST /compute-metrics, no /v1 prefix) ---------- */
 // The backend schema is named `MetricsRequest`; the app calls it ComputeMetricsRequest.
 export type ComputeMetricsRequest = Schemas["MetricsRequest"];

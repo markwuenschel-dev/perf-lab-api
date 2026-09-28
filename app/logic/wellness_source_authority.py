@@ -15,11 +15,20 @@ measurable by a device at all — a provider reporting them is inferring, while 
 the primary instrument. So authority inverts by signal rather than being a single ranking of
 providers.
 
-**Two devices are NOT ranked against each other.** There is no evidence in this repo that
-one wearable measures HRV better than another, and inventing an order would be exactly the
-kind of unbacked claim the readiness path is being cleaned of. Equal-authority sources tie-
-break on ingestion recency, which is the previous behaviour narrowed to where it is
+**Two cloud devices are NOT ranked against each other.** There is no evidence in this repo
+that one wearable measures HRV better than another, and inventing an order would be exactly
+the kind of unbacked claim the readiness path is being cleaned of. Equal-authority sources
+tie-break on ingestion recency, which is the previous behaviour narrowed to where it is
 defensible.
+
+**A phone-pushed source is a fallback, by decision rather than by accuracy (2026-09-28).**
+Apple Watch data arrives through a phone automation (``POST /v1/wellness/ingest``). The
+athlete decided that when a cloud-synced device (Oura) has a same-day reading, that reading
+is used; otherwise the Apple Watch's is. That is a statement of which device the athlete
+treats as primary, not a claim that one measures better, and a per-athlete source
+preference may replace it later. A pushed source still outranks a hand-entered value on a
+measured signal. Resolution is per day and per signal, so an Apple sleep reading still wins
+on a day the ring reported only HRV.
 
 Distinct from ``app.logic.observation_authority``, which governs whether an observation may
 write *capacity* (and rejects device imports outright, ADR-0058). Wellness is not capacity;
@@ -43,7 +52,13 @@ OBJECTIVE_SIGNALS: frozenset[str] = frozenset(
 #: The athlete entering a value by hand. Every other source string is a provider/device.
 MANUAL_SOURCE = "manual"
 
+#: Sources a phone pushes through the ingest seam (``POST /v1/wellness/ingest``). They are
+#: devices, but they rank below a cloud-synced device on the same day (see the module doc).
+#: The ingest endpoint accepts exactly these source values.
+PUSHED_DEVICE_SOURCES: frozenset[str] = frozenset({"apple_watch"})
+
 #: Authority ranks. Only the ordering matters; the values are arbitrary.
+_PRIMARY_DEVICE = 3
 _PREFERRED = 2
 _ACCEPTED = 1
 
@@ -66,7 +81,10 @@ def authority_rank(signal: str, source: str) -> int:
     device = is_device_source(source)
     if signal in SUBJECTIVE_SIGNALS:
         return _ACCEPTED if device else _PREFERRED
-    return _PREFERRED if device else _ACCEPTED
+    if not device:
+        return _ACCEPTED
+    pushed = (source or "").strip().lower() in PUSHED_DEVICE_SOURCES
+    return _PREFERRED if pushed else _PRIMARY_DEVICE
 
 
 #: Ordering stand-in for a reading whose source reported no quality at all. Between a

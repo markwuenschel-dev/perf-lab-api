@@ -13,6 +13,8 @@ import type {
   BlockUpdateRequest,
   ComputeMetricsRequest,
   ConnectionStatus,
+  IngestTokenCreated,
+  IngestTokenOut,
   ExerciseCatalogOut,
   MacrocycleCreate,
   MacrocycleRead,
@@ -705,6 +707,44 @@ export async function getOuraAuthorizeUrl(token: string): Promise<AuthorizeUrlRe
     headers: { ...authHeaders(token) },
   });
   return handleResponse<AuthorizeUrlResponse>(res, { sessionOn401: true });
+}
+
+/* ---------- Phone-pushed wellness (Apple Watch via an iOS Shortcut) ---------- */
+
+/** The URL a phone automation posts to, absolute so it can be pasted into a Shortcut. */
+export function wellnessIngestUrl(): string {
+  const base = API_V1_BASE.startsWith("http") ? API_V1_BASE : `${window.location.origin}${API_V1_BASE}`;
+  return `${base}/wellness/ingest`;
+}
+
+/** Create a write-only ingest token. The response is the ONLY time the token is shown. */
+export async function createIngestToken(label: string, token: string): Promise<IngestTokenCreated> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/wellness/ingest-tokens`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ label }),
+  });
+  return handleResponse<IngestTokenCreated>(res, { sessionOn401: true });
+}
+
+/** The athlete's active ingest tokens; `last_used_at` is the last successful push. */
+export async function listIngestTokens(token: string): Promise<IngestTokenOut[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/wellness/ingest-tokens`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<IngestTokenOut[]>(res, { sessionOn401: true });
+}
+
+/** Revoke an ingest token; the phone automation using it stops working immediately. */
+export async function revokeIngestToken(id: number, token: string): Promise<void> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/wellness/ingest-tokens/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<void>(res, { sessionOn401: true });
 }
 
 /** Oura: pull the athlete's recent data now (the app also does this when data is stale). */

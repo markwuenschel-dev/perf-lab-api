@@ -91,3 +91,13 @@ export function ouraRedirectResult(search: string): "connected" | "error" | null
   const v = new URLSearchParams(search).get("oura");
   return v === "connected" || v === "error" ? v : null;
 }
+
+/** A phone automation can fail silently (phone locked, offline, automation off). After this
+ *  long without a successful push, Settings says so rather than let the data go stale
+ *  unnoticed. 36 h: a daily automation that missed one morning. */
+export const PUSH_STALE_AFTER_MS = 36 * 60 * 60 * 1000;
+
+export function isPushStale(lastUsedAt: string | null | undefined, now: Date): boolean {
+  if (!lastUsedAt) return false; // never pushed: "not synced yet", not a warning
+  return now.getTime() - parseServerUtc(lastUsedAt).getTime() > PUSH_STALE_AFTER_MS;
+}
