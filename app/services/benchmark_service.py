@@ -14,6 +14,7 @@ from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
 from app.logic.ekf.observation import mapping_specs_from_orm
+from app.logic.prescription_evidence import utc_naive
 from app.logic.state_update_v0 import (
     apply_benchmark_observation,
     capacity_increased,
@@ -87,7 +88,8 @@ async def _apply_weak_point_feedback(
     if not tags:
         return
 
-    now = datetime.now(UTC)
+    # weak_points timestamps are naive UTC; an aware value fails the insert (asyncpg).
+    now = utc_naive(datetime.now(UTC))
 
     if normalized_value < _DEFICIT_THRESHOLD:
         # Flag each tag as a benchmark-sourced weakness (skip if already active)
@@ -401,10 +403,13 @@ async def stage_observation(
         normalized_value = round(score01 * 100.0, 2)
 
     authority = _resolve_authority(body, definition, provenance_operation=provenance_operation)
+    # A client may send observed_at with an offset. Stored timestamps are naive UTC, and the
+    # same value becomes the new state's timestamp and any decline candidate's clock.
+    observation_time = utc_naive(body.observed_at or datetime.now(UTC))
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
-        observed_at=body.observed_at or datetime.now(UTC).replace(tzinfo=None),
+        observed_at=observation_time,
         performed_at=(
             performed_at.astimezone(UTC).replace(tzinfo=None)
             if performed_at is not None and performed_at.tzinfo is not None
@@ -438,7 +443,6 @@ async def stage_observation(
     await db.flush()
 
     mappings = list(definition.observation_mappings or [])
-    observation_time = body.observed_at or datetime.now(UTC).replace(tzinfo=None)
     # Policy-derived capacity authority (ADR-0058): the resolved capacity_effect is
     # the state-transition operator. Re-derive it from provenance fail-closed and
     # take the stricter of stored-vs-law — a mismarked row can never earn authority

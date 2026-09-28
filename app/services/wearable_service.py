@@ -29,6 +29,7 @@ from app.core import crypto
 from app.core.config import settings
 from app.integrations.base import TokenBundle, WearableAdapter
 from app.integrations.registry import adapter_for
+from app.logic.prescription_evidence import utc_naive
 from app.models.wearable_connection import WearableConnection
 from app.schemas.wellness import WellnessSampleIn
 from app.services import readiness_service
@@ -132,7 +133,7 @@ async def _store_connection(
     conn.auth_type = auth_type
     conn.access_token_enc = access_enc
     conn.refresh_token_enc = refresh_enc
-    conn.expires_at = tokens.expires_at
+    conn.expires_at = _stored_expiry(tokens.expires_at)
     conn.scope = tokens.scope
     await db.commit()
     await db.refresh(conn)
@@ -196,7 +197,7 @@ async def _valid_access_token(db: AsyncSession, conn: WearableConnection) -> str
     conn.access_token_enc = crypto.encrypt(tokens.access_token)
     if tokens.refresh_token:
         conn.refresh_token_enc = crypto.encrypt(tokens.refresh_token)
-    conn.expires_at = tokens.expires_at
+    conn.expires_at = _stored_expiry(tokens.expires_at)
     if tokens.scope:
         conn.scope = tokens.scope
     await db.commit()
@@ -281,6 +282,11 @@ async def sync_all(db: AsyncSession, *, days: int = DEFAULT_SYNC_DAYS) -> dict[s
 
 def _utc_today() -> date_cls:
     return datetime.now(UTC).date()
+
+
+def _stored_expiry(expires_at: datetime | None) -> datetime | None:
+    """Adapters report expiry as aware UTC; the column is naive UTC (``_aware`` restores it)."""
+    return utc_naive(expires_at) if expires_at is not None else None
 
 
 def _aware(dt: datetime) -> datetime:
