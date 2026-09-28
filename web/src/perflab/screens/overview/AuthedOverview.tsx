@@ -29,7 +29,7 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { activeMacrocycle, weekProgressLabel } from "../../macrocycles";
 import { sortObjectives } from "../../objectives";
-import { COLORS, readinessColor, readinessWord } from "../../readinessPresentation";
+import { COLORS, readinessColor, readinessNote, readinessWord } from "../../readinessPresentation";
 import { resourceData, type AuthedResource } from "../../resource";
 import { relativeTime } from "../../stateVector";
 import { usePerfLab } from "../../store";
@@ -49,7 +49,11 @@ import {
 import { EmptyLine, MetricText, NeutralRing, OverviewHeader, Snap, StatCol } from "./overviewLeaves";
 
 const btnGhost =
-  "rounded-[9px] border border-white/10 bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft";
+  "rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft";
+
+// Console section label (mono 10px, faint) — a local override of the shared
+// SectionLabel default, which the not-yet-migrated screens still render at 11px.
+const LABEL = "text-[10px] text-faint";
 
 // Status → user-facing word + colour. "insufficient" (no baseline yet) reads as
 // "building baseline" rather than an invented judgement.
@@ -128,69 +132,75 @@ export function AuthedOverview() {
           <>
             {newest && <SyncChip label={`Synced ${relativeTime(newest.timestamp)}`} />}
             <button onClick={actions.openCheckin} className={btnGhost}>Check in</button>
-            <button onClick={actions.openLog} className="rounded-[9px] bg-ink px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Log workout</button>
+            <button onClick={actions.openLog} className="rounded-[9px] bg-ac px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Log workout</button>
           </>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <GoalObjectiveCard />
-        <MorningCard morning={morning} onCheckin={actions.openCheckin} />
-      </div>
+      <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+          <GoalObjectiveCard />
+          <MorningCard morning={morning} onCheckin={actions.openCheckin} />
+        </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-        <Card className="p-6">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-            <div className="w-full sm:w-[300px] sm:flex-none">
-              <ReadinessBlock readiness={readiness} />
-              <TrendBlock trend={trend} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+          <Card className="p-6">
+            <div className="flex flex-wrap items-start gap-[26px]">
+              <div className="w-full sm:w-[280px] sm:flex-none">
+                <ReadinessBlock readiness={readiness} />
+                <TrendBlock trend={trend} />
+              </div>
+              <RecommendedToday
+                resource={todayRes}
+                primaryAction={primaryAction}
+                onPlan={() => actions.setScreen("planning")}
+                onSimulate={() => actions.setScreen("simulate")}
+              />
             </div>
-            <RecommendedToday resource={todayRes} primaryAction={primaryAction} onPlan={() => actions.setScreen("planning")} />
-          </div>
-        </Card>
+          </Card>
 
-        <div className="flex flex-col gap-4">
-          <TrainingLoadCard load={load} />
-          <HabitCard habit={habit} />
+          <div className="flex flex-col gap-4">
+            <TrainingLoadCard load={load} />
+            <HabitCard habit={habit} />
+            <Card>
+              <div className="mb-[14px] flex items-center justify-between">
+                <SectionLabel className={LABEL}>Twin snapshot</SectionLabel>
+                <button onClick={() => actions.setScreen("twin")} className="text-[11px] font-medium leading-none text-teal">Open twin →</button>
+              </div>
+              <div className="grid grid-cols-2 gap-x-[22px] gap-y-[14px]">
+                <Snap label="Aerobic" value={<MetricText state={twin.aerobic} />} />
+                <Snap label="Strength" value={<MetricText state={twin.strength} />} color="text-teal" />
+                <Snap label="Mean fatigue" value={<MetricText state={twin.meanFatigue} />} color="text-warn" />
+                <Snap
+                  label="Peak tissue"
+                  value={
+                    twin.peakTissue.kind === "value" ? (
+                      <>
+                        {twin.peakTissue.value.value}{" "}
+                        <span className="text-[11px] text-faint">{twin.peakTissue.value.region.toLowerCase()}</span>
+                      </>
+                    ) : (
+                      <MetricText state={{ kind: twin.peakTissue.kind } as MetricState<string>} />
+                    )
+                  }
+                  color="text-warn"
+                />
+              </div>
+              {twin.aerobic.kind === "empty" && (
+                <EmptyLine>No twin state yet — log a workout or run a field test to seed it.</EmptyLine>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <SectionLabel className={`${LABEL} mb-[14px]`}>Recent activity</SectionLabel>
+            <RecentActivity resource={workoutsRes} />
+          </Card>
+          <InsightsCard readinessRes={readinessRes} todayRes={todayRes} />
         </div>
       </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <SectionLabel className="mb-4">Recent activity</SectionLabel>
-          <RecentActivity resource={workoutsRes} />
-        </Card>
-        <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <SectionLabel>Twin snapshot</SectionLabel>
-            <button onClick={() => actions.setScreen("twin")} className="text-[11px] font-medium leading-none text-teal">Open twin →</button>
-          </div>
-          <div className="grid grid-cols-2 gap-x-[22px] gap-y-[14px]">
-            <Snap label="Aerobic" value={<MetricText state={twin.aerobic} />} />
-            <Snap label="Strength" value={<MetricText state={twin.strength} />} color="text-teal" />
-            <Snap label="Mean fatigue" value={<MetricText state={twin.meanFatigue} />} color="text-warn" />
-            <Snap
-              label="Peak tissue"
-              value={
-                twin.peakTissue.kind === "value" ? (
-                  <>
-                    {twin.peakTissue.value.value}{" "}
-                    <span className="text-[11px] text-faint">{twin.peakTissue.value.region.toLowerCase()}</span>
-                  </>
-                ) : (
-                  <MetricText state={{ kind: twin.peakTissue.kind } as MetricState<string>} />
-                )
-              }
-              color="text-warn"
-            />
-          </div>
-          {twin.aerobic.kind === "empty" && (
-            <EmptyLine>No twin state yet — log a workout or run a field test to seed it.</EmptyLine>
-          )}
-        </Card>
-      </div>
-
-      <InsightsCard readinessRes={readinessRes} todayRes={todayRes} />
     </>
   );
 }
@@ -213,7 +223,7 @@ function ReadinessBlock({ readiness }: { readiness: ReturnType<typeof readinessS
       <div className="flex items-center gap-4">
         <NeutralRing />
         <div>
-          <SectionLabel className="text-faint">Readiness</SectionLabel>
+          <SectionLabel className={LABEL}>Readiness</SectionLabel>
           <div className="mt-2 max-w-[180px] text-[12.5px] font-medium leading-[1.5] text-mute">{message}</div>
         </div>
       </div>
@@ -225,7 +235,7 @@ function ReadinessBlock({ readiness }: { readiness: ReturnType<typeof readinessS
     <div className="flex items-center gap-4">
       <ReadinessRing value={score.value} color={color} size={96} inner={74} valueClassName="text-[29px]" />
       <div>
-        <SectionLabel className="text-faint">Readiness</SectionLabel>
+        <SectionLabel className={LABEL}>Readiness</SectionLabel>
         <div className="mt-2 text-[17px] font-bold leading-none" style={{ color }}>{readinessWord(score.value)}</div>
         {confidenceBand.kind === "value" && (
           <div className="mt-[7px] text-[10.5px] font-semibold leading-none text-dim">
@@ -233,6 +243,7 @@ function ReadinessBlock({ readiness }: { readiness: ReturnType<typeof readinessS
             {confidenceBand.value === "low" && <span className="ml-1 text-warn">· limited data — check in to improve</span>}
           </div>
         )}
+        <div className="mt-2 max-w-[170px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(score.value)}</div>
       </div>
     </div>
   );
@@ -246,7 +257,7 @@ function TrendBlock({ trend }: { trend: ReturnType<typeof trendSection> }) {
   // backend confidence band while being computed from the fatigue proxy, so it read
   // as describing the ring above it. It does not.
   return (
-    <div className="mt-5 border-t border-white/[0.06] pt-4">
+    <div className="mt-5 border-t border-white/[0.07] pt-4">
       <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.14em] text-dim">
         {trend.label} · last 14 days
       </div>
@@ -257,7 +268,7 @@ function TrendBlock({ trend }: { trend: ReturnType<typeof trendSection> }) {
               {trend.delta.value >= 0 ? "+" : ""}{trend.delta.value} vs 2w ago
             </div>
           )}
-          <Sparkline values={trend.series.value} min={20} max={100} width={300} height={70} className="mt-2 block h-[56px] w-full" />
+          <Sparkline values={trend.series.value} min={20} max={100} width={300} height={70} className="mt-2 block h-[58px] w-full" />
         </>
       ) : (
         <div className="mt-2 flex h-[56px] items-center text-[11px] font-medium text-dim">
@@ -286,7 +297,7 @@ function MorningCard({
   return (
     <Card className="flex flex-col gap-[14px]">
       <div className="flex items-center justify-between">
-        <SectionLabel>This morning</SectionLabel>
+        <SectionLabel className={LABEL}>This morning</SectionLabel>
         <button onClick={onCheckin} className="rounded-[8px] bg-ac px-[11px] py-[7px] text-[11px] font-semibold leading-none text-[#0a0c10]">Check in →</button>
       </div>
       <div className="grid grid-cols-4 gap-3">
@@ -314,14 +325,20 @@ function MorningCard({
 
 // ---- Recommended today -----------------------------------------------------------
 
+// Secondary action into the Simulator: accent-tinted, one step below the primary.
+const btnAccentGhost =
+  "rounded-[9px] border border-ac/30 bg-ac/10 px-[14px] py-[10px] text-[12.5px] font-semibold leading-none text-ac";
+
 function RecommendedToday({
   resource,
   primaryAction,
   onPlan,
+  onSimulate,
 }: {
   resource: AuthedResource<TodaySessionResponse>;
   primaryAction: ReturnType<typeof primaryActionSection>;
   onPlan: () => void;
+  onSimulate: () => void;
 }) {
   const data = resourceData(resource);
   const session = data ? data.session : null;
@@ -338,10 +355,10 @@ function RecommendedToday({
           ? "Reload to try again."
           : "Plan a block to get a recommended session, or take today as recovery.";
     return (
-      <div className="flex-1">
+      <div className="min-w-0 flex-[1_1_300px]">
         <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Recommended today</div>
         <div className="mt-[9px] text-[22px] font-bold leading-[1.1] text-ink">{headline}</div>
-        <div className="mt-[9px] max-w-[380px] text-[13px] font-medium leading-[1.5] text-mute">{sub}</div>
+        <div className="mt-[9px] max-w-[400px] text-[13px] font-medium leading-[1.5] text-mute">{sub}</div>
         <div className="mt-4 flex gap-[10px]">
           <button onClick={onPlan} className={btnGhost}>Plan your week</button>
         </div>
@@ -373,21 +390,22 @@ function RecommendedToday({
   if (focus && stats.length < 4) stats.push({ label: "Focus", value: focus });
 
   return (
-    <div className="flex-1">
+    <div className="min-w-0 flex-[1_1_300px]">
       <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Recommended today</div>
       <div className="mt-[9px] text-[22px] font-bold leading-[1.1] text-ink">{title}</div>
-      {prose && <div className="mt-[9px] max-w-[380px] text-[13px] font-medium leading-[1.5] text-mute">{prose}</div>}
+      {prose && <div className="mt-[9px] max-w-[400px] text-[13px] font-medium leading-[1.5] text-mute">{prose}</div>}
       <div className="mt-4 flex gap-[10px]">
         {/* No "Start session" button. The guided player renders a hardcoded interval
             plan, and #183 established no real playable session can be built from the
             current prescription contract, so authenticated entry is closed (#188). */}
         <button onClick={onPlan} className={btnGhost}>View week</button>
+        <button onClick={onSimulate} className={btnAccentGhost}>Simulate this →</button>
       </div>
       {!primaryAction.canStartSession && primaryAction.unavailableReason && (
         <div className="mt-[10px] text-[11px] font-medium leading-[1.5] text-dim">{primaryAction.unavailableReason}</div>
       )}
       {stats.length > 0 && (
-        <div className="mt-5 grid grid-cols-4 gap-[18px] border-t border-white/[0.06] pt-[18px]">
+        <div className="mt-5 grid grid-cols-4 gap-[18px] border-t border-white/[0.07] pt-[18px]">
           {stats.map((s) => (
             <StatCol key={s.label} label={s.label}>{s.value}</StatCol>
           ))}
@@ -412,7 +430,7 @@ function TrainingLoadCard({ load }: { load: ReturnType<typeof loadSection> }) {
   return (
     <Card>
       <div className="flex items-center justify-between">
-        <SectionLabel className="text-faint">Training load</SectionLabel>
+        <SectionLabel className={LABEL}>Training load</SectionLabel>
         <span className={`font-mono text-[11px] font-semibold leading-none ${status.color}`}>{status.label}</span>
       </div>
       <div className="mt-3 flex items-end gap-2">
@@ -444,7 +462,7 @@ function HabitCard({ habit }: { habit: ReturnType<typeof habitSection> }) {
   return (
     <Card>
       <div className="flex items-center justify-between">
-        <SectionLabel className="text-faint">Habit</SectionLabel>
+        <SectionLabel className={LABEL}>Habit</SectionLabel>
         <span className="font-mono text-[11px] font-semibold leading-none text-ac">
           {habit.streakDays.kind === "value"
             ? habit.streakDays.value > 0
@@ -488,13 +506,13 @@ function RecentActivity({ resource }: { resource: AuthedResource<WorkoutLogSumma
             const when = new Date(wk.logged_at).toLocaleDateString(undefined, { weekday: "short" });
             const sub = [when, km, `RPE ${wk.session_rpe}`].filter(Boolean).join(" · ");
             return (
-              <div key={wk.id} className="flex items-center gap-[13px] border-b border-white/[0.05] py-[11px] last:border-0">
+              <div key={wk.id} className="flex items-center gap-[13px] border-b border-white/[0.07] py-[11px] last:border-0">
                 <div className="h-[9px] w-[9px] flex-none rounded-full" style={{ background: dot(wk.session_rpe) }} />
                 <div className="flex-1">
                   <div className="text-[13px] font-semibold leading-none text-ink">
                     {wk.modality.charAt(0).toUpperCase() + wk.modality.slice(1)} · {Math.round(wk.duration_minutes)} min
                   </div>
-                  <div className="mt-1 text-[11px] font-medium leading-none text-faint">{sub}</div>
+                  <div className="mt-[6px] text-[11px] font-medium leading-none text-faint">{sub}</div>
                 </div>
                 <span className="font-mono text-[11px] font-semibold leading-none" style={{ color: dot(wk.session_rpe) }}>load {Math.round(wk.total_volume_load)}</span>
               </div>
@@ -556,7 +574,7 @@ function InsightsCard({
   return (
     <Card>
       <div className="mb-[14px] flex items-center justify-between">
-        <SectionLabel>Insights</SectionLabel>
+        <SectionLabel className={LABEL}>Insights</SectionLabel>
         <span className="text-[11px] font-medium leading-none text-dim">from readiness &amp; your plan</span>
       </div>
       {insights.length === 0 ? (
@@ -564,11 +582,11 @@ function InsightsCard({
       ) : (
         <div className="flex flex-col gap-[2px]">
           {insights.map((a, i) => (
-            <div key={i} className="flex items-start gap-3 border-b border-white/[0.05] py-[11px] last:border-0">
+            <div key={i} className="flex items-start gap-3 border-b border-white/[0.07] py-[11px] last:border-0">
               <span className="mt-[3px] h-[9px] w-[9px] flex-none rounded-full" style={{ background: a.dot }} />
               <div>
                 <div className="text-[13px] font-semibold leading-none text-ink">{a.title}</div>
-                <div className="mt-1 text-[11.5px] font-medium leading-[1.5] text-mute">{a.desc}</div>
+                <div className="mt-[6px] text-[11.5px] font-medium leading-[1.5] text-mute">{a.desc}</div>
               </div>
             </div>
           ))}
@@ -585,7 +603,7 @@ function GoalObjectiveCard() {
   const objectivesRes = useAuthedResource<ObjectiveRead[]>((t) => api.listObjectives(t), [state.objectivesRefreshKey]);
   const objectives = resourceData(objectivesRes);
   const top = objectives && objectives.length ? sortObjectives(objectives)[0] : null;
-  const gradient = { background: "radial-gradient(120% 140% at 100% 0%,#11321f,#111419 55%)" };
+  const gradient = { background: "radial-gradient(120% 140% at 100% 0%,rgba(17,50,31,.85),var(--color-tile) 55%)" };
 
   if (!top) {
     const loading = objectivesRes.status === "loading";

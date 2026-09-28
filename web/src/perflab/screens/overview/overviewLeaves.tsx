@@ -10,6 +10,7 @@
 //
 // Nothing in this file may import sim.ts or read the store.
 import type { ReactNode } from "react";
+import { Ring } from "../../viz";
 import { dateLine, greetingPrefix } from "./overviewClock";
 import type { MetricState } from "./overviewModel";
 
@@ -32,8 +33,8 @@ export function MetricText({ state }: { state: MetricState<string | number> }) {
 export function StatCol({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-faint">{label}</div>
-      <div className="mt-2 font-mono text-[18px] font-semibold leading-none text-ink">{children}</div>
+      <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.1em] text-faint">{label}</div>
+      <div className="mt-[7px] font-mono text-[15px] font-semibold leading-none text-ink">{children}</div>
     </div>
   );
 }
@@ -41,23 +42,19 @@ export function StatCol({ label, children }: { label: string; children: ReactNod
 export function Snap({ label, value, color = "text-ink" }: { label: string; value: ReactNode; color?: string }) {
   return (
     <div>
-      <div className="text-[11px] font-medium leading-none text-mute">{label}</div>
-      <div className={`mt-[5px] font-mono text-[22px] font-semibold leading-none ${color}`}>{value}</div>
+      <div className="font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.1em] text-faint">{label}</div>
+      <div className={`mt-[7px] font-mono text-[16px] font-semibold leading-none ${color}`}>{value}</div>
     </div>
   );
 }
 
-/** A greyed, non-scored readiness ring for "no number to show". */
+/** A greyed, non-scored readiness ring for "no number to show": the viz Ring at
+ *  zero, so the whole circle is the theme track and no arc implies a value. */
 export function NeutralRing({ size = 96, inner = 74 }: { size?: number; inner?: number }) {
   return (
-    <div
-      className="grid flex-none place-items-center rounded-full"
-      style={{ width: size, height: size, background: "conic-gradient(rgba(255,255,255,.08) 0 100%)" }}
-    >
-      <div className="grid place-items-center rounded-full bg-tile" style={{ width: inner, height: inner }}>
-        <span className="font-mono text-[26px] font-semibold leading-none text-dim">{EM_DASH}</span>
-      </div>
-    </div>
+    <Ring value={0} color="transparent" size={size} inner={inner}>
+      <span className="font-mono text-[26px] font-semibold leading-none text-dim">{EM_DASH}</span>
+    </Ring>
   );
 }
 
@@ -87,7 +84,7 @@ export function OverviewHeader({
           {subtitleExtra}
         </p>
       </div>
-      {actions && <div className="flex items-center gap-[9px]">{actions}</div>}
+      {actions && <div className="flex flex-none items-center gap-[9px]">{actions}</div>}
     </header>
   );
 }

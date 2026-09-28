@@ -10,7 +10,7 @@
 //
 // Each of these was previously asserted only by reading the code, which is
 // exactly the kind of claim that rots silently.
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let token: string | null = null;
@@ -154,5 +154,32 @@ describe("Overview insights show plan adjustments in words (S-A)", () => {
     } finally {
       todayResponse = { session: null, prescription: null };
     }
+  });
+});
+
+describe("Recommended today hands off to the Simulator", () => {
+  it("offers Simulate this → beside a real prescription and routes to the simulator", async () => {
+    token = "real-token";
+    setScreen.mockClear();
+    todayResponse = {
+      session: null,
+      prescription: { type: "Strength", focus: "Squat focus", rationale: "Lead with squats.", duration_min: 60, exercises: [], why: null },
+    };
+    try {
+      const { AuthedOverview } = await import("./AuthedOverview");
+      render(<AuthedOverview />);
+      fireEvent.click(await screen.findByRole("button", { name: "Simulate this →" }));
+      expect(setScreen).toHaveBeenCalledWith("simulate");
+    } finally {
+      todayResponse = { session: null, prescription: null };
+    }
+  });
+
+  it("does not offer it when nothing is scheduled — there is no session to simulate", async () => {
+    token = "real-token";
+    const { AuthedOverview } = await import("./AuthedOverview");
+    render(<AuthedOverview />);
+    await screen.findByText("Nothing scheduled today");
+    expect(screen.queryByRole("button", { name: "Simulate this →" })).toBeNull();
   });
 });

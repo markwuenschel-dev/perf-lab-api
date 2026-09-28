@@ -41,7 +41,7 @@ export function GuestOverviewPreview() {
       <OverviewHeader
         name="Guest"
         actions={
-          <button onClick={actions.openAuth} className="rounded-[9px] bg-ink px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Sign in</button>
+          <button onClick={actions.openAuth} className="rounded-[9px] bg-ac px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">Sign in</button>
         }
       />
 
