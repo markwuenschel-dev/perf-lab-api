@@ -23,7 +23,7 @@
 //   We NEVER render a radar over a subset of axes — a disappearing spoke would
 //   move every other spoke and fake capacity change during a scrub.
 
-import { Radar, type RadarAxis } from "../../viz";
+import { Meter, Radar, type RadarAxis } from "../../viz";
 import { SectionLabel } from "../../ui";
 import type { CapacityState, ConfidenceStatus, StateHistorySnapshotRead } from "@/types";
 
@@ -138,7 +138,7 @@ export function CapacityView({ row, startRow, showDelta }: CapacityViewProps) {
   return (
     <div className="rounded-[18px] border border-white/[0.06] bg-tile px-[22px] py-5">
       <div className="mb-[18px] flex items-center justify-between">
-        <SectionLabel>Capacities · X(t)</SectionLabel>
+        <SectionLabel className="text-[10px] text-faint">Capacities · X(t)</SectionLabel>
         <div className="font-mono text-[10px] leading-none text-dim">
           {allDisplayable ? "5 axes · confidence-scored" : `${insufficientCount} of 5 need more evidence`}
         </div>
@@ -158,8 +158,8 @@ export function CapacityView({ row, startRow, showDelta }: CapacityViewProps) {
 function DerivedSummary({ axes, incompleteCount }: { axes: AxisRow[]; incompleteCount: number }) {
   if (axes.length === 0) {
     return (
-      <div className="flex flex-col justify-center gap-[10px] self-stretch rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-[18px]">
-        <SectionLabel className="text-faint">Profile shape</SectionLabel>
+      <div className="flex flex-col justify-center gap-[10px] self-stretch rounded-[14px] border border-white/[0.07] bg-white/[0.04] p-[18px]">
+        <SectionLabel className="text-[10px] text-faint">Profile shape</SectionLabel>
         <div className="text-[13px] font-medium leading-[1.5] text-mute">
           Not enough evidence yet across the capacity axes — log training or a benchmark to establish them.
         </div>
@@ -185,9 +185,9 @@ function DerivedSummary({ axes, incompleteCount }: { axes: AxisRow[]; incomplete
         }`;
 
   return (
-    <div className="flex flex-col justify-center gap-[14px] self-stretch rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-[18px]">
+    <div className="flex flex-col justify-center gap-[14px] self-stretch rounded-[14px] border border-white/[0.07] bg-white/[0.04] p-[18px]">
       <div>
-        <SectionLabel className="text-faint">Profile shape</SectionLabel>
+        <SectionLabel className="text-[10px] text-faint">Profile shape</SectionLabel>
         <div className="mt-[9px] text-[19px] font-bold leading-[1.1] text-ac">{TYPE_NAMES[dom.field] ?? dom.label}</div>
       </div>
       <div className="flex flex-col gap-[9px]">
@@ -225,7 +225,7 @@ function RadarPanel({ axes, displayableAxes, showDelta }: { axes: AxisRow[]; dis
         <div className="mt-2 flex flex-wrap justify-center gap-x-[18px] gap-y-1 text-[10px] font-medium leading-none text-mute">
           <span><span className="mr-[5px] inline-block h-[3px] w-[12px] rounded-[2px] bg-ac align-middle" />now</span>
           {showDelta && (
-            <span><span className="mr-[5px] inline-block w-[12px] border-t-[1.5px] border-dashed border-white/50 align-middle" />window start</span>
+            <span><span className="mr-[5px] inline-block w-[12px] border-t-[1.5px] border-dashed border-mute align-middle" />window start</span>
           )}
           {anyProvisional && <span className="text-warn">* provisional (estimate)</span>}
         </div>
@@ -289,17 +289,7 @@ function AxisTile({ axis, showDelta }: { axis: AxisRow; showDelta: boolean }) {
         {axis.provisional && <EstTag />}
       </div>
       <div className="font-mono text-[30px] font-semibold leading-none text-ink">{Math.round(axis.raw)}</div>
-      <div className="mb-[7px] mt-[11px] h-[6px] overflow-hidden rounded-full bg-white/[0.07]">
-        <div
-          className="h-full rounded-full"
-          style={{
-            width: `${Math.max(4, axis.norm * 100)}%`,
-            background: axis.provisional
-              ? "repeating-linear-gradient(90deg,var(--ac) 0 6px,transparent 6px 10px)"
-              : "linear-gradient(90deg,var(--ac),#a7e36e)",
-          }}
-        />
-      </div>
+      <Meter variant="bare" pct={Math.max(4, axis.norm * 100)} color={axisFill(axis)} trackClassName="h-[6px]" className="mb-[7px] mt-[11px]" />
       <div className="font-mono text-[10px] leading-none text-dim">
         {showDelta ? `${delta >= 0 ? "+" : ""}${Math.round(delta)} vs window start` : "current"}
       </div>
@@ -317,25 +307,24 @@ function AxisBarRow({ axis, showDelta }: { axis: AxisRow; showDelta: boolean }) 
         {axis.provisional && <EstTag />}
       </span>
       <span className="w-[46px] flex-none font-mono text-[16px] font-semibold leading-none text-ink">{Math.round(axis.raw)}</span>
-      <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-white/[0.07]">
-        <div
-          className="h-full rounded-full"
-          style={{
-            width: `${Math.max(4, axis.norm * 100)}%`,
-            background: axis.provisional
-              ? "repeating-linear-gradient(90deg,var(--ac) 0 6px,transparent 6px 10px)"
-              : "linear-gradient(90deg,var(--ac),#a7e36e)",
-          }}
-        />
-      </div>
+      <Meter variant="bare" pct={Math.max(4, axis.norm * 100)} color={axisFill(axis)} trackClassName="h-[6px]" className="flex-1" />
       {showDelta && (
-        <span className="w-[40px] text-right font-mono text-[11px] font-semibold leading-none text-teal">
+        <span className="w-[42px] text-right font-mono text-[11px] font-semibold leading-none text-teal">
           {delta >= 0 ? "+" : ""}
           {Math.round(delta)}
         </span>
       )}
     </div>
   );
+}
+
+// Axis bar fill: a dashed accent for a provisional estimate, the solid accent
+// ramp for an established value. One definition for both the radar-mode rows
+// and the bars-mode tiles so the two can't drift.
+function axisFill(axis: AxisRow): string {
+  return axis.provisional
+    ? "repeating-linear-gradient(90deg,var(--ac) 0 6px,transparent 6px 10px)"
+    : "linear-gradient(90deg,var(--ac),#a7e36e)";
 }
 
 function EstTag() {

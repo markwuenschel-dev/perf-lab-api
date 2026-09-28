@@ -11,6 +11,7 @@
 
 import type { ReactNode } from "react";
 import { Card } from "../../ui";
+import { Meter } from "../../viz";
 
 export function MiniTile({ label, value, sub, foot, footColor, bar, tip }: { label: string; value: ReactNode; sub: string; foot?: string; footColor?: string; bar?: number; tip?: string }) {
   return (
@@ -21,7 +22,7 @@ export function MiniTile({ label, value, sub, foot, footColor, bar, tip }: { lab
         <div className="mt-[5px] text-[10px] font-medium leading-none text-faint">{sub}</div>
       </div>
       {bar != null ? (
-        <div className="h-[5px] overflow-hidden rounded-full bg-white/[0.08]"><div className="h-full rounded-full bg-ac" style={{ width: `${bar}%` }} /></div>
+        <Meter variant="bare" pct={bar} color="var(--ac)" trackClassName="h-[5px]" />
       ) : (
         <div className={`font-mono text-[10px] leading-none ${footColor}`}>{foot}</div>
       )}
