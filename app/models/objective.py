@@ -65,6 +65,10 @@ class Objective(Base):
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # The athlete's display order (1 = first), written by PUT /v1/objectives/order.
+    # Display only — not a weight (ADR-0061): prescription reads ``priority`` and the
+    # macrocycle anchor, never this. NULL = never ordered; sorts last.
+    display_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[ObjectiveStatus] = mapped_column(
         SAEnum(ObjectiveStatus, values_callable=_enum_values),
         default=ObjectiveStatus.ACTIVE,

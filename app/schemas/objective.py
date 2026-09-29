@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date as date_cls
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,6 +59,8 @@ class ObjectiveRead(BaseModel):
     target_unit: str | None
     target_date: date_cls | None
     priority: int
+    # Display only — not a weight (ADR-0061). NULL = never ordered (sorts last).
+    display_rank: int | None
     status: ObjectiveStatus
     created_at: datetime
 
@@ -65,3 +68,30 @@ class ObjectiveRead(BaseModel):
     days_to_go: int | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ObjectiveOrderUpdate(BaseModel):
+    """``PUT /v1/objectives/order`` body: the caller's ACTIVE objective ids, first to last.
+
+    Must cover exactly the caller's active objectives, each once. Writes
+    ``display_rank`` 1..N — display only, never ``priority`` (ADR-0061)."""
+
+    objective_ids: list[int]
+
+
+DrivingObjectiveSource = Literal["macrocycle_anchor", "priority"]
+
+
+class DrivingObjectiveRead(BaseModel):
+    """The objective that actually drives prescription, chosen by the same selector
+    the prescriber's objective signals come from
+    (``objective_service.resolve_driving_objective``).
+
+    - ``source="macrocycle_anchor"``: the anchor of the earliest-start active macrocycle.
+    - ``source="priority"``: no usable anchor, so the highest-priority active objective
+      (priority 1 first, ties by lowest id).
+    - both null: nothing drives prescription (no active objectives, no anchor).
+    """
+
+    objective_id: int | None
+    source: DrivingObjectiveSource | None

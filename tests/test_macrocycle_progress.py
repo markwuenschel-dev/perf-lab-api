@@ -6,7 +6,13 @@ availability (see tests/test_macrocycles_routes.py for the DB-gated round trip).
 """
 from datetime import date, timedelta
 
-from app.services.macrocycle_service import compute_week_progress
+from app.logic.planning import block_taper_week
+from app.services.macrocycle_service import (
+    block_end_date,
+    block_phase,
+    compute_unplanned_weeks,
+    compute_week_progress,
+)
 
 TODAY = date(2026, 7, 4)
 
@@ -62,3 +68,40 @@ def test_target_on_or_before_start_is_open_horizon():
     assert wp.current_week == 1
     assert wp.total_weeks is None
     assert wp.pct is None
+
+
+# ---------------------------------------------------------------------------
+# Program timeline helpers (B2)
+# ---------------------------------------------------------------------------
+
+def test_block_end_date_prefers_stored_else_weeks_times_seven_minus_one():
+    assert block_end_date(TODAY, 4, None) == TODAY + timedelta(days=27)
+    assert block_end_date(TODAY, 4, TODAY + timedelta(days=3)) == TODAY + timedelta(days=3)
+
+
+def test_block_phase_boundaries():
+    end = TODAY + timedelta(days=6)
+    assert block_phase(TODAY, end, today=TODAY) == "current"         # first day
+    assert block_phase(TODAY, end, today=end) == "current"           # last day (inclusive)
+    assert block_phase(TODAY, end, today=end + timedelta(days=1)) == "completed"
+    assert block_phase(TODAY, end, today=TODAY - timedelta(days=1)) == "upcoming"
+
+
+def test_block_taper_week_is_final_week_of_three_plus_week_blocks():
+    assert block_taper_week(1) is None
+    assert block_taper_week(2) is None
+    assert block_taper_week(3) == 3
+    assert block_taper_week(8) == 8
+
+
+def test_unplanned_weeks():
+    # No target → null, blocks or not.
+    assert compute_unplanned_weeks(TODAY, None, None) is None
+    assert compute_unplanned_weeks(TODAY, TODAY + timedelta(days=13), None) is None
+    # No blocks → the whole horizon from the macrocycle start (matches total_weeks).
+    assert compute_unplanned_weeks(TODAY, None, TODAY + timedelta(days=28)) == 4
+    # Blocks cover through the day before the target → nothing unplanned.
+    assert compute_unplanned_weeks(TODAY, TODAY + timedelta(days=27), TODAY + timedelta(days=28)) == 0
+    # A partial uncovered week rounds up; blocks past the target never go negative.
+    assert compute_unplanned_weeks(TODAY, TODAY + timedelta(days=13), TODAY + timedelta(days=24)) == 2
+    assert compute_unplanned_weeks(TODAY, TODAY + timedelta(days=40), TODAY + timedelta(days=28)) == 0

@@ -96,7 +96,7 @@ class MesocycleBlock(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(
         Date, nullable=True
-    )  # computed: start_date + duration_weeks * 7
+    )  # computed: start_date + duration_weeks * 7 - 1 (inclusive last day of the block)
 
     # Modality emphasis split (sum should ~ 1.0)
     modality_mix: Mapped[dict[str, Any]] = mapped_column(

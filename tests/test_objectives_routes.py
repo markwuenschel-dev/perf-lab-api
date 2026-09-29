@@ -141,3 +141,124 @@ async def test_patch_delete_nonexistent_objective_404(http_client):
         await http_client.patch("/v1/objectives/999999", json={"priority": 2}, headers=hdr)
     ).status_code == 404
     assert (await http_client.delete("/v1/objectives/999999", headers=hdr)).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# PUT /v1/objectives/order — display order (display only, never priority)
+# ---------------------------------------------------------------------------
+
+async def _mk_objectives(client, hdr, specs: list[tuple[str, int]]) -> list[dict]:
+    made = []
+    for label, priority in specs:
+        resp = await client.post(
+            "/v1/objectives", json={"label": label, "priority": priority}, headers=hdr
+        )
+        assert resp.status_code == 200, resp.text
+        made.append(resp.json())
+    return made
+
+
+async def test_order_writes_display_rank_and_leaves_priority(http_client):
+    token = await _register_and_get_token(http_client, "obj_order@test.com", "securepass1")
+    hdr = {"Authorization": f"Bearer {token}"}
+    a, b, c = await _mk_objectives(http_client, hdr, [("A", 1), ("B", 2), ("C", 3)])
+    assert a["display_rank"] is None  # never ordered
+
+    # Before any ordering: priority order.
+    listed = (await http_client.get("/v1/objectives", headers=hdr)).json()
+    assert [o["label"] for o in listed] == ["A", "B", "C"]
+
+    new_order = [c["id"], a["id"], b["id"]]
+    resp = await http_client.put(
+        "/v1/objectives/order", json={"objective_ids": new_order}, headers=hdr
+    )
+    assert resp.status_code == 200, resp.text
+    assert [o["id"] for o in resp.json()] == new_order
+    assert [o["display_rank"] for o in resp.json()] == [1, 2, 3]
+
+    listed = (await http_client.get("/v1/objectives", headers=hdr)).json()
+    assert [o["label"] for o in listed] == ["C", "A", "B"]
+    assert {o["label"]: o["priority"] for o in listed} == {"A": 1, "B": 2, "C": 3}
+    assert {o["label"]: o["display_rank"] for o in listed} == {"C": 1, "A": 2, "B": 3}
+
+
+async def test_order_never_ordered_objectives_sort_last(http_client):
+    token = await _register_and_get_token(http_client, "obj_nulls@test.com", "securepass1")
+    hdr = {"Authorization": f"Bearer {token}"}
+    a, b = await _mk_objectives(http_client, hdr, [("A", 2), ("B", 3)])
+    resp = await http_client.put(
+        "/v1/objectives/order", json={"objective_ids": [b["id"], a["id"]]}, headers=hdr
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Created after ordering, and priority 1 — still lands at the bottom (NULLS LAST).
+    (late,) = await _mk_objectives(http_client, hdr, [("Late", 1)])
+    listed = (await http_client.get("/v1/objectives", headers=hdr)).json()
+    assert [o["label"] for o in listed] == ["B", "A", "Late"]
+    assert listed[-1]["id"] == late["id"] and listed[-1]["display_rank"] is None
+
+    # The old order no longer covers every active objective → 400 until the client refetches.
+    stale = await http_client.put(
+        "/v1/objectives/order", json={"objective_ids": [b["id"], a["id"]]}, headers=hdr
+    )
+    assert stale.status_code == 400
+    assert str(late["id"]) in stale.json()["detail"]
+
+
+async def test_order_rejects_mismatched_ids(http_client):
+    token = await _register_and_get_token(http_client, "obj_bad_order@test.com", "securepass1")
+    hdr = {"Authorization": f"Bearer {token}"}
+    a, b = await _mk_objectives(http_client, hdr, [("A", 1), ("B", 2)])
+
+    other_tok = await _register_and_get_token(http_client, "obj_bad_order2@test.com", "securepass1")
+    other_hdr = {"Authorization": f"Bearer {other_tok}"}
+    (foreign,) = await _mk_objectives(http_client, other_hdr, [("Theirs", 1)])
+
+    cases = {
+        "missing": [a["id"]],
+        "extra": [a["id"], b["id"], 999999],
+        "foreign": [a["id"], b["id"], foreign["id"]],
+        "duplicate": [a["id"], b["id"], a["id"]],
+    }
+    details = {}
+    for name, ids in cases.items():
+        resp = await http_client.put(
+            "/v1/objectives/order", json={"objective_ids": ids}, headers=hdr
+        )
+        assert resp.status_code == 400, (name, resp.text)
+        details[name] = resp.json()["detail"]
+    assert f"missing active objectives [{b['id']}]" in details["missing"]
+    assert "999999" in details["extra"]
+    assert str(foreign["id"]) in details["foreign"]
+    assert f"duplicate ids [{a['id']}]" in details["duplicate"]
+
+    # Nothing was written by any rejected request, and the other user's row is untouched.
+    listed = (await http_client.get("/v1/objectives", headers=hdr)).json()
+    assert all(o["display_rank"] is None for o in listed)
+    theirs = (await http_client.get("/v1/objectives", headers=other_hdr)).json()
+    assert theirs[0]["display_rank"] is None
+
+
+async def test_order_excludes_non_active_objectives(http_client):
+    token = await _register_and_get_token(http_client, "obj_order_active@test.com", "securepass1")
+    hdr = {"Authorization": f"Bearer {token}"}
+    a, done = await _mk_objectives(http_client, hdr, [("A", 1), ("Done", 2)])
+    patch = await http_client.patch(
+        f"/v1/objectives/{done['id']}", json={"status": "achieved"}, headers=hdr
+    )
+    assert patch.status_code == 200
+    # An achieved objective is not part of the active order.
+    bad = await http_client.put(
+        "/v1/objectives/order", json={"objective_ids": [a["id"], done["id"]]}, headers=hdr
+    )
+    assert bad.status_code == 400
+    ok = await http_client.put("/v1/objectives/order", json={"objective_ids": [a["id"]]}, headers=hdr)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()[0]["display_rank"] == 1
+
+
+async def test_order_and_driving_unauthenticated(http_client):
+    assert (
+        await http_client.put("/v1/objectives/order", json={"objective_ids": []})
+    ).status_code == 401
+    assert (await http_client.get("/v1/objectives/driving")).status_code == 401

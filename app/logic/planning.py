@@ -628,6 +628,14 @@ def _recovery_week(wk: int, weeks: int, deload_n: int) -> str | None:
     return None
 
 
+def block_taper_week(weeks: int) -> int | None:
+    """The block-local taper week of a ``weeks``-long block — its final week when the block
+    runs 3+ weeks, else None — read off :func:`_recovery_week` so the display cannot drift
+    from the envelope. Block-local only: event tapers are a separate, typed concept
+    (ADR-0061/0065). Deload weeks are not reported here (the stored sessions carry them)."""
+    return weeks if weeks >= 1 and _recovery_week(weeks, weeks, 0) == "taper" else None
+
+
 def _template_recovery(template: PlanTemplate | None, kind: str, source: str) -> PhaseEnvelope:
     generic = _GENERIC_TAPER if kind == "taper" else _GENERIC_DELOAD
     wanted = BlockType.TAPER if kind == "taper" else BlockType.DELOAD

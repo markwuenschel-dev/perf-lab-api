@@ -507,11 +507,61 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Objectives */
+        /**
+         * List Objectives
+         * @description Objectives in the athlete's display order: ``display_rank`` (never-ordered last),
+         *     then ``priority``, then ``id``. Display only — not a weight (ADR-0061).
+         */
         get: operations["list_objectives_v1_objectives_get"];
         put?: never;
         /** Create Objective */
         post: operations["create_objective_v1_objectives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/objectives/driving": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Driving Objective
+         * @description The objective that actually drives prescription — resolved by the same selector
+         *     that produces the prescriber's objective signals, so a "primary" badge built on it can
+         *     never disagree with training. Read-only.
+         */
+        get: operations["get_driving_objective_v1_objectives_driving_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/objectives/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Objective Order
+         * @description Set the display order of the caller's ACTIVE objectives (``display_rank`` 1..N).
+         *
+         *     Display only — not a weight (ADR-0061): ``priority`` and what drives prescription
+         *     are unchanged. ``objective_ids`` must list every active objective exactly once;
+         *     otherwise 400 naming the mismatch (the client should refetch and retry).
+         */
+        put: operations["set_objective_order_v1_objectives_order_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1847,6 +1897,23 @@ export interface components {
             primary_anchors: components["schemas"]["AnchorObservationOut"][];
         };
         /**
+         * DrivingObjectiveRead
+         * @description The objective that actually drives prescription, chosen by the same selector
+         *     the prescriber's objective signals come from
+         *     (``objective_service.resolve_driving_objective``).
+         *
+         *     - ``source="macrocycle_anchor"``: the anchor of the earliest-start active macrocycle.
+         *     - ``source="priority"``: no usable anchor, so the highest-priority active objective
+         *       (priority 1 first, ties by lowest id).
+         *     - both null: nothing drives prescription (no active objectives, no anchor).
+         */
+        DrivingObjectiveRead: {
+            /** Objective Id */
+            objective_id: number | null;
+            /** Source */
+            source: ("macrocycle_anchor" | "priority") | null;
+        };
+        /**
          * DurationEstimate
          * @description How much of a session's time is actually known.
          *
@@ -2446,6 +2513,47 @@ export interface components {
              */
             status: "recommended" | "no_qualifying_evidence" | "not_supported";
         };
+        /**
+         * MacrocycleBlockSummary
+         * @description One training block under a macrocycle, for the program timeline.
+         *
+         *     Blocks are generated one at a time and never persisted ahead (ADR-0040), so this
+         *     lists only blocks that exist. ``phase`` is date-derived (``end_date`` before today →
+         *     completed, ``start_date`` after today → upcoming, else current); it is independent of
+         *     ``status``, which only changes by a manual PATCH. ``deload_weeks``/``benchmark_weeks``
+         *     are the week numbers whose stored sessions are flagged deload/benchmark.
+         *     ``block_taper_week`` is the block-local final-week taper (3+ week blocks), not an
+         *     event taper (ADR-0061/0065).
+         */
+        MacrocycleBlockSummary: {
+            /** Benchmark Weeks */
+            benchmark_weeks: number[];
+            /** Block Taper Week */
+            block_taper_week: number | null;
+            /** Deload Weeks */
+            deload_weeks: number[];
+            /** Duration Weeks */
+            duration_weeks: number;
+            /**
+             * End Date
+             * Format: date
+             */
+            end_date: string;
+            goal: components["schemas"]["BlockGoal"];
+            /** Id */
+            id: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "completed" | "current" | "upcoming";
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            status: components["schemas"]["BlockStatus"];
+        };
         /** MacrocycleCreate */
         MacrocycleCreate: {
             /** Objective Id */
@@ -2457,6 +2565,8 @@ export interface components {
         MacrocycleRead: {
             /** Block Count */
             block_count: number;
+            /** Blocks */
+            blocks: components["schemas"]["MacrocycleBlockSummary"][];
             /**
              * Created At
              * Format: date-time
@@ -2476,6 +2586,8 @@ export interface components {
             status: components["schemas"]["MacrocycleStatus"];
             /** Target Date */
             target_date: string | null;
+            /** Unplanned Weeks */
+            unplanned_weeks: number | null;
             /**
              * Updated At
              * Format: date-time
@@ -2576,6 +2688,17 @@ export interface components {
             /** Target Value */
             target_value?: number | null;
         };
+        /**
+         * ObjectiveOrderUpdate
+         * @description ``PUT /v1/objectives/order`` body: the caller's ACTIVE objective ids, first to last.
+         *
+         *     Must cover exactly the caller's active objectives, each once. Writes
+         *     ``display_rank`` 1..N — display only, never ``priority`` (ADR-0061).
+         */
+        ObjectiveOrderUpdate: {
+            /** Objective Ids */
+            objective_ids: number[];
+        };
         /** ObjectiveRead */
         ObjectiveRead: {
             /** Benchmark Code */
@@ -2587,6 +2710,8 @@ export interface components {
             created_at: string;
             /** Days To Go */
             days_to_go: number | null;
+            /** Display Rank */
+            display_rank: number | null;
             /** Domain */
             domain: string | null;
             /** Id */
@@ -5524,6 +5649,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ObjectiveRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_driving_objective_v1_objectives_driving_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrivingObjectiveRead"];
+                };
+            };
+        };
+    };
+    set_objective_order_v1_objectives_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObjectiveOrderUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectiveRead"][];
                 };
             };
             /** @description Validation Error */

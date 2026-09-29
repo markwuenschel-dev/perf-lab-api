@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from datetime import date as date_cls
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from app.models.macrocycle import MacrocycleStatus
+from app.models.mesocycle import BlockGoal, BlockStatus
 
 
 class MacrocycleCreate(BaseModel):
@@ -45,6 +47,30 @@ class WeekProgress(BaseModel):
     weeks_to_go: int | None = None
 
 
+class MacrocycleBlockSummary(BaseModel):
+    """One training block under a macrocycle, for the program timeline.
+
+    Blocks are generated one at a time and never persisted ahead (ADR-0040), so this
+    lists only blocks that exist. ``phase`` is date-derived (``end_date`` before today →
+    completed, ``start_date`` after today → upcoming, else current); it is independent of
+    ``status``, which only changes by a manual PATCH. ``deload_weeks``/``benchmark_weeks``
+    are the week numbers whose stored sessions are flagged deload/benchmark.
+    ``block_taper_week`` is the block-local final-week taper (3+ week blocks), not an
+    event taper (ADR-0061/0065).
+    """
+
+    id: int
+    goal: BlockGoal
+    start_date: date_cls
+    end_date: date_cls
+    duration_weeks: int
+    status: BlockStatus
+    phase: Literal["completed", "current", "upcoming"]
+    deload_weeks: list[int]
+    benchmark_weeks: list[int]
+    block_taper_week: int | None
+
+
 class MacrocycleRead(BaseModel):
     id: int
     user_id: int
@@ -57,8 +83,15 @@ class MacrocycleRead(BaseModel):
     # Denormalized from the anchor Objective for display.
     objective_label: str
     target_date: date_cls | None
-    # How many blocks currently hang under this macrocycle.
+    # How many blocks currently hang under this macrocycle (== len(blocks)).
     block_count: int
     week_progress: WeekProgress
+    # The blocks under this macrocycle, ordered start_date then id.
+    blocks: list[MacrocycleBlockSummary]
+    # Weeks from the last block's end to the anchor's target date — the horizon no
+    # block covers yet (blocks are never persisted ahead, ADR-0040). Null when the
+    # anchor has no target date; with no blocks it is measured from the macrocycle
+    # start. Never negative.
+    unplanned_weeks: int | None
 
     model_config = ConfigDict(from_attributes=True)
