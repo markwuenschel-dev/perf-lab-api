@@ -92,6 +92,10 @@ export type BlockUpdateRequest = Schemas["BlockUpdateRequest"];
 export type PlannedSessionRead = Schemas["PlannedSessionRead"];
 export type PlannedSessionUpdateRequest = Schemas["PlannedSessionUpdateRequest"];
 export type TodaySessionResponse = Schemas["TodaySessionResponse"];
+/** C1b planned-week projection (ADR-0073): display-only load + modeled FATIGUE, never readiness. */
+export type PlannedWeekProjection = Schemas["PlannedWeekProjection"];
+export type PlannedWeekDay = Schemas["PlannedWeekDay"];
+export type PlannedWeekSession = Schemas["PlannedWeekSession"];
 
 /* ---------- Wellness / readiness (P5, PDR-0005) ---------- */
 export type WellnessSampleIn = Schemas["WellnessSampleIn"];
