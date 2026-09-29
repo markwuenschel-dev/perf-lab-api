@@ -1,5 +1,6 @@
 // src/perflab/Sidebar.tsx
 import type { ReactNode } from "react";
+import { SquareCheckBig } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { usePerfLab } from "./store";
@@ -60,6 +61,9 @@ const ICONS: Record<Screen, ReactNode> = {
       <path d="M3 9h18M8 2v4M16 2v4" />
     </>,
   ),
+  // lucide's check-square (named SquareCheckBig in lucide-react), sized and stroked
+  // to match the hand-drawn icons around it.
+  review: <SquareCheckBig size={17} strokeWidth={1.7} aria-hidden="true" />,
   history: I(
     <>
       <circle cx="12" cy="12" r="9" />
@@ -87,6 +91,7 @@ const WORKSPACE: { screen: Screen; label: string }[] = [
   { screen: "simulate", label: "Simulator" },
   { screen: "objectives", label: "Objectives" },
   { screen: "planning", label: "Planning" },
+  { screen: "review", label: "Week review" },
   { screen: "history", label: "History" },
 ];
 const SETUP: { screen: Screen; label: string }[] = [

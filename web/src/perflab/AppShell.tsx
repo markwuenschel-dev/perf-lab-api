@@ -11,6 +11,7 @@ import { AssessmentSurfaceScreen } from "./screens/AssessmentSurfaceScreen";
 import { TwinScreen } from "./screens/TwinScreen";
 import { PlanningScreen } from "./screens/PlanningScreen";
 import { HistoryScreen } from "./screens/HistoryScreen";
+import { WeekReviewScreen } from "./screens/WeekReviewScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { ObjectivesScreen } from "./screens/ObjectivesScreen";
 import { SimulatorScreen } from "./screens/SimulatorScreen";
@@ -30,6 +31,7 @@ const SCREENS: Partial<Record<Screen, ComponentType>> = {
   assess: AssessmentSurfaceScreen,
   twin: TwinScreen,
   planning: PlanningScreen,
+  review: WeekReviewScreen,
   history: HistoryScreen,
   settings: SettingsScreen,
   objectives: ObjectivesScreen,
@@ -40,6 +42,7 @@ const EMPTY: Partial<Record<Screen, { t: string; d: string }>> = {
   overview: { t: "Welcome to Perf Lab", d: "Your twin seeds from a provisional experience prior — assess a benchmark whenever you like to sharpen it." },
   twin: { t: "Your twin is provisional", d: "S(t) starts from an experience-level prior. Assess a benchmark to replace an estimate with a measurement." },
   planning: { t: "Planning is ready", d: "Sessions are prescribed against readiness. Assess a benchmark to raise confidence in the plan." },
+  review: { t: "No week to review yet", d: "Once a training block is running, each block week closes here: what was planned, what you logged, and what moved in your twin." },
   history: { t: "No history yet", d: "Once you log workouts and assess benchmarks, your trends and progressions build up here." },
 };
 
