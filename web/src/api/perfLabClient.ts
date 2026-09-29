@@ -13,6 +13,7 @@ import type {
   BlockUpdateRequest,
   ComputeMetricsRequest,
   ConnectionStatus,
+  DrivingObjectiveRead,
   IngestTokenCreated,
   IngestTokenOut,
   ExerciseCatalogOut,
@@ -21,6 +22,7 @@ import type {
   MacrocycleUpdate,
   MetricsResponse,
   ObjectiveCreate,
+  ObjectiveOrderUpdate,
   ObjectiveRead,
   ObjectiveUpdate,
   OnboardRequest,
@@ -45,6 +47,7 @@ import type {
   SessionFeedbackIn,
   SessionFeedbackOut,
   WeeklyTemplateSlot,
+  WeekReview,
   WellnessSampleIn,
   WellnessSampleOut,
   WorkoutLog,
@@ -495,6 +498,26 @@ export async function getPlannedWeekProjection(
   return handleResponse<PlannedWeekProjection>(res, { sessionOn401: true });
 }
 
+/**
+ * Week review: one block week — its sessions, counts, what the state did, and the facts
+ * already determined for the following week. With both params omitted the backend picks
+ * the current block's current week. Display-only. No active block / no state / undecodable
+ * state come back as `200 {available: false, reason}`; an unknown block or out-of-range
+ * week is a 404.
+ */
+export async function getWeekReview(
+  token: string,
+  params?: { block_id?: number; week_number?: number },
+): Promise<WeekReview> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = new URLSearchParams();
+  if (params?.block_id != null) query.set("block_id", String(params.block_id));
+  if (params?.week_number != null) query.set("week_number", String(params.week_number));
+  const url = `${API_V1_BASE}/planning/week-review${query.toString() ? `?${query.toString()}` : ""}`;
+  const res = await fetch(url, { headers: { ...authHeaders(token) } });
+  return handleResponse<WeekReview>(res, { sessionOn401: true });
+}
+
 export async function getTodayPlannedSession(
   goal: string,
   token: string,
@@ -706,6 +729,33 @@ export async function updateObjective(
     body: JSON.stringify(body),
   });
   return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+}
+
+/** Objectives: set the DISPLAY order of the caller's active objectives (`display_rank`
+ *  1..N, ADR-0061). Display only — never touches `priority` or what drives prescription.
+ *  `objectiveIds` must list every active objective exactly once, else 400 (refetch). */
+export async function setObjectiveOrder(
+  objectiveIds: number[],
+  token: string,
+): Promise<ObjectiveRead[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const body: ObjectiveOrderUpdate = { objective_ids: objectiveIds };
+  const res = await fetch(`${API_V1_BASE}/objectives/order`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: true });
+}
+
+/** Objectives: the objective that actually drives prescription (program anchor, else
+ *  priority) — the only honest source for a "primary" badge. Read-only. */
+export async function getDrivingObjective(token: string): Promise<DrivingObjectiveRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/objectives/driving`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<DrivingObjectiveRead>(res, { sessionOn401: true });
 }
 
 /** Objectives (P4a): delete an objective. */

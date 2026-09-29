@@ -96,6 +96,10 @@ export type TodaySessionResponse = Schemas["TodaySessionResponse"];
 export type PlannedWeekProjection = Schemas["PlannedWeekProjection"];
 export type PlannedWeekDay = Schemas["PlannedWeekDay"];
 export type PlannedWeekSession = Schemas["PlannedWeekSession"];
+export type WeekReview = Schemas["WeekReview"];
+export type WeekReviewSession = Schemas["WeekReviewSession"];
+export type WeekReviewAxisMove = Schemas["WeekReviewAxisMove"];
+export type WeekReviewNextItem = Schemas["WeekReviewNextItem"];
 
 /* ---------- Wellness / readiness (P5, PDR-0005) ---------- */
 export type WellnessSampleIn = Schemas["WellnessSampleIn"];
@@ -109,6 +113,8 @@ export type ObjectiveRead = Schemas["ObjectiveRead"];
 export type ObjectiveUpdate = Schemas["ObjectiveUpdate"];
 export type ObjectiveStatus = Schemas["ObjectiveStatus"];
 export type ProgressBlock = Schemas["ProgressBlock"];
+export type ObjectiveOrderUpdate = Schemas["ObjectiveOrderUpdate"];
+export type DrivingObjectiveRead = Schemas["DrivingObjectiveRead"];
 
 /* ---------- Dashboard overview (Phase 6: GET /v1/dashboard/overview) ---------- */
 export type OverviewMetrics = Schemas["OverviewMetrics"];
@@ -126,6 +132,7 @@ export type MacrocycleRead = Schemas["MacrocycleRead"];
 export type MacrocycleUpdate = Schemas["MacrocycleUpdate"];
 export type MacrocycleStatus = Schemas["MacrocycleStatus"];
 export type WeekProgress = Schemas["WeekProgress"];
+export type MacrocycleBlockSummary = Schemas["MacrocycleBlockSummary"];
 
 /* ---------- Session feedback (athlete-reported outcomes: /v1/feedback) ---------- */
 export type SessionFeedbackIn = Schemas["SessionFeedbackIn"];

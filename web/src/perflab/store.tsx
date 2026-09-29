@@ -20,6 +20,7 @@ export type Screen =
   | "assess"
   | "twin"
   | "planning"
+  | "review"
   | "history"
   | "settings"
   | "objectives"
