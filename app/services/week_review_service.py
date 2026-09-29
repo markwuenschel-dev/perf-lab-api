@@ -35,6 +35,7 @@ from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.state_loading import unified_from_athlete_row_strict
 from app.logic.confidence_presentation import STATUS_INSUFFICIENT, confidence_status
 from app.logic.constraint_engine import mean_fatigue
+from app.logic.planned_session_log import prescribed_rpe
 from app.logic.prescriber import MODIFICATION_FRICTION_WEIGHT, RECENT_SKIPS_BIAS_THRESHOLD
 from app.logic.prescription_finalize import derive_plan_revision_triggers
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
@@ -60,25 +61,9 @@ class WeekReviewNotFound(LookupError):
     """The requested block is not the caller's, or the week is outside it (router → 404)."""
 
 
-def prescribed_rpe_cap(prescribed_content: dict[str, Any] | None) -> float | None:
-    """Max exercise ``rpe_cap`` in a stored prescription; ``None`` when there is none.
-
-    Reads the persisted JSONB defensively (historical rows are not proven to satisfy the
-    current model): any non-numeric or missing cap is ignored rather than guessed.
-    """
-    if not prescribed_content:
-        return None
-    exercises = prescribed_content.get("exercises")
-    if not isinstance(exercises, list):
-        return None
-    caps: list[float] = []
-    for ex in exercises:  # pyright: ignore[reportUnknownVariableType]
-        if not isinstance(ex, dict):
-            continue
-        cap = ex.get("rpe_cap")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        if isinstance(cap, (int, float)) and not isinstance(cap, bool):
-            caps.append(float(cap))
-    return max(caps) if caps else None
+# One definition of "prescribed RPE" shared with the C1b projection (ADR-0073): the max
+# exercise ``rpe_cap`` in a stored prescription, None when there is none — never guessed.
+prescribed_rpe_cap = prescribed_rpe
 
 
 def feedback_reports_modification(fb: SessionFeedback | None) -> bool:
