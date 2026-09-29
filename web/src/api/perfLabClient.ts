@@ -44,6 +44,7 @@ import type {
   SessionFeedbackIn,
   SessionFeedbackOut,
   WeeklyTemplateSlot,
+  WeekReview,
   WellnessSampleIn,
   WellnessSampleOut,
   WorkoutLog,
@@ -473,6 +474,26 @@ export async function updatePlannedSession(
     body: JSON.stringify(body),
   });
   return handleResponse<PlannedSessionRead>(res, { sessionOn401: true });
+}
+
+/**
+ * Week review: one block week — its sessions, counts, what the state did, and the facts
+ * already determined for the following week. With both params omitted the backend picks
+ * the current block's current week. Display-only. No active block / no state / undecodable
+ * state come back as `200 {available: false, reason}`; an unknown block or out-of-range
+ * week is a 404.
+ */
+export async function getWeekReview(
+  token: string,
+  params?: { block_id?: number; week_number?: number },
+): Promise<WeekReview> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = new URLSearchParams();
+  if (params?.block_id != null) query.set("block_id", String(params.block_id));
+  if (params?.week_number != null) query.set("week_number", String(params.week_number));
+  const url = `${API_V1_BASE}/planning/week-review${query.toString() ? `?${query.toString()}` : ""}`;
+  const res = await fetch(url, { headers: { ...authHeaders(token) } });
+  return handleResponse<WeekReview>(res, { sessionOn401: true });
 }
 
 export async function getTodayPlannedSession(

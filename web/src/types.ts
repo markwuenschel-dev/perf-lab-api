@@ -92,6 +92,10 @@ export type BlockUpdateRequest = Schemas["BlockUpdateRequest"];
 export type PlannedSessionRead = Schemas["PlannedSessionRead"];
 export type PlannedSessionUpdateRequest = Schemas["PlannedSessionUpdateRequest"];
 export type TodaySessionResponse = Schemas["TodaySessionResponse"];
+export type WeekReview = Schemas["WeekReview"];
+export type WeekReviewSession = Schemas["WeekReviewSession"];
+export type WeekReviewAxisMove = Schemas["WeekReviewAxisMove"];
+export type WeekReviewNextItem = Schemas["WeekReviewNextItem"];
 
 /* ---------- Wellness / readiness (P5, PDR-0005) ---------- */
 export type WellnessSampleIn = Schemas["WellnessSampleIn"];
