@@ -13,6 +13,7 @@ import type {
   BlockUpdateRequest,
   ComputeMetricsRequest,
   ConnectionStatus,
+  DrivingObjectiveRead,
   IngestTokenCreated,
   IngestTokenOut,
   ExerciseCatalogOut,
@@ -21,6 +22,7 @@ import type {
   MacrocycleUpdate,
   MetricsResponse,
   ObjectiveCreate,
+  ObjectiveOrderUpdate,
   ObjectiveRead,
   ObjectiveUpdate,
   OnboardRequest,
@@ -686,6 +688,33 @@ export async function updateObjective(
     body: JSON.stringify(body),
   });
   return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+}
+
+/** Objectives: set the DISPLAY order of the caller's active objectives (`display_rank`
+ *  1..N, ADR-0061). Display only — never touches `priority` or what drives prescription.
+ *  `objectiveIds` must list every active objective exactly once, else 400 (refetch). */
+export async function setObjectiveOrder(
+  objectiveIds: number[],
+  token: string,
+): Promise<ObjectiveRead[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const body: ObjectiveOrderUpdate = { objective_ids: objectiveIds };
+  const res = await fetch(`${API_V1_BASE}/objectives/order`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: true });
+}
+
+/** Objectives: the objective that actually drives prescription (program anchor, else
+ *  priority) — the only honest source for a "primary" badge. Read-only. */
+export async function getDrivingObjective(token: string): Promise<DrivingObjectiveRead> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/objectives/driving`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<DrivingObjectiveRead>(res, { sessionOn401: true });
 }
 
 /** Objectives (P4a): delete an objective. */
