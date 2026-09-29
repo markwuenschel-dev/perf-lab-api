@@ -30,6 +30,7 @@ import type {
   OverviewMetrics,
   PlannedSessionRead,
   PlannedSessionUpdateRequest,
+  PlannedWeekProjection,
   ProfileRead,
   ProfileUpdate,
   ProjectionRequest,
@@ -476,6 +477,25 @@ export async function updatePlannedSession(
     body: JSON.stringify(body),
   });
   return handleResponse<PlannedSessionRead>(res, { sessionOn401: true });
+}
+
+/**
+ * C1b (ADR-0073): the athlete's PENDING planned sessions projected forward through
+ * the real engine — per-day sRPE load and modeled MEAN FATIGUE (not readiness).
+ * Display-only. `available: false` + `reason` ("no_state" | "state_invalid") is a
+ * 200, not an error. `through` defaults server-side to the end of the current
+ * block week (today+6 with no active block) and is capped at 28 days.
+ */
+export async function getPlannedWeekProjection(
+  token: string,
+  through?: string,
+): Promise<PlannedWeekProjection> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = through ? `?through=${encodeURIComponent(through)}` : "";
+  const res = await fetch(`${API_V1_BASE}/planning/projection${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<PlannedWeekProjection>(res, { sessionOn401: true });
 }
 
 /**

@@ -81,6 +81,10 @@ vi.mock("@/api/perfLabClient", () => ({
   // Never settles: the surrounding cards stay in their loading state and stay out of the way.
   getReadiness: () => new Promise(() => {}),
   getStateHistory: () => new Promise(() => {}),
+  // Planning's block bar, logged row and forward projection: out of the way too.
+  listWorkouts: () => new Promise(() => {}),
+  listPlanningBlocks: () => new Promise(() => {}),
+  getPlannedWeekProjection: () => new Promise(() => {}),
   listPlannedSessions: () =>
     Promise.resolve([
       {
