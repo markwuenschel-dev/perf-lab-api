@@ -19,9 +19,10 @@ from app.schemas.planning import (
     PlannedWeekProjection,
     TodaySessionResponse,
     WeeklyTemplateSlot,
+    WeekReview,
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.services import planning_projection_service, planning_service
+from app.services import planning_projection_service, planning_service, week_review_service
 from app.services.planning_service import create_block_with_sessions, get_today_session
 from app.services.prescription_service import prescribe_for_athlete
 
@@ -116,6 +117,28 @@ async def update_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@router.get("/week-review", response_model=WeekReview)
+async def get_week_review(
+    block_id: int | None = Query(default=None),
+    week_number: int | None = Query(default=None, ge=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WeekReview:
+    """One block week in review: its sessions, counts, what the state did, and the facts
+    already determined for the week after. Display-only; reads nothing it could change.
+
+    Defaults to the current block's current week. No active block, no state, or state that
+    fails strict decoding answer ``200 {available: false, reason}`` — this surface gates
+    nothing, so a decode failure is not a 409 here.
+    """
+    try:
+        return await week_review_service.build_week_review(
+            db, current_user.id, block_id=block_id, week_number=week_number
+        )
+    except week_review_service.WeekReviewNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/today", response_model=TodaySessionResponse)

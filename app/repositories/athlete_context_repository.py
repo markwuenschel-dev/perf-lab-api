@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +76,24 @@ class AthleteContextRepository:
             .limit(limit)
         )
         return result.scalars().all()
+
+    async def latest_state_at_or_before(
+        self, user_id: int, ts: datetime
+    ) -> AthleteState | None:
+        """The athlete's most recent ``AthleteState`` with ``timestamp <= ts``, or ``None``.
+
+        Bounded to one row, so a point-in-time read never loads the athlete's whole
+        history (contrast ``list_states_ascending``). ``ts`` is naive UTC, like the column.
+        Ties on ``timestamp`` break by ``id`` DESC — the same total order as
+        ``list_recent_states``.
+        """
+        result = await self.session.execute(
+            select(AthleteState)
+            .where(AthleteState.user_id == user_id, AthleteState.timestamp <= ts)
+            .order_by(AthleteState.timestamp.desc(), AthleteState.id.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
 
     async def list_states_ascending(self, user_id: int) -> Sequence[AthleteState]:
         """The athlete's full ``AthleteState`` history, oldest first (for feature-building)."""

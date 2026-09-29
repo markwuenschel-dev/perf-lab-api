@@ -242,7 +242,7 @@ def _trigger_condition(rule: "_DriverRule", fires_now: bool) -> str:
     )
 
 
-def _derive_plan_revision_triggers(state: UnifiedStateVector) -> list[PlanRevisionTrigger]:
+def derive_plan_revision_triggers(state: UnifiedStateVector) -> list[PlanRevisionTrigger]:
     """What would change this plan - every active driver, plus the nearest approaching ones.
 
     Uses the prescriber's own thresholds, so a trigger can never contradict the reasoning
@@ -274,6 +274,11 @@ def _derive_plan_revision_triggers(state: UnifiedStateVector) -> list[PlanRevisi
 
     approaching.sort(key=lambda pair: (pair[0], pair[1].axis))
     return active + [t for _, t in approaching[:MAX_INACTIVE_TRIGGERS]]
+
+
+#: The pre-publication private name, kept so existing importers keep working. Public since
+#: the week review reads the same triggers (one rule set, two surfaces).
+_derive_plan_revision_triggers = derive_plan_revision_triggers
 
 
 #: How many predicted movements are worth showing. The forward model touches every axis;
@@ -451,7 +456,7 @@ def finalize_prescription(
         state_evidence=evidence,
         confidence=_derive_confidence(state),
         measurement_recommendations=_derive_measurement_recommendations(state, goal),
-        plan_revision_triggers=_derive_plan_revision_triggers(state),
+        plan_revision_triggers=derive_plan_revision_triggers(state),
         expected_outcomes=(
             _derive_expected_outcomes(state, session_candidate)
             if session_candidate is not None

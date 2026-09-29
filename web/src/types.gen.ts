@@ -792,6 +792,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/planning/week-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Week Review
+         * @description One block week in review: its sessions, counts, what the state did, and the facts
+         *     already determined for the week after. Display-only; reads nothing it could change.
+         *
+         *     Defaults to the current block's current week. No active block, no state, or state that
+         *     fails strict decoding answer ``200 {available: false, reason}`` — this surface gates
+         *     nothing, so a decode failure is not a 409 here.
+         */
+        get: operations["get_week_review_v1_planning_week_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/profile": {
         parameters: {
             query?: never;
@@ -4324,6 +4349,211 @@ export interface components {
             /** Weeks To Go */
             weeks_to_go?: number | null;
         };
+        /**
+         * WeekReview
+         * @description Week review. ``available=false`` carries a ``reason`` and nothing else is populated
+         *     beyond ``window`` (when one was resolved).
+         */
+        WeekReview: {
+            /** Available */
+            available: boolean;
+            counts?: components["schemas"]["WeekReviewCounts"] | null;
+            moved?: components["schemas"]["WeekReviewMoved"] | null;
+            /**
+             * Next Week
+             * @description Already-determined facts about the following week only. Nothing here was re-planned: future sessions are resolved on the day.
+             */
+            next_week?: components["schemas"]["WeekReviewNextItem"][];
+            /**
+             * Next Week Status
+             * @description 'nothing_scheduled_to_change' means no determined fact applies — NOT that a model checked next week and found nothing to change.
+             */
+            next_week_status?: ("changes_listed" | "nothing_scheduled_to_change") | null;
+            /** Reason */
+            reason?: ("no_active_block" | "no_state" | "state_invalid") | null;
+            /** Sessions */
+            sessions?: components["schemas"]["WeekReviewSession"][];
+            window?: components["schemas"]["WeekReviewWindow"] | null;
+        };
+        /**
+         * WeekReviewAxisMove
+         * @description One capacity axis across the week. An axis whose end status is ``insufficient`` is
+         *     reported as not measured: its value is an unrefined prior, so no value or delta is given.
+         */
+        WeekReviewAxisMove: {
+            /** Axis */
+            axis: string;
+            /** Delta */
+            delta?: number | null;
+            /** End */
+            end?: number | null;
+            /** Measured */
+            measured: boolean;
+            /** Start */
+            start?: number | null;
+            /** Status End */
+            status_end?: string | null;
+            /** Status Start */
+            status_start?: string | null;
+        };
+        /** WeekReviewCounts */
+        WeekReviewCounts: {
+            /**
+             * Adherence Pct
+             * @description completed / due × 100 (dashboard rule); null when nothing is due yet.
+             */
+            adherence_pct?: number | null;
+            /** Completed */
+            completed: number;
+            /**
+             * Due
+             * @description Sessions scheduled on or before today — the adherence denominator.
+             */
+            due: number;
+            /**
+             * Modified
+             * @description Subset of completed.
+             */
+            modified: number;
+            /** Pending */
+            pending: number;
+            /** Planned */
+            planned: number;
+            /** Skipped */
+            skipped: number;
+        };
+        /**
+         * WeekReviewMoved
+         * @description State snapshots bracketing the week: the latest state at or before each boundary.
+         *
+         *     ``start_snapshot_at`` is the latest state at or before the week's first instant — which is
+         *     also the previous week's end. ``previous_week_start_snapshot_at`` brackets the previous
+         *     week so its fatigue movement can be compared with this one's.
+         */
+        WeekReviewMoved: {
+            /** Capacity */
+            capacity?: components["schemas"]["WeekReviewAxisMove"][];
+            /** End Snapshot At */
+            end_snapshot_at?: string | null;
+            /** Mean Fatigue End */
+            mean_fatigue_end?: number | null;
+            /** Mean Fatigue Previous Week Start */
+            mean_fatigue_previous_week_start?: number | null;
+            /** Mean Fatigue Start */
+            mean_fatigue_start?: number | null;
+            /** Previous Week Start Snapshot At */
+            previous_week_start_snapshot_at?: string | null;
+            /** Start Snapshot At */
+            start_snapshot_at?: string | null;
+        };
+        /** WeekReviewNextItem */
+        WeekReviewNextItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "plan" | "safety" | "assess";
+            /** Reason */
+            reason: string;
+            /**
+             * Source
+             * @description block:deload_week | block:benchmark_session | block:ends | adherence:lighter_bias | trigger:<axis>
+             */
+            source: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * WeekReviewSession
+         * @description One planned session whose ``scheduled_date`` falls in the window (moved sessions are
+         *     counted where they now sit, ADR-0069).
+         */
+        WeekReviewSession: {
+            /** Category */
+            category: string;
+            /**
+             * Feedback Status
+             * @description SessionFeedback.status, if any.
+             */
+            feedback_status?: string | null;
+            /**
+             * Felt Rpe
+             * @description Session RPE from the linked workout log; null when no log is linked (e.g. a session marked completed by PATCH).
+             */
+            felt_rpe?: number | null;
+            /** Followed As Prescribed */
+            followed_as_prescribed?: boolean | null;
+            /** Is Benchmark */
+            is_benchmark: boolean;
+            /** Is Deload */
+            is_deload: boolean;
+            /** Modality */
+            modality: string;
+            /** Modification Reason */
+            modification_reason?: string | null;
+            /**
+             * Modified
+             * @description Completed AND the athlete reported a modification — the same rule the prescriber's adherence aggregate counts (ADR-0070).
+             */
+            modified: boolean;
+            /** Modified Exercises */
+            modified_exercises?: boolean | null;
+            /** Modified Intensity */
+            modified_intensity?: boolean | null;
+            /** Modified Volume */
+            modified_volume?: boolean | null;
+            /** Original Scheduled Date */
+            original_scheduled_date?: string | null;
+            /** Planned Session Id */
+            planned_session_id: number;
+            /**
+             * Prescribed Rpe
+             * @description Max exercise rpe_cap in the stored prescription; null when the session was never prescribed or its prescription names no cap. Never guessed.
+             */
+            prescribed_rpe?: number | null;
+            /**
+             * Scheduled Date
+             * Format: date
+             */
+            scheduled_date: string;
+            status: components["schemas"]["SessionStatus"];
+            /**
+             * Week Number
+             * @description The week the session was planned in (unchanged by a move).
+             */
+            week_number: number;
+            /** Workout Log Id */
+            workout_log_id?: number | null;
+        };
+        /** WeekReviewWindow */
+        WeekReviewWindow: {
+            /** Block Id */
+            block_id: number;
+            /** Duration Weeks */
+            duration_weeks: number;
+            /**
+             * End
+             * Format: date
+             * @description start + 6 (inclusive).
+             */
+            end: string;
+            /**
+             * Is Current Week
+             * @description Server-local today falls inside the window.
+             */
+            is_current_week: boolean;
+            /**
+             * Start
+             * Format: date
+             * @description block.start_date + (week_number - 1) * 7.
+             */
+            start: string;
+            /**
+             * Week Number
+             * @description 1-indexed week within the block.
+             */
+            week_number: number;
+        };
         /** WeeklyTemplateSlot */
         WeeklyTemplateSlot: {
             /** Category */
@@ -6103,6 +6333,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TodaySessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_week_review_v1_planning_week_review_get: {
+        parameters: {
+            query?: {
+                block_id?: number | null;
+                week_number?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeekReview"];
                 };
             };
             /** @description Validation Error */
