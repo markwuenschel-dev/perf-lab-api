@@ -242,3 +242,64 @@ class WeekReview(BaseModel):
         description="'nothing_scheduled_to_change' means no determined fact applies — NOT that "
         "a model checked next week and found nothing to change.",
     )
+
+
+# ---------------------------------------------------------------------------
+# C1b planned-week projection (ADR-0073) — display-only, never an input to scoring.
+# ---------------------------------------------------------------------------
+
+
+class PlannedWeekWindow(BaseModel):
+    """The projected span. ``block_id``/``week_number`` name the current block week when
+    today falls inside the most recently created active block; otherwise null."""
+
+    start: date
+    end: date
+    block_id: int | None = None
+    week_number: int | None = None
+
+
+class PlannedWeekFatigue(BaseModel):
+    """Modeled per-axis fatigue at the end of a projected day (engine scale)."""
+
+    cns: float
+    muscular: float
+    metabolic: float
+    structural: float
+    tendon: float
+    grip: float
+
+
+class PlannedWeekSession(BaseModel):
+    planned_session_id: int
+    modality: str
+    # "prescribed": a prescription is stored on the session and its RPE caps set the
+    # intensity. "template_estimate": nothing prescribed yet; balanced intensity assumed.
+    basis: Literal["prescribed", "template_estimate"]
+    # sRPE load (session RPE x minutes) — the same proxy ACWR uses.
+    load: float
+
+
+class PlannedWeekDay(BaseModel):
+    date: date
+    sessions: list[PlannedWeekSession] = Field(default_factory=lambda: [])
+    load: float
+    # Mean of the six fatigue axes at end of day. Modeled FATIGUE, not readiness (PDR-0005).
+    mean_fatigue: float
+    fatigue: PlannedWeekFatigue
+
+
+class PlannedWeekProjection(BaseModel):
+    """Forward projection of the athlete's PENDING planned sessions through the real engine.
+
+    Display-only (ADR-0073): writes nothing, feeds no scoring or prescription. ``available``
+    is false with a ``reason`` when there is no state to start from (``no_state``) or the
+    stored state cannot be decoded strictly (``state_invalid``).
+    """
+
+    available: bool
+    reason: Literal["no_state", "state_invalid"] | None = None
+    window: PlannedWeekWindow
+    days: list[PlannedWeekDay] = Field(default_factory=lambda: [])
+    peak_mean_fatigue: float | None = None
+

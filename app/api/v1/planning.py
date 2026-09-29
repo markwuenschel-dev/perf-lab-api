@@ -16,12 +16,13 @@ from app.schemas.planning import (
     BlockUpdateRequest,
     PlannedSessionRead,
     PlannedSessionUpdateRequest,
+    PlannedWeekProjection,
     TodaySessionResponse,
     WeeklyTemplateSlot,
     WeekReview,
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
-from app.services import planning_service, week_review_service
+from app.services import planning_projection_service, planning_service, week_review_service
 from app.services.planning_service import create_block_with_sessions, get_today_session
 from app.services.prescription_service import prescribe_for_athlete
 
@@ -79,6 +80,30 @@ async def list_sessions(
     current_user: User = Depends(get_current_user),
 ) -> list[PlannedSession]:
     return await planning_service.list_sessions(db, current_user.id, start_date, end_date)
+
+
+@router.get("/projection", response_model=PlannedWeekProjection)
+async def get_planned_week_projection(
+    through: date | None = Query(
+        default=None,
+        description=(
+            "Last day to project (inclusive). Default: end of the current block week, or "
+            "today+6 with no active block. Capped at 28 days from today."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PlannedWeekProjection:
+    """Pending planned sessions projected forward: sRPE load and modeled fatigue per day.
+
+    Display-only (ADR-0073): writes nothing and feeds no scoring. Fatigue, not readiness.
+    """
+    try:
+        return await planning_projection_service.planned_week_projection(
+            db, current_user.id, through
+        )
+    except planning_projection_service.ProjectionWindowError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.patch("/sessions/{session_id}", response_model=PlannedSessionRead)

@@ -9,15 +9,23 @@ the anchor Objective's ``target_date``; nothing about future weeks is persisted.
 from __future__ import annotations
 
 import math
-from datetime import date
+from datetime import date, timedelta
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.planning import block_taper_week
 from app.models.macrocycle import Macrocycle, MacrocycleStatus
-from app.models.mesocycle import MesocycleBlock
+from app.models.mesocycle import MesocycleBlock, PlannedSession
 from app.models.objective import Objective
-from app.schemas.macrocycle import MacrocycleCreate, MacrocycleRead, MacrocycleUpdate, WeekProgress
+from app.schemas.macrocycle import (
+    MacrocycleBlockSummary,
+    MacrocycleCreate,
+    MacrocycleRead,
+    MacrocycleUpdate,
+    WeekProgress,
+)
 
 # ---------------------------------------------------------------------------
 # Pure schedule math (non-DB, unit-testable)
@@ -56,8 +64,44 @@ def compute_week_progress(
     )
 
 
+def block_end_date(start_date: date, duration_weeks: int, end_date: date | None) -> date:
+    """A block's last day: the stored ``end_date``, else ``start + weeks*7 - 1`` -- the
+    same rule block creation stores (``planning_service.create_block_with_sessions``)."""
+    if end_date is not None:
+        return end_date
+    return start_date + timedelta(days=duration_weeks * 7 - 1)
+
+
+def block_phase(
+    start_date: date, end_date: date, today: date | None = None
+) -> Literal["completed", "current", "upcoming"]:
+    """Where a block sits relative to today, from its dates alone (a block's ``status``
+    only changes by manual PATCH, so it cannot say this)."""
+    today = today or date.today()
+    if end_date < today:
+        return "completed"
+    if start_date > today:
+        return "upcoming"
+    return "current"
+
+
+def compute_unplanned_weeks(
+    macrocycle_start: date, last_block_end: date | None, target_date: date | None
+) -> int | None:
+    """Weeks between the last block's end (or the macrocycle start when there are no
+    blocks) and the anchor's target date -- the horizon no block covers yet (blocks are
+    never persisted ahead, ADR-0040). ``ceil(days / 7)`` like ``total_weeks``; never
+    negative; None when there is no target date."""
+    if target_date is None:
+        return None
+    uncovered_from = (
+        last_block_end + timedelta(days=1) if last_block_end is not None else macrocycle_start
+    )
+    return max(0, math.ceil((target_date - uncovered_from).days / 7))
+
+
 # ---------------------------------------------------------------------------
-# Read assembly (DB-touching: resolves the anchor objective + block count)
+# Read assembly (DB-touching: resolves the anchor objective + the blocks)
 # ---------------------------------------------------------------------------
 
 async def to_read_schema(db: AsyncSession, macrocycle: Macrocycle) -> MacrocycleRead:
@@ -75,9 +119,10 @@ async def to_read_schemas(
 
     The per-row assembly issued two queries per macrocycle (anchor objective +
     block count), so listing N cost 2N round-trips. This resolves every anchor
-    objective in one ``IN`` query and every block count in one grouped query — two
-    queries total, independent of N. The assembled shape is identical to the per-row
-    version, including the empty-label / null-target fallback for a dangling anchor."""
+    objective in one ``IN`` query and every block -- with its per-week deload/benchmark
+    flags -- in one query (blocks outer-joined to a per-(block, week) session aggregate):
+    two queries total, independent of N. ``block_count`` is derived from the blocks.
+    Keeps the empty-label / null-target fallback for a dangling anchor."""
     if not macrocycles:
         return []
 
@@ -88,20 +133,76 @@ async def to_read_schemas(
     objective_by_id = {o.id: o for o in objectives}
 
     macrocycle_ids = [m.id for m in macrocycles]
-    count_rows = (
+    block_ids = select(MesocycleBlock.id).where(MesocycleBlock.macrocycle_id.in_(macrocycle_ids))
+    week_flags = (
+        select(
+            PlannedSession.block_id.label("block_id"),
+            PlannedSession.week_number.label("week_number"),
+            func.bool_or(PlannedSession.is_deload).label("any_deload"),
+            func.bool_or(PlannedSession.is_benchmark).label("any_benchmark"),
+        )
+        .where(PlannedSession.block_id.in_(block_ids))
+        .group_by(PlannedSession.block_id, PlannedSession.week_number)
+        .subquery()
+    )
+    block_rows = (
         await db.execute(
-            select(MesocycleBlock.macrocycle_id, func.count())
+            select(
+                MesocycleBlock.id,
+                MesocycleBlock.macrocycle_id,
+                MesocycleBlock.goal,
+                MesocycleBlock.start_date,
+                MesocycleBlock.end_date,
+                MesocycleBlock.duration_weeks,
+                MesocycleBlock.status,
+                week_flags.c.week_number,
+                week_flags.c.any_deload,
+                week_flags.c.any_benchmark,
+            )
+            .outerjoin(week_flags, week_flags.c.block_id == MesocycleBlock.id)
             .where(MesocycleBlock.macrocycle_id.in_(macrocycle_ids))
-            .group_by(MesocycleBlock.macrocycle_id)
+            .order_by(
+                MesocycleBlock.start_date.asc(),
+                MesocycleBlock.id.asc(),
+                week_flags.c.week_number.asc(),
+            )
         )
     ).all()
-    block_count_by_macrocycle: dict[int, int] = {row[0]: row[1] for row in count_rows}
+
+    today = date.today()
+    blocks_by_macrocycle: dict[int, list[MacrocycleBlockSummary]] = {}
+    summary_by_block: dict[int, MacrocycleBlockSummary] = {}
+    for row in block_rows:
+        summary = summary_by_block.get(row.id)
+        if summary is None:
+            end = block_end_date(row.start_date, row.duration_weeks, row.end_date)
+            summary = MacrocycleBlockSummary(
+                id=row.id,
+                goal=row.goal,
+                start_date=row.start_date,
+                end_date=end,
+                duration_weeks=row.duration_weeks,
+                status=row.status,
+                phase=block_phase(row.start_date, end, today),
+                deload_weeks=[],
+                benchmark_weeks=[],
+                block_taper_week=block_taper_week(row.duration_weeks),
+            )
+            summary_by_block[row.id] = summary
+            blocks_by_macrocycle.setdefault(row.macrocycle_id, []).append(summary)
+        if row.week_number is not None:
+            if row.any_deload:
+                summary.deload_weeks.append(row.week_number)
+            if row.any_benchmark:
+                summary.benchmark_weeks.append(row.week_number)
 
     reads: list[MacrocycleRead] = []
     for macrocycle in macrocycles:
         objective = objective_by_id.get(macrocycle.objective_id)
         objective_label = objective.label if objective is not None else ""
         target_date = objective.target_date if objective is not None else None
+        blocks = blocks_by_macrocycle.get(macrocycle.id, [])
+        last_block_end = max((b.end_date for b in blocks), default=None)
         reads.append(
             MacrocycleRead(
                 id=macrocycle.id,
@@ -113,8 +214,12 @@ async def to_read_schemas(
                 updated_at=macrocycle.updated_at,
                 objective_label=objective_label,
                 target_date=target_date,
-                block_count=block_count_by_macrocycle.get(macrocycle.id, 0),
+                block_count=len(blocks),
                 week_progress=compute_week_progress(macrocycle.start_date, target_date),
+                blocks=blocks,
+                unplanned_weeks=compute_unplanned_weeks(
+                    macrocycle.start_date, last_block_end, target_date
+                ),
             )
         )
     return reads

@@ -56,6 +56,9 @@ async def test_macrocycle_create_list_get_patch_delete(http_client):
     assert wp["total_weeks"] == 4
     assert wp["pct"] == 25.0
     assert wp["weeks_to_go"] == 4
+    # No blocks yet: the whole horizon is unplanned (measured from the macrocycle start).
+    assert created["blocks"] == []
+    assert created["unplanned_weeks"] == 4
 
     macro_id = created["id"]
     listed = (await http_client.get("/v1/macrocycles", headers=hdr)).json()
@@ -96,6 +99,69 @@ async def test_open_horizon_when_objective_has_no_target(http_client):
     assert wp["total_weeks"] is None
     assert wp["pct"] is None
     assert created["target_date"] is None
+    assert created["unplanned_weeks"] is None  # no target date → no horizon to measure
+
+    # Still null once a block exists: blocks are never persisted ahead (ADR-0040).
+    block = await http_client.post(
+        "/v1/planning/blocks",
+        json={"goal": "Strength", "start_date": date.today().isoformat(), "duration_weeks": 2},
+        headers=hdr,
+    )
+    assert block.status_code == 200, block.text
+    got = (await http_client.get(f"/v1/macrocycles/{created['id']}", headers=hdr)).json()
+    assert got["block_count"] == 1 and len(got["blocks"]) == 1
+    assert got["unplanned_weeks"] is None
+
+
+async def test_macrocycle_blocks_timeline(http_client):
+    token = await _register_and_get_token(http_client, "macro_blocks@test.com", "securepass1")
+    hdr = {"Authorization": f"Bearer {token}"}
+    objective = await _create_objective(http_client, hdr, label="Worlds", target_in_days=70)
+    today = date.today()
+    macro = (
+        await http_client.post(
+            "/v1/macrocycles",
+            json={"objective_id": objective["id"], "start_date": (today - timedelta(days=28)).isoformat()},
+            headers=hdr,
+        )
+    ).json()
+
+    async def _block(start: date, weeks: int, **extra) -> int:
+        body = {"goal": "Strength", "start_date": start.isoformat(), "duration_weeks": weeks, **extra}
+        resp = await http_client.post("/v1/planning/blocks", json=body, headers=hdr)
+        assert resp.status_code == 200, resp.text
+        return resp.json()["id"]
+
+    # Created out of date order on purpose: the timeline orders by start_date, id.
+    upcoming_id = await _block(today + timedelta(days=28), 2)
+    completed_id = await _block(today - timedelta(days=28), 2)
+    current_id = await _block(
+        today, 4, deload_every_n_weeks=4, benchmark_every_n_weeks=2
+    )
+
+    got = (await http_client.get(f"/v1/macrocycles/{macro['id']}", headers=hdr)).json()
+    blocks = got["blocks"]
+    assert [b["id"] for b in blocks] == [completed_id, current_id, upcoming_id]
+    assert got["block_count"] == 3
+    assert [b["phase"] for b in blocks] == ["completed", "current", "upcoming"]
+
+    completed, current, upcoming = blocks
+    assert completed["start_date"] == (today - timedelta(days=28)).isoformat()
+    assert completed["end_date"] == (today - timedelta(days=15)).isoformat()  # weeks*7 - 1
+    assert current["goal"] == "Strength" and current["status"] == "active"
+    assert current["duration_weeks"] == 4
+    assert current["deload_weeks"] == [4]
+    assert current["benchmark_weeks"] == [2, 4]
+    assert current["block_taper_week"] == 4  # final week of a 3+ week block
+    # A 2-week block has no block-local taper, no deload (every 4) and no benchmark (every 4).
+    assert upcoming["block_taper_week"] is None
+    assert upcoming["deload_weeks"] == [] and upcoming["benchmark_weeks"] == []
+
+    # Last block ends today+41; target today+70 → 28 uncovered days → 4 weeks.
+    assert got["unplanned_weeks"] == 4
+
+    listed = (await http_client.get("/v1/macrocycles", headers=hdr)).json()
+    assert [b["id"] for b in listed[0]["blocks"]] == [completed_id, current_id, upcoming_id]
 
 
 async def test_cannot_anchor_to_another_users_objective(http_client):
