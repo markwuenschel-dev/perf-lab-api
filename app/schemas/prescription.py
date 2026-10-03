@@ -46,6 +46,13 @@ class ValidationSummary(BaseModel):
     passed: bool
     failed_checks: list[str] = Field(default_factory=list)
     hard_violations: list[str] = Field(default_factory=list)
+    unevaluated_hard: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Hard safety constraints that could not be evaluated (unregistered or crashed). "
+            "Non-empty means the session was replaced by complete rest."
+        ),
+    )
 
 
 class StateEvidence(BaseModel):

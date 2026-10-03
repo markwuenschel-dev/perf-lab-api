@@ -54,14 +54,24 @@ class SessionValidator:
     ) -> None:
         fn = CONSTRAINT_REGISTRY.get(code)
         if fn is None:
-            report.skipped_codes.append(code)
-            logger.warning("constraint code not registered: %s", code)
+            if is_hard:
+                # A hard safety rule that cannot run has not passed (W1-c). It used to land in
+                # `skipped_codes` and count as a pass, sending the full session.
+                report.unevaluated_hard.append(code)
+                logger.error("hard constraint not registered, session not validated: %s", code)
+            else:
+                report.skipped_codes.append(code)
+                logger.warning("constraint code not registered: %s", code)
             return
         try:
             result = fn(candidate, ctx)
         except Exception:
-            logger.exception("constraint %s crashed; skipping", code)
-            report.skipped_codes.append(code)
+            if is_hard:
+                report.unevaluated_hard.append(code)
+                logger.exception("hard constraint %s crashed, session not validated", code)
+            else:
+                logger.exception("constraint %s crashed; skipping", code)
+                report.skipped_codes.append(code)
             return
 
         if result.passed:

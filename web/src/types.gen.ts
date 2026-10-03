@@ -4253,6 +4253,11 @@ export interface components {
             hard_violations?: string[];
             /** Passed */
             passed: boolean;
+            /**
+             * Unevaluated Hard
+             * @description Hard safety constraints that could not be evaluated (unregistered or crashed). Non-empty means the session was replaced by complete rest.
+             */
+            unevaluated_hard?: string[];
         };
         /**
          * WarmupBlock

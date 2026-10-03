@@ -72,7 +72,7 @@ from app.logic.planning_constraints import (
     ResolvedPlanningConstraint,
     apply_constraints,
 )
-from app.logic.prescription_finalize import finalize_prescription
+from app.logic.prescription_finalize import finalize_prescription, is_safety_replacement
 from app.schemas.prescription import (
     ExercisePrescription,
     PlannedSessionUnavailable,
@@ -1492,6 +1492,20 @@ def _recommend_next_session(
             replaced_reason = "unavailable"
         if (code := _plan_outcome_code(planned, rx, replaced_reason=replaced_reason)) is not None:
             rx.why.constraints_applied.append(code)
+
+    # A safety replacement (hard violation, or a hard rule that could not run) is final. Every
+    # stage below exists to build out a TRAINING session — template exercises, accessories,
+    # block target duration, taper, workload sets — and used to run on the replacement too:
+    # a wrist-stress override still prescribed push-ups and a shoulder press, and a block's
+    # target duration stretched the 35-minute recovery (or W1-c's rest) back to a full session.
+    if is_safety_replacement(rx):
+        if rx.why is not None:
+            rx.why.constraints_applied = list(dict.fromkeys(rx.why.constraints_applied))
+        if rx.duration_min == 0:
+            rx.exercises = []
+            rx.structure = None
+            return rx
+        return rx.with_structure()
 
     # Level 1: surface deload assessment as explanation only (never blocks)
     if rx.why and deload_need.tier != "none":

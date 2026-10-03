@@ -7692,6 +7692,14 @@
           "passed": {
             "title": "Passed",
             "type": "boolean"
+          },
+          "unevaluated_hard": {
+            "description": "Hard safety constraints that could not be evaluated (unregistered or crashed). Non-empty means the session was replaced by complete rest.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unevaluated Hard",
+            "type": "array"
           }
         },
         "required": [
