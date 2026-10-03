@@ -116,15 +116,24 @@ Choosing a value later than the stop time costs nothing for real users (each unt
 still dies at its own `exp`); it only widens the window in which a *stray* untyped issuer
 would be trusted. So: a small margin, never an early value.
 
-1. Pick `T` = now + 60 min (comfortably past build + recreate; the build is the slow part).
-2. Add `TYPED_TOKENS_SINCE=T` (ISO-8601 UTC, e.g. `2026-10-04T19:00:00Z`) to
+Because `T` must come after the old issuer stops but the stop time depends on how long the
+build takes, do **not** use the one-shot deploy script for this release. Build first, then set
+`T`, then swap — so `T` is chosen when the only remaining step is the seconds-long recreate:
+
+1. On the box, sync the clone and build the image (the old container keeps serving):
+   `cd /opt/stack/perf-lab-api && git fetch -q origin && git checkout -q main && git reset --hard origin/main`
+   then, with the same build arg the deploy script passes (shadow rows record it):
+   `BUILD_SHA=$(git rev-parse HEAD) && cd /opt/stack/infra && sudo docker compose build --build-arg APP_BUILD_SHA="$BUILD_SHA" perf-lab-api`.
+2. Only after the build has finished, set `T` = now + 10 min, as ISO-8601 UTC:
+   `date -u -d '+10 min' +%Y-%m-%dT%H:%M:%SZ`. Add `TYPED_TOKENS_SINCE=T` to
    `/opt/stack/infra/env/perf-lab-api.env`.
-3. Run the deploy (`scripts/deploy.ps1` / `deploy.sh`).
-4. Confirm the old issuer stopped before `T`:
+3. Replace the container immediately: `sudo docker compose up -d perf-lab-api`.
+4. Verify the old issuer stopped before `T`:
    `sudo docker inspect -f '{{.State.StartedAt}}' $(sudo docker compose ps -q perf-lab-api)`
-   must be **earlier than `T`** (the new container starts right after the old one stops).
-   If it is not (a slow build), raise `T` to a time after `StartedAt`, then
-   `sudo docker compose up -d perf-lab-api`. **Never lower `T`** — that rejects real tokens.
+   must be **earlier than `T`** (the new container starts right after the old one stops), and
+   `sudo docker compose exec -T perf-lab-api alembic current` must show the head.
+   If `StartedAt` is not earlier (the swap was delayed), raise `T` to a time after `StartedAt`
+   and run step 3 again. **Never lower `T`** — that rejects real tokens.
 5. Leave `T` unchanged forever after. Once `T` + one token lifetime has passed, no untyped token
    can be valid and the legacy branch in `app/core/auth.py` can be deleted (tracked follow-up).
 - **CRLF guard**: the deploy scripts strip `\r` on the remote side before bash reads the piped
