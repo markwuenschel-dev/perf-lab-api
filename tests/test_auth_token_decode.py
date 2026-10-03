@@ -38,13 +38,14 @@ def _token(claims: dict[str, object], key: str | None = None) -> str:
 pytestmark = pytest.mark.asyncio
 
 
-async def _assert_401_before_db(token: str) -> None:
+async def _rejected_401_before_db(token: str) -> bool:
+    """True when the token is refused with a 401 during decode, before any DB access."""
     db = AsyncMock()
-    with pytest.raises(HTTPException) as exc:
+    try:
         await get_current_user(token=token, db=db)
-    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
-    # Rejected during decode — the DB must never be touched.
-    db.execute.assert_not_awaited()
+    except HTTPException as exc:
+        return exc.status_code == status.HTTP_401_UNAUTHORIZED and not db.execute.await_count
+    return False
 
 
 def test_fixture_passes_the_type_discriminator():
@@ -55,19 +56,19 @@ def test_fixture_passes_the_type_discriminator():
 
 async def test_non_numeric_sub_is_401_not_500():
     """A well-signed typed token with a non-numeric ``sub`` → 401, not an int() ValueError."""
-    await _assert_401_before_db(_token(_claims(sub="not-an-int")))
+    assert await _rejected_401_before_db(_token(_claims(sub="not-an-int")))
 
 
 async def test_missing_sub_is_401():
     """A typed token with no ``sub`` claim → 401."""
     claims = _claims()
     del claims["sub"]
-    await _assert_401_before_db(_token(claims))
+    assert await _rejected_401_before_db(_token(claims))
 
 
 async def test_bad_signature_is_401():
     """A typed token signed with the wrong key → 401."""
-    await _assert_401_before_db(_token(_claims(), key="wrong-signing-key"))
+    assert await _rejected_401_before_db(_token(_claims(), key="wrong-signing-key"))
 
 
 @pytest.mark.parametrize(
