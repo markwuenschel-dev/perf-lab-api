@@ -1202,7 +1202,9 @@ def _plan_outcome_code(
     if validation is not None and validation.unevaluated_hard:
         return f"plan:session_replaced={planned.slug}(safety_unevaluated)"
     if validation is not None and validation.hard_violations:
-        return f"plan:session_replaced={planned.slug}(validation)"
+        # Never "followed" — but the caller's reason is the precise one (a pre-scoring
+        # safety override that also tripped a rule is "safety"; a scored winner is "validation").
+        return f"plan:session_replaced={planned.slug}({replaced_reason})"
     branch = rx.why.prescription_branch if rx.why is not None else None
     if branch is not None and branch in planned.branch_ids:
         return f"plan:session_followed={branch}"

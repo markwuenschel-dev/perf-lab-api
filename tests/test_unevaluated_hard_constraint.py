@@ -323,3 +323,19 @@ def test_projection_treats_stored_rest_as_zero_work():
     # Zero work: the day ends exactly as a day with no session, and below a trained day.
     assert rest[0].fatigue == empty[0].fatigue
     assert rest[0].mean_fatigue < trained[0].mean_fatigue
+
+
+def test_planned_winner_rejected_by_a_hard_rule_is_not_reported_as_followed():
+    """The evaluated-violation twin of the rest case: the replaced winner keeps its branch id
+    (`gym_skill`, which the planned Gymnastics Skill slot binds), and that alone used to read
+    as `plan:session_followed=gym_skill` on a recovery override."""
+    s = _healthy_state()
+    s.tissue_t.wrist = 80.0
+    rx = recommend_next_session(
+        s, goal="Gymnastics",
+        block_context={"session_domain": "gymnastics", "session_category": "Gymnastics Skill"},
+    )
+    assert rx.why is not None and rx.why.validation is not None
+    assert rx.why.validation.hard_violations
+    plan_codes = [c for c in rx.why.constraints_applied if c.startswith("plan:")]
+    assert plan_codes == ["plan:session_replaced=gymnastics_skill(validation)"]
