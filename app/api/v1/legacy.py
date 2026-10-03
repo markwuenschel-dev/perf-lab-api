@@ -8,9 +8,10 @@ Legacy v0.1 endpoints preserved for frontend compatibility.
 """
 
 
+import math
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(tags=["Legacy"])
@@ -21,14 +22,41 @@ router = APIRouter(tags=["Legacy"])
 # ---------------------------------------------------------------------------
 
 def parse_time_to_seconds(text: str) -> float:
+    """Parse ``SS``, ``MM:SS`` or ``HH:MM:SS`` into seconds.
+
+    Raises ``ValueError`` for anything that is not a finite, strictly positive duration:
+    malformed text, ``nan``/``inf``, a negative component, or a zero total. The callers
+    divide by these values, so a zero or non-finite time must never reach the math.
+    """
     text = text.strip()
-    if ":" in text:
-        parts = text.split(":")
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + float(parts[1])
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
-    return float(text)
+    parts = text.split(":")
+    if len(parts) > 3:
+        raise ValueError(f"not a time: {text!r}")
+    values = [float(p) for p in parts]  # float('') / float('abc') raise ValueError
+    # copysign catches "-0" too: a signed component is malformed even when it is zero.
+    if any(not math.isfinite(v) or math.copysign(1.0, v) < 0 for v in values):
+        raise ValueError(f"not a finite, non-negative time: {text!r}")
+    seconds = 0.0
+    for v in values:
+        seconds = seconds * 60 + v
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError(f"time must be positive: {text!r}")
+    return seconds
+
+
+# Usable input ranges, in seconds. Generous around human performance (300 m world-class
+# ≈ 31 s, 1.5 mi ≈ 6:20; walking pace ≈ 3–4 min and ≈ 30 min) so no real athlete is
+# refused, while values the formulas cannot use — 1e-323 underflowing a denominator to
+# zero, 1e308 overflowing a ratio — never reach them.
+TIME_300M_BOUNDS = (20.0, 1800.0)  # 20 s – 30 min
+TIME_1P5MI_BOUNDS = (180.0, 14400.0)  # 3 min – 4 h
+
+
+def _bounded(seconds: float, bounds: tuple[float, float], field: str) -> float:
+    lo, hi = bounds
+    if not lo <= seconds <= hi:
+        raise ValueError(f"{field} must be between {lo:g} and {hi:g} seconds, got {seconds:g}")
+    return seconds
 
 
 def vo2_from_1p5(time_sec: float) -> float:
@@ -199,13 +227,26 @@ def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
     # truth. The run field test is now assessed via the one assessment surface
     # (POST /v1/benchmarks/observations), which owns the state seed. This endpoint
     # remains only to compute VO₂/zones for display; it writes no state.
-    t300 = parse_time_to_seconds(payload.time_300m)
-    t15 = parse_time_to_seconds(payload.time_1p5mi)
+    try:
+        t300 = _bounded(parse_time_to_seconds(payload.time_300m), TIME_300M_BOUNDS, "time_300m")
+        t15 = _bounded(parse_time_to_seconds(payload.time_1p5mi), TIME_1P5MI_BOUNDS, "time_1p5mi")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Times must be positive durations as SS, MM:SS or HH:MM:SS ({exc}).",
+        ) from None
     vo2 = vo2_from_1p5(t15)
     ff = fatigue_factor(t300, t15)
     ff_percent = (ff - 1.0) * 100.0
     race_pace_sec = t15 / 1.5
     zones = [Zone(**z) for z in pace_zone_bounds(race_pace_sec)]
+    # Defense in depth: the bounds above keep every intermediate finite, but a response
+    # with a non-finite number serializes as JSON null (a silent 200), so prove it.
+    numbers = [vo2, ff_percent, race_pace_sec] + [
+        v for z in zones for v in (z.slow_pace_sec, z.fast_pace_sec)
+    ]
+    if not all(math.isfinite(n) for n in numbers):
+        raise HTTPException(status_code=422, detail="These times do not produce finite metrics.")
     return MetricsResponse(
         vo2_max=vo2,
         vo2_category=vo2_category_male_36_45(vo2),
