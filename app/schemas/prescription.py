@@ -37,7 +37,7 @@ __all__ = ["LoadExplanation", "LoadExplanationReason"]
 #: ``openapi.json`` carries it as the schema default, so a bump needs all three updated
 #: together. ``test_prescription_engine_version_is_assigned_not_defaulted`` pins the Python
 #: half of that coupling.
-PRESCRIPTION_ENGINE_VERSION = "v0.7"
+PRESCRIPTION_ENGINE_VERSION = "v0.8"  # v0.8: W1-c safety replacements are final
 
 
 class ValidationSummary(BaseModel):
@@ -46,6 +46,13 @@ class ValidationSummary(BaseModel):
     passed: bool
     failed_checks: list[str] = Field(default_factory=list)
     hard_violations: list[str] = Field(default_factory=list)
+    unevaluated_hard: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Hard safety constraints that could not be evaluated (unregistered or crashed). "
+            "Non-empty means the session was replaced by complete rest."
+        ),
+    )
 
 
 class StateEvidence(BaseModel):
