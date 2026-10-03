@@ -154,7 +154,11 @@ def project_planned_days(
     d = start
     while d <= end:
         rows: list[PlannedWeekSession] = []
-        for i, (session, block) in enumerate(sessions_by_day.get(d, ())):
+        # Same-day TRAINING sessions are placed an hour apart. Count only those: a rest row is
+        # zero work and takes no slot, so inserting one cannot move another workout's time
+        # (and with it the decay before it, i.e. the forecast fatigue).
+        trained = 0
+        for session, block in sessions_by_day.get(d, ()):
             if prescribes_rest(session.prescribed_content):
                 # The stored prescription is complete rest: zero work. Projecting it through
                 # the block's target workout would show training fatigue and adaptation for a
@@ -168,7 +172,8 @@ def project_planned_days(
                     )
                 )
                 continue
-            when = datetime.combine(d, time(SESSION_HOUR, 0)) + timedelta(hours=i)
+            when = datetime.combine(d, time(SESSION_HOUR, 0)) + timedelta(hours=trained)
+            trained += 1
             log = planned_session_to_log(session, block, when)
             dt = when - cur.timestamp
             if dt.total_seconds() < 0:

@@ -40,13 +40,26 @@ _SCORE_AXES: tuple[str, ...] = (
 )
 
 
-def final_outcome(prescription: WorkoutPrescription) -> str:
-    """What finalize did with the ranked winner, from the prescription the athlete got.
+#: Early exits that prescribe without ranking a pool, by the branch id they finalize under
+#: (``app.logic.prescriber``). Each is its own outcome, never ``as_ranked``.
+_UNRANKED_EXITS: dict[str, str] = {
+    "equipment_unavailable": "equipment_unavailable",
+    "constraint_infeasible": "constraint_infeasible",
+}
+
+
+def final_outcome(prescription: WorkoutPrescription, ranked_winner: str | None) -> str:
+    """What was prescribed, relative to the ranking — from the prescription the athlete got.
+
+    ``ranked_winner`` is the branch id of the top-ranked candidate, or None when no candidate
+    was ranked (a safety override clears the pool; the early exits never build one).
 
     ``safety_unevaluated_rest`` — a hard rule could not run, so the session became rest;
-    ``hard_violation_replaced`` — an evaluated hard rule failed and replaced it;
-    ``safety_override`` — a pre-scoring safety branch prescribed (no ranking happened);
-    ``as_ranked`` — the ranked winner was prescribed.
+    ``hard_violation_replaced`` — an evaluated hard rule failed and replaced the session;
+    ``safety_override`` — a pre-scoring safety branch prescribed;
+    ``equipment_unavailable`` / ``constraint_infeasible`` — an early exit prescribed;
+    ``as_ranked`` — the ranked winner itself was prescribed;
+    ``unknown`` — none of the above can be established. Never a guess.
     """
     why = prescription.why
     validation = why.validation if why is not None else None
@@ -57,7 +70,11 @@ def final_outcome(prescription: WorkoutPrescription) -> str:
     branch = why.prescription_branch if why is not None else None
     if branch is not None and branch.startswith("safety_"):
         return "safety_override"
-    return "as_ranked"
+    if branch is not None and branch in _UNRANKED_EXITS:
+        return _UNRANKED_EXITS[branch]
+    if ranked_winner is not None and branch == ranked_winner:
+        return "as_ranked"
+    return "unknown"
 
 
 def _score_components(candidate: SessionCandidate) -> dict[str, float]:
@@ -122,7 +139,9 @@ async def persist_prescription_decision(
             chosen_candidate_id=chosen.branch_id if chosen is not None else None,
             chosen_score=score_candidate(chosen) if chosen is not None else None,
             # The ranking above is evidence; this is what was actually prescribed (W1-c).
-            final_outcome=final_outcome(prescription),
+            final_outcome=final_outcome(
+                prescription, chosen.branch_id if chosen is not None else None
+            ),
             final_prescription_type=prescription.type,
             final_duration_min=prescription.duration_min,
             hard_violations_json=hard_violations,

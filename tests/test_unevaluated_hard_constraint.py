@@ -282,6 +282,11 @@ def test_every_code_on_a_rest_prescription_has_a_real_label(monkeypatch):
     assert "Rest today" in labels[f"safety:unevaluated={HARD_CODE}"]
 
 
+def _ranked_winner(log: list) -> str | None:
+    """What decision telemetry passes as the ranked winner: ``candidate_log[0]``."""
+    return log[0].branch_id if log else None
+
+
 @pytest.mark.parametrize(
     ("setup", "expected"),
     [
@@ -299,7 +304,97 @@ def test_final_outcome_is_recorded_apart_from_the_ranking(monkeypatch, setup, ex
     if setup == "wrist":
         state.tissue_t.wrist = 80.0
         goal = "Gymnastics"
-    assert final_outcome(recommend_next_session(state, goal=goal)) == expected
+    log: list = []
+    rx = recommend_next_session(state, goal=goal, candidate_log_out=log)
+    assert final_outcome(rx, _ranked_winner(log)) == expected
+
+
+def _unranked_exit(path: str):
+    """Drive one real early exit and return (prescription, candidate_log) exactly as the
+    service hands them to decision telemetry."""
+    log: list = []
+    if path == "equipment_unavailable":
+        from app.scripts import simulate_matrix as sm
+
+        level_key, _ = sm.EXPERIENCE["intermediate"]
+        rx = recommend_next_session(
+            sm._state(level_key, *sm.FRESHNESS["fresh"]),
+            goal="OlympicLifts",  # type: ignore[arg-type]
+            catalog=sm._catalog(),
+            available_equipment=["bodyweight"],
+            block_context={
+                "block_goal": "OlympicLifts", "session_category": "Weightlifting Technique",
+                "session_domain": "weightlifting", "week_number": 2, "duration_weeks": 8,
+                "deload_every_n_weeks": 4,
+            },
+            candidate_log_out=log,
+        )
+    else:
+        from app.logic.planning_constraints import (
+            AuthorityClass,
+            ConstraintKind,
+            ConstraintScope,
+            Hardness,
+            ResolvedPlanningConstraint,
+        )
+
+        bar_everything = ResolvedPlanningConstraint(
+            kind=ConstraintKind.MAX_DURATION_MIN, hardness=Hardness.HARD,
+            authority_class=AuthorityClass.USER_OVERRIDE, scope=ConstraintScope.MICROCYCLE,
+            reason_code="athlete_excluded", source_type="synthetic_external", threshold=0.0,
+        )
+        rx = recommend_next_session(
+            _healthy_state(), goal="Running", constraints=[bar_everything], candidate_log_out=log
+        )
+    return rx, log
+
+
+@pytest.mark.parametrize("path", ["equipment_unavailable", "constraint_infeasible"])
+def test_unranked_exits_get_their_own_outcome_never_as_ranked(path):
+    """These exits prescribe without ranking a pool to choose from. `as_ranked` ("the ranked
+    winner was prescribed") was the fall-through default and mislabelled both."""
+    from app.services.decision_telemetry import final_outcome
+
+    rx, log = _unranked_exit(path)
+    assert rx.why is not None and rx.why.prescription_branch == path, "fixture must hit the exit"
+    assert final_outcome(rx, _ranked_winner(log)) == path
+
+
+def test_an_unrecognised_unranked_prescription_is_unknown_not_as_ranked():
+    from app.schemas.prescription import PrescriptionExplanation
+    from app.services.decision_telemetry import final_outcome
+
+    rx = recommend_next_session(_healthy_state(), goal="Strength")
+    assert rx.why is not None
+    orphan = rx.model_copy(
+        update={"why": PrescriptionExplanation(**{**rx.why.model_dump(), "prescription_branch": "some_new_exit"})}
+    )
+    assert final_outcome(orphan, None) == "unknown"
+    assert final_outcome(orphan, "a_different_winner") == "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["equipment_unavailable", "constraint_infeasible"])
+async def test_unranked_exit_decision_row(async_db, path):
+    """The persisted decision row for a real no-candidate exit (the writer, not just the helper)."""
+    from sqlalchemy import select
+
+    from app.models.telemetry import PrescriptionDecision
+    from app.services.decision_telemetry import persist_prescription_decision
+
+    user = User(email=f"w1c-{path}@test.com", hashed_password="h", is_active=True)
+    async_db.add(user)
+    await async_db.commit()
+    await async_db.refresh(user)
+    rx, log = _unranked_exit(path)
+    await persist_prescription_decision(async_db, user.id, rx, log, goal="x")
+    row = (
+        await async_db.execute(
+            select(PrescriptionDecision).where(PrescriptionDecision.athlete_id == user.id)
+        )
+    ).scalars().one()
+    assert row.final_outcome == path
+    assert row.final_duration_min == rx.duration_min
 
 
 def test_projection_treats_stored_rest_as_zero_work():
@@ -339,3 +434,27 @@ def test_planned_winner_rejected_by_a_hard_rule_is_not_reported_as_followed():
     assert rx.why.validation.hard_violations
     plan_codes = [c for c in rx.why.constraints_applied if c.startswith("plan:")]
     assert plan_codes == ["plan:session_replaced=gymnastics_skill(validation)"]
+
+
+@pytest.mark.parametrize("position", ["before", "between", "after"])
+def test_a_rest_row_never_moves_a_same_day_workout(position):
+    """Same-day sessions are placed an hour apart. Rest rows used to take a slot in that
+    count, so a rest BEFORE a workout pushed it from 12:00 to 13:00 and changed the forecast
+    fatigue (5.82 -> 5.91 in review). Rest is zero work and takes no slot."""
+    from test_planning_projection_service import D0, _block, _session, _state
+
+    from app.services.planning_projection_service import project_planned_days
+
+    block = _block(target_session_minutes=60, goal=BlockGoal.HYPERTROPHY)
+    rest = _session(9, D0, prescribed_content={"type": "Rest", "duration_min": 0})
+    w1, w2 = _session(1, D0), _session(2, D0, category="Heavy Upper")
+    with_rest = {
+        "before": [rest, w1, w2],
+        "between": [w1, rest, w2],
+        "after": [w1, w2, rest],
+    }[position]
+    plain, _ = project_planned_days(_state(), D0, D0, {D0: [(w1, block), (w2, block)]})
+    mixed, _ = project_planned_days(_state(), D0, D0, {D0: [(s, block) for s in with_rest]})
+    assert mixed[0].load == plain[0].load
+    assert mixed[0].fatigue == plain[0].fatigue
+    assert mixed[0].mean_fatigue == plain[0].mean_fatigue
