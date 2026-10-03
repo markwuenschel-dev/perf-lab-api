@@ -8,9 +8,10 @@ Legacy v0.1 endpoints preserved for frontend compatibility.
 """
 
 
+import math
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(tags=["Legacy"])
@@ -21,14 +22,26 @@ router = APIRouter(tags=["Legacy"])
 # ---------------------------------------------------------------------------
 
 def parse_time_to_seconds(text: str) -> float:
+    """Parse ``SS``, ``MM:SS`` or ``HH:MM:SS`` into seconds.
+
+    Raises ``ValueError`` for anything that is not a finite, strictly positive duration:
+    malformed text, ``nan``/``inf``, a negative component, or a zero total. The callers
+    divide by these values, so a zero or non-finite time must never reach the math.
+    """
     text = text.strip()
-    if ":" in text:
-        parts = text.split(":")
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + float(parts[1])
-        if len(parts) == 3:
-            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
-    return float(text)
+    parts = text.split(":")
+    if len(parts) > 3:
+        raise ValueError(f"not a time: {text!r}")
+    values = [float(p) for p in parts]  # float('') / float('abc') raise ValueError
+    # copysign catches "-0" too: a signed component is malformed even when it is zero.
+    if any(not math.isfinite(v) or math.copysign(1.0, v) < 0 for v in values):
+        raise ValueError(f"not a finite, non-negative time: {text!r}")
+    seconds = 0.0
+    for v in values:
+        seconds = seconds * 60 + v
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError(f"time must be positive: {text!r}")
+    return seconds
 
 
 def vo2_from_1p5(time_sec: float) -> float:
@@ -199,8 +212,14 @@ def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
     # truth. The run field test is now assessed via the one assessment surface
     # (POST /v1/benchmarks/observations), which owns the state seed. This endpoint
     # remains only to compute VO₂/zones for display; it writes no state.
-    t300 = parse_time_to_seconds(payload.time_300m)
-    t15 = parse_time_to_seconds(payload.time_1p5mi)
+    try:
+        t300 = parse_time_to_seconds(payload.time_300m)
+        t15 = parse_time_to_seconds(payload.time_1p5mi)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Times must be positive durations as SS, MM:SS or HH:MM:SS ({exc}).",
+        ) from None
     vo2 = vo2_from_1p5(t15)
     ff = fatigue_factor(t300, t15)
     ff_percent = (ff - 1.0) * 100.0
