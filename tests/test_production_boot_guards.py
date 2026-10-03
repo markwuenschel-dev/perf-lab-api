@@ -413,3 +413,34 @@ def test_the_shipped_debug_default_is_safe() -> None:
     operator who sets DEBUG=True in production; this stops the one who never set it.
     """
     assert Settings(_env_file=None).DEBUG is False  # type: ignore[arg-type]
+
+
+# ── W1-a: TYPED_TOKENS_SINCE ──────────────────────────────────────────────────────────
+
+
+def test_production_refuses_to_boot_without_a_typed_token_cutoff() -> None:
+    """Without the cutoff the untyped-token grace window is undefined: every pre-deploy
+    session would be silently logged out, or — had the default been permissive — legacy
+    tokens would never expire out of the grace path. Production must state it."""
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE=None)
+    with pytest.raises(RuntimeError, match="TYPED_TOKENS_SINCE"):
+        main._check_production_token_cutoff(cfg)
+
+
+def test_a_typed_token_cutoff_boots_production() -> None:
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE="2026-10-03T18:00:00Z")
+    with assert_does_not_raise():
+        main._check_production_token_cutoff(cfg)
+
+
+def test_missing_token_cutoff_only_warns_outside_production() -> None:
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="development", TYPED_TOKENS_SINCE=None)
+    with caplog_at("perflab", logging.WARNING) as records:
+        main._check_production_token_cutoff(cfg)
+    assert any("TYPED_TOKENS_SINCE" in r.getMessage() for r in records)

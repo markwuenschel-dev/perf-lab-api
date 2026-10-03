@@ -122,6 +122,30 @@ def _check_production_debug(cfg: Settings) -> None:
     logger.warning("%s (allowed outside production)", DEBUG_UNSUPPORTED_IN_PRODUCTION)
 
 
+TOKEN_CUTOFF_REQUIRED_IN_PRODUCTION = (
+    "TYPED_TOKENS_SINCE is unset. Set it to this deployment's start time (ISO-8601 UTC, "
+    "e.g. TYPED_TOKENS_SINCE=2026-10-03T18:00:00Z) the first time typed access tokens ship, "
+    "and keep it fixed afterwards. It bounds how long pre-`typ` tokens stay valid; without "
+    "it the grace window is undefined."
+)
+
+
+def _check_production_token_cutoff(cfg: Settings) -> None:
+    """Refuse to boot in production without ``TYPED_TOKENS_SINCE`` (W1-a).
+
+    ``get_current_user`` accepts an untyped legacy token only while its ``exp`` lies within
+    one TTL of this instant. Unset, every untyped token is rejected — safe, but in
+    production it would also silently log out every pre-deploy session, and an operator
+    who meant to grant grace would not find out. Require the decision to be made on
+    purpose. Mirrors ``_check_production_secrets``: raise in production, warn elsewhere.
+    """
+    if cfg.TYPED_TOKENS_SINCE is not None:
+        return
+    if cfg.is_production:
+        raise RuntimeError(TOKEN_CUTOFF_REQUIRED_IN_PRODUCTION)
+    logger.warning("%s (allowed outside production)", TOKEN_CUTOFF_REQUIRED_IN_PRODUCTION)
+
+
 def _cors_problem(cfg: Settings) -> str | None:
     """Why this CORS config must not serve production, or None if it is safe.
 
@@ -306,6 +330,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Critical safety check: production must not boot with a forgeable signing key
     _check_production_secrets(settings)
+
+    # Critical safety check: production must state when typed access tokens started
+    _check_production_token_cutoff(settings)
 
     # Critical safety check: production must pin an explicit CORS origin (no wildcard-subdomain default)
     _check_production_cors(settings)

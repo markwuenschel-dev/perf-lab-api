@@ -2,6 +2,7 @@
 app/core/config.py
 """
 
+from datetime import datetime
 from urllib.parse import urlparse, urlunparse
 
 from pydantic import field_validator
@@ -128,6 +129,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str = DEFAULT_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    # When this deployment started minting typed access tokens (`typ="access"`). Every
+    # untyped token was issued before then, so an untyped token is accepted only while its
+    # `exp` falls inside one TTL of this instant — exactly the grace the old issuer granted,
+    # and nothing an untyped token minted later could satisfy. Unset means "no grace":
+    # untyped tokens are rejected. Production refuses to boot without it
+    # (`app.main._check_production_token_cutoff`), so the grace can never silently become
+    # either zero or unbounded.
+    TYPED_TOKENS_SINCE: datetime | None = None
 
     # CORS — comma-separated list of allowed origins.
     # Defaults to local dev origins only. In production you MUST pin an explicit prod

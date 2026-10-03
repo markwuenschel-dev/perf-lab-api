@@ -100,5 +100,10 @@ code **and** an old migration head.
 - **Secrets** live only in `/opt/stack/infra/env/perf-lab-api.env` on the box — never commit
   `.env`. In production set `ENVIRONMENT=production` and a real `SECRET_KEY` / `DATABASE_URL`;
   `config.py` rewrites `postgresql://` → `postgresql+asyncpg://` automatically.
+- **`TYPED_TOKENS_SINCE`** (required in production; boot fails without it): the ISO-8601 UTC
+  instant this deployment first issued typed access tokens. Add it to the env file **before**
+  deploying the release that introduces it, set to that deploy's time, and never change it
+  afterwards. Pre-typed login tokens keep working only until one token lifetime
+  (`ACCESS_TOKEN_EXPIRE_MINUTES`) past it.
 - **CRLF guard**: the deploy scripts strip `\r` on the remote side before bash reads the piped
   script — a CRLF checkout would otherwise make the box see `perf-lab-api\r` → "no such service".
