@@ -2,6 +2,7 @@
 app/core/config.py
 """
 
+from datetime import datetime
 from urllib.parse import urlparse, urlunparse
 
 from pydantic import field_validator
@@ -128,6 +129,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str = DEFAULT_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    # An instant at or after the last untyped-token issuer stopped (the previous release's
+    # container, which serves until `docker compose up -d` replaces it — docs/DEPLOY.md
+    # "Typed-token cutover"). Every legitimate untyped token was issued before it, so an
+    # untyped token is accepted only while its `exp` ≤ this + one TTL. Unset means "no
+    # grace": untyped tokens are rejected. Production refuses to boot without it, or with
+    # a value implausibly far in the future (`app.main._check_production_token_cutoff`).
+    TYPED_TOKENS_SINCE: datetime | None = None
 
     # CORS — comma-separated list of allowed origins.
     # Defaults to local dev origins only. In production you MUST pin an explicit prod
