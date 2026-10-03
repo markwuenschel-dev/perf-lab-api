@@ -31,7 +31,8 @@ async def record_recovery_shadow(
     """Write one recovery shadow-telemetry row. Never raises to the caller.
 
     Takes an immutable snapshot, never a live WellnessSample ORM instance (AUD-C24)."""
-    async with best_effort_write(db, f"recovery shadow log for user {user_id}"):
+    async with best_effort_write(db, f"recovery shadow log for user {user_id}") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
         params = default_parameters()
         artifact = load_namespace_override(_NAMESPACE)
         if artifact is not None:
@@ -41,14 +42,14 @@ async def record_recovery_shadow(
             learned = params
             model_version = "none"
 
-        state = await load_current_state(db, user_id)
+        state = await load_current_state(tdb, user_id)
         fatigue_before = (
             {a: round(float(getattr(state.fatigue_f, a)), 2) for a in FatigueState.KEYS}
             if state is not None
             else {}
         )
 
-        db.add(
+        tdb.add(
             RecoveryShadowLog(
                 user_id=user_id,
                 model_version=model_version,

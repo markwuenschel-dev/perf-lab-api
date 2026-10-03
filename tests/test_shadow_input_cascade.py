@@ -46,10 +46,11 @@ async def factory(_migrated_schema: None):
 
 
 async def _fail_early_shadow(db: AsyncSession) -> None:
-    """An early best-effort shadow that does DB work then fails — rolls back (expiring the
-    shared sample) and swallows, exactly as a real writer would."""
-    async with best_effort_write(db, "test-injected early shadow failure"):
-        await db.execute(text("SELECT 1"))
+    """An early best-effort shadow that does DB work then fails and swallows, exactly as a
+    real writer would. Before F1 its rollback ran on the SHARED session and expired the
+    sample; now it runs in its own session, so the guard below is belt-and-braces."""
+    async with best_effort_write(db, "test-injected early shadow failure") as tx:
+        await tx.db.execute(text("SELECT 1"))
         raise RuntimeError("injected early shadow failure")
 
 

@@ -899,8 +899,9 @@ export interface paths {
          * Simulate Projection
          * @description Project the athlete's capacity axes forward under a hypothetical plan.
          *
-         *     Loads (or seeds) the caller's current state, then runs the pure projection
-         *     engine. No state is written — this is a compute-and-return preview.
+         *     Loads the caller's current state — or, for an athlete with none, the baseline that
+         *     initialization would seed, built in memory — then runs the pure projection engine.
+         *     No state is written: this is a compute-and-return preview (F1).
          */
         post: operations["simulate_projection_v1_simulate_projection_post"];
         delete?: never;

@@ -86,7 +86,8 @@ async def persist_prescription_decision(
         state_snapshot: JSON-serializable athlete-state snapshot.
         block_context: JSON-serializable block/objective context used for bias.
     """
-    async with best_effort_write(db, f"prescription decision telemetry for user {user_id}"):
+    async with best_effort_write(db, f"prescription decision telemetry for user {user_id}") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
         chosen = candidate_log[0] if candidate_log else None
         decision = PrescriptionDecision(
             athlete_id=user_id,
@@ -99,12 +100,12 @@ async def persist_prescription_decision(
             chosen_candidate_id=chosen.branch_id if chosen is not None else None,
             chosen_score=score_candidate(chosen) if chosen is not None else None,
         )
-        db.add(decision)
+        tdb.add(decision)
         # Flush to assign decision.id for the candidate-log FK, without committing.
-        await db.flush()
+        await tdb.flush()
 
         for candidate in candidate_log:
-            db.add(
+            tdb.add(
                 CandidateDecisionLog(
                     prescription_decision_id=decision.id,
                     branch_id=candidate.branch_id,

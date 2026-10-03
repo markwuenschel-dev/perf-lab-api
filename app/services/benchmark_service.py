@@ -577,7 +577,9 @@ async def complete_observation(
     if staged.floor_shadow_candidate is not None:
         prior_state, floored_state = staged.floor_shadow_candidate
         await capacity_floor_shadow_service.record_floor_candidate(
-            db, user_id, observation=obs, benchmark_code=staged.benchmark_code,
+            db, user_id,
+            observation=capacity_floor_shadow_service.FloorObservationSnapshot.of(obs),
+            benchmark_code=staged.benchmark_code,
             prior=prior_state, floored=floored_state,
         )
 

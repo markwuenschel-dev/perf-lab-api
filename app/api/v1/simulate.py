@@ -15,7 +15,11 @@ from app.core.db import get_db
 from app.models.user import User
 from app.schemas.projection import ProjectionRequest, ProjectionResponse
 from app.services.projection_service import project_trajectory
-from app.services.state_service import load_or_init_current_state
+from app.services.state_service import (
+    has_state,
+    load_or_init_current_state,
+    preview_baseline_state,
+)
 
 router = APIRouter(prefix="/simulate", tags=["Simulate"])
 
@@ -28,8 +32,14 @@ async def simulate_projection(
 ) -> ProjectionResponse:
     """Project the athlete's capacity axes forward under a hypothetical plan.
 
-    Loads (or seeds) the caller's current state, then runs the pure projection
-    engine. No state is written — this is a compute-and-return preview.
+    Loads the caller's current state — or, for an athlete with none, the baseline that
+    initialization would seed, built in memory — then runs the pure projection engine.
+    No state is written: this is a compute-and-return preview (F1).
     """
-    state = await load_or_init_current_state(db, current_user.id)
+    # Never initialize here: an athlete with no state gets the in-memory preview baseline.
+    # With a state row present, load_or_init_current_state only loads.
+    if await has_state(db, current_user.id):
+        state = await load_or_init_current_state(db, current_user.id)
+    else:
+        state = preview_baseline_state(current_user.id)
     return project_trajectory(state, payload)

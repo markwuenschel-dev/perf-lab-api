@@ -62,8 +62,9 @@ async def record_mpc_shadow(
         return  # safety-override / empty pool → nothing to plan over
 
     w = weights or MpcWeights()
-    async with best_effort_write(db, f"mpc shadow log for user {user_id}"):
-        belief_trace = await _latest_belief_trace(db, user_id, default=w.uncertainty_ref)
+    async with best_effort_write(db, f"mpc shadow log for user {user_id}") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
+        belief_trace = await _latest_belief_trace(tdb, user_id, default=w.uncertainty_ref)
         evals = evaluate_candidates(state, pool, goal, belief_trace, horizon_days=horizon_days, weights=w)
 
         greedy = pool[0]
@@ -77,7 +78,7 @@ async def record_mpc_shadow(
             }
             for e in evals
         ]
-        db.add(
+        tdb.add(
             MpcShadowLog(
                 user_id=user_id,
                 goal=goal,

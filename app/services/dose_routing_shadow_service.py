@@ -94,8 +94,9 @@ async def record_dose_routing(
     """
     async with best_effort_write(
         db, f"dose routing shadow (user {user_id}, workout {workout_log_id})"
-    ):
-        e1rm_by_key = await _e1rm_by_exercise_key(db, user_id, log)
+    ) as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
+        e1rm_by_key = await _e1rm_by_exercise_key(tdb, user_id, log)
         r = dr.build_routing(
             log, e1rm_by_key=e1rm_by_key, external_intensity=external_intensity
         )
@@ -131,4 +132,4 @@ async def record_dose_routing(
             contributions_json=[asdict(c) for c in r.contributions],
             decision_impact="none_shadow_only",
         )
-        db.add(row)
+        tdb.add(row)
