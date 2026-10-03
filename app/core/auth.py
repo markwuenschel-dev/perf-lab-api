@@ -90,7 +90,10 @@ def _is_access_token(payload: dict[str, Any]) -> bool:
     exp = payload.get("exp")
     if grace_ends is None or not isinstance(exp, int | float) or isinstance(exp, bool):
         return False
-    return datetime.fromtimestamp(exp, UTC) <= grace_ends
+    # Compare in epoch seconds rather than converting `exp` to a datetime: an
+    # attacker-shaped exp (1e20, inf) would raise OverflowError in fromtimestamp, and a
+    # NaN compares False here — both are rejections, never a 500.
+    return exp <= grace_ends.timestamp()
 
 
 async def get_current_user(
@@ -116,7 +119,9 @@ async def get_current_user(
         # `sub` is attacker-influenced; a non-numeric value must be a 401, not a
         # 500 from an unguarded int() (INT-10).
         user_pk = int(user_id)
-    except (JWTError, ValueError):
+    # OverflowError: python-jose's own exp check does int(exp), which overflows on a
+    # signed `exp=inf` — a malformed token, so a 401, not a 500.
+    except (JWTError, ValueError, OverflowError):
         raise credentials_exception from None
 
     result = await db.execute(select(User).where(User.id == user_pk))

@@ -444,3 +444,29 @@ def test_missing_token_cutoff_only_warns_outside_production() -> None:
     with caplog_at("perflab", logging.WARNING) as records:
         main._check_production_token_cutoff(cfg)
     assert any("TYPED_TOKENS_SINCE" in r.getMessage() for r in records)
+
+
+def test_a_token_cutoff_far_in_the_future_never_boots_production() -> None:
+    """A cutover margin is minutes to an hour. A value days ahead (wrong year/day) would
+    trust untyped tokens from any stray issuer for that long."""
+    from datetime import UTC, datetime, timedelta
+
+    from app import main
+
+    now = datetime(2026, 10, 4, 18, 0, tzinfo=UTC)
+    far = (now + timedelta(hours=25)).isoformat()
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE=far)
+    with pytest.raises(RuntimeError, match="TYPED_TOKENS_SINCE"):
+        main._check_production_token_cutoff(cfg, now=now)
+
+
+def test_a_token_cutoff_with_a_cutover_margin_boots_production() -> None:
+    """The documented procedure sets the cutoff ~1 h ahead of the deploy."""
+    from datetime import UTC, datetime, timedelta
+
+    from app import main
+
+    now = datetime(2026, 10, 4, 18, 0, tzinfo=UTC)
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE=(now + timedelta(hours=1)).isoformat())
+    with assert_does_not_raise():
+        main._check_production_token_cutoff(cfg, now=now)

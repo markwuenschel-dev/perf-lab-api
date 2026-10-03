@@ -129,13 +129,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = DEFAULT_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-    # When this deployment started minting typed access tokens (`typ="access"`). Every
-    # untyped token was issued before then, so an untyped token is accepted only while its
-    # `exp` falls inside one TTL of this instant — exactly the grace the old issuer granted,
-    # and nothing an untyped token minted later could satisfy. Unset means "no grace":
-    # untyped tokens are rejected. Production refuses to boot without it
-    # (`app.main._check_production_token_cutoff`), so the grace can never silently become
-    # either zero or unbounded.
+    # An instant at or after the last untyped-token issuer stopped (the previous release's
+    # container, which serves until `docker compose up -d` replaces it — docs/DEPLOY.md
+    # "Typed-token cutover"). Every legitimate untyped token was issued before it, so an
+    # untyped token is accepted only while its `exp` ≤ this + one TTL. Unset means "no
+    # grace": untyped tokens are rejected. Production refuses to boot without it, or with
+    # a value implausibly far in the future (`app.main._check_production_token_cutoff`).
     TYPED_TOKENS_SINCE: datetime | None = None
 
     # CORS — comma-separated list of allowed origins.
