@@ -140,14 +140,15 @@ async def record_ekf_predict(
     log: WorkoutLog,
 ) -> None:
     """Write one EKF predict row for a workout ingest. Never raises to the caller."""
-    async with best_effort_write(db, f"ekf predict for user {user_id}"):
-        await _acquire_ekf_chain_lock(db, user_id)  # serialize the per-user belief chain
+    async with best_effort_write(db, f"ekf predict for user {user_id}") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
+        await _acquire_ekf_chain_lock(tdb, user_id)  # serialize the per-user belief chain
         params = default_parameters()
-        template = await load_current_state(db, user_id)
+        template = await load_current_state(tdb, user_id)
         if template is None:
             return  # nothing to seed from yet
 
-        prior_row = await _load_latest_belief(db, user_id)
+        prior_row = await _load_latest_belief(tdb, user_id)
         if prior_row is None:
             # First EKF step: seed the belief from the current production state; do not
             # propagate (there is no prior belief to advance).
@@ -156,7 +157,7 @@ async def record_ekf_predict(
             ctx = TransitionContext(dose=dose, time_delta=time_delta, log=log, template=template)
             belief = predict(_belief_from_row(prior_row), ctx, params)
 
-        db.add(
+        tdb.add(
             EkfShadowLog(
                 user_id=user_id,
                 belief_at=_naive(belief.timestamp),
@@ -185,14 +186,15 @@ async def record_ekf_update(
     *before* the production commit) so nothing is lazy-loaded across this transaction.
     """
     specs = list(mapping_specs)
-    async with best_effort_write(db, f"ekf update for user {user_id}"):
-        await _acquire_ekf_chain_lock(db, user_id)  # serialize the per-user belief chain
+    async with best_effort_write(db, f"ekf update for user {user_id}") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
+        await _acquire_ekf_chain_lock(tdb, user_id)  # serialize the per-user belief chain
         params = default_parameters()
-        state = await load_current_state(db, user_id)
+        state = await load_current_state(tdb, user_id)
         if state is None:
             return
 
-        prior_row = await _load_latest_belief(db, user_id)
+        prior_row = await _load_latest_belief(tdb, user_id)
         prior = _belief_from_row(prior_row) if prior_row is not None else EkfBelief.seed_from_unified(state, params)
 
         profile = get_validity_profile(benchmark_code)
@@ -200,7 +202,7 @@ async def record_ekf_update(
         if obs is None:
             return  # no score / no capacity mapping → nothing to assimilate
 
-        db.add(_staged_update_row(user_id, prior, obs, params, observed_at))
+        tdb.add(_staged_update_row(user_id, prior, obs, params, observed_at))
 
 
 def _validate_wellness_shadow_input(
@@ -258,22 +260,23 @@ async def record_ekf_wellness_observation(
     async with best_effort_write(
         db, f"ekf wellness update for user {user_id}"
     ) as main_write:
-        await _acquire_ekf_chain_lock(db, user_id)  # serialize the per-user belief chain
+        tdb = main_write.db  # F1: the telemetry transaction's own session
+        await _acquire_ekf_chain_lock(tdb, user_id)  # serialize the per-user belief chain
         _validate_wellness_shadow_input(user_id, shadow_input)
         await _validate_wellness_source_tenant(
-            db, user_id, shadow_input.wellness_sample_id
+            tdb, user_id, shadow_input.wellness_sample_id
         )
         # (1) Pre-existing pending head correction, in THIS transaction (see docstring). Blocked/
         # no_pending return normally; an unexpected error propagates and aborts the shadow txn.
         await _replay_pending_head_correction(
-            db,
+            tdb,
             user_id,
             phase="pre_ingest",
             current_input=shadow_input,
             deferred_logs=pre_replay_logs,
         )
         # (2) Assimilate or classify the current input.
-        outcome = await _assimilate_or_classify(db, user_id, shadow_input, observed_at)
+        outcome = await _assimilate_or_classify(tdb, user_id, shadow_input, observed_at)
     _flush_deferred_replay_logs(pre_replay_logs, committed=main_write.committed)
 
     # (3) A newly detected correction: repair it in its own best-effort transaction so a replay
@@ -283,9 +286,10 @@ async def record_ekf_wellness_observation(
         async with best_effort_write(
             db, f"ekf head replay for user {user_id}"
         ) as replay_write:
-            await _acquire_ekf_chain_lock(db, user_id)
+            tdb = replay_write.db  # F1: the telemetry transaction's own session
+            await _acquire_ekf_chain_lock(tdb, user_id)
             await _replay_pending_head_correction(
-                db,
+                tdb,
                 user_id,
                 phase="post_classification",
                 deferred_logs=post_replay_logs,

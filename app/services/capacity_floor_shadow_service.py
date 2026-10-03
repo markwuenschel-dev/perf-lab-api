@@ -11,6 +11,8 @@ production state (``decision_impact = "none_shadow_only"``).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +22,29 @@ from app.logic import observation_authority as oa
 from app.models.capacity_floor_shadow import CapacityFloorShadowLog
 from app.schemas.state import UnifiedStateVector
 from app.services.telemetry_common import best_effort_write
+
+
+@dataclass(frozen=True)
+class FloorObservationSnapshot:
+    """The committed observation's fields this writer records — plain values, taken by the
+    caller BEFORE the telemetry transaction, never the live ORM row (F1: a writer reading a
+    request-session object reaches across into a transaction it does not own)."""
+
+    id: int
+    observed_at: datetime
+    capacity_effect: str | None
+    authority_policy_version: str | None
+    authority_resolution_reason: str | None
+
+    @classmethod
+    def of(cls, observation: Any) -> FloorObservationSnapshot:
+        return cls(
+            id=int(observation.id),
+            observed_at=observation.observed_at,
+            capacity_effect=observation.capacity_effect,
+            authority_policy_version=observation.authority_policy_version,
+            authority_resolution_reason=observation.authority_resolution_reason,
+        )
 
 
 def floor_candidate_payload(
@@ -55,7 +80,7 @@ async def record_floor_candidate(
     db: AsyncSession,
     user_id: int,
     *,
-    observation: Any,
+    observation: FloorObservationSnapshot,
     benchmark_code: str,
     prior: UnifiedStateVector,
     floored: UnifiedStateVector,
@@ -74,7 +99,8 @@ async def record_floor_candidate(
     with its observation; losing one piece of evidence is the intended best-effort
     trade, and ``benchmark_observation_id`` is nullable with ``ondelete=CASCADE``.
     """
-    async with best_effort_write(db, f"capacity floor shadow candidate (user {user_id})"):
+    async with best_effort_write(db, f"capacity floor shadow candidate (user {user_id})") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
         payload = floor_candidate_payload(prior, floored)
         row = CapacityFloorShadowLog(
             user_id=user_id,
@@ -92,4 +118,4 @@ async def record_floor_candidate(
             would_raise=payload["would_raise"],
             decision_impact="none_shadow_only",
         )
-        db.add(row)
+        tdb.add(row)

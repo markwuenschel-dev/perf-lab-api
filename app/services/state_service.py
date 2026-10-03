@@ -1,3 +1,4 @@
+import copy
 import logging
 import re
 from datetime import UTC, datetime, timedelta
@@ -391,6 +392,20 @@ async def load_or_init_current_state(
     if row is None:
         return await initialize_athlete_state(db, user_id)
     return unified_from_athlete_row(row)
+
+
+def preview_baseline_state(user_id: int) -> UnifiedStateVector:
+    """The baseline ``initialize_athlete_state`` would seed with its defaults — built in
+    memory, never persisted. Pure: no database access.
+
+    For read-only previews of an athlete who has no state yet (``POST /v1/simulate/projection``,
+    F1). Same inputs and the same row→vector conversion as initialization, so the preview
+    matches what the first real write would seed.
+    """
+    _, transient = _build_baseline_vector(
+        user_id, "intermediate", None, None, None, None, None, 0.0, goal=None
+    )
+    return unified_from_athlete_row(transient)
 
 
 async def has_state(db: AsyncSession, user_id: int) -> bool:
@@ -1232,8 +1247,9 @@ async def process_new_workout(
         # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as
         # this athlete's above) may lend the prescription's structure to v1's density. The
         # same-day fallback match is a heuristic, and a false link invents a density.
+        # A deep copy: the telemetry writer gets plain data, never the request ORM row's dict.
         linked_prescription=(
-            planned_session.prescribed_content
+            copy.deepcopy(planned_session.prescribed_content)
             if log.planned_session_id is not None and planned_session is not None
             else None
         ),

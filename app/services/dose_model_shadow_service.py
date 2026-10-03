@@ -232,9 +232,10 @@ async def record_dose_model_shadow(
     """
     async with best_effort_write(
         db, f"dose model shadow (user {user_id}, workout {workout_log_id})"
-    ):
+    ) as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
         experience_level = (
-            await db.execute(
+            await tdb.execute(
                 select(AthleteProfile.experience_level).where(AthleteProfile.user_id == user_id)
             )
         ).scalar_one_or_none()
@@ -242,7 +243,7 @@ async def record_dose_model_shadow(
         workload_defaulted: bool | None = None
         if planned_block_id is not None:
             raw = (
-                await db.execute(
+                await tdb.execute(
                     select(MesocycleBlock.intensity).where(MesocycleBlock.id == planned_block_id)
                 )
             ).scalar_one_or_none()
@@ -252,7 +253,7 @@ async def record_dose_model_shadow(
         v1_dose = dose_engine_v1.calculate_stress_dose(
             log, external_intensity=external_intensity, prescribed_density=prescribed_density
         )
-        db.add(
+        tdb.add(
             build_shadow_row(
                 user_id=user_id,
                 workout_log_id=workout_log_id,

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.future import select
 
 from app.core.errors import CanonicalStateInvalid, normalize_decode_error
@@ -691,9 +691,14 @@ async def _record_prescription_telemetry(
     swallow theirs. Order is preserved from the original inline tail. The decline
     payloads were resolved during enrichment; resolving never writes.
     """
-    # INT-02 decline-shadow rows.
+    # INT-02 decline-shadow rows. Their own sessions, on the REQUEST's engine (F1): the
+    # writer's default factory is bound to the app's configured DATABASE_URL, which under
+    # test is not the database the request runs on.
+    decline_sessions = async_sessionmaker(db.bind, expire_on_commit=False, autoflush=False)
     for payload in shadow_payloads:
-        await strength_decline_service.persist_strength_decline_shadow_best_effort(payload)
+        await strength_decline_service.persist_strength_decline_shadow_best_effort(
+            payload, session_factory=decline_sessions
+        )
 
     # Decision telemetry.
     await persist_prescription_decision(

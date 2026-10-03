@@ -19,13 +19,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BestEffortWriteStatus:
-    """Observable result of a best-effort transaction after its context exits.
+    """The telemetry transaction's own session, and its outcome once the context exits.
 
-    Existing callers may ignore the yielded object. Callers whose own structured outcome means
-    "durably persisted" can inspect ``committed`` before emitting it, avoiding a false success log
-    when the body completed but the commit or a later operation in the same transaction failed.
+    ``db`` is a FRESH session (F1), opened on the caller's engine and owned by this context:
+    every telemetry read and write in the body goes through it. The caller's session is used
+    only to find the engine — never read from, written to, committed or rolled back here.
+
+    Callers whose own structured outcome means "durably persisted" can inspect ``committed``
+    before emitting it, avoiding a false success log when the body completed but the commit
+    failed.
     """
 
+    db: AsyncSession
     committed: bool = False
     failed: bool = False
 
@@ -34,23 +39,38 @@ class BestEffortWriteStatus:
 async def best_effort_write(
     db: AsyncSession, description: str
 ) -> AsyncIterator[BestEffortWriteStatus]:
-    """Commit telemetry staged in the body; on ANY failure log, roll back, and suppress it.
+    """Run telemetry in its OWN session and transaction; on ANY failure log, roll back, suppress.
 
-    A telemetry failure must never propagate to the caller's request. The yielded status is
-    finalized only after commit/rollback, so durability-sensitive callers can distinguish a
-    committed write from a body that merely reached its end.
+    F1: this used to commit and roll back the CALLER's session — so a shadow write could
+    commit the request's staged work, or roll it back and expire its ORM objects. Now:
+
+    * the body gets ``status.db``, a new session on the caller's engine (the same database in
+      production and under test — tests inject the engine through ``get_db``);
+    * only that session is committed or rolled back, and it is closed on exit;
+    * the caller's session is never touched, so it stays usable whatever happens here.
+
+    Precondition (verified at every call site): the caller has COMMITTED the primary write the
+    telemetry describes, so this separate transaction can see the rows it references.
+    Inputs must be immutable snapshots, never ORM instances bound to the caller's session.
     """
-    status = BestEffortWriteStatus()
+    telemetry_db = AsyncSession(bind=db.bind, expire_on_commit=False, autoflush=False)
+    status = BestEffortWriteStatus(db=telemetry_db)
     try:
         yield status
-        await db.commit()
+        await telemetry_db.commit()
         status.committed = True
     except Exception:
         status.failed = True
         logger.warning("telemetry write failed (%s)", description, exc_info=True)
         try:
-            await db.rollback()
+            await telemetry_db.rollback()
         except Exception:
             logger.warning(
                 "rollback after telemetry failure also failed (%s)", description, exc_info=True
             )
+    finally:
+        # Even closing must not reach the caller: it returns the connection to the pool.
+        try:
+            await telemetry_db.close()
+        except Exception:
+            logger.warning("closing telemetry session failed (%s)", description, exc_info=True)
