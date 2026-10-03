@@ -1137,6 +1137,17 @@ async def process_new_workout(
     shadow_prescription_branch = prescription_branch_of(
         planned_session.prescribed_content if planned_session is not None else None
     )
+    # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as this
+    # athlete's above) may lend the prescription's structure to v1's density — the same-day
+    # fallback match is a heuristic, and a false link invents a density. Deep-copied HERE,
+    # with the other planned-session fields: a later rollback in the request session (e.g. a
+    # failed KPI recompute after an e1RM observation) expires `planned_session`, and reading
+    # it after that raises MissingGreenlet outside any guard — a 500 on a committed workout.
+    shadow_linked_prescription = (
+        copy.deepcopy(planned_session.prescribed_content)
+        if log.planned_session_id is not None and planned_session is not None
+        else None
+    )
     shadow_state_before = current_state.model_copy(deep=True)
     shadow_n_set_rows = len(set_rows)
 
@@ -1244,15 +1255,7 @@ async def process_new_workout(
         planned_block_id=shadow_planned_block_id,
         prescription_branch=shadow_prescription_branch,
         n_set_rows=shadow_n_set_rows,
-        # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as
-        # this athlete's above) may lend the prescription's structure to v1's density. The
-        # same-day fallback match is a heuristic, and a false link invents a density.
-        # A deep copy: the telemetry writer gets plain data, never the request ORM row's dict.
-        linked_prescription=(
-            copy.deepcopy(planned_session.prescribed_content)
-            if log.planned_session_id is not None and planned_session is not None
-            else None
-        ),
+        linked_prescription=shadow_linked_prescription,
     )
 
     return result
