@@ -1195,6 +1195,14 @@ def _plan_outcome_code(
     """
     if planned is None:
         return None
+    # A safety replacement keeps the chosen candidate's branch id (it is the session that was
+    # REPLACED), so the branch alone would claim the plan was followed while the athlete is
+    # told to recover or rest. Judge the replacement first.
+    validation = rx.why.validation if rx.why is not None else None
+    if validation is not None and validation.unevaluated_hard:
+        return f"plan:session_replaced={planned.slug}(safety_unevaluated)"
+    if validation is not None and validation.hard_violations:
+        return f"plan:session_replaced={planned.slug}(validation)"
     branch = rx.why.prescription_branch if rx.why is not None else None
     if branch is not None and branch in planned.branch_ids:
         return f"plan:session_followed={branch}"

@@ -14,7 +14,10 @@ Every number here is an ESTIMATE of a session that has not happened, and says wh
 
 Duration is never read from the prescription: it comes from the block's
 ``target_session_minutes`` (else the modality baseline), scaled by ``deload_volume_factor``
-on a deload session. Display-only — the result must never feed scoring (ADR-0064).
+on a deload session — with one exception: a stored prescription of complete rest
+(``duration_min == 0``, e.g. W1-c's "safety check could not run") is zero work, and
+``prescribes_rest`` lets the caller project it as no session at all rather than as the
+block's target workout. Display-only — the result must never feed scoring (ADR-0064).
 
 Pure: no DB, no clock. The caller supplies ``when``.
 """
@@ -57,6 +60,18 @@ def prescribed_rpe(prescribed_content: dict[str, Any] | None) -> float | None:
         if isinstance(cap, (int, float)) and not isinstance(cap, bool):
             caps.append(float(cap))
     return max(caps) if caps else None
+
+
+def prescribes_rest(prescribed_content: dict[str, Any] | None) -> bool:
+    """True when a stored prescription is complete rest: a numeric ``duration_min`` of 0.
+
+    Only an explicit zero counts. A missing or malformed duration is NOT rest — that session
+    keeps the template estimate, as before.
+    """
+    if not prescribed_content:
+        return False
+    minutes = prescribed_content.get("duration_min")
+    return isinstance(minutes, int | float) and not isinstance(minutes, bool) and minutes == 0
 
 
 def session_basis(session: PlannedSession) -> SessionBasis:

@@ -40,6 +40,26 @@ _SCORE_AXES: tuple[str, ...] = (
 )
 
 
+def final_outcome(prescription: WorkoutPrescription) -> str:
+    """What finalize did with the ranked winner, from the prescription the athlete got.
+
+    ``safety_unevaluated_rest`` — a hard rule could not run, so the session became rest;
+    ``hard_violation_replaced`` — an evaluated hard rule failed and replaced it;
+    ``safety_override`` — a pre-scoring safety branch prescribed (no ranking happened);
+    ``as_ranked`` — the ranked winner was prescribed.
+    """
+    why = prescription.why
+    validation = why.validation if why is not None else None
+    if validation is not None and validation.unevaluated_hard:
+        return "safety_unevaluated_rest"
+    if validation is not None and validation.hard_violations:
+        return "hard_violation_replaced"
+    branch = why.prescription_branch if why is not None else None
+    if branch is not None and branch.startswith("safety_"):
+        return "safety_override"
+    return "as_ranked"
+
+
 def _score_components(candidate: SessionCandidate) -> dict[str, float]:
     """Snapshot a candidate's raw scoring axes for offline weight-fitting."""
     return {axis: float(getattr(candidate, axis, 0.0)) for axis in _SCORE_AXES}
@@ -88,6 +108,9 @@ async def persist_prescription_decision(
     """
     async with best_effort_write(db, f"prescription decision telemetry for user {user_id}"):
         chosen = candidate_log[0] if candidate_log else None
+        validation = prescription.why.validation if prescription.why is not None else None
+        hard_violations = list(validation.hard_violations) if validation is not None else []
+        unevaluated_hard = list(validation.unevaluated_hard) if validation is not None else []
         decision = PrescriptionDecision(
             athlete_id=user_id,
             planned_session_id=planned_session_id,
@@ -98,6 +121,12 @@ async def persist_prescription_decision(
             block_context_json=block_context,
             chosen_candidate_id=chosen.branch_id if chosen is not None else None,
             chosen_score=score_candidate(chosen) if chosen is not None else None,
+            # The ranking above is evidence; this is what was actually prescribed (W1-c).
+            final_outcome=final_outcome(prescription),
+            final_prescription_type=prescription.type,
+            final_duration_min=prescription.duration_min,
+            hard_violations_json=hard_violations,
+            unevaluated_hard_json=unevaluated_hard,
         )
         db.add(decision)
         # Flush to assign decision.id for the candidate-log FK, without committing.
@@ -113,10 +142,15 @@ async def persist_prescription_decision(
                     source=candidate.source,
                     score_components_json=_score_components(candidate),
                     final_score=score_candidate(candidate),
-                    # The logged pool is the set of scored *survivors*; the
-                    # prescriber applies hard constraints during finalization,
-                    # not by flagging pool members — so nothing here hard-failed.
-                    hard_failed=False,
+                    # The logged pool is the set of scored *survivors*; the prescriber
+                    # applies hard constraints only to the WINNER, during finalization.
+                    # So only the chosen candidate can have hard-failed, and only when an
+                    # evaluated rule rejected it. A rule that could not run judged nothing:
+                    # that is recorded on the decision (unevaluated_hard_json), not here.
+                    hard_failed=candidate is chosen and bool(hard_violations),
+                    hard_fail_reasons_json=(
+                        hard_violations if candidate is chosen and hard_violations else None
+                    ),
                     chosen=candidate is chosen,
                 )
             )

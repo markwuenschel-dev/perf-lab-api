@@ -39,7 +39,7 @@ from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.simulate import make_log, rest_dose, rest_for
 from app.logic.constraint_engine import mean_fatigue
 from app.logic.dose_engine import calculate_stress_dose
-from app.logic.planned_session_log import planned_session_to_log, session_basis
+from app.logic.planned_session_log import planned_session_to_log, prescribes_rest, session_basis
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
 from app.schemas.planning import (
@@ -61,6 +61,9 @@ DEFAULT_WINDOW_DAYS = 7
 SESSION_HOUR = 12
 # Modality of the zero-dose rest log; its dose is zero, so the modality carries no load.
 _REST_MODALITY = "Strength"
+# What a session whose stored prescription is complete rest shows as (W1-c). A label, not an
+# engine modality: the row carries no work and is never run through the dose law.
+PRESCRIBED_REST_MODALITY = "Rest"
 
 
 class ProjectionWindowError(ValueError):
@@ -152,6 +155,19 @@ def project_planned_days(
     while d <= end:
         rows: list[PlannedWeekSession] = []
         for i, (session, block) in enumerate(sessions_by_day.get(d, ())):
+            if prescribes_rest(session.prescribed_content):
+                # The stored prescription is complete rest: zero work. Projecting it through
+                # the block's target workout would show training fatigue and adaptation for a
+                # day the athlete was told to rest. The day-end rest step below covers it.
+                rows.append(
+                    PlannedWeekSession(
+                        planned_session_id=session.id,
+                        modality=PRESCRIBED_REST_MODALITY,
+                        basis=session_basis(session),
+                        load=0.0,
+                    )
+                )
+                continue
             when = datetime.combine(d, time(SESSION_HOUR, 0)) + timedelta(hours=i)
             log = planned_session_to_log(session, block, when)
             dt = when - cur.timestamp

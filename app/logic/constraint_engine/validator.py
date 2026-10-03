@@ -10,7 +10,11 @@ from app.logic.constraint_engine.constraints_impl import (
     UNIVERSAL_HARD_CONSTRAINTS,
     UNIVERSAL_SOFT_CONSTRAINTS,
 )
-from app.logic.constraint_engine.types import ConstraintContext, ValidationReport
+from app.logic.constraint_engine.types import (
+    ConstraintContext,
+    ConstraintResult,
+    ValidationReport,
+)
 from app.schemas.coaching_template import StructuredCoachingTemplate
 
 logger = logging.getLogger(__name__)
@@ -72,6 +76,21 @@ class SessionValidator:
             else:
                 logger.exception("constraint %s crashed; skipping", code)
                 report.skipped_codes.append(code)
+            return
+        # A rule that returned but did not produce a well-formed verdict has not evaluated
+        # anything either: `None` (AttributeError on `.passed`) and a truthy non-bool `passed`
+        # (which `if result.passed` would wave through) are the same failure as a crash.
+        if not isinstance(result, ConstraintResult) or not isinstance(result.passed, bool):
+            if is_hard:
+                report.unevaluated_hard.append(code)
+                logger.error(
+                    "hard constraint %s returned a malformed result (%r), session not validated",
+                    code,
+                    result,
+                )
+            else:
+                report.skipped_codes.append(code)
+                logger.warning("constraint %s returned a malformed result (%r); skipping", code, result)
             return
 
         if result.passed:
