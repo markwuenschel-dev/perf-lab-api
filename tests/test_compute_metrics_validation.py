@@ -30,6 +30,32 @@ def test_bad_time_is_422_not_500(field: str, bad: str) -> None:
     assert resp.status_code == 422, (bad, resp.status_code, resp.text)
 
 
+@pytest.mark.parametrize(
+    ("t300", "t15"),
+    [
+        # Review regressions: accepted-positive values the formulas cannot use.
+        ("0:55", "1e-323"),  # underflows the 1.5 mi pace denominator to 0 → was a 500
+        ("1e308", "1"),  # overflows the fatigue ratio → was a 200 with fatigue_percent null
+        # Bounds edges just outside the usable ranges.
+        ("19.99", "10:30"), ("30:00.01", "10:30"), ("0:55", "179.99"), ("0:55", "4:00:00.01"),
+    ],
+)
+def test_unusable_times_are_422(t300: str, t15: str) -> None:
+    resp = client.post("/compute-metrics", json={**VALID, "time_300m": t300, "time_1p5mi": t15})
+    assert resp.status_code == 422, (t300, t15, resp.status_code, resp.text)
+
+
+@pytest.mark.parametrize(("t300", "t15"), [("20", "3:00"), ("30:00", "4:00:00")])
+def test_bound_edges_are_accepted_and_finite(t300: str, t15: str) -> None:
+    resp = client.post("/compute-metrics", json={**VALID, "time_300m": t300, "time_1p5mi": t15})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    numbers = [body["vo2_max"], body["fatigue_percent"], body["race_pace_sec_per_mile"]] + [
+        z[k] for z in body["zones"] for k in ("slow_pace_sec", "fast_pace_sec")
+    ]
+    assert all(isinstance(n, float | int) and math.isfinite(n) for n in numbers), body
+
+
 @pytest.mark.parametrize("field", ["time_300m", "time_1p5mi"])
 def test_missing_time_is_422(field: str) -> None:
     body = {k: v for k, v in VALID.items() if k != field}

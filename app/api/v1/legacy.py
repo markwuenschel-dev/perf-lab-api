@@ -44,6 +44,21 @@ def parse_time_to_seconds(text: str) -> float:
     return seconds
 
 
+# Usable input ranges, in seconds. Generous around human performance (300 m world-class
+# ≈ 31 s, 1.5 mi ≈ 6:20; walking pace ≈ 3–4 min and ≈ 30 min) so no real athlete is
+# refused, while values the formulas cannot use — 1e-323 underflowing a denominator to
+# zero, 1e308 overflowing a ratio — never reach them.
+TIME_300M_BOUNDS = (20.0, 1800.0)  # 20 s – 30 min
+TIME_1P5MI_BOUNDS = (180.0, 14400.0)  # 3 min – 4 h
+
+
+def _bounded(seconds: float, bounds: tuple[float, float], field: str) -> float:
+    lo, hi = bounds
+    if not lo <= seconds <= hi:
+        raise ValueError(f"{field} must be between {lo:g} and {hi:g} seconds, got {seconds:g}")
+    return seconds
+
+
 def vo2_from_1p5(time_sec: float) -> float:
     time_min = time_sec / 60.0
     return 88.02 - (0.1656 * 163) - (2.76 * time_min) + (3.716 * 1)
@@ -213,8 +228,8 @@ def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
     # (POST /v1/benchmarks/observations), which owns the state seed. This endpoint
     # remains only to compute VO₂/zones for display; it writes no state.
     try:
-        t300 = parse_time_to_seconds(payload.time_300m)
-        t15 = parse_time_to_seconds(payload.time_1p5mi)
+        t300 = _bounded(parse_time_to_seconds(payload.time_300m), TIME_300M_BOUNDS, "time_300m")
+        t15 = _bounded(parse_time_to_seconds(payload.time_1p5mi), TIME_1P5MI_BOUNDS, "time_1p5mi")
     except ValueError as exc:
         raise HTTPException(
             status_code=422,
@@ -225,6 +240,13 @@ def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
     ff_percent = (ff - 1.0) * 100.0
     race_pace_sec = t15 / 1.5
     zones = [Zone(**z) for z in pace_zone_bounds(race_pace_sec)]
+    # Defense in depth: the bounds above keep every intermediate finite, but a response
+    # with a non-finite number serializes as JSON null (a silent 200), so prove it.
+    numbers = [vo2, ff_percent, race_pace_sec] + [
+        v for z in zones for v in (z.slow_pace_sec, z.fast_pace_sec)
+    ]
+    if not all(math.isfinite(n) for n in numbers):
+        raise HTTPException(status_code=422, detail="These times do not produce finite metrics.")
     return MetricsResponse(
         vo2_max=vo2,
         vo2_category=vo2_category_male_36_45(vo2),
