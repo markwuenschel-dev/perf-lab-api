@@ -472,9 +472,11 @@ async def test_concurrent_repairs_in_opposite_orders_do_not_deadlock(factory, mo
     real_lock = rc.lock_athlete_chain
     first_locked: set[int] = set()
     both = asyncio.Event()
+    acquired: dict[int, list[int]] = {}  # per repair session: athlete ids in acquisition order
 
     async def barrier_lock(db, uid):
         await real_lock(db, uid)
+        acquired.setdefault(id(db), []).append(uid)
         if id(db) not in first_locked:
             first_locked.add(id(db))
             if len(first_locked) == 2:
@@ -493,5 +495,9 @@ async def test_concurrent_repairs_in_opposite_orders_do_not_deadlock(factory, mo
 
     results = await asyncio.wait_for(asyncio.gather(run(), run(), return_exceptions=True), 30)
     assert not [r for r in results if isinstance(r, BaseException)], results
+    # The direct proof, independent of the barrier's scheduling: each repair acquired its
+    # locks in ascending athlete-id order, whatever order the athletes were enumerated in.
+    assert len(acquired) == 2
+    assert all(order == sorted(order) == sorted({a, b}) for order in acquired.values()), acquired
     # Each athlete corrected exactly once across the two repairs.
     assert sum(r.corrected for r in results if not isinstance(r, BaseException)) == 2
