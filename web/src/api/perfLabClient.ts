@@ -529,6 +529,21 @@ export async function getTodayPlannedSession(
 }
 
 /**
+ * P1: ask for today's session to be re-checked. Unlike GET /planning/today, this may LIFT a
+ * safety restriction that has cleared (the server replaces the issued revision with the
+ * unrestricted one). Only offered while a restriction is in force (todayRevision.canRecheck).
+ */
+export async function recheckTodayPlannedSession(
+  goal: string,
+  token: string,
+): Promise<TodaySessionResponse> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const url = `${API_V1_BASE}/planning/today/recheck?goal=${encodeURIComponent(goal)}`;
+  const res = await fetch(url, { method: "POST", headers: { ...authHeaders(token) } });
+  return handleResponse<TodaySessionResponse>(res, { sessionOn401: true });
+}
+
+/**
  * Wellness (P5): ingest one acute daily-wellness sample. Idempotent on
  * (date, source) — re-posting the same day/source replaces it.
  */

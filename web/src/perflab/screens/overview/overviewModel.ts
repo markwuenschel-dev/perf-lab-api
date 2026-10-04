@@ -356,8 +356,9 @@ export function habitSection(resource: AuthedResource<OverviewMetrics>): HabitVi
 /**
  * Whether a real, playable session can be constructed from canonical prescription
  * data. Ticket #183 established it cannot: there are no per-phase duration/zone/
- * pace/rest fields on `WorkoutPrescription`, and `/planning/today` overwrites
- * `prescribed_content` per call, so a session has no revision identity either.
+ * pace/rest fields on `WorkoutPrescription`. (Since P1 `/planning/today` serves an
+ * immutable revision, so a session now has a revision identity; the missing per-phase
+ * timeline alone keeps this false.)
  *
  * #188 ruled this must be a NAMED CONSTANT, never a predicate over prescription
  * data — a predicate would quietly start returning true the moment some unrelated

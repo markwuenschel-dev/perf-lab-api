@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import {
   getNextSession,
+  getTodayPlannedSession,
   listExercises,
-  listPlannedSessions,
   logWorkout,
   simulateDose,
 } from "@/api/perfLabClient";
@@ -15,12 +15,8 @@ import { MetricBar } from "../ui";
 import { COLORS, DOSE_NAMES, doseBarColor, PRESETS, projectLogDose } from "../sim";
 import { SetBuilder } from "./SetBuilder";
 import { deriveModality, groupsToSets, type SetGroup } from "./setBuilderLogic";
-import {
-  exercisesFromStoredPrescription,
-  isoLocalDate,
-  pickTodaysPendingSession,
-  plannedGroup,
-} from "./prescriptionPrefill";
+import { plannedGroup } from "./prescriptionPrefill";
+import { prefillFromToday } from "../prescription/todayRevision";
 // #199: the request body is built in its own fixture-free module so the static
 // reachability guard (workoutLogBoundary.test.ts) can root there. This file cannot be
 // a root — it value-imports the fixture module `../sim` for its preview chrome below.
@@ -60,6 +56,9 @@ export function LogWorkoutModal() {
   // Which planned session the pre-fill came from. The body links it only once the athlete
   // records one of its exercises (buildWorkoutLog).
   const [plannedSessionId, setPlannedSessionId] = useState<number | null>(null);
+  // P1: the exact immutable revision the pre-fill shows — sent with the log so it records
+  // what the athlete answered, even if the session is replaced later.
+  const [plannedRevisionId, setPlannedRevisionId] = useState<number | null>(null);
   const goal = state.settings.goal;
 
   // On open, best-effort pre-fill from the workout the app is recommending (which one:
@@ -71,13 +70,12 @@ export function LogWorkoutModal() {
     let cancelled = false;
     (async () => {
       try {
-        const today = isoLocalDate(new Date());
-        const sessions = await listPlannedSessions(token, { start_date: today, end_date: today }).catch(
-          () => [],
-        );
-        const pending = pickTodaysPendingSession(sessions, today);
-        let exercises = exercisesFromStoredPrescription(pending?.prescribed_content);
-        if (!exercises.length) exercises = (await getNextSession(goal, token)).exercises ?? [];
+        // Today's ISSUED revision (P1) — the session id, revision id and exercises all come
+        // from this one response, the same one Overview and Planning show. Only with nothing
+        // planned today is a /next-session preview used, and then nothing is linked.
+        const today = prefillFromToday(await getTodayPlannedSession(goal, token).catch(() => null));
+        let exercises = today?.exercises ?? [];
+        if (!today) exercises = (await getNextSession(goal, token)).exercises ?? [];
         if (!exercises.length) return;
         const matches = await Promise.all(
           exercises.map((ex) =>
@@ -91,7 +89,8 @@ export function LogWorkoutModal() {
         const groups: SetGroup[] = exercises.map((ex, i) => plannedGroup(ex, matches[i], base + i));
         // Never overwrite anything the athlete started entering while this loaded.
         setSets((current) => (current.length ? current : groups));
-        setPlannedSessionId(pending?.id ?? null);
+        setPlannedSessionId(today?.plannedSessionId ?? null);
+        setPlannedRevisionId(today?.revisionId ?? null);
       } catch {
         // best-effort — never block the log on a prescription fetch
       }
@@ -108,6 +107,7 @@ export function LogWorkoutModal() {
       setDoseSix(null);
       setSets([]);
       setPlannedSessionId(null);
+      setPlannedRevisionId(null);
       return;
     }
     let cancelled = false;
@@ -159,7 +159,9 @@ export function LogWorkoutModal() {
     setApplying(true);
     setApplyError(null);
     try {
-      const body = buildWorkoutLog(logType, rpe, durationMin, distanceKm, wellness, sets, plannedSessionId);
+      const body = buildWorkoutLog(
+        logType, rpe, durationMin, distanceKm, wellness, sets, plannedSessionId, plannedRevisionId,
+      );
       if (!body) {
         // Unreachable while the button is disabled; kept so this path can never
         // fabricate a reading if a future caller bypasses the gate.

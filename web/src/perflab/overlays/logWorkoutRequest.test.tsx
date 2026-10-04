@@ -18,8 +18,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CheckinState } from "../sim";
-import type { ExercisePrescription, PlannedSessionRead, WorkoutLog } from "@/types";
-import { isoLocalDate } from "./prescriptionPrefill";
+import type { ExercisePrescription, TodaySessionResponse, WorkoutLog } from "@/types";
 
 const AUTH_TOKEN = "test-token";
 
@@ -43,7 +42,8 @@ vi.mock("@/auth/useAuth", () => ({
 }));
 
 /** What the pre-fill reads: today's plan and the fresh prescription. Empty by default. */
-let plannedSessions: PlannedSessionRead[] = [];
+/** GET /v1/planning/today. `null` = nothing planned today. */
+let todayResponse: TodaySessionResponse | null = null;
 let nextSessionRx: { exercises: ExercisePrescription[] } = { exercises: [] };
 /** Every goal the modal asked GET /v1/next-session for. */
 const nextSessionGoals: string[] = [];
@@ -61,7 +61,8 @@ vi.mock("@/api/perfLabClient", () => ({
     nextSessionGoals.push(goal);
     return Promise.resolve(nextSessionRx);
   },
-  listPlannedSessions: () => Promise.resolve(plannedSessions),
+  getTodayPlannedSession: () =>
+    Promise.resolve(todayResponse ?? ({ session: null, prescription: null } as TodaySessionResponse)),
   listExercises: () => Promise.resolve([]),
 }));
 
@@ -313,18 +314,18 @@ const SQUAT_RX: ExercisePrescription = {
 };
 const SQUAT_TARGET = "5 × 3 @ 120 kg · RPE ≤ 8";
 
-/** Today's pending planned session with a stored prescription. */
-const todaysSession = (id: number, exercises: ExercisePrescription[]): PlannedSessionRead =>
+/** Today's planned session and the issued revision GET /v1/planning/today serves for it. */
+const REVISION_ID = 900;
+const todaysSession = (id: number, exercises: ExercisePrescription[]): TodaySessionResponse =>
   ({
-    id,
-    scheduled_date: isoLocalDate(new Date()),
-    status: "pending",
-    prescribed_content: { exercises },
-  }) as Partial<PlannedSessionRead> as PlannedSessionRead;
+    session: { id, status: "pending" },
+    prescription: { type: "Strength", focus: "x", rationale: "y", duration_min: 45, exercises },
+    revision: { id: REVISION_ID, revision_no: 1, reason: "first_issue", safety_kind: "none", issued_at: "2026-10-04T00:00:00Z", issued_now: false },
+  }) as unknown as TodaySessionResponse;
 
 describe("the recommended workout pre-fills Log Workout", () => {
   const resetPrefill = () => {
-    plannedSessions = [];
+    todayResponse = null;
     nextSessionRx = { exercises: [] };
     nextSessionGoals.length = 0;
     storeGoal = "Hypertrophy";
@@ -338,15 +339,15 @@ describe("the recommended workout pre-fills Log Workout", () => {
     await vi.waitFor(() => expect(nextSessionGoals).toEqual(["Powerlifting"]));
   });
 
-  it("shows today's stored prescription without re-prescribing", async () => {
-    plannedSessions = [todaysSession(41, [SQUAT_RX])];
+  it("shows today's issued revision, never a preview, when a session is planned", async () => {
+    todayResponse = todaysSession(41, [SQUAT_RX]);
     render(<LogWorkoutModal />);
     expect(await screen.findByText(SQUAT_TARGET)).toBeTruthy();
     expect(screen.getByDisplayValue("Back Squat")).toBeTruthy();
-    expect(nextSessionGoals, "a stored prescription must not trigger a fresh one").toEqual([]);
+    expect(nextSessionGoals, "an issued revision must not trigger a preview").toEqual([]);
   });
 
-  it("falls back to a fresh prescription when nothing is stored for today", async () => {
+  it("falls back to a preview only when nothing is planned today", async () => {
     nextSessionRx = { exercises: [SQUAT_RX] };
     render(<LogWorkoutModal />);
     expect(await screen.findByText(SQUAT_TARGET)).toBeTruthy();
@@ -354,7 +355,7 @@ describe("the recommended workout pre-fills Log Workout", () => {
   });
 
   it("UNTOUCHED: a recommendation the athlete did not confirm is not logged", async () => {
-    plannedSessions = [todaysSession(41, [SQUAT_RX])];
+    todayResponse = todaysSession(41, [SQUAT_RX]);
     render(<LogWorkoutModal />);
     await screen.findByText(SQUAT_TARGET);
     fireEvent.click(applyBtn());
@@ -362,10 +363,11 @@ describe("the recommended workout pre-fills Log Workout", () => {
     const b = logged[0] as unknown as Record<string, unknown>;
     expect(hasKey(b, "sets"), "no set may be logged from an unconfirmed recommendation").toBe(false);
     expect(hasKey(b, "planned_session_id"), "an untouched plan is not fulfilled").toBe(false);
+    expect(hasKey(b, "prescription_revision_id"), "nor is its revision claimed").toBe(false);
   });
 
   it("DONE AS PRESCRIBED logs the target reps and kg, never the RPE cap, and links the plan", async () => {
-    plannedSessions = [todaysSession(41, [SQUAT_RX])];
+    todayResponse = todaysSession(41, [SQUAT_RX]);
     render(<LogWorkoutModal />);
     fireEvent.click(await screen.findByText(/Done as prescribed/));
     fireEvent.click(applyBtn());
@@ -375,5 +377,7 @@ describe("the recommended workout pre-fills Log Workout", () => {
       expect.objectContaining({ free_text_name: "Back Squat", sets: 5, reps: 3, load_kg: 120, rpe: null }),
     ]);
     expect(b.planned_session_id).toBe(41);
+    // P1: the log records exactly the revision the athlete was shown.
+    expect(b.prescription_revision_id).toBe(REVISION_ID);
   });
 });
