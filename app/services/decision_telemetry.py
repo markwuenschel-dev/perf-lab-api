@@ -94,6 +94,7 @@ async def persist_prescription_decision(
     planned_session_id: int | None = None,
     state_snapshot: dict[str, Any] | None = None,
     block_context: dict[str, Any] | None = None,
+    prescription_revision_id: int | None = None,
 ) -> None:
     """Persist one ``PrescriptionDecision`` + N ``CandidateDecisionLog`` rows.
 
@@ -147,6 +148,7 @@ async def persist_prescription_decision(
             final_duration_min=prescription.duration_min,
             hard_violations_json=hard_violations,
             unevaluated_hard_json=unevaluated_hard,
+            prescription_revision_id=prescription_revision_id,
         )
         tdb.add(decision)
         # Flush to assign decision.id for the candidate-log FK, without committing.

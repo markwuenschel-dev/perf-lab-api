@@ -105,16 +105,34 @@ async def test_next_session_targets_the_user_wide_lowest_id_pending_session(asyn
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
+            # P1: /next-session is NON-ISSUING — it resolves the same target but writes nothing.
+            preview = await client.get(
                 "/v1/next-session", params={"goal": TRAINING_GOAL_DEFAULT}
             )
-            assert resp.status_code == 200, resp.text
+            assert preview.status_code == 200, preview.text
+            await async_db.refresh(leftover)
+            await async_db.refresh(active_session)
+            assert leftover.prescribed_content is None
+            assert active_session.prescribed_content is None
+
+            # /planning/today issues into the canonical (lowest-id) session...
+            today = await client.get(
+                "/v1/planning/today", params={"goal": TRAINING_GOAL_DEFAULT}
+            )
+            assert today.status_code == 200, today.text
+            assert today.json()["session"]["id"] == leftover.id
+            # ...and /next-session then serves exactly that issued revision: same target.
+            after = await client.get(
+                "/v1/next-session", params={"goal": TRAINING_GOAL_DEFAULT}
+            )
+            assert after.status_code == 200, after.text
+            assert after.json() == today.json()["prescription"]
     finally:
         app.dependency_overrides.clear()
 
     await async_db.refresh(leftover)
     await async_db.refresh(active_session)
-    # The canonical resolver picks the lowest-id session; /next-session persisted
-    # into it, not into the active-block session the old path would have chosen.
+    # The canonical resolver picks the lowest-id session; it was issued into, not the
+    # active-block session the old block-scoped path would have chosen.
     assert leftover.prescribed_content is not None
     assert active_session.prescribed_content is None

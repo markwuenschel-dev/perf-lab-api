@@ -41,6 +41,16 @@ class PrescriptionDecision(Base):
     final_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hard_violations_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     unevaluated_hard_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    # The revision this decision issued (P1, a051). NULL before a051 and when nothing was issued.
+    prescription_revision_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "prescription_revisions.id",
+            ondelete="SET NULL",
+            name="fk_prescription_decisions_prescription_revision_id",
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

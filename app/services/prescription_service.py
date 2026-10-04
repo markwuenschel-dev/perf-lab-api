@@ -28,6 +28,7 @@ from app.logic.workout_history import recent_workout_summaries
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.exercise import Exercise
 from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
+from app.models.prescription_revision import PrescriptionRevision
 from app.models.weak_point import WeakPoint
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.repositories.benchmark_observation_repository import select_prescription_basis
@@ -47,6 +48,7 @@ from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
 from app.services.planned_session_protocol import conflict, lock_planned_session
 from app.services.planning_service import block_adherence_signals, get_today_session
+from app.services.prescription_issuance_service import issue_or_serve
 from app.services.state_service import (
     load_current_state_strict,
     load_or_init_current_state_strict,
@@ -669,38 +671,72 @@ def _score_prescription(
     )
 
 
-async def _persist_prescription(
-    db: AsyncSession, target_session: PlannedSession | None, rx: WorkoutPrescription
-) -> bool:
-    """Phase 5 — the production commit: persist ``rx`` into the planned-session slot.
+@dataclass(frozen=True)
+class PrescriptionResult:
+    """What a prescription request serves: the content, and the revision it is (if any)."""
 
-    F3: scoring ran on a row read long before this point. The row is re-locked (which
-    refreshes it), and ``rx`` is written only if the session is still PENDING on the date
-    it was resolved for. A session a workout completed, or a PATCH skipped or moved,
-    meanwhile keeps its content: ``rx`` no longer describes that row.
+    prescription: WorkoutPrescription
+    revision: PrescriptionRevision | None
+    issued_now: bool
 
-    Returns whether ``rx`` may be published: True when written (or when there is no planned
-    session to write into), False when the session changed and the write was refused.
+
+async def _issue_for_session(
+    db: AsyncSession,
+    ctx: _PrescriptionContext,
+    rx: WorkoutPrescription,
+    state: UnifiedStateVector,
+    *,
+    allow_relax: bool,
+) -> PrescriptionResult:
+    """Phase 5 — the production commit (P1): keep or replace the session's issued revision.
+
+    F3: scoring ran on a row read long before this point, so the row is re-locked (which
+    refreshes it). A session skipped, moved or completed meanwhile gets nothing: ``rx`` no
+    longer describes it, and the request is refused (409) rather than publishing it. Otherwise
+    ``prescription_issuance_service.issue_or_serve`` decides, by the fork-4 rule, whether the
+    athlete keeps the revision already issued or gets a new one.
     """
-    if target_session is None:
-        return True
-    resolved_for = target_session.scheduled_date
-    locked = await lock_planned_session(db, target_session.id, target_session.user_id)
-    still_targeted = (
-        locked is not None
-        and locked.status == SessionStatus.PENDING
-        and locked.scheduled_date == resolved_for
-    )
-    if still_targeted:
-        assert locked is not None
-        locked.prescribed_content = rx.to_prescribed_content()
-    else:
-        logger.info(
-            "prescription not persisted: planned session %s changed during scoring",
-            target_session.id,
+    target = ctx.target_session
+    if target is None:
+        return PrescriptionResult(rx, None, issued_now=False)
+    resolved_for = target.scheduled_date
+    locked = await lock_planned_session(db, target.id, target.user_id)
+    if (
+        locked is None
+        or locked.status != SessionStatus.PENDING
+        or locked.scheduled_date != resolved_for
+    ):
+        await db.commit()  # release the row lock; nothing was written
+        raise conflict(
+            "Today's session changed while its prescription was being prepared; request it again"
         )
-    await db.commit()  # writes, or just releases the row lock
-    return still_targeted
+    issued = await issue_or_serve(
+        db,
+        locked,
+        rx,
+        state=state,
+        recent=ctx.recent,
+        goal=cast(TrainingGoal, ctx.effective_goal),
+        evaluation_date=resolved_for,
+        allow_relax=allow_relax,
+    )
+    await db.commit()
+    return PrescriptionResult(issued.prescription, issued.revision, issued.issued_now)
+
+
+async def _preview_for_session(
+    db: AsyncSession, ctx: _PrescriptionContext, rx: WorkoutPrescription
+) -> PrescriptionResult:
+    """Non-issuing (``/next-session``): today's issued revision if there is one, else a fresh
+    preview. Writes nothing to the session or its revisions."""
+    target = ctx.target_session
+    if target is not None and target.current_revision_id is not None:
+        revision = await db.get(PrescriptionRevision, target.current_revision_id)
+        if revision is not None:
+            return PrescriptionResult(
+                WorkoutPrescription.model_validate(revision.content), revision, issued_now=False
+            )
+    return PrescriptionResult(rx, None, issued_now=False)
 
 
 async def _record_prescription_telemetry(
@@ -710,6 +746,7 @@ async def _record_prescription_telemetry(
     state: UnifiedStateVector,
     ctx: _PrescriptionContext,
     shadow_payloads: list[strength_decline_service.StrengthDeclineShadowPayload],
+    prescription_revision_id: int | None = None,
 ) -> None:
     """Phase 6 — best-effort capture, run strictly AFTER the production commit.
 
@@ -740,6 +777,7 @@ async def _record_prescription_telemetry(
         planned_session_id=ctx.target_session.id if ctx.target_session is not None else None,
         state_snapshot=state.model_dump(mode="json"),
         block_context={**dict(ctx.block_context), "readiness_audit": ctx.readiness_audit},
+        prescription_revision_id=prescription_revision_id,
     )
 
     # Shadow MPC (ADR-0042): re-rank the same candidate pool by receding-horizon
@@ -753,14 +791,31 @@ async def prescribe_for_athlete(
     goal: TrainingGoal | None,
     *,
     planned_session: PlannedSession | None = None,
+    issue: bool = True,
 ) -> WorkoutPrescription:
+    """The served prescription only — see :func:`prescribe_and_issue`."""
+    result = await prescribe_and_issue(
+        db, user_id, goal, planned_session=planned_session, issue=issue
+    )
+    return result.prescription
+
+
+async def prescribe_and_issue(
+    db: AsyncSession,
+    user_id: int,
+    goal: TrainingGoal | None,
+    *,
+    planned_session: PlannedSession | None = None,
+    issue: bool = True,
+    allow_relax: bool = False,
+) -> PrescriptionResult:
     """
     Full prescription pipeline for one athlete.
     Auto-initializes state if none exists.
     Callable by HTTP routes, cron jobs, or batch processes.
 
     Six phases, each its own seam: (1) load/gate state, (2) gather context, (3) score,
-    (4) enrich prescribed load, (5) persist the production commit, (6) best-effort
+    (4) enrich prescribed load, (5) issue a revision (the production commit), (6) best-effort
     telemetry — run strictly after the commit so a telemetry failure can never alter or
     block ``rx``.
 
@@ -801,16 +856,22 @@ async def prescribe_for_athlete(
     if rx.structure is not None:
         rx.structure = structure_from_exercises(rx.exercises, rx.structure)
 
-    # Phase 5 — persist the prescription (the production commit). A refused write means the
-    # session was skipped, moved or completed while this prescription was being scored: it
-    # describes nothing the athlete has any more. Refuse to publish it, and record no
-    # decision for it (telemetry below never runs) — the client re-requests today's session.
-    if not await _persist_prescription(db, ctx.target_session, rx):
-        raise conflict(
-            "Today's session changed while its prescription was being prepared; request it again"
+    # Phase 5 — issue (P1). With a planned session today, the athlete is served an immutable
+    # revision: the one already issued, or a replacement the fork-4 rule allows. A session
+    # changed during scoring is refused (409) and records nothing. ``issue=False``
+    # (/next-session) never writes the session: it serves the issued revision or a preview.
+    if issue:
+        result = await _issue_for_session(db, ctx, rx, state, allow_relax=allow_relax)
+    else:
+        result = await _preview_for_session(db, ctx, rx)
+
+    # Phase 6 — best-effort telemetry, strictly after the commit. A decision is recorded when
+    # a revision is ISSUED, and for an athlete with no planned session (the only prescription
+    # they get). Serving an already-issued revision decided nothing new.
+    if result.issued_now or ctx.target_session is None:
+        await _record_prescription_telemetry(
+            db, user_id, result.prescription, state, ctx, shadow_payloads,
+            prescription_revision_id=result.revision.id if result.revision is not None else None,
         )
 
-    # Phase 6 — best-effort telemetry, strictly after the commit.
-    await _record_prescription_telemetry(db, user_id, rx, state, ctx, shadow_payloads)
-
-    return rx
+    return result

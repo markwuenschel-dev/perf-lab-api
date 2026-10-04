@@ -176,6 +176,14 @@ class WorkoutLog(BaseModel):
         default=None,
         description="If provided, marks this log as fulfillment of the planned session.",
     )
+    prescription_revision_id: int | None = Field(
+        default=None,
+        description=(
+            "The prescription revision the athlete was shown (GET /v1/planning/today "
+            "`revision.id`). Must belong to the linked planned session. Omitted = the "
+            "session's current revision at the time of logging."
+        ),
+    )
     is_benchmark: bool = False
     benchmark_results: dict[str, Any] | None = Field(
         default=None,

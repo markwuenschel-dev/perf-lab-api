@@ -41,6 +41,7 @@ from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.exercise import Exercise
 from app.models.mesocycle import PlannedSession, SessionStatus
+from app.models.prescription_revision import PrescriptionRevision
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
@@ -691,6 +692,21 @@ async def _match_planned_session(
     return res.scalars().first()
 
 
+async def _revision_for_log(
+    db: AsyncSession, planned_session: PlannedSession, claimed: int | None
+) -> int | None:
+    """The revision a linked log records (P1). 409 when the client names a revision that is
+    not this session's — it would point the log at a prescription it did not answer."""
+    if claimed is None:
+        return planned_session.current_revision_id
+    owner = await db.scalar(
+        select(PrescriptionRevision.planned_session_id).where(PrescriptionRevision.id == claimed)
+    )
+    if owner != planned_session.id:
+        raise conflict("That prescription revision does not belong to this planned session")
+    return claimed
+
+
 async def _state_row_count(db: AsyncSession, user_id: int) -> int:
     """Number of persisted AthleteState rows for a user (1 ⇒ only the initial baseline)."""
     res = await db.execute(
@@ -1226,6 +1242,12 @@ async def process_new_workout(
         planned_session.status = SessionStatus.COMPLETED
         planned_session.completed_at = datetime.now(UTC).replace(tzinfo=None)
         workout_row.planned_session_id = planned_session.id
+        # P1: exactly which immutable revision this log answers — the one the athlete was
+        # shown when the client says so (it must be this session's), else the session's
+        # current revision now. A later replacement never changes what this log points at.
+        workout_row.prescription_revision_id = await _revision_for_log(
+            db, planned_session, log.prescription_revision_id
+        )
 
     # Physical decay interval since the current state, clamped non-negative so an
     # out-of-order/backfilled log never applies negative decay. Same instant rule as

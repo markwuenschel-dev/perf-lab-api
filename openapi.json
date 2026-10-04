@@ -5432,6 +5432,56 @@
         "title": "PrescriptionExplanation",
         "type": "object"
       },
+      "PrescriptionRevisionRead": {
+        "description": "Which immutable revision of today's prescription is being served (P1).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "issued_at": {
+            "format": "date-time",
+            "title": "Issued At",
+            "type": "string"
+          },
+          "issued_now": {
+            "default": false,
+            "description": "True when this request issued it (a first issue or a replacement)",
+            "title": "Issued Now",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "Why this revision was issued: first_issue, legacy_reissue, safety_check_rerun, issued_no_longer_safe, safety_outcome_changed, athlete_recheck",
+            "title": "Reason",
+            "type": "string"
+          },
+          "revision_no": {
+            "description": "Increases per session for its whole life",
+            "title": "Revision No",
+            "type": "integer"
+          },
+          "safety_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "none | readiness_redirect | safety_override | hard_violation | unevaluated",
+            "title": "Safety Kind"
+          }
+        },
+        "required": [
+          "id",
+          "revision_no",
+          "reason",
+          "issued_at"
+        ],
+        "title": "PrescriptionRevisionRead",
+        "type": "object"
+      },
       "ProfileRead": {
         "properties": {
           "available_days_per_week": {
@@ -7400,6 +7450,16 @@
               }
             ]
           },
+          "revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrescriptionRevisionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "session": {
             "anyOf": [
               {
@@ -9127,6 +9187,18 @@
             ],
             "description": "If provided, marks this log as fulfillment of the planned session.",
             "title": "Planned Session Id"
+          },
+          "prescription_revision_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The prescription revision the athlete was shown (GET /v1/planning/today `revision.id`). Must belong to the linked planned session. Omitted = the session's current revision at the time of logging.",
+            "title": "Prescription Revision Id"
           },
           "session_rpe": {
             "maximum": 10.0,
@@ -10869,7 +10941,7 @@
     },
     "/v1/next-session": {
       "get": {
-        "description": "DEV-friendly version that auto-initializes baseline state.",
+        "description": "DEV-friendly version that auto-initializes baseline state.\n\nNON-ISSUING (P1): never writes today's planned session or its revisions. With a revision\nalready issued today it returns that revision's content; otherwise a fresh preview. The\nactionable session is ``GET /v1/planning/today``.",
         "operationId": "get_next_session_v1_next_session_get",
         "parameters": [
           {
@@ -11753,6 +11825,55 @@
           }
         ],
         "summary": "Get Today",
+        "tags": [
+          "Planning"
+        ]
+      }
+    },
+    "/v1/planning/today/recheck": {
+      "post": {
+        "description": "The athlete asks for today's session to be re-checked (P1, fork 4).\n\nSame as ``GET /today``, except that a safety restriction which has CLEARED may now be\nlifted: the issued session is replaced by the unrestricted one. ``GET`` never relaxes an\nissued restriction on its own \u2014 it could raise the load of a workout already started.",
+        "operationId": "recheck_today_v1_planning_today_recheck_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "goal",
+            "required": false,
+            "schema": {
+              "default": "Strength",
+              "title": "Goal",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodaySessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Recheck Today",
         "tags": [
           "Planning"
         ]

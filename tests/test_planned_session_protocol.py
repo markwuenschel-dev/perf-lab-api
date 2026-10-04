@@ -33,7 +33,6 @@ from app.models.mesocycle import (
 )
 from app.models.user import User
 from app.schemas.planning import PlannedSessionUpdateRequest
-from app.schemas.prescription import WorkoutPrescription
 from app.schemas.workouts import WorkoutLog
 from app.services import planning_service, prescription_service, state_service
 from app.services.planned_session_protocol import check_patch, lock_planned_session
@@ -252,15 +251,18 @@ async def test_link_vs_reschedule_a_moved_session_is_not_linked(factory):
 
 @pytest.mark.asyncio
 async def test_issuance_vs_reschedule_a_moved_session_keeps_its_content(factory):
-    """A prescription scored for today's row must not land on a row moved meanwhile."""
+    """A prescription scored for today's row must not be issued onto a row moved meanwhile:
+    the request is refused (409) and nothing is stored."""
     uid, sid = await _athlete_with_session(factory, "f3-ir@test.com")
     async with factory() as db:
+        await state_service.initialize_athlete_state(db, uid)
         target = await db.get(PlannedSession, sid)  # what scoring resolved, pre-move
-    rx = WorkoutPrescription(type="Strength", focus="x", rationale="y", duration_min=45)
 
     async def contender():
         async with factory() as db:
-            await prescription_service._persist_prescription(db, target, rx)
+            await prescription_service.prescribe_and_issue(
+                db, uid, "Strength", planned_session=target  # type: ignore[arg-type]
+            )
 
     async def holder_body(db):
         await planning_service.update_session(
@@ -269,21 +271,26 @@ async def test_issuance_vs_reschedule_a_moved_session_keeps_its_content(factory)
         )
 
     result = await _contend(contender, holder_body, factory, uid=uid, sid=sid, chain=False)
-    assert not isinstance(result, Exception), result
-    assert (await _session(factory, sid)).prescribed_content is None
+    assert isinstance(result, HTTPException) and result.status_code == 409
+    row = await _session(factory, sid)
+    assert row.prescribed_content is None and row.current_revision_id is None
 
 
 @pytest.mark.asyncio
 async def test_issuance_persists_when_nothing_changed(factory):
-    """The control for the race above: an unchanged PENDING row does get the content."""
+    """The control for the race above: an unchanged PENDING row is issued revision 1."""
     uid, sid = await _athlete_with_session(factory, "f3-issue-ok@test.com")
     async with factory() as db:
+        await state_service.initialize_athlete_state(db, uid)
         target = await db.get(PlannedSession, sid)
-    rx = WorkoutPrescription(type="Strength", focus="x", rationale="y", duration_min=45)
     async with factory() as db:
-        await prescription_service._persist_prescription(db, target, rx)
-    content = (await _session(factory, sid)).prescribed_content
-    assert content is not None and content["type"] == "Strength"
+        result = await prescription_service.prescribe_and_issue(
+            db, uid, "Strength", planned_session=target  # type: ignore[arg-type]
+        )
+    row = await _session(factory, sid)
+    assert result.revision is not None and result.revision.revision_no == 1
+    assert row.current_revision_id == result.revision.id
+    assert row.prescribed_content is not None
 
 
 @pytest.mark.asyncio
@@ -359,7 +366,7 @@ def _session_writers() -> dict[str, ast.AST]:
 
 def test_the_session_writer_scan_finds_the_known_writers():
     assert {k.rsplit(":", 1)[1] for k in _session_writers()} == {
-        "update_session", "_persist_prescription", "process_new_workout",
+        "update_session", "issue_or_serve", "process_new_workout",
     }
 
 

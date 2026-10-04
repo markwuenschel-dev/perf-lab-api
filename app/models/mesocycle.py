@@ -217,6 +217,17 @@ class PlannedSession(Base):
     workout_log_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("workout_logs.id"), nullable=True
     )
+    # The live immutable revision (P1, a051); `prescribed_content` mirrors its content.
+    current_revision_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "prescription_revisions.id",
+            ondelete="SET NULL",
+            name="fk_planned_sessions_current_revision_id",
+            use_alter=True,
+        ),
+        nullable=True,
+    )
 
     # Whether this is a deload session (affects prescriber intensity targets)
     is_deload: Mapped[bool] = mapped_column(Boolean, default=False)
