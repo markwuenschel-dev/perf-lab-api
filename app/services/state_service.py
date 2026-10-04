@@ -1,3 +1,4 @@
+import copy
 import logging
 import re
 from datetime import UTC, datetime, timedelta
@@ -391,6 +392,20 @@ async def load_or_init_current_state(
     if row is None:
         return await initialize_athlete_state(db, user_id)
     return unified_from_athlete_row(row)
+
+
+def preview_baseline_state(user_id: int) -> UnifiedStateVector:
+    """The baseline ``initialize_athlete_state`` would seed with its defaults — built in
+    memory, never persisted. Pure: no database access.
+
+    For read-only previews of an athlete who has no state yet (``POST /v1/simulate/projection``,
+    F1). Same inputs and the same row→vector conversion as initialization, so the preview
+    matches what the first real write would seed.
+    """
+    _, transient = _build_baseline_vector(
+        user_id, "intermediate", None, None, None, None, None, 0.0, goal=None
+    )
+    return unified_from_athlete_row(transient)
 
 
 async def has_state(db: AsyncSession, user_id: int) -> bool:
@@ -1122,6 +1137,17 @@ async def process_new_workout(
     shadow_prescription_branch = prescription_branch_of(
         planned_session.prescribed_content if planned_session is not None else None
     )
+    # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as this
+    # athlete's above) may lend the prescription's structure to v1's density — the same-day
+    # fallback match is a heuristic, and a false link invents a density. Deep-copied HERE,
+    # with the other planned-session fields: a later rollback in the request session (e.g. a
+    # failed KPI recompute after an e1RM observation) expires `planned_session`, and reading
+    # it after that raises MissingGreenlet outside any guard — a 500 on a committed workout.
+    shadow_linked_prescription = (
+        copy.deepcopy(planned_session.prescribed_content)
+        if log.planned_session_id is not None and planned_session is not None
+        else None
+    )
     shadow_state_before = current_state.model_copy(deep=True)
     shadow_n_set_rows = len(set_rows)
 
@@ -1229,14 +1255,7 @@ async def process_new_workout(
         planned_block_id=shadow_planned_block_id,
         prescription_branch=shadow_prescription_branch,
         n_set_rows=shadow_n_set_rows,
-        # Phase 5.4: only an EXPLICIT link (the client sent planned_session_id, verified as
-        # this athlete's above) may lend the prescription's structure to v1's density. The
-        # same-day fallback match is a heuristic, and a false link invents a density.
-        linked_prescription=(
-            planned_session.prescribed_content
-            if log.planned_session_id is not None and planned_session is not None
-            else None
-        ),
+        linked_prescription=shadow_linked_prescription,
     )
 
     return result

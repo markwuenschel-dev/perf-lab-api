@@ -253,9 +253,12 @@ async def test_concurrent_replays_produce_exactly_one_replay_row(factory):
 
     async def fire():
         async with factory() as db:
-            async with best_effort_write(db, "test concurrent replay"):
-                await ekf_shadow_service._acquire_ekf_chain_lock(db, uid)
-                return await ekf_shadow_service._replay_pending_head_correction(db, uid, phase="test")
+            # F1: the replay runs in the telemetry transaction's own session, as every writer does.
+            async with best_effort_write(db, "test concurrent replay") as tx:
+                await ekf_shadow_service._acquire_ekf_chain_lock(tx.db, uid)
+                return await ekf_shadow_service._replay_pending_head_correction(
+                    tx.db, uid, phase="test"
+                )
 
     outcomes = await asyncio.gather(*[fire() for _ in range(4)])
     assert outcomes.count("completed") == 1
@@ -643,10 +646,10 @@ async def test_replay_and_unrelated_benchmark_appender_serialize_without_fork(fa
 
     async def fire_replay():
         async with factory() as db:
-            async with best_effort_write(db, "test replay/appender race"):
-                await ekf_shadow_service._acquire_ekf_chain_lock(db, uid)
+            async with best_effort_write(db, "test replay/appender race") as tx:
+                await ekf_shadow_service._acquire_ekf_chain_lock(tx.db, uid)
                 return await ekf_shadow_service._replay_pending_head_correction(
-                    db, uid, phase="test"
+                    tx.db, uid, phase="test"
                 )
 
     async def fire_benchmark():

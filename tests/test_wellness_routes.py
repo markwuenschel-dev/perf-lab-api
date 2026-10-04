@@ -84,8 +84,9 @@ async def test_wellness_survives_a_shadow_rollback(http_client, monkeypatch):
         # expires the just-committed sample — then swallows. The SELECT is what makes the
         # rollback real (a no-op rollback would not expire the sample, and this test would
         # then pass even with the guard removed).
-        async with best_effort_write(db, "test-injected shadow failure"):
-            await db.execute(text("SELECT 1"))
+        # F1: like every real writer, the failing work runs in the telemetry's own session.
+        async with best_effort_write(db, "test-injected shadow failure") as tx:
+            await tx.db.execute(text("SELECT 1"))
             raise RuntimeError("injected shadow failure")
 
     monkeypatch.setattr(

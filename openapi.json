@@ -11997,7 +11997,7 @@
     },
     "/v1/simulate/projection": {
       "post": {
-        "description": "Project the athlete's capacity axes forward under a hypothetical plan.\n\nLoads (or seeds) the caller's current state, then runs the pure projection\nengine. No state is written \u2014 this is a compute-and-return preview.",
+        "description": "Project the athlete's capacity axes forward under a hypothetical plan.\n\nLoads the caller's current state \u2014 or, for an athlete with none, the baseline that\ninitialization would seed, built in memory \u2014 then runs the pure projection engine.\nNo state is written: this is a compute-and-return preview (F1).",
         "operationId": "simulate_projection_v1_simulate_projection_post",
         "requestBody": {
           "content": {

@@ -107,7 +107,8 @@ async def record_personalization_shadow(
 
     Takes an immutable current-wellness snapshot, never a live WellnessSample ORM instance
     (AUD-C24)."""
-    async with best_effort_write(db, f"personalization shadow log for user {user_id}"):
+    async with best_effort_write(db, f"personalization shadow log for user {user_id}") as tx:
+        tdb = tx.db  # F1: the telemetry transaction's own session
         params = default_parameters()
         artifact = load_namespace_override(_NAMESPACE)
         if artifact is None:
@@ -116,11 +117,11 @@ async def record_personalization_shadow(
         model_version = str(artifact["version"])
         mu0_resp = dict(artifact.get("training", {}).get("learned_response", {}))
 
-        profile = await AthleteProfileRepository(db).get_for_user(user_id)
+        profile = await AthleteProfileRepository(tdb).get_for_user(user_id)
         scale = experience_prior_scale(profile.experience_level if profile else None)
 
         clip = params.recovery_zscore_scale
-        Z, y = await _build_recovery_frame(db, user_id, clip)
+        Z, y = await _build_recovery_frame(tdb, user_id, clip)
         n = int(y.shape[0])
 
         personalized = copy.deepcopy(population)
@@ -145,7 +146,7 @@ async def record_personalization_shadow(
                             axis_beta[sig] = axis_beta[sig] * ratio
 
         w_mean = float(np.mean(w_values)) if w_values else 0.0
-        db.add(
+        tdb.add(
             PersonalizationShadowLog(
                 user_id=user_id,
                 parameter="recovery_beta",
