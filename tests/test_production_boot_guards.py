@@ -413,3 +413,60 @@ def test_the_shipped_debug_default_is_safe() -> None:
     operator who sets DEBUG=True in production; this stops the one who never set it.
     """
     assert Settings(_env_file=None).DEBUG is False  # type: ignore[arg-type]
+
+
+# ── W1-a: TYPED_TOKENS_SINCE ──────────────────────────────────────────────────────────
+
+
+def test_production_refuses_to_boot_without_a_typed_token_cutoff() -> None:
+    """Without the cutoff the untyped-token grace window is undefined: every pre-deploy
+    session would be silently logged out, or — had the default been permissive — legacy
+    tokens would never expire out of the grace path. Production must state it."""
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE=None)
+    with pytest.raises(RuntimeError, match="TYPED_TOKENS_SINCE"):
+        main._check_production_token_cutoff(cfg)
+
+
+def test_a_typed_token_cutoff_boots_production() -> None:
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE="2026-10-03T18:00:00Z")
+    with assert_does_not_raise():
+        main._check_production_token_cutoff(cfg)
+
+
+def test_missing_token_cutoff_only_warns_outside_production() -> None:
+    from app import main
+
+    cfg = _settings(ENVIRONMENT="development", TYPED_TOKENS_SINCE=None)
+    with caplog_at("perflab", logging.WARNING) as records:
+        main._check_production_token_cutoff(cfg)
+    assert any("TYPED_TOKENS_SINCE" in r.getMessage() for r in records)
+
+
+def test_a_token_cutoff_far_in_the_future_never_boots_production() -> None:
+    """A cutover margin is minutes to an hour. A value days ahead (wrong year/day) would
+    trust untyped tokens from any stray issuer for that long."""
+    from datetime import UTC, datetime, timedelta
+
+    from app import main
+
+    now = datetime(2026, 10, 4, 18, 0, tzinfo=UTC)
+    far = (now + timedelta(hours=25)).isoformat()
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE=far)
+    with pytest.raises(RuntimeError, match="TYPED_TOKENS_SINCE"):
+        main._check_production_token_cutoff(cfg, now=now)
+
+
+def test_a_token_cutoff_with_a_cutover_margin_boots_production() -> None:
+    """The documented procedure sets the cutoff ~1 h ahead of the deploy."""
+    from datetime import UTC, datetime, timedelta
+
+    from app import main
+
+    now = datetime(2026, 10, 4, 18, 0, tzinfo=UTC)
+    cfg = _settings(ENVIRONMENT="production", TYPED_TOKENS_SINCE=(now + timedelta(hours=1)).isoformat())
+    with assert_does_not_raise():
+        main._check_production_token_cutoff(cfg, now=now)

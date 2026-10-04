@@ -100,5 +100,41 @@ code **and** an old migration head.
 - **Secrets** live only in `/opt/stack/infra/env/perf-lab-api.env` on the box — never commit
   `.env`. In production set `ENVIRONMENT=production` and a real `SECRET_KEY` / `DATABASE_URL`;
   `config.py` rewrites `postgresql://` → `postgresql+asyncpg://` automatically.
+- **`TYPED_TOKENS_SINCE`** (required in production; boot fails without it, or if it is more
+  than 24 h after boot). See *Typed-token cutover* below.
+
+## Typed-token cutover (one time, the release that adds `TYPED_TOKENS_SINCE`)
+
+An untyped (pre-`typ`) login token is accepted only if its `exp` ≤ `TYPED_TOKENS_SINCE` +
+`ACCESS_TOKEN_EXPIRE_MINUTES`. So `TYPED_TOKENS_SINCE` must be **at or after the moment the
+last untyped issuer stops** — the old container, which keeps serving logins until
+`docker compose up -d` replaces it, *after* the image build. Set it to the deploy start and
+anyone who logs in during the build gets a token that is rejected the moment the new
+container boots.
+
+Choosing a value later than the stop time costs nothing for real users (each untyped token
+still dies at its own `exp`); it only widens the window in which a *stray* untyped issuer
+would be trusted. So: a small margin, never an early value.
+
+Because `T` must come after the old issuer stops but the stop time depends on how long the
+build takes, do **not** use the one-shot deploy script for this release. Build first, then set
+`T`, then swap — so `T` is chosen when the only remaining step is the seconds-long recreate:
+
+1. On the box, sync the clone and build the image (the old container keeps serving):
+   `cd /opt/stack/perf-lab-api && git fetch -q origin && git checkout -q main && git reset --hard origin/main`
+   then, with the same build arg the deploy script passes (shadow rows record it):
+   `BUILD_SHA=$(git rev-parse HEAD) && cd /opt/stack/infra && sudo docker compose build --build-arg APP_BUILD_SHA="$BUILD_SHA" perf-lab-api`.
+2. Only after the build has finished, set `T` = now + 10 min, as ISO-8601 UTC:
+   `date -u -d '+10 min' +%Y-%m-%dT%H:%M:%SZ`. Add `TYPED_TOKENS_SINCE=T` to
+   `/opt/stack/infra/env/perf-lab-api.env`.
+3. Replace the container immediately: `sudo docker compose up -d perf-lab-api`.
+4. Verify the old issuer stopped before `T`:
+   `sudo docker inspect -f '{{.State.StartedAt}}' $(sudo docker compose ps -q perf-lab-api)`
+   must be **earlier than `T`** (the new container starts right after the old one stops), and
+   `sudo docker compose exec -T perf-lab-api alembic current` must show the head.
+   If `StartedAt` is not earlier (the swap was delayed), raise `T` to a time after `StartedAt`
+   and run step 3 again. **Never lower `T`** — that rejects real tokens.
+5. Leave `T` unchanged forever after. Once `T` + one token lifetime has passed, no untyped token
+   can be valid and the legacy branch in `app/core/auth.py` can be deleted (tracked follow-up).
 - **CRLF guard**: the deploy scripts strip `\r` on the remote side before bash reads the piped
   script — a CRLF checkout would otherwise make the box see `perf-lab-api\r` → "no such service".

@@ -8,6 +8,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -120,6 +121,52 @@ def _check_production_debug(cfg: Settings) -> None:
     if cfg.is_production:
         raise RuntimeError(DEBUG_UNSUPPORTED_IN_PRODUCTION)
     logger.warning("%s (allowed outside production)", DEBUG_UNSUPPORTED_IN_PRODUCTION)
+
+
+TOKEN_CUTOFF_REQUIRED_IN_PRODUCTION = (
+    "TYPED_TOKENS_SINCE is unset. Set it to an instant at or after the moment the last "
+    "untyped-token issuer (the previous release) stops serving — see docs/DEPLOY.md "
+    "'Typed-token cutover' — e.g. TYPED_TOKENS_SINCE=2026-10-03T19:00:00Z, and never change "
+    "it afterwards. It bounds which pre-`typ` tokens stay valid; without it the grace "
+    "window is undefined."
+)
+
+# A cutoff this far past boot is a typo (wrong year/day), not a cutover margin: it would
+# keep admitting untyped tokens from any stray issuer for that long.
+MAX_TOKEN_CUTOFF_LEAD = timedelta(hours=24)
+
+
+def _token_cutoff_problem(cfg: Settings, now: datetime) -> str | None:
+    since = cfg.TYPED_TOKENS_SINCE
+    if since is None:
+        return TOKEN_CUTOFF_REQUIRED_IN_PRODUCTION
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)
+    if since - now > MAX_TOKEN_CUTOFF_LEAD:
+        return (
+            f"TYPED_TOKENS_SINCE={since.isoformat()} is more than "
+            f"{MAX_TOKEN_CUTOFF_LEAD} after boot ({now.isoformat()}); a cutover margin is "
+            "minutes to an hour. Check the date."
+        )
+    return None
+
+
+def _check_production_token_cutoff(cfg: Settings, now: datetime | None = None) -> None:
+    """Refuse to boot in production without a plausible ``TYPED_TOKENS_SINCE`` (W1-a).
+
+    ``get_current_user`` accepts an untyped legacy token only while its ``exp`` lies within
+    one TTL of this instant, so the instant must be at or after the last untyped issuer
+    stopped (the old container keeps serving until ``docker compose up -d`` replaces it).
+    Unset, every untyped token is rejected — safe, but in production it would silently log
+    out every pre-deploy session. Mirrors ``_check_production_secrets``: raise in
+    production, warn elsewhere.
+    """
+    problem = _token_cutoff_problem(cfg, now or datetime.now(UTC))
+    if problem is None:
+        return
+    if cfg.is_production:
+        raise RuntimeError(problem)
+    logger.warning("%s (allowed outside production)", problem)
 
 
 def _cors_problem(cfg: Settings) -> str | None:
@@ -306,6 +353,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Critical safety check: production must not boot with a forgeable signing key
     _check_production_secrets(settings)
+
+    # Critical safety check: production must state when typed access tokens started
+    _check_production_token_cutoff(settings)
 
     # Critical safety check: production must pin an explicit CORS origin (no wildcard-subdomain default)
     _check_production_cors(settings)
