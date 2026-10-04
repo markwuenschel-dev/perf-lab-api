@@ -45,7 +45,7 @@ from app.services import dashboard_service, readiness_service, strength_decline_
 from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
-from app.services.planned_session_protocol import lock_planned_session
+from app.services.planned_session_protocol import conflict, lock_planned_session
 from app.services.planning_service import block_adherence_signals, get_today_session
 from app.services.state_service import (
     load_current_state_strict,
@@ -671,23 +671,28 @@ def _score_prescription(
 
 async def _persist_prescription(
     db: AsyncSession, target_session: PlannedSession | None, rx: WorkoutPrescription
-) -> None:
+) -> bool:
     """Phase 5 — the production commit: persist ``rx`` into the planned-session slot.
 
     F3: scoring ran on a row read long before this point. The row is re-locked (which
     refreshes it), and ``rx`` is written only if the session is still PENDING on the date
     it was resolved for. A session a workout completed, or a PATCH skipped or moved,
     meanwhile keeps its content: ``rx`` no longer describes that row.
+
+    Returns whether ``rx`` may be published: True when written (or when there is no planned
+    session to write into), False when the session changed and the write was refused.
     """
     if target_session is None:
-        return
+        return True
     resolved_for = target_session.scheduled_date
     locked = await lock_planned_session(db, target_session.id, target_session.user_id)
-    if (
+    still_targeted = (
         locked is not None
         and locked.status == SessionStatus.PENDING
         and locked.scheduled_date == resolved_for
-    ):
+    )
+    if still_targeted:
+        assert locked is not None
         locked.prescribed_content = rx.to_prescribed_content()
     else:
         logger.info(
@@ -695,6 +700,7 @@ async def _persist_prescription(
             target_session.id,
         )
     await db.commit()  # writes, or just releases the row lock
+    return still_targeted
 
 
 async def _record_prescription_telemetry(
@@ -795,8 +801,14 @@ async def prescribe_for_athlete(
     if rx.structure is not None:
         rx.structure = structure_from_exercises(rx.exercises, rx.structure)
 
-    # Phase 5 — persist the prescription (the production commit).
-    await _persist_prescription(db, ctx.target_session, rx)
+    # Phase 5 — persist the prescription (the production commit). A refused write means the
+    # session was skipped, moved or completed while this prescription was being scored: it
+    # describes nothing the athlete has any more. Refuse to publish it, and record no
+    # decision for it (telemetry below never runs) — the client re-requests today's session.
+    if not await _persist_prescription(db, ctx.target_session, rx):
+        raise conflict(
+            "Today's session changed while its prescription was being prepared; request it again"
+        )
 
     # Phase 6 — best-effort telemetry, strictly after the commit.
     await _record_prescription_telemetry(db, user_id, rx, state, ctx, shadow_payloads)

@@ -58,6 +58,7 @@ from app.schemas.workouts import (
 from app.services.planned_session_protocol import (
     LINKABLE_BY_EXPLICIT_LOG,
     conflict,
+    ensure_feedback_allows,
     lock_planned_session,
 )
 from app.services.state_chain_lock import lock_athlete_chain
@@ -664,6 +665,10 @@ async def _match_planned_session(
                 f"Planned session is already {SessionStatus(session.status).value}; "
                 "it cannot be linked to another workout"
             )
+        if session is not None:
+            # A late log of a SKIPPED session that already has "skipped" feedback would
+            # leave that feedback contradicting a completed session.
+            await ensure_feedback_allows(db, session, SessionStatus.COMPLETED)
         return session
     # Deliberately the client's WALL-CLOCK day, not the UTC date: `scheduled_date` is a
     # calendar day, and converting an evening session to UTC could move it onto the next

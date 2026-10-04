@@ -31,6 +31,13 @@ COMPLETED → anything; moving it    409                 explicit link → 409
 
 ``RESCHEDULED`` stays writable by an explicit PATCH for compatibility (ADR-0069 point 1).
 Completion comes only from a logged workout, never from a PATCH.
+
+**Feedback pins the outcome.** Feedback describes the outcome a session had when it was
+given, and is one-per-session (ADR-0070). A status change that would leave existing feedback
+describing an outcome the session no longer has — reopening or rescheduling a skipped session,
+or completing it with a late log — is a 409 while that feedback exists, checked under the
+same row lock (:func:`ensure_feedback_allows`). A date move keeps the status, so it stays
+allowed. Superseding the earlier feedback instead is the P2 design (it needs a migration).
 """
 
 from __future__ import annotations
@@ -42,6 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mesocycle import PlannedSession, SessionStatus
+from app.models.telemetry import SessionFeedback
 
 #: Statuses a logged workout may complete by an EXPLICIT link (a late log of a session the
 #: athlete skipped or moved). The implicit same-day match only ever links PENDING.
@@ -76,6 +84,22 @@ async def lock_planned_session(
         .execution_options(populate_existing=True)
     )
     return result.scalars().first()
+
+
+async def ensure_feedback_allows(
+    db: AsyncSession, session: PlannedSession, new_status: SessionStatus | None
+) -> None:
+    """409 when changing the LOCKED session to ``new_status`` would strand its feedback."""
+    if new_status is None or new_status == session.status:
+        return
+    feedback_id = await db.scalar(
+        select(SessionFeedback.id).where(SessionFeedback.planned_session_id == session.id)
+    )
+    if feedback_id is not None:
+        raise conflict(
+            f"This session already has feedback for its {SessionStatus(session.status).value} "
+            "outcome; changing the outcome would contradict it"
+        )
 
 
 def check_patch(

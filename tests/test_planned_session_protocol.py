@@ -372,3 +372,117 @@ def test_every_session_writer_loads_the_row_locked(name):
         if isinstance(c, ast.Call)
     }
     assert calls & _LOCKING_LOADERS, f"{name} writes a planned session it did not lock"
+
+
+# ── review follow-ups ─────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["move", "skip", "complete"])
+async def test_today_never_publishes_a_prescription_it_could_not_persist(factory, change):
+    """Review repro: scoring raced a move / skip / completion; persistence correctly declined
+    the write, but /planning/today still returned HTTP 200 with the prescription. It now
+    refuses to publish it (409), stores nothing, and records no decision for it."""
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import func, select
+
+    from app.core.auth import get_current_user
+    from app.core.db import get_db
+    from app.main import app
+    from app.models.telemetry import PrescriptionDecision
+    from app.models.user import AthleteProfile
+
+    uid, sid = await _athlete_with_session(factory, f"f3-today-{change}@test.com")
+    async with factory() as db:
+        db.add(AthleteProfile(user_id=uid, equipment=["barbell"]))
+        await db.commit()
+        await state_service.initialize_athlete_state(db, uid)
+        user = await db.get(User, uid)
+
+    async def _db():
+        async with factory() as db:
+            yield db
+
+    async def _user():
+        return user
+
+    async def contender():
+        app.dependency_overrides[get_db] = _db
+        app.dependency_overrides[get_current_user] = _user
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                return await c.get("/v1/planning/today", params={"goal": "Strength"})
+        finally:
+            app.dependency_overrides.clear()
+
+    async def holder_body(db):
+        if change == "move":
+            await planning_service.update_session(
+                db, uid, sid,
+                PlannedSessionUpdateRequest(scheduled_date=date.today() + timedelta(days=1)),
+            )
+        elif change == "skip":
+            await planning_service.update_session(db, uid, sid, PlannedSessionUpdateRequest(status=S))
+        else:
+            await state_service.process_new_workout(db, uid, _log_today(sid))
+
+    resp = await _contend(contender, holder_body, factory, uid=uid, sid=sid, chain=False)
+    assert not isinstance(resp, Exception), resp
+    assert resp.status_code == 409, resp.text
+    assert (await _session(factory, sid)).prescribed_content is None
+    async with factory() as db:
+        decisions = (await db.execute(
+            select(func.count()).select_from(PrescriptionDecision)
+            .where(PrescriptionDecision.athlete_id == uid)
+        )).scalar_one()
+    assert decisions == 0
+
+
+async def _skipped_with_feedback(factory, email: str) -> tuple[int, int]:
+    from app.schemas.session_feedback import SessionFeedbackIn
+    from app.services import session_feedback_service
+
+    uid, sid = await _athlete_with_session(factory, email, status=S)
+    async with factory() as db:
+        await session_feedback_service.create_feedback(
+            db, uid, SessionFeedbackIn(planned_session_id=sid, status="skipped")
+        )
+    return uid, sid
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", [P, R], ids=lambda s: s.value)
+async def test_a_status_change_cannot_strand_existing_feedback(factory, target):
+    """Review repro: "skipped" feedback, then the session reopened or rescheduled — the
+    feedback kept describing an outcome the session no longer had."""
+    uid, sid = await _skipped_with_feedback(factory, f"f3-fb-{target.value}@test.com")
+    async with factory() as db:
+        with pytest.raises(HTTPException) as exc:
+            await planning_service.update_session(
+                db, uid, sid, PlannedSessionUpdateRequest(status=target)
+            )
+    assert exc.value.status_code == 409 and "feedback" in str(exc.value.detail)
+    assert (await _session(factory, sid)).status == S
+
+
+@pytest.mark.asyncio
+async def test_a_late_log_cannot_strand_skipped_feedback(factory):
+    uid, sid = await _skipped_with_feedback(factory, "f3-fb-late@test.com")
+    async with factory() as db:
+        with pytest.raises(HTTPException) as exc:
+            await state_service.process_new_workout(db, uid, _log_today(sid))
+    assert exc.value.status_code == 409 and "feedback" in str(exc.value.detail)
+    assert (await _session(factory, sid)).status == S
+
+
+@pytest.mark.asyncio
+async def test_moving_a_session_with_feedback_keeps_its_outcome(factory):
+    """A date move does not change the status the feedback describes: allowed."""
+    uid, sid = await _skipped_with_feedback(factory, "f3-fb-move@test.com")
+    new_day = date.today() + timedelta(days=3)
+    async with factory() as db:
+        await planning_service.update_session(
+            db, uid, sid, PlannedSessionUpdateRequest(scheduled_date=new_day)
+        )
+    row = await _session(factory, sid)
+    assert row.status == S and row.scheduled_date == new_day

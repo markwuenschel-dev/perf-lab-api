@@ -24,7 +24,11 @@ from app.schemas.planning import (
     WeeklyTemplateSlot,
 )
 from app.services import macrocycle_service
-from app.services.planned_session_protocol import check_patch, lock_planned_session
+from app.services.planned_session_protocol import (
+    check_patch,
+    ensure_feedback_allows,
+    lock_planned_session,
+)
 
 _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
     BlockGoal.STRENGTH: [
@@ -501,6 +505,7 @@ async def update_session(
     check_patch(
         session, new_status=payload.status, new_date=payload.scheduled_date, today=date.today()
     )
+    await ensure_feedback_allows(db, session, payload.status)
 
     # A genuine date move preserves the original plan date (first move only). It does
     # NOT change lifecycle status: the auto-transition to RESCHEDULED used to make the
