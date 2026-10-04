@@ -18,8 +18,9 @@ export function SessionPlayer() {
   // Everything below renders the hardcoded `sim.PHASES` interval plan — fixed
   // paces, invented heart rate, invented splits. Ticket #183 established that no
   // real playable session can be constructed today: `WorkoutPrescription` carries
-  // no per-phase duration/zone/pace/rest, and /planning/today rewrites
-  // prescribed_content on every call, so a session has no revision identity either.
+  // no per-phase duration/zone/pace/rest. (Since P1 a session DOES have a revision
+  // identity — /planning/today serves an immutable revision — but the missing per-phase
+  // timeline alone keeps this closed.)
   //
   // Hiding the entry buttons is necessary but NOT sufficient — `sessOpen` is set by
   // a zero-payload store action, so retained state, a deep link, or any future

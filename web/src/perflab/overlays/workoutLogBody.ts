@@ -144,6 +144,7 @@ export function buildWorkoutLog(
   wellness: WorkoutWellness,
   setGroups: SetGroup[] = [],
   plannedSessionId: number | null = null,
+  plannedRevisionId: number | null = null,
 ): WorkoutLog | null {
   if (missingRequiredReadings(logType, rpe, durationMin, distanceKm, setGroups).length) {
     return null;
@@ -175,5 +176,9 @@ export function buildWorkoutLog(
         ? { distance_meters: Math.round((distanceKm as number) * 1000) }
         : {}),
     ...(fulfilsPlan ? { planned_session_id: plannedSessionId } : {}),
+    // P1: the revision the athlete was shown, only with the plan it belongs to.
+    ...(fulfilsPlan && plannedRevisionId !== null
+      ? { prescription_revision_id: plannedRevisionId }
+      : {}),
   } satisfies Partial<WorkoutLog> as WorkoutLog;
 }

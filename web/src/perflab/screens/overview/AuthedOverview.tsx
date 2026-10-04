@@ -25,11 +25,12 @@ import type {
   WellnessSampleOut,
   WorkoutLogSummary,
 } from "@/types";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { activeMacrocycle, weekProgressLabel } from "../../macrocycles";
 import { sortObjectives } from "../../objectives";
 import { COLORS, readinessColor, readinessNote, readinessWord } from "../../readinessPresentation";
+import { RevisionNotice } from "../../prescription/RevisionNotice";
 import { resourceData, type AuthedResource } from "../../resource";
 import { relativeTime } from "../../stateVector";
 import { usePerfLab } from "../../store";
@@ -86,7 +87,7 @@ const signalLabel = (s: string) => SIGNAL_LABELS[s] ?? s.replace(/_/g, " ");
 
 export function AuthedOverview() {
   const { state, actions } = usePerfLab();
-  const { user, profile, email } = useAuth();
+  const { user, profile, email, token } = useAuth();
 
   const readinessRes = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey]);
   // A day is several rows, not one: `WellnessSample` is keyed (user, date, source), so a
@@ -103,7 +104,15 @@ export function AuthedOverview() {
   const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 5), []);
   const overviewRes = useAuthedResource<OverviewMetrics>((t) => api.getDashboardOverview(t), []);
   const goal = state.settings.goal;
-  const todayRes = useAuthedResource<TodaySessionResponse>((t) => api.getTodayPlannedSession(goal, t), [goal]);
+  // P1: today's session is an immutable revision; a re-check may replace it, after which
+  // this reload serves the new one.
+  const [todayKey, setTodayKey] = useState(0);
+  const todayRes = useAuthedResource<TodaySessionResponse>((t) => api.getTodayPlannedSession(goal, t), [goal, todayKey]);
+  const recheckToday = async () => {
+    if (!token) return;
+    await api.recheckTodayPlannedSession(goal, token);
+    setTodayKey((k) => k + 1);
+  };
 
   // There is no check-in auto-prompt here, and its absence is deliberate.
   // L4 requires the prompt be scoped to a canonical athlete day; #191 made that day
@@ -152,6 +161,7 @@ export function AuthedOverview() {
               </div>
               <RecommendedToday
                 resource={todayRes}
+                onRecheck={recheckToday}
                 primaryAction={primaryAction}
                 onPlan={() => actions.setScreen("planning")}
                 onSimulate={() => actions.setScreen("simulate")}
@@ -331,11 +341,13 @@ const btnAccentGhost =
 
 function RecommendedToday({
   resource,
+  onRecheck,
   primaryAction,
   onPlan,
   onSimulate,
 }: {
   resource: AuthedResource<TodaySessionResponse>;
+  onRecheck: () => Promise<void>;
   primaryAction: ReturnType<typeof primaryActionSection>;
   onPlan: () => void;
   onSimulate: () => void;
@@ -394,6 +406,7 @@ function RecommendedToday({
       <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Recommended today</div>
       <div className="mt-[9px] text-[22px] font-bold leading-[1.1] text-ink">{title}</div>
       {prose && <div className="mt-[9px] max-w-[400px] text-[13px] font-medium leading-[1.5] text-mute">{prose}</div>}
+      <RevisionNotice revision={data?.revision} onRecheck={onRecheck} />
       <div className="mt-4 flex gap-[10px]">
         {/* No "Start session" button. The guided player renders a hardcoded interval
             plan, and #183 established no real playable session can be built from the

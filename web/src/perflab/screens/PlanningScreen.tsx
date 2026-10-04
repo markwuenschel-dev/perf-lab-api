@@ -24,6 +24,7 @@ import type {
   PlannedSessionRead,
   PlannedSessionUpdateRequest,
   PlannedWeekProjection,
+  PrescriptionRevisionRead,
   ReadinessScore,
   WorkoutLogSummary,
   WorkoutPrescription,
@@ -36,6 +37,7 @@ import { WhyThisSession } from "../prescription/WhyThisSession";
 import { LoadExplanation } from "../prescription/LoadExplanation";
 import { ExpectedOutcomes } from "../prescription/ExpectedOutcomes";
 import { PlanRevisionTriggers } from "../prescription/PlanRevisionTriggers";
+import { RevisionNotice } from "../prescription/RevisionNotice";
 import { Chart, Bars, Line, Marker, Axis, Legend, useVizTheme } from "../viz";
 import { PHASES } from "../sim";
 import { COLORS } from "../readinessPresentation";
@@ -219,9 +221,9 @@ function AuthedPlanningBody() {
   // `planningRefreshKey` is bumped by BlockCreateModal after a successful
   // POST /v1/planning/blocks so a freshly created block's week shows up here.
   // `feedbackRefreshKey` is bumped after feedback is recorded — this list is what
-  // renders the affordance, so it is the resource that has to re-read. Note this
-  // re-reads the session LIST, which is a plain GET; re-fetching a prescription
-  // would rewrite `prescribed_content`, so it is deliberately not invalidated here.
+  // renders the affordance, so it is the resource that has to re-read. This re-reads the
+  // session LIST only; today's prescription is an immutable revision (P1) that the
+  // Prescribed session card reads on its own.
   const sessions = useAuthedResource<PlannedSessionRead[]>(
     (t) => api.listPlannedSessions(t, { start_date: week.start_date, end_date: week.end_date }),
     [week.start_date, state.planningRefreshKey, state.feedbackRefreshKey, writeKey],
@@ -826,12 +828,38 @@ function ProjectionView({ data }: { data: PlannedWeekProjection }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Prescribed session — the same live seam TwinScreen uses
-// (GET /v1/next-session → typed WorkoutPrescription). A prescription failure is
-// localized to this card and never restores fixtures.
+// Prescribed session (P1). With a session planned today this is today's ISSUED revision
+// (GET /v1/planning/today) — the same revision and content Overview and the Log Workout
+// pre-fill show. Only when nothing is planned today does it fall back to a labelled preview
+// (GET /v1/next-session). A prescription failure is localized to this card and never
+// restores fixtures.
 // ──────────────────────────────────────────────────────────────────────────
+interface TodayPrescription {
+  prescription: WorkoutPrescription;
+  revision: PrescriptionRevisionRead | null;
+  /** False: nothing is planned today, so this is a preview, not an issued session. */
+  planned: boolean;
+}
+
 function PrescribedSessionCard({ goal }: { goal: string }) {
-  const prescription = useAuthedResource<WorkoutPrescription>((t) => api.getNextSession(goal, t), [goal]);
+  const { token } = useAuth();
+  const [todayKey, setTodayKey] = useState(0);
+  const today = useAuthedResource<TodayPrescription>(async (t) => {
+    const res = await api.getTodayPlannedSession(goal, t);
+    if (res.prescription) {
+      return { prescription: res.prescription, revision: res.revision ?? null, planned: true };
+    }
+    return { prescription: await api.getNextSession(goal, t), revision: null, planned: false };
+  }, [goal, todayKey]);
+  const prescription: AuthedResource<WorkoutPrescription> =
+    today.status === "success" ? { ...today, data: today.data.prescription } : today;
+  const revision = today.status === "success" ? today.data.revision : null;
+  const preview = today.status === "success" && !today.data.planned;
+  const recheck = async () => {
+    if (!token) return;
+    await api.recheckTodayPlannedSession(goal, token);
+    setTodayKey((k) => k + 1);
+  };
 
   // The card shell and its header render in every state — only the interior and
   // the header's right-hand summary are state-dependent — so this surface reads
@@ -839,10 +867,11 @@ function PrescribedSessionCard({ goal }: { goal: string }) {
   return (
     <Card className="p-[22px]">
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>Prescribed session</SectionLabel>
+        <SectionLabel className={LABEL}>{preview ? "Preview — nothing planned today" : "Prescribed session"}</SectionLabel>
         <div className="font-mono text-[10px] leading-none text-dim">{prescriptionSummary(prescription)}</div>
       </div>
 
+      <RevisionNotice revision={revision} onRecheck={recheck} />
       <PrescribedSessionBody resource={prescription} />
     </Card>
   );

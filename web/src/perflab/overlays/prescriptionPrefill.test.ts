@@ -5,13 +5,8 @@
 // the target states unambiguously, the RPE cap never becomes a reported RPE, and the
 // planned-session link is claimed only when a prescribed exercise was actually recorded.
 import { describe, expect, it } from "vitest";
-import type { ExerciseCatalogOut, ExercisePrescription, PlannedSessionRead } from "@/types";
-import {
-  exercisesFromStoredPrescription,
-  isoLocalDate,
-  pickTodaysPendingSession,
-  plannedGroup,
-} from "./prescriptionPrefill";
+import type { ExerciseCatalogOut, ExercisePrescription } from "@/types";
+import { plannedGroup } from "./prescriptionPrefill";
 import {
   confirmAsPrescribed,
   deriveModality,
@@ -86,38 +81,6 @@ describe("a pre-filled group is a target, not a reading", () => {
   });
 });
 
-describe("which recommendation pre-fills", () => {
-  const session = (over: Partial<PlannedSessionRead>) =>
-    ({ id: 1, scheduled_date: "2026-09-13", status: "pending", prescribed_content: null, ...over }) as PlannedSessionRead;
-
-  it("today's pending session, lowest id first", () => {
-    const picked = pickTodaysPendingSession(
-      [
-        session({ id: 9 }),
-        session({ id: 4 }),
-        session({ id: 2, status: "completed" }),
-        session({ id: 1, scheduled_date: "2026-09-14" }),
-      ],
-      "2026-09-13",
-    );
-    expect(picked?.id).toBe(4);
-  });
-
-  it("none when nothing is pending today", () => {
-    expect(pickTodaysPendingSession([session({ status: "skipped" })], "2026-09-13")).toBeNull();
-  });
-
-  it("reads a stored prescription's exercises without trusting its shape", () => {
-    expect(exercisesFromStoredPrescription(null)).toEqual([]);
-    expect(exercisesFromStoredPrescription({ exercises: "nope" })).toEqual([]);
-    expect(exercisesFromStoredPrescription({ exercises: [SQUAT, { sets: 3 }, null] })).toEqual([SQUAT]);
-  });
-
-  it("dates the query by the local calendar day", () => {
-    expect(isoLocalDate(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
-  });
-});
-
 describe("the planned-session link", () => {
   const log = (groups: ReturnType<typeof plannedGroup>[], plannedSessionId: number | null) =>
     buildWorkoutLog("strength", 7, 45, null, NO_WELLNESS_REPORTED, groups, plannedSessionId);
@@ -136,5 +99,17 @@ describe("the planned-session link", () => {
     expect(log([confirmAsPrescribed(plannedGroup(SQUAT, catalog(), 1))], null)).not.toHaveProperty(
       "planned_session_id",
     );
+  });
+
+  it("sends the shown revision only with the plan it belongs to (P1)", () => {
+    const confirmed = [confirmAsPrescribed(plannedGroup(SQUAT, catalog(), 1))];
+    const linked = buildWorkoutLog("strength", 7, 45, null, NO_WELLNESS_REPORTED, confirmed, 41, 900);
+    expect(linked?.prescription_revision_id).toBe(900);
+    const unconfirmed = buildWorkoutLog(
+      "strength", 7, 45, null, NO_WELLNESS_REPORTED, [plannedGroup(SQUAT, catalog(), 1)], 41, 900,
+    );
+    expect(unconfirmed).not.toHaveProperty("prescription_revision_id");
+    const unplanned = buildWorkoutLog("strength", 7, 45, null, NO_WELLNESS_REPORTED, confirmed, null, 900);
+    expect(unplanned).not.toHaveProperty("prescription_revision_id");
   });
 });

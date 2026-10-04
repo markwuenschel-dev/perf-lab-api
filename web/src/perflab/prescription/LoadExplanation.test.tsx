@@ -78,6 +78,8 @@ const RX: WorkoutPrescription = {
 
 vi.mock("@/api/perfLabClient", () => ({
   getNextSession: () => Promise.resolve(RX),
+  // P1: with nothing planned today, Planning's card shows the /next-session preview.
+  getTodayPlannedSession: () => Promise.resolve({ session: null, prescription: null }),
   // Never settles: the surrounding cards stay in their loading state and stay out of the way.
   getReadiness: () => new Promise(() => {}),
   getStateHistory: () => new Promise(() => {}),
