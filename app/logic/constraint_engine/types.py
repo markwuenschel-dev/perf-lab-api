@@ -48,8 +48,13 @@ class ValidationReport:
 
     hard_failed: list[str] = field(default_factory=lambda: [])
     soft_warnings: list[str] = field(default_factory=lambda: [])
+    # SOFT codes that were unregistered or crashed: advisory checks we could not run.
     skipped_codes: list[str] = field(default_factory=lambda: [])
+    # HARD codes that were unregistered or crashed. Kept apart from both `hard_failed`
+    # ("evaluated and rejected") and `skipped_codes`: a safety check that could not run
+    # has not passed, and has not judged the session either (W1-c).
+    unevaluated_hard: list[str] = field(default_factory=lambda: [])
 
     @property
     def ok(self) -> bool:
-        return len(self.hard_failed) == 0
+        return not self.hard_failed and not self.unevaluated_hard

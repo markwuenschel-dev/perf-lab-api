@@ -182,7 +182,7 @@ async def test_next_session_model_version_v06(http_client):
 
     resp = await http_client.get("/v1/next-session", headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["model_version"] == "v0.7"
+    assert resp.json()["model_version"] == "v0.8"
 
 
 async def test_next_session_ignores_user_id_query_param(http_client):

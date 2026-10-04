@@ -4253,6 +4253,11 @@ export interface components {
             hard_violations?: string[];
             /** Passed */
             passed: boolean;
+            /**
+             * Unevaluated Hard
+             * @description Hard safety constraints that could not be evaluated (unregistered or crashed). Non-empty means the session was replaced by complete rest.
+             */
+            unevaluated_hard?: string[];
         };
         /**
          * WarmupBlock
@@ -4860,7 +4865,7 @@ export interface components {
             /**
              * Model Version
              * @description Prescription engine version
-             * @default v0.7
+             * @default v0.8
              */
             model_version: string;
             /** Rationale */

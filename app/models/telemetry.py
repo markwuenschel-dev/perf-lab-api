@@ -29,8 +29,18 @@ class PrescriptionDecision(Base):
     decision_mode: Mapped[str] = mapped_column(String, nullable=False, default="adaptive")
     state_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     block_context_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # The RANKED winner — ranking evidence, not necessarily what was prescribed: finalize can
+    # replace it for safety. What the athlete actually got is in the final_* columns below.
     chosen_candidate_id: Mapped[str | None] = mapped_column(String, nullable=True)
     chosen_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # W1-c (a050): the final safety outcome, recorded separately from the ranking.
+    # "as_ranked" | "safety_override" | "hard_violation_replaced" | "safety_unevaluated_rest";
+    # NULL on rows written before a050.
+    final_outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    final_prescription_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    final_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hard_violations_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    unevaluated_hard_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 

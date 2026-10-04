@@ -762,7 +762,10 @@ async def prescribe_for_athlete(
     # Re-derive it once, AFTER both — it used to run between them, so the persisted structure
     # carried pre-enrichment weak-point tags while exercises[] carried the enriched ones. The
     # current structure is passed as `previous` so a structured run keeps its work shape.
-    rx.structure = structure_from_exercises(rx.exercises, rx.structure)
+    # A structure that is deliberately absent (complete rest, equipment unavailable) stays
+    # absent: re-deriving it would hand clients an empty workout to render.
+    if rx.structure is not None:
+        rx.structure = structure_from_exercises(rx.exercises, rx.structure)
 
     # Phase 5 — persist the prescription (the production commit).
     await _persist_prescription(db, ctx.target_session, rx)

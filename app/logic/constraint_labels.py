@@ -50,6 +50,8 @@ PLAN_REPLACED_PREFIX = "plan:session_replaced="
 PLAN_UNAVAILABLE_PREFIX = "plan:session_unavailable="
 
 SAFETY_OVERRIDE_PREFIX = "safety:override="
+#: W1-c: a hard safety rule could not be evaluated, so the session became complete rest.
+SAFETY_UNEVALUATED_PREFIX = "safety:unevaluated="
 
 _EXACT: dict[str, tuple[str, AppliedConstraintGroup, bool]] = {
     "planning:infeasible": (
@@ -264,6 +266,7 @@ _PLAN_CONSTRAINT = re.compile(
     r"^(?P<family>constraint|constraint_soft):(?P<kind>[a-z_]+)(?:=(?P<target>[^:]*))?:(?P<reason>.+)$"
 )
 _SAFETY_OVERRIDE = re.compile(r"^safety:override=(?P<branch>[a-z_]+)$")
+_SAFETY_UNEVALUATED = re.compile(r"^safety:unevaluated=(?P<codes>[a-z_0-9,]+)$")
 _PLAN_FOLLOWED = re.compile(r"^plan:session_followed=(?P<branch>[a-z_]+)$")
 _PLAN_REPLACED = re.compile(r"^plan:session_replaced=(?P<slug>[a-z_]+)\((?P<reason>[a-z_]+)\)$")
 _PLAN_UNAVAILABLE = re.compile(r"^plan:session_unavailable=(?P<slug>[a-z_]+)$")
@@ -296,6 +299,7 @@ CODE_FAMILIES: tuple[str, ...] = (
     "adherence:recent_skips=",
     "adherence:recent_modifications=",
     "safety:override=",
+    SAFETY_UNEVALUATED_PREFIX,
     PLAN_FOLLOWED_PREFIX,
     PLAN_REPLACED_PREFIX,
     PLAN_UNAVAILABLE_PREFIX,
@@ -512,6 +516,7 @@ _PLAN_REPLACED_REASONS: dict[str, str] = {
     "constraints": "your plan's constraints ruled out every option",
     "readiness": "today's readiness called for different work",
     "validation": "it did not pass this session's safety checks",
+    "safety_unevaluated": "a safety check could not run, so no session could be confirmed safe",
     "unavailable": "it isn't available for you today",
     "equipment": "it needs equipment you haven't listed, so a version you can do was chosen",
     "arm": "an experiment arm selected the session",
@@ -584,6 +589,14 @@ def _plan_session(code: str) -> _Labelled | None:
 
 
 def _safety(code: str) -> _Labelled | None:
+    if _SAFETY_UNEVALUATED.match(code):
+        # Names no rule code: the athlete is owed what happened and what to do, not an id.
+        return (
+            "Rest today: a safety check could not run, so no session could be confirmed "
+            "safe. It is checked again the next time you open today's session.",
+            "safety",
+            True,
+        )
     m = _SAFETY_OVERRIDE.match(code)
     if m is None:
         return None

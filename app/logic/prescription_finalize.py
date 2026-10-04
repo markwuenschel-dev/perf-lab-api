@@ -392,14 +392,37 @@ def finalize_prescription(
     soft_warnings = srep.soft_warnings
     hard_violations = list(dict.fromkeys(srep.hard_failed))
     skipped_codes = srep.skipped_codes
+    unevaluated_hard = list(dict.fromkeys(srep.unevaluated_hard))
     score_val: float | None = None
-    if not hard_violations:
+    if not hard_violations and not unevaluated_hard:
         score_val = simple_session_scorer(candidate, structured, state)
 
     out_rx = rx.model_copy(deep=True)
     rationale_suffix = ""
 
-    if hard_violations:
+    if unevaluated_hard:
+        # A hard safety rule could not run (W1-c). Nothing proves ANY session satisfies it —
+        # including the movement fallback below — so the only safe output is complete rest
+        # with nothing actionable: no exercises, no loads, no structure. Takes precedence over
+        # an evaluated hard violation, because rest is the more restrictive of the two.
+        out_rx = WorkoutPrescription(
+            type="Rest",
+            focus="Rest — safety check could not run",
+            rationale=(
+                f"A safety check could not be evaluated ({', '.join(unevaluated_hard[:6])}), "
+                "so no session can be confirmed safe today. Rest; the session is re-checked "
+                "the next time it is requested."
+            ),
+            duration_min=0,
+        )
+        vsummary = ValidationSummary(
+            passed=False,
+            failed_checks=soft_warnings,
+            hard_violations=hard_violations,
+            unevaluated_hard=unevaluated_hard,
+        )
+        score_val = None
+    elif hard_violations:
         if rx.duration_min == 0:
             # Already complete rest — the most restrictive prescription there is. The fallback
             # below ("easy movement + mobility") would RELAX it. It used to: the old
@@ -444,6 +467,10 @@ def finalize_prescription(
             soft_warnings + program_template.constraint_rule_ids[:6] + hard_violations[:4]
         )
     )
+    if unevaluated_hard:
+        applied.append(f"safety:unevaluated={','.join(unevaluated_hard)}")
+    # A replaced session's forecast would describe the session that was NOT prescribed.
+    replaced = bool(hard_violations or unevaluated_hard)
 
     warnings_out = list(dict.fromkeys(soft_warnings))[:12]
 
@@ -459,7 +486,7 @@ def finalize_prescription(
         plan_revision_triggers=derive_plan_revision_triggers(state),
         expected_outcomes=(
             _derive_expected_outcomes(state, session_candidate)
-            if session_candidate is not None
+            if session_candidate is not None and not replaced
             else []
         ),
         expected_outcome_horizon=EXPECTED_OUTCOME_HORIZON,
@@ -476,11 +503,25 @@ def finalize_prescription(
 
     out_rx.model_version = PRESCRIPTION_ENGINE_VERSION
 
-    if rationale_suffix and not hard_violations:
+    if rationale_suffix and not replaced:
         out_rx.rationale = (out_rx.rationale + rationale_suffix).strip()
 
     # Phase 2.1: attach the typed structure for the paths that RETURN from here — the safety
     # override and the hard-constraint replacement, neither of which goes on to select
     # exercises. The scoring path attaches its own at the end of _score_prescription, after
     # exercise selection has run.
+    if unevaluated_hard:
+        # Complete rest is nothing to do: no exercises and no structured workout at all, not
+        # an empty structure a client might still render as a session.
+        out_rx.exercises = []
+        out_rx.structure = None
+        return out_rx
     return out_rx.with_structure()
+
+
+def is_safety_replacement(rx: WorkoutPrescription) -> bool:
+    """True when finalize replaced the chosen session for safety: a hard constraint failed,
+    or one could not be evaluated. Such a prescription is final — no later stage may add
+    exercises, accessories or duration to it (a stage may restrict, never relax)."""
+    v = rx.why.validation if rx.why is not None else None
+    return v is not None and bool(v.hard_violations or v.unevaluated_hard)
