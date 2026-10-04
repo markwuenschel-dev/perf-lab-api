@@ -1,6 +1,7 @@
 """Prescription orchestration service — reusable by HTTP routes and cron jobs."""
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,7 +27,7 @@ from app.logic.prescription_evidence import (
 from app.logic.workout_history import recent_workout_summaries
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.exercise import Exercise
-from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession
+from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, SessionStatus
 from app.models.weak_point import WeakPoint
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.repositories.benchmark_observation_repository import select_prescription_basis
@@ -44,11 +45,14 @@ from app.services import dashboard_service, readiness_service, strength_decline_
 from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
+from app.services.planned_session_protocol import lock_planned_session
 from app.services.planning_service import block_adherence_signals, get_today_session
 from app.services.state_service import (
     load_current_state_strict,
     load_or_init_current_state_strict,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class BlockContext(TypedDict, total=False):
@@ -668,10 +672,29 @@ def _score_prescription(
 async def _persist_prescription(
     db: AsyncSession, target_session: PlannedSession | None, rx: WorkoutPrescription
 ) -> None:
-    """Phase 5 — the production commit: persist ``rx`` into the planned-session slot."""
-    if target_session is not None:
-        target_session.prescribed_content = rx.to_prescribed_content()
-        await db.commit()
+    """Phase 5 — the production commit: persist ``rx`` into the planned-session slot.
+
+    F3: scoring ran on a row read long before this point. The row is re-locked (which
+    refreshes it), and ``rx`` is written only if the session is still PENDING on the date
+    it was resolved for. A session a workout completed, or a PATCH skipped or moved,
+    meanwhile keeps its content: ``rx`` no longer describes that row.
+    """
+    if target_session is None:
+        return
+    resolved_for = target_session.scheduled_date
+    locked = await lock_planned_session(db, target_session.id, target_session.user_id)
+    if (
+        locked is not None
+        and locked.status == SessionStatus.PENDING
+        and locked.scheduled_date == resolved_for
+    ):
+        locked.prescribed_content = rx.to_prescribed_content()
+    else:
+        logger.info(
+            "prescription not persisted: planned session %s changed during scoring",
+            target_session.id,
+        )
+    await db.commit()  # writes, or just releases the row lock
 
 
 async def _record_prescription_telemetry(

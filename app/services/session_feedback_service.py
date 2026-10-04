@@ -19,6 +19,7 @@ from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.telemetry import SessionFeedback
 from app.models.workout_log import WorkoutLog
 from app.schemas.session_feedback import SessionFeedbackIn
+from app.services.planned_session_protocol import lock_planned_session
 
 # Feedback describes an outcome, so the session must already have one (ADR-0070).
 # RESCHEDULED is deliberately absent: a moved session has not happened yet, and
@@ -47,15 +48,9 @@ async def create_feedback(
     not exist *for this user*, mirroring the objectives/macrocycles pattern)
     and on a duplicate (409 — ``planned_session_id`` is unique).
     """
-    # 1. The planned session must exist AND belong to the caller.
-    planned_session = (
-        await db.execute(
-            select(PlannedSession).where(
-                PlannedSession.id == payload.planned_session_id,
-                PlannedSession.user_id == user_id,
-            )
-        )
-    ).scalars().first()
+    # 1. The planned session must exist AND belong to the caller. Locked (F3), so its
+    # status cannot change between the checks below and the feedback insert.
+    planned_session = await lock_planned_session(db, payload.planned_session_id, user_id)
     if planned_session is None:
         raise HTTPException(status_code=404, detail="Planned session not found")
 
