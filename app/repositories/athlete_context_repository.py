@@ -57,7 +57,9 @@ class AthleteContextRepository:
         result = await self.session.execute(
             select(AthleteState)
             .where(AthleteState.user_id == user_id)
-            .order_by(AthleteState.timestamp.desc())
+            # id breaks timestamp ties deterministically: rows can share a timestamp
+            # (a workout and its e1RM observations), and "latest" must not be arbitrary.
+            .order_by(AthleteState.timestamp.desc(), AthleteState.id.desc())
             .limit(1)
         )
         return result.scalars().first()
@@ -100,7 +102,7 @@ class AthleteContextRepository:
         result = await self.session.execute(
             select(AthleteState)
             .where(AthleteState.user_id == user_id)
-            .order_by(AthleteState.timestamp)
+            .order_by(AthleteState.timestamp, AthleteState.id)
         )
         return result.scalars().all()
 
