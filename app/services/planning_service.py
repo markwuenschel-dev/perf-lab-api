@@ -24,6 +24,11 @@ from app.schemas.planning import (
     WeeklyTemplateSlot,
 )
 from app.services import macrocycle_service
+from app.services.planned_session_protocol import (
+    check_patch,
+    ensure_feedback_allows,
+    lock_planned_session,
+)
 
 _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
     BlockGoal.STRENGTH: [
@@ -489,18 +494,18 @@ async def update_session(
     payload: PlannedSessionUpdateRequest,
 ) -> PlannedSession | None:
     """Partial update of one owned planned session. Returns ``None`` when the
-    session does not exist or is not owned by ``user_id`` (router → 404)."""
-    result = await db.execute(
-        select(PlannedSession).where(
-            and_(
-                PlannedSession.id == session_id,
-                PlannedSession.user_id == user_id,
-            )
-        )
-    )
-    session = result.scalars().first()
+    session does not exist or is not owned by ``user_id`` (router → 404).
+
+    F3: the row is locked first and the change validated against its CURRENT state
+    (``planned_session_protocol.check_patch``) — 409 for a disallowed transition.
+    """
+    session = await lock_planned_session(db, session_id, user_id)
     if not session:
         return None
+    check_patch(
+        session, new_status=payload.status, new_date=payload.scheduled_date, today=date.today()
+    )
+    await ensure_feedback_allows(db, session, payload.status)
 
     # A genuine date move preserves the original plan date (first move only). It does
     # NOT change lifecycle status: the auto-transition to RESCHEDULED used to make the

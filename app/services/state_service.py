@@ -55,6 +55,12 @@ from app.schemas.workouts import (
     WorkoutLog,
     WorkoutSetEntry,
 )
+from app.services.planned_session_protocol import (
+    LINKABLE_BY_EXPLICIT_LOG,
+    conflict,
+    ensure_feedback_allows,
+    lock_planned_session,
+)
 from app.services.state_chain_lock import lock_athlete_chain
 
 logger = logging.getLogger(__name__)
@@ -643,15 +649,27 @@ def _seed_exercises_from_prescription(
 async def _match_planned_session(
     db: AsyncSession, user_id: int, log: WorkoutLog
 ) -> PlannedSession | None:
-    """The planned session this log fulfills: explicit id, else same-day pending."""
+    """The planned session this log fulfills: explicit id, else same-day pending.
+
+    F3: the row is locked FOR UPDATE (and refreshed) until the workout commits, so it cannot
+    change between this decision and the link. An explicit link to a COMPLETED session is a
+    409 — it would silently re-point that session at a second workout. A late explicit log
+    of a SKIPPED/RESCHEDULED session completes it. The implicit match only takes PENDING;
+    if a concurrent log completes the row while this one waits, Postgres re-checks the
+    filter after the lock and the log simply stays unlinked.
+    """
     if log.planned_session_id is not None:
-        res = await db.execute(
-            select(PlannedSession).where(
-                PlannedSession.id == log.planned_session_id,
-                PlannedSession.user_id == user_id,
+        session = await lock_planned_session(db, log.planned_session_id, user_id)
+        if session is not None and session.status not in LINKABLE_BY_EXPLICIT_LOG:
+            raise conflict(
+                f"Planned session is already {SessionStatus(session.status).value}; "
+                "it cannot be linked to another workout"
             )
-        )
-        return res.scalars().first()
+        if session is not None:
+            # A late log of a SKIPPED session that already has "skipped" feedback would
+            # leave that feedback contradicting a completed session.
+            await ensure_feedback_allows(db, session, SessionStatus.COMPLETED)
+        return session
     # Deliberately the client's WALL-CLOCK day, not the UTC date: `scheduled_date` is a
     # calendar day, and converting an evening session to UTC could move it onto the next
     # day. (The instant-based times — log_ts and the evidence performed_at — use UTC.)
@@ -667,6 +685,8 @@ async def _match_planned_session(
         )
         .order_by(PlannedSession.id.asc())
         .limit(1)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     return res.scalars().first()
 
