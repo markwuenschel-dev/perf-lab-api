@@ -1,6 +1,7 @@
 import copy
 import logging
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -54,6 +55,7 @@ from app.schemas.workouts import (
     WorkoutLog,
     WorkoutSetEntry,
 )
+from app.services.state_chain_lock import lock_athlete_chain
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +230,11 @@ async def stage_baseline_state(
     with no state — so a later failure leaves no baseline behind. The row is flushed, so
     reads later in the same transaction find it. :func:`initialize_athlete_state` is this
     plus a commit.
+
+    Takes the state-chain lock (F2, re-entrant): callers that check for existing state first
+    must take it themselves BEFORE that check, or two of them can both stage a baseline.
     """
+    await lock_athlete_chain(db, user_id)
     _, row = _build_baseline_vector(
         user_id,
         experience_level,
@@ -266,8 +272,22 @@ async def initialize_athlete_state(
     run_5k_seconds: float | None = None,
     experience_years: float = 0.0,
     goal: str | None = None,
+    decode: Callable[[AthleteState], UnifiedStateVector] = unified_from_athlete_row,
 ) -> UnifiedStateVector:
-    """Creates baseline S0 for a new user and commits it."""
+    """Creates baseline S0 for a new user and commits it — exactly once (F2).
+
+    Double-checked under the state-chain lock: callers decide "no state yet" from a read that
+    another writer can overtake (a concurrent first workout or observation). If a row exists
+    once the lock is held, nothing is inserted and that state is returned through ``decode``
+    (the caller's policy: strict callers pass the strict decoder). Either way this commits,
+    as its contract always has, which also releases the lock.
+    """
+    await lock_athlete_chain(db, user_id)
+    existing = await AthleteContextRepository(db).get_latest_state(user_id)
+    if existing is not None:
+        state = decode(existing)
+        await db.commit()
+        return state
     state = await stage_baseline_state(
         db,
         user_id,
@@ -462,7 +482,9 @@ async def load_or_init_current_state_strict(
     """
     row = await AthleteContextRepository(db).get_latest_state(user_id)
     if row is None:
-        return await initialize_athlete_state(db, user_id)
+        return await initialize_athlete_state(
+            db, user_id, decode=unified_from_athlete_row_strict
+        )
     return unified_from_athlete_row_strict(row)
 
 
@@ -1056,7 +1078,11 @@ async def process_new_workout(
 ) -> UnifiedStateVector:
     """
     Fetch S(t), resolve exercise phi vectors, compute D(t), evolve to S(t+1), persist.
+
+    The state-chain lock is taken before S(t) is read and held to the commit below, so a
+    concurrent writer cannot append from the same predecessor (F2).
     """
+    await lock_athlete_chain(db, user_id)
     last_record = await AthleteContextRepository(db).get_latest_state(user_id)
 
     # UTC-naive workout time — the anchor for this state transition. The DB stores naive

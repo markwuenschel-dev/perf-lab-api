@@ -22,6 +22,7 @@ from app.services import (
     state_service,
     strength_evidence_service,
 )
+from app.services.state_chain_lock import lock_athlete_chain
 
 router = APIRouter(prefix="/v1", tags=["onboarding"])
 
@@ -65,6 +66,11 @@ async def onboard_athlete(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
+    # State-chain lock FIRST, then the user row (F2): every state insert holds this lock and
+    # takes KEY SHARE on the user row via its foreign key, which FOR UPDATE blocks — the
+    # opposite order deadlocks against a concurrent workout. Held through has_state() below,
+    # so a concurrent first workout cannot stage a second baseline between check and stage.
+    await lock_athlete_chain(db, user_id)
     await db.execute(select(User.id).where(User.id == user_id).with_for_update())
 
     # Upsert profile: register creates an empty shell; onboard fills it in. Squat, bench and

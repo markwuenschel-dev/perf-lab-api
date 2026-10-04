@@ -70,6 +70,7 @@ from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.engine.state_loading import unified_from_athlete_row_strict
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_observation import BenchmarkObservation
+from app.services.state_chain_lock import lock_athlete_chain
 
 _EPS = 0.5  # kg — ignore trivial floating drift
 
@@ -132,11 +133,15 @@ async def repair_with_db(db: AsyncSession, apply: bool) -> RepairReport:
     print(f"[repair] {len(user_ids)} athlete(s) with workout_extraction evidence")
 
     for uid in user_ids:
+        if apply:
+            # F2: the correction row is appended from the latest state; no live writer may
+            # append in between. Held until the single commit below (a dry run never locks).
+            await lock_athlete_chain(db, uid)
         rows = (
             await db.execute(
                 select(AthleteState)
                 .where(AthleteState.user_id == uid)
-                .order_by(AthleteState.timestamp.asc())
+                .order_by(AthleteState.timestamp.asc(), AthleteState.id.asc())
             )
         ).scalars().all()
         if not rows:

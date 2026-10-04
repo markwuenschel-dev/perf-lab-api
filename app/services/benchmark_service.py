@@ -34,6 +34,7 @@ from app.services import (
     state_service,
     strength_decline_service,
 )
+from app.services.state_chain_lock import lock_athlete_chain
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +316,7 @@ async def _current_or_staged_baseline(db: AsyncSession, user_id: int) -> Unified
     the reviewed loaders rather than added as a new public current-state loader (AUD-C17,
     tests/test_state_loader_policies.py).
     """
+    await lock_athlete_chain(db, user_id)  # F2; re-entrant — stage_observation holds it already
     current = await state_service.load_current_state(db, user_id)
     if current is None:
         current = await state_service.stage_baseline_state(db, user_id)
@@ -378,7 +380,11 @@ async def stage_observation(
     ``provenance_operation`` names the server-side operation writing the row. It is a
     parameter of this function, never a field of the request body, so a client cannot claim
     another writer's provenance.
+
+    Takes the state-chain lock first (F2): the observation may append a state row built from
+    the current state, so it must not read that predecessor while another writer can append.
     """
+    await lock_athlete_chain(db, user_id)
     r = await db.execute(
         select(BenchmarkDefinition)
         .options(selectinload(BenchmarkDefinition.observation_mappings))
