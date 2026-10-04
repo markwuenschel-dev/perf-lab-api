@@ -17,6 +17,7 @@ from app.schemas.planning import (
     PlannedSessionRead,
     PlannedSessionUpdateRequest,
     PlannedWeekProjection,
+    PrescriptionRevisionRead,
     TodaySessionResponse,
     WeeklyTemplateSlot,
     WeekReview,
@@ -24,7 +25,7 @@ from app.schemas.planning import (
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import planning_projection_service, planning_service, week_review_service
 from app.services.planning_service import create_block_with_sessions, get_today_session
-from app.services.prescription_service import prescribe_for_athlete
+from app.services.prescription_service import prescribe_and_issue
 
 router = APIRouter(prefix="/planning", tags=["Planning"])
 
@@ -147,20 +148,46 @@ async def get_today(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> TodaySessionResponse:
-    session = await get_today_session(db, current_user.id)
+    return await _today(db, current_user.id, goal, allow_relax=False)
+
+
+@router.post("/today/recheck", response_model=TodaySessionResponse)
+async def recheck_today(
+    goal: str = Query(TRAINING_GOAL_DEFAULT),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> TodaySessionResponse:
+    """The athlete asks for today's session to be re-checked (P1, fork 4).
+
+    Same as ``GET /today``, except that a safety restriction which has CLEARED may now be
+    lifted: the issued session is replaced by the unrestricted one. ``GET`` never relaxes an
+    issued restriction on its own — it could raise the load of a workout already started.
+    """
+    return await _today(db, current_user.id, goal, allow_relax=True)
+
+
+async def _today(
+    db: AsyncSession, user_id: int, goal: str, *, allow_relax: bool
+) -> TodaySessionResponse:
+    session = await get_today_session(db, user_id)
     if not session:
         return TodaySessionResponse(session=None, prescription=None)
 
-    # Delegate to the single prescribe-and-persist seam so /planning/today and
-    # /next-session agree by construction: same ADR-0030 goal resolution and the
-    # same weak-point / KPI signals. Passing the session we resolved guarantees
-    # the displayed session is the one the prescription was persisted into.
-    # prescribe_for_athlete also handles state auto-init, objective signals, and
-    # the decision-telemetry write, so this route no longer duplicates them.
-    rx = await prescribe_for_athlete(
-        db, current_user.id, cast(TrainingGoal, goal), planned_session=session
+    # The single prescribe-and-issue seam (P1): serves today's issued revision, or issues
+    # one, by the fork-4 rule — so every actionable surface reading /today gets the same
+    # revision and identical content until safety requires a replacement.
+    result = await prescribe_and_issue(
+        db, user_id, cast(TrainingGoal, goal), planned_session=session, allow_relax=allow_relax
     )
+    rx = result.prescription
     await db.refresh(session)
+    revision = (
+        PrescriptionRevisionRead.model_validate(result.revision).model_copy(
+            update={"issued_now": result.issued_now}
+        )
+        if result.revision is not None
+        else None
+    )
     return TodaySessionResponse(
         session=PlannedSessionRead.model_validate(session, from_attributes=True),
         # `prescription` is declared as WorkoutPrescription, so hand over the model
@@ -172,4 +199,5 @@ async def get_today(
         # persisting into PlannedSession.prescribed_content, which prescribe_for_athlete
         # already did above.
         prescription=rx,
+        revision=revision,
     )

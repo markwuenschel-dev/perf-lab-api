@@ -101,6 +101,30 @@ class PlannedSessionUpdateRequest(BaseModel):
     scheduled_date: date | None = None
 
 
+class PrescriptionRevisionRead(BaseModel):
+    """Which immutable revision of today's prescription is being served (P1)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    revision_no: int = Field(description="Increases per session for its whole life")
+    reason: str = Field(
+        description=(
+            "Why this revision was issued: first_issue, legacy_reissue, safety_check_rerun, "
+            "issued_no_longer_safe, safety_outcome_changed, athlete_recheck"
+        )
+    )
+    safety_kind: str | None = Field(
+        default=None,
+        description="none | readiness_redirect | safety_override | hard_violation | unevaluated",
+    )
+    issued_at: datetime
+    issued_now: bool = Field(
+        default=False,
+        description="True when this request issued it (a first issue or a replacement)",
+    )
+
+
 class TodaySessionResponse(BaseModel):
     session: PlannedSessionRead | None
     # The route already sends a serialized WorkoutPrescription here — it builds this
@@ -113,6 +137,8 @@ class TodaySessionResponse(BaseModel):
     # field reflects persisted historical JSONB, which is not proven to satisfy this
     # model, so typing it would turn a contract cleanup into a runtime behaviour change.
     prescription: WorkoutPrescription | None = None
+    # The immutable revision `prescription` is (P1). A log of this session should send its id.
+    revision: PrescriptionRevisionRead | None = None
 
 
 

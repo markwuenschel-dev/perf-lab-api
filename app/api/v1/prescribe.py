@@ -17,8 +17,13 @@ async def get_next_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WorkoutPrescription:
-    """DEV-friendly version that auto-initializes baseline state."""
+    """DEV-friendly version that auto-initializes baseline state.
+
+    NON-ISSUING (P1): never writes today's planned session or its revisions. With a revision
+    already issued today it returns that revision's content; otherwise a fresh preview. The
+    actionable session is ``GET /v1/planning/today``.
+    """
     # No blanket try/except: an HTTPException raised downstream keeps its status,
     # and any unexpected error is logged + returned as a clean 500 by the global
     # handler (app.main) rather than being mislabelled a 400 with leaked internals.
-    return await prescribe_for_athlete(db, current_user.id, goal)
+    return await prescribe_for_athlete(db, current_user.id, goal, issue=False)

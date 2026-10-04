@@ -490,6 +490,10 @@ export interface paths {
         /**
          * Get Next Session
          * @description DEV-friendly version that auto-initializes baseline state.
+         *
+         *     NON-ISSUING (P1): never writes today's planned session or its revisions. With a revision
+         *     already issued today it returns that revision's content; otherwise a fresh preview. The
+         *     actionable session is ``GET /v1/planning/today``.
          */
         get: operations["get_next_session_v1_next_session_get"];
         put?: never;
@@ -786,6 +790,30 @@ export interface paths {
         get: operations["get_today_v1_planning_today_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/planning/today/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck Today
+         * @description The athlete asks for today's session to be re-checked (P1, fork 4).
+         *
+         *     Same as ``GET /today``, except that a safety restriction which has CLEARED may now be
+         *     lifted: the issued session is replaced by the unrestricted one. ``GET`` never relaxes an
+         *     issued restriction on its own — it could raise the load of a workout already started.
+         */
+        post: operations["recheck_today_v1_planning_today_recheck_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3247,6 +3275,40 @@ export interface components {
              */
             warnings?: string[];
         };
+        /**
+         * PrescriptionRevisionRead
+         * @description Which immutable revision of today's prescription is being served (P1).
+         */
+        PrescriptionRevisionRead: {
+            /** Id */
+            id: number;
+            /**
+             * Issued At
+             * Format: date-time
+             */
+            issued_at: string;
+            /**
+             * Issued Now
+             * @description True when this request issued it (a first issue or a replacement)
+             * @default false
+             */
+            issued_now: boolean;
+            /**
+             * Reason
+             * @description Why this revision was issued: first_issue, legacy_reissue, safety_check_rerun, issued_no_longer_safe, safety_outcome_changed, athlete_recheck
+             */
+            reason: string;
+            /**
+             * Revision No
+             * @description Increases per session for its whole life
+             */
+            revision_no: number;
+            /**
+             * Safety Kind
+             * @description none | readiness_redirect | safety_override | hard_violation | unevaluated
+             */
+            safety_kind?: string | null;
+        };
         /** ProfileRead */
         ProfileRead: {
             /** Available Days Per Week */
@@ -4083,6 +4145,7 @@ export interface components {
         /** TodaySessionResponse */
         TodaySessionResponse: {
             prescription?: components["schemas"]["WorkoutPrescription"] | null;
+            revision?: components["schemas"]["PrescriptionRevisionRead"] | null;
             session: components["schemas"]["PlannedSessionRead"] | null;
         };
         /** TokenResponse */
@@ -4780,6 +4843,11 @@ export interface components {
              * @description If provided, marks this log as fulfillment of the planned session.
              */
             planned_session_id?: number | null;
+            /**
+             * Prescription Revision Id
+             * @description The prescription revision the athlete was shown (GET /v1/planning/today `revision.id`). Must belong to the linked planned session. Omitted = the session's current revision at the time of logging.
+             */
+            prescription_revision_id?: number | null;
             /** Session Rpe */
             session_rpe: number;
             /**
@@ -6322,6 +6390,37 @@ export interface operations {
         };
     };
     get_today_v1_planning_today_get: {
+        parameters: {
+            query?: {
+                goal?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodaySessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_today_v1_planning_today_recheck_post: {
         parameters: {
             query?: {
                 goal?: string;

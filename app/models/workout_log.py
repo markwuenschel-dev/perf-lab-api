@@ -33,6 +33,16 @@ class WorkoutLog(Base):
         index=True,
         comment="Set when this log fulfills a PlannedSession"
     )
+    # Exactly which prescription revision this log was linked to (P1, a051).
+    prescription_revision_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "prescription_revisions.id",
+            ondelete="SET NULL",
+            name="fk_workout_logs_prescription_revision_id",
+        ),
+        nullable=True,
+    )
 
     logged_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
