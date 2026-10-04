@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -44,35 +45,97 @@ _PREDECESSOR_READS = (
 
 
 # ── architecture: every chain writer locks before reading its predecessor ─────────────
+#
+# What the guard proves, per function that writes the chain (discovered below):
+#   1. it AWAITS lock_athlete_chain (an un-awaited call acquires nothing);
+#   2. the awaited lock comes, lexically, before its first predecessor read AND its first
+#      write; and
+#   3. no commit()/rollback() appears between the lock and either of them (that would end
+#      the transaction, and with it the lock, before the read or the write).
+# It is a static, lexical check of each function body — calls made through other functions
+# are covered by those functions' own entries, not traced here.
 
 
-def _is_chain_writer(fn: ast.AST) -> bool:
-    """Appends or stages a state row: adds an AthleteState / a built baseline, or stages one."""
-    src_calls = [
-        c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", "")
+def _call_name(c: ast.Call) -> str:
+    return c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", "")
+
+
+def _session_adds(fn: ast.AST) -> list[int]:
+    """Lines of `<session>.add(...)` — `db.add`, `self.session.add` — never `set.add`."""
+    return [
+        c.lineno
         for c in ast.walk(fn)
         if isinstance(c, ast.Call)
-    ]
-    # Only a SESSION add stages a row (`db.add(...)`, `self.session.add(...)`), never `set.add`.
-    adds = any(
-        isinstance(c, ast.Call)
         and isinstance(c.func, ast.Attribute)
         and c.func.attr == "add"
         and ast.unparse(c.func.value).split(".")[-1] in ("db", "session")
-        for c in ast.walk(fn)
-    )
-    builds = "AthleteState" in src_calls or "_build_baseline_vector" in src_calls
-    return (adds and builds) or "stage_baseline_state" in src_calls
+    ]
 
 
-def _first_line(fn: ast.AST, names: tuple[str, ...]) -> int | None:
+def _core_state_writes(fn: ast.AST) -> list[int]:
+    """Lines of Core writes to the table: insert/pg_insert/update(AthleteState), or raw SQL
+    naming athlete_states in an INSERT/UPDATE."""
     lines = [
         c.lineno
         for c in ast.walk(fn)
         if isinstance(c, ast.Call)
-        and (c.func.id if isinstance(c.func, ast.Name) else getattr(c.func, "attr", "")) in names
+        and _call_name(c) in ("insert", "pg_insert", "update")
+        and any(ast.unparse(a).split(".")[-1] == "AthleteState" for a in c.args)
     ]
-    return min(lines) if lines else None
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            sql = node.value.lower()
+            if "athlete_states" in sql and ("insert" in sql or "update" in sql):
+                lines.append(node.lineno)
+    return lines
+
+
+def _write_lines(fn: ast.AST) -> list[int]:
+    calls = {_call_name(c) for c in ast.walk(fn) if isinstance(c, ast.Call)}
+    builds = "AthleteState" in calls or "_build_baseline_vector" in calls
+    lines = _core_state_writes(fn)
+    if builds:
+        lines += _session_adds(fn)
+    lines += [c.lineno for c in ast.walk(fn) if isinstance(c, ast.Call) and _call_name(c) == "stage_baseline_state"]
+    return lines
+
+
+def _lines_of(fn: ast.AST, names: tuple[str, ...]) -> list[int]:
+    return [c.lineno for c in ast.walk(fn) if isinstance(c, ast.Call) and _call_name(c) in names]
+
+
+def _violations(fn: ast.AST) -> list[str]:
+    """Every way `fn` breaks the lock protocol (empty for a non-writer or a correct writer)."""
+    writes = _write_lines(fn)
+    if not writes:
+        return []
+    awaited = [
+        n.value.lineno
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Await)
+        and isinstance(n.value, ast.Call)
+        and _call_name(n.value) == "lock_athlete_chain"
+    ]
+    if not awaited:
+        bare = _lines_of(fn, ("lock_athlete_chain",))
+        return ["lock_athlete_chain is called but never awaited" if bare else "no chain lock"]
+    lock = min(awaited)
+    out: list[str] = []
+    ends = _lines_of(fn, ("commit", "rollback"))
+    for label, targets in (
+        ("predecessor read", _lines_of(fn, _PREDECESSOR_READS)),
+        ("write", writes),
+    ):
+        if fn.name == "stage_baseline_state" and label == "predecessor read":
+            continue  # it IS the staged baseline; its only "read" is its own name
+        if not targets:
+            continue
+        first = min(targets)
+        if first < lock:
+            out.append(f"{label} at line {first} precedes the lock at line {lock}")
+        elif any(lock < e < first for e in ends):
+            out.append(f"commit/rollback between the lock (line {lock}) and the first {label} (line {first})")
+    return out
 
 
 def _chain_writers() -> dict[str, ast.AST]:
@@ -80,7 +143,7 @@ def _chain_writers() -> dict[str, ast.AST]:
     for path in APP.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_chain_writer(node):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _write_lines(node):
                 found[f"{path.relative_to(APP.parent).as_posix()}:{node.name}"] = node
     return found
 
@@ -100,13 +163,80 @@ def test_the_writer_scan_finds_the_known_writers():
 
 
 @pytest.mark.parametrize("name", sorted(_chain_writers()))
-def test_every_chain_writer_locks_before_reading_its_predecessor(name):
-    fn = _chain_writers()[name]
-    lock_line = _first_line(fn, ("lock_athlete_chain",))
-    assert lock_line is not None, f"{name} appends/stages a state row without the chain lock"
-    read_line = _first_line(fn, _PREDECESSOR_READS)
-    if read_line is not None and fn.name != "stage_baseline_state":
-        assert lock_line < read_line, f"{name} reads its predecessor before taking the lock"
+def test_every_chain_writer_follows_the_lock_protocol(name):
+    assert _violations(_chain_writers()[name]) == []
+
+
+def _fn(src: str) -> ast.AST:
+    node = ast.parse(src).body[0]
+    assert isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    return node
+
+
+_CASES = {
+    "correct": (
+        """
+        async def w(db, uid):
+            await lock_athlete_chain(db, uid)
+            s = await repo.get_latest_state(uid)
+            db.add(AthleteState(user_id=uid))
+        """,
+        None,
+    ),
+    "unawaited": (  # an un-awaited lock acquires nothing
+        """
+        async def w(db, uid):
+            lock_athlete_chain(db, uid)
+            s = await repo.get_latest_state(uid)
+            db.add(AthleteState(user_id=uid))
+        """,
+        "never awaited",
+    ),
+    "commit-between": (  # a commit ends the transaction, and the lock, before the read
+        """
+        async def w(db, uid):
+            await lock_athlete_chain(db, uid)
+            await db.commit()
+            s = await repo.get_latest_state(uid)
+            db.add(AthleteState(user_id=uid))
+        """,
+        "commit/rollback between",
+    ),
+    "read-first": (
+        """
+        async def w(db, uid):
+            s = await repo.get_latest_state(uid)
+            await lock_athlete_chain(db, uid)
+            db.add(AthleteState(user_id=uid))
+        """,
+        "precedes the lock",
+    ),
+    "core-insert": (  # a Core insert with no lock is still a writer
+        """
+        async def w(db, uid):
+            await db.execute(insert(AthleteState).values(user_id=uid))
+        """,
+        "no chain lock",
+    ),
+    "raw-sql": (  # raw SQL with no lock is still a writer
+        """
+        async def w(db, uid):
+            await db.execute(text("INSERT INTO athlete_states (user_id) VALUES (1)"))
+        """,
+        "no chain lock",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_CASES))
+def test_the_guard_catches_what_it_claims_to(case):
+    src, expected = _CASES[case]
+    found = _violations(_fn(textwrap.dedent(src)))
+    if expected is None:
+        assert found == []
+    else:
+        assert any(expected in v for v in found), found
+
 
 
 # ── deterministic races on two real connections ───────────────────────────────────────
@@ -248,3 +378,120 @@ async def test_benchmark_vs_workout_reads_the_workout_as_its_predecessor(factory
     # When the contender first read its predecessor, the workout's rows were already durable.
     assert seen and seen[0] == 2
     assert await _state_rows(factory, uid) == 2  # no second baseline staged
+
+
+async def _seed_squat_benchmark(factory: async_sessionmaker[AsyncSession]) -> None:
+    """A measured benchmark mapped to max_strength: a `benchmark_test` observation of it is a
+    bidirectional update that appends a capacity state row (test_capacity_corruption_hotfix)."""
+    from app.models.benchmark_definition import BenchmarkDefinition
+    from app.models.observation_mapping import ObservationMapping
+
+    async with factory() as db:
+        definition = BenchmarkDefinition(
+            code="pl_e1rm_squat", name="Squat e1RM", domain="powerlifting",
+            metric_type="load", unit="kg", better_direction="higher",
+            observation_weight=1.0, standardization_rules={"floor": 40.0, "cap": 250.0},
+        )
+        db.add(definition)
+        await db.flush()
+        db.add(ObservationMapping(
+            benchmark_definition_id=definition.id, target_vector="capacity",
+            target_key="max_strength", mapping_type="residual", coefficient=1.0, intercept=0.0,
+        ))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_state_changing_benchmark_vs_a_workout_equals_the_sequential_result(factory):
+    """Review gap: the full benchmark transition — staging, the state row it appends, the
+    commit — under contention, not just the baseline helper."""
+    from app.schemas.benchmarks import BenchmarkObservationCreate
+    from app.services import benchmark_service
+
+    await _seed_squat_benchmark(factory)
+    uid = await _user(factory, "f2-bench@test.com")
+    ref = await _user(factory, "f2-bench-ref@test.com")
+    workout = _log(T0)
+    body = BenchmarkObservationCreate(
+        benchmark_code="pl_e1rm_squat", raw_value=150.0, source="benchmark_test",
+        observed_at=(T0 + timedelta(hours=2)).replace(tzinfo=None),
+    )
+
+    async def contender():
+        async with factory() as db:
+            await benchmark_service.create_observation(db, uid, body)
+
+    async def holder_write(db):
+        await state_service.process_new_workout(db, uid, workout)
+
+    await _contend(factory, uid, contender, holder_write)
+
+    async with factory() as db:
+        await state_service.process_new_workout(db, ref, workout)
+    async with factory() as db:
+        await benchmark_service.create_observation(db, ref, body)
+    # baseline + workout + the observation's capacity row, built on the workout's state.
+    assert await _state_rows(factory, uid) == await _state_rows(factory, ref) == 3
+    assert await _head(factory, uid) == await _head(factory, ref)
+
+
+async def _corrupted_athlete(factory: async_sessionmaker[AsyncSession], email: str) -> int:
+    """An athlete whose latest max_strength is below an earlier watermark — what the repair
+    script corrects."""
+    from app.engine.state_bridge import athlete_state_kwargs_from_unified
+
+    uid = await _user(factory, email)
+    async with factory() as db:
+        base = await state_service.initialize_athlete_state(db, uid)
+    lowered = base.model_copy(deep=True)
+    lowered.capacity_x.max_strength = base.capacity_x.max_strength - 10.0
+    # Now, not the future: the repair stamps its correction at now, and it must sort after.
+    lowered.timestamp = datetime.now(UTC).replace(tzinfo=None)
+    async with factory() as db:
+        db.add(AthleteState(user_id=uid, **athlete_state_kwargs_from_unified(lowered)))
+        await db.commit()
+    return uid
+
+
+@pytest.mark.asyncio
+async def test_concurrent_repairs_in_opposite_orders_do_not_deadlock(factory, monkeypatch):
+    """Review repro: --apply holds every athlete's chain lock until one final commit, and the
+    athletes came from an unordered SELECT DISTINCT. Two repairs enumerating them in opposite
+    orders each took one lock and waited for the other's: SQLSTATE 40P01. The barrier below
+    makes each repair take its first lock before either proceeds, so an unsorted acquisition
+    order deadlocks deterministically."""
+    from app.scripts import repair_capacity_corruption as rc
+
+    a = await _corrupted_athlete(factory, "f2-repair-a@test.com")
+    b = await _corrupted_athlete(factory, "f2-repair-b@test.com")
+    orders = iter([[a, b], [b, a]])
+
+    async def opposite_orders(_db):
+        return next(orders)
+
+    real_lock = rc.lock_athlete_chain
+    first_locked: set[int] = set()
+    both = asyncio.Event()
+
+    async def barrier_lock(db, uid):
+        await real_lock(db, uid)
+        if id(db) not in first_locked:
+            first_locked.add(id(db))
+            if len(first_locked) == 2:
+                both.set()
+            try:
+                await asyncio.wait_for(both.wait(), timeout=1.0)
+            except TimeoutError:
+                pass  # the other repair is (correctly) blocked behind this one's first lock
+
+    monkeypatch.setattr(rc, "_affected_user_ids", opposite_orders)
+    monkeypatch.setattr(rc, "lock_athlete_chain", barrier_lock)
+
+    async def run():
+        async with factory() as db:
+            return await rc.repair_with_db(db, apply=True)
+
+    results = await asyncio.wait_for(asyncio.gather(run(), run(), return_exceptions=True), 30)
+    assert not [r for r in results if isinstance(r, BaseException)], results
+    # Each athlete corrected exactly once across the two repairs.
+    assert sum(r.corrected for r in results if not isinstance(r, BaseException)) == 2

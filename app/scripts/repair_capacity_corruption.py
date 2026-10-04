@@ -129,7 +129,10 @@ async def repair_with_db(db: AsyncSession, apply: bool) -> RepairReport:
     """Core repair against a given session — what was corrected, and what was refused."""
     corrected = 0
     refused: list[Refusal] = []
-    user_ids = await _affected_user_ids(db)
+    # Sorted: with --apply every athlete's chain lock is held until the single commit below,
+    # so two concurrent repairs must acquire them in ONE global order. SELECT DISTINCT has no
+    # order, and two plans returning different orders deadlocked (SQLSTATE 40P01).
+    user_ids = sorted(await _affected_user_ids(db))
     print(f"[repair] {len(user_ids)} athlete(s) with workout_extraction evidence")
 
     for uid in user_ids:

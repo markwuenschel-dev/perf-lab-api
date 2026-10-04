@@ -286,21 +286,20 @@ async def initialize_athlete_state(
     existing = await AthleteContextRepository(db).get_latest_state(user_id)
     if existing is not None:
         state = decode(existing)
-        await db.commit()
-        return state
-    state = await stage_baseline_state(
-        db,
-        user_id,
-        experience_level=experience_level,
-        squat_1rm_kg=squat_1rm_kg,
-        deadlift_1rm_kg=deadlift_1rm_kg,
-        bench_1rm_kg=bench_1rm_kg,
-        bodyweight_kg=bodyweight_kg,
-        run_5k_seconds=run_5k_seconds,
-        experience_years=experience_years,
-        goal=goal,
-    )
-    await db.commit()
+    else:
+        state = await stage_baseline_state(
+            db,
+            user_id,
+            experience_level=experience_level,
+            squat_1rm_kg=squat_1rm_kg,
+            deadlift_1rm_kg=deadlift_1rm_kg,
+            bench_1rm_kg=bench_1rm_kg,
+            bodyweight_kg=bodyweight_kg,
+            run_5k_seconds=run_5k_seconds,
+            experience_years=experience_years,
+            goal=goal,
+        )
+    await db.commit()  # one commit for both branches — it also releases the lock
     return state
 
 
