@@ -37,6 +37,7 @@ async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
             AND pd.created_at >= ea.assigned_at
         LEFT JOIN session_feedback sf
             ON sf.planned_session_id = pd.planned_session_id
+            AND sf.superseded_at IS NULL  -- P2: active feedback only, one per session
         ORDER BY ea.user_id, pd.created_at
         LIMIT 200000
     """)

@@ -199,7 +199,10 @@ class WeekReviewSession(BaseModel):
 class WeekReviewCounts(BaseModel):
     planned: int
     completed: int
-    skipped: int
+    skipped: int = Field(description="Sessions the athlete declared skipped.")
+    missed: int = Field(
+        description="Past sessions nothing was recorded for — the system's inference, not a skip."
+    )
     modified: int = Field(description="Subset of completed.")
     pending: int
     due: int = Field(description="Sessions scheduled on or before today — the adherence denominator.")

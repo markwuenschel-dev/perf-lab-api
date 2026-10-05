@@ -58,5 +58,8 @@ class SessionFeedbackOut(BaseModel):
     soreness_flag: bool
     notes: str | None
     created_at: datetime
+    describes_status: str | None = Field(
+        default=None, description="The session status this feedback described when given."
+    )
 
     model_config = ConfigDict(from_attributes=True)

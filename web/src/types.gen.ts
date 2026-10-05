@@ -835,6 +835,9 @@ export interface paths {
          *     Defaults to the current block's current week. No active block, no state, or state that
          *     fails strict decoding answer ``200 {available: false, reason}`` — this surface gates
          *     nothing, so a decode failure is not a 409 here.
+         *
+         *     P2: missed-session reconciliation runs first, in its own committed transaction, so the
+         *     counts tell missed from pending.
          */
         get: operations["get_week_review_v1_planning_week_review_get"];
         put?: never;
@@ -3694,6 +3697,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Describes Status
+             * @description The session status this feedback described when given.
+             */
+            describes_status?: string | null;
             /** Followed As Prescribed */
             followed_as_prescribed: boolean | null;
             /** Id */
@@ -3727,7 +3735,7 @@ export interface components {
          * SessionStatus
          * @enum {string}
          */
-        SessionStatus: "pending" | "completed" | "skipped" | "rescheduled";
+        SessionStatus: "pending" | "completed" | "skipped" | "rescheduled" | "missed";
         /**
          * SignalSummary
          * @description Honesty-ladder buckets over the athlete's logical wellness signals (ADR-0053).
@@ -4480,6 +4488,11 @@ export interface components {
              */
             due: number;
             /**
+             * Missed
+             * @description Past sessions nothing was recorded for — the system's inference, not a skip.
+             */
+            missed: number;
+            /**
              * Modified
              * @description Subset of completed.
              */
@@ -4488,7 +4501,10 @@ export interface components {
             pending: number;
             /** Planned */
             planned: number;
-            /** Skipped */
+            /**
+             * Skipped
+             * @description Sessions the athlete declared skipped.
+             */
             skipped: number;
         };
         /**

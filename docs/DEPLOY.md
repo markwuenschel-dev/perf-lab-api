@@ -138,3 +138,47 @@ build takes, do **not** use the one-shot deploy script for this release. Build f
    can be valid and the legacy branch in `app/core/auth.py` can be deleted (tracked follow-up).
 - **CRLF guard**: the deploy scripts strip `\r` on the remote side before bash reads the piped
   script — a CRLF checkout would otherwise make the box see `perf-lab-api\r` → "no such service".
+
+## Missed sessions (P2): turning reconciliation on, and rolling it back
+
+Migration `a052_missed_sessions` adds the `missed` session status and feedback supersession.
+Nothing writes `missed` until `RECONCILE_MISSED_SESSIONS=true`, and it stays off by default.
+Code that predates `missed` **cannot load a `missed` row**: its `SessionStatus` enum has no
+such value. So the order is fixed:
+
+1. Deploy the release with `a052` and the flag off. Every backend reader handles `missed`.
+2. Deploy the web release that renders `missed`. In the same release or a later one, confirm
+   that Planning, Week Review and the feedback flow show it.
+3. Turn the flag on: add `RECONCILE_MISSED_SESSIONS=true` to
+   `/opt/stack/infra/env/perf-lab-api.env`, then `sudo docker compose up -d perf-lab-api`.
+   The first read of `/v1/planning/sessions`, `/today` or `/week-review` marks that athlete's
+   past sessions: as of day D, anything dated before D−1 that is still pending.
+
+**Rollback** (in this order: the old code must never see a `missed` row):
+
+1. Set `RECONCILE_MISSED_SESSIONS=false` (or remove the line), then
+   `sudo docker compose up -d perf-lab-api`.
+2. Dry run, read the counts, then apply:
+   ```bash
+   sudo docker compose exec -T perf-lab-api python -m app.scripts.revert_missed_sessions
+   sudo docker compose exec -T perf-lab-api python -m app.scripts.revert_missed_sessions --apply
+   ```
+   `--apply` refuses while the flag is on. Feedback given about a miss is superseded, not
+   deleted.
+3. Only if code from before P2 must run again: older code **will not boot** on an `a052`
+   database. Its `alembic upgrade head` cannot find `a052`, and in production the boot
+   check fails closed (`app/main.py` `_check_alembic_head`). So downgrade the schema first,
+   **from the current image**, which is the only one that has `a052`'s downgrade:
+   ```bash
+   sudo docker compose exec -T perf-lab-api alembic downgrade a051_prescription_revisions
+   ```
+   then deploy the older SHA right away; the running container errors on feedback reads in
+   between. The downgrade also turns any remaining `missed` into `pending`.
+
+   It **refuses** while any session has more than one feedback row, because restoring
+   one-per-session would delete feedback. Superseded rows appear even with the flag off, when
+   a late log or a reopen follows feedback. List them with:
+   ```sql
+   SELECT * FROM session_feedback WHERE superseded_at IS NOT NULL;
+   ```
+   Export them, decide, and delete them before downgrading.

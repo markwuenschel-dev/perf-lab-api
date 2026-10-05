@@ -46,6 +46,9 @@ class SessionStatus(str, enum.Enum):
     COMPLETED = "completed"
     SKIPPED = "skipped"
     RESCHEDULED = "rescheduled"
+    # P2: the system's inference that a past session was never recorded (reconciliation
+    # only). Distinct from SKIPPED, which the athlete declares.
+    MISSED = "missed"
 
 
 class MesocycleBlock(Base):

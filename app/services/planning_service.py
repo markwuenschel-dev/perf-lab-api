@@ -26,8 +26,8 @@ from app.schemas.planning import (
 from app.services import macrocycle_service
 from app.services.planned_session_protocol import (
     check_patch,
-    ensure_feedback_allows,
     lock_planned_session,
+    supersede_feedback,
 )
 
 _DEFAULT_TEMPLATES: dict[BlockGoal, list[WeeklyTemplateSlot]] = {
@@ -379,9 +379,16 @@ async def block_adherence_signals(
     ``SessionFeedback.created_at``: submission time measures reporting behaviour,
     not training behaviour, and would make a replay non-reproducible.
 
-    The LEFT JOIN cannot fan out — ``session_feedback.planned_session_id`` is
-    unique — so each planned session yields exactly one row and the counts are
-    deduplicated by construction rather than by a DISTINCT.
+    The LEFT JOIN cannot fan out — it takes only ACTIVE feedback, and at most one
+    row per session is active (partial unique index, P2) — so each planned session
+    yields exactly one row and the counts are deduplicated by construction rather
+    than by a DISTINCT. Superseded feedback described an outcome the session no
+    longer has and counts for nothing.
+
+    MISSED (P2) is deliberately not a skip here: a skip is the athlete's declaration,
+    a miss is the system's inference. Whether misses should add friction is a
+    prescriber decision this change does not make; the athlete-facing week review
+    counts them separately.
     """
     # A report of "modified" counts even when the athlete named no dimension.
     # Normalising here rather than refusing the write keeps an honest but
@@ -403,7 +410,10 @@ async def block_adherence_signals(
         .select_from(PlannedSession)
         .outerjoin(
             SessionFeedback,
-            SessionFeedback.planned_session_id == PlannedSession.id,
+            and_(
+                SessionFeedback.planned_session_id == PlannedSession.id,
+                SessionFeedback.superseded_at.is_(None),
+            ),
         )
         .where(
             and_(
@@ -505,7 +515,8 @@ async def update_session(
     check_patch(
         session, new_status=payload.status, new_date=payload.scheduled_date, today=date.today()
     )
-    await ensure_feedback_allows(db, session, payload.status)
+    # P2: the outcome and the feedback that described it change in one transaction.
+    await supersede_feedback(db, session, payload.status)
 
     # A genuine date move preserves the original plan date (first move only). It does
     # NOT change lifecycle status: the auto-transition to RESCHEDULED used to make the

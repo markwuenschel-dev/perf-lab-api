@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.vectors import CapacityState
@@ -135,13 +135,19 @@ async def _sessions_in_window(
 ) -> list[_SessionRow]:
     """The block's sessions dated in the window, outer-joined to their log and feedback.
 
-    Both joins are at most one row per session: ``workout_log_id`` is a single FK and
-    ``session_feedback.planned_session_id`` is unique — so there is no fan-out.
+    Both joins are at most one row per session: ``workout_log_id`` is a single FK and only
+    ACTIVE feedback is joined, at most one per session (P2) — so there is no fan-out.
     """
     result = await db.execute(
         select(PlannedSession, WorkoutLog.session_rpe, SessionFeedback)
         .outerjoin(WorkoutLog, WorkoutLog.id == PlannedSession.workout_log_id)
-        .outerjoin(SessionFeedback, SessionFeedback.planned_session_id == PlannedSession.id)
+        .outerjoin(
+            SessionFeedback,
+            and_(
+                SessionFeedback.planned_session_id == PlannedSession.id,
+                SessionFeedback.superseded_at.is_(None),
+            ),
+        )
         .where(
             PlannedSession.user_id == user_id,
             PlannedSession.block_id == block_id,
@@ -192,6 +198,8 @@ def _counts(sessions: list[WeekReviewSession], today: date) -> WeekReviewCounts:
         planned=len(sessions),
         completed=completed,
         skipped=sum(1 for s in sessions if s.status == SessionStatus.SKIPPED),
+        # P2: the system's inference, kept apart from the athlete's own skips.
+        missed=sum(1 for s in sessions if s.status == SessionStatus.MISSED),
         modified=sum(1 for s in sessions if s.modified),
         pending=sum(1 for s in sessions if s.status == SessionStatus.PENDING),
         due=due,

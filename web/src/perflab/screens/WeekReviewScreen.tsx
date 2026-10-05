@@ -277,7 +277,12 @@ function StatTiles({ review }: { review: WeekReview }) {
   const wk = review.window?.week_number;
 
   const loggedSub = c
-    ? [`${c.skipped} skipped`, `${c.pending} pending`, ...(c.modified > 0 ? [`${c.modified} modified`] : [])].join(" · ")
+    ? [
+        `${c.skipped} skipped`,
+        ...(c.missed > 0 ? [`${c.missed} missed`] : []),
+        `${c.pending} pending`,
+        ...(c.modified > 0 ? [`${c.modified} modified`] : []),
+      ].join(" · ")
     : "";
 
   const adherence = c?.adherence_pct;
@@ -414,6 +419,8 @@ function FeltRow({ s, onFeedback }: { s: WeekReviewSession; onFeedback?: (id: nu
         </>
       );
     }
+  } else if (s.status === "missed") {
+    body = <span className="text-[11px] font-medium leading-none text-dim">missed · nothing logged</span>;
   } else {
     body = <span className="text-[11px] font-medium leading-none text-dim">{s.status === "rescheduled" ? "rescheduled" : "not done yet"}</span>;
   }
@@ -520,7 +527,7 @@ function NextWeekCard({ items, status, sample }: {
 const SAMPLE_REVIEW: WeekReview = {
   available: true,
   window: { block_id: 0, week_number: 3, duration_weeks: 8, start: "2026-09-14", end: "2026-09-20", is_current_week: false },
-  counts: { planned: 4, completed: 3, skipped: 1, modified: 0, pending: 0, due: 4, adherence_pct: 75 },
+  counts: { planned: 4, completed: 3, skipped: 1, missed: 0, modified: 0, pending: 0, due: 4, adherence_pct: 75 },
   moved: {
     mean_fatigue_previous_week_start: 33,
     mean_fatigue_start: 35,

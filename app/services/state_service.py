@@ -58,9 +58,10 @@ from app.schemas.workouts import (
 )
 from app.services.planned_session_protocol import (
     LINKABLE_BY_EXPLICIT_LOG,
+    LINKABLE_BY_SAME_DAY_MATCH,
     conflict,
-    ensure_feedback_allows,
     lock_planned_session,
+    supersede_feedback,
 )
 from app.services.state_chain_lock import lock_athlete_chain
 
@@ -650,14 +651,15 @@ def _seed_exercises_from_prescription(
 async def _match_planned_session(
     db: AsyncSession, user_id: int, log: WorkoutLog
 ) -> PlannedSession | None:
-    """The planned session this log fulfills: explicit id, else same-day pending.
+    """The planned session this log fulfills: explicit id, else same-day pending or missed.
 
     F3: the row is locked FOR UPDATE (and refreshed) until the workout commits, so it cannot
     change between this decision and the link. An explicit link to a COMPLETED session is a
     409 — it would silently re-point that session at a second workout. A late explicit log
-    of a SKIPPED/RESCHEDULED session completes it. The implicit match only takes PENDING;
-    if a concurrent log completes the row while this one waits, Postgres re-checks the
-    filter after the lock and the log simply stays unlinked.
+    of a SKIPPED/RESCHEDULED/MISSED session completes it. The implicit match takes PENDING
+    or MISSED (P2: a log on that day disproves the miss); if a concurrent log completes the
+    row while this one waits, Postgres re-checks the filter after the lock and the log simply
+    stays unlinked. Feedback on the earlier outcome is superseded at the link.
     """
     if log.planned_session_id is not None:
         session = await lock_planned_session(db, log.planned_session_id, user_id)
@@ -666,10 +668,6 @@ async def _match_planned_session(
                 f"Planned session is already {SessionStatus(session.status).value}; "
                 "it cannot be linked to another workout"
             )
-        if session is not None:
-            # A late log of a SKIPPED session that already has "skipped" feedback would
-            # leave that feedback contradicting a completed session.
-            await ensure_feedback_allows(db, session, SessionStatus.COMPLETED)
         return session
     # Deliberately the client's WALL-CLOCK day, not the UTC date: `scheduled_date` is a
     # calendar day, and converting an evening session to UTC could move it onto the next
@@ -682,7 +680,7 @@ async def _match_planned_session(
         .where(
             PlannedSession.user_id == user_id,
             PlannedSession.scheduled_date == session_day,
-            PlannedSession.status == SessionStatus.PENDING,
+            PlannedSession.status.in_(LINKABLE_BY_SAME_DAY_MATCH),
         )
         .order_by(PlannedSession.id.asc())
         .limit(1)
@@ -1238,6 +1236,9 @@ async def process_new_workout(
     workout_log_id = workout_row.id  # capture before commit expires the object
 
     if planned_session is not None:
+        # P2: feedback that described the earlier outcome (a skip, a miss) is superseded in
+        # this same transaction — the session row is still locked from the match.
+        await supersede_feedback(db, planned_session, SessionStatus.COMPLETED)
         planned_session.workout_log_id = workout_row.id
         planned_session.status = SessionStatus.COMPLETED
         planned_session.completed_at = datetime.now(UTC).replace(tzinfo=None)

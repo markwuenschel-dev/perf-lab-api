@@ -23,8 +23,10 @@ from app.services.planned_session_protocol import lock_planned_session
 
 # Feedback describes an outcome, so the session must already have one (ADR-0070).
 # RESCHEDULED is deliberately absent: a moved session has not happened yet, and
-# PENDING obviously has not either.
-_TERMINAL_STATUSES = frozenset({SessionStatus.COMPLETED, SessionStatus.SKIPPED})
+# PENDING obviously has not either. MISSED (P2) is an outcome the athlete may explain.
+_TERMINAL_STATUSES = frozenset(
+    {SessionStatus.COMPLETED, SessionStatus.SKIPPED, SessionStatus.MISSED}
+)
 
 _DUPLICATE_DETAIL = "Feedback already recorded for this session"
 
@@ -36,6 +38,9 @@ _DUPLICATE_DETAIL = "Feedback already recorded for this session"
 _COHERENT_OUTCOMES: dict[SessionStatus, frozenset[str]] = {
     SessionStatus.COMPLETED: frozenset({"completed", "modified", "unknown"}),
     SessionStatus.SKIPPED: frozenset({"skipped", "unknown"}),
+    # Nothing was recorded: the athlete may say they skipped it, or decline to say. Training
+    # that did happen is told by logging it, which completes the session.
+    SessionStatus.MISSED: frozenset({"skipped", "unknown"}),
 }
 
 
@@ -46,7 +51,8 @@ async def create_feedback(
 
     Raises ``HTTPException`` on ownership violations (404 — the resource does
     not exist *for this user*, mirroring the objectives/macrocycles pattern)
-    and on a duplicate (409 — ``planned_session_id`` is unique).
+    and on a duplicate (409 — one ACTIVE row per session; feedback superseded by a later
+    outcome change does not count).
     """
     # 1. The planned session must exist AND belong to the caller. Locked (F3), so its
     # status cannot change between the checks below and the feedback insert.
@@ -63,7 +69,7 @@ async def create_feedback(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Planned session is not complete or skipped yet; "
+                "Planned session is not complete, skipped or missed yet; "
                 "record the outcome on the session before giving feedback"
             ),
         )
@@ -101,11 +107,13 @@ async def create_feedback(
                 detail="That workout log did not fulfill this planned session",
             )
 
-    # 3. Feedback is one-per-session (planned_session_id is unique).
+    # 3. One ACTIVE feedback per session (partial unique index, P2). Superseded rows
+    # describe an outcome the session no longer has and do not block new feedback.
     existing = (
         await db.execute(
             select(SessionFeedback.id).where(
-                SessionFeedback.planned_session_id == payload.planned_session_id
+                SessionFeedback.planned_session_id == payload.planned_session_id,
+                SessionFeedback.superseded_at.is_(None),
             )
         )
     ).scalars().first()
@@ -127,11 +135,12 @@ async def create_feedback(
         pain_flag=payload.pain_flag,
         soreness_flag=payload.soreness_flag,
         notes=payload.notes,
+        describes_status=SessionStatus(planned_session.status).value,
     )
     db.add(feedback)
     # The check above narrows the window; it does not close it. Two concurrent
     # submissions can both find no existing row, and the loser then violates the
-    # unique constraint on `planned_session_id`. An in-process guard cannot help —
+    # partial unique index on `planned_session_id`. An in-process guard cannot help —
     # API workers are separate processes — so the database arbitrates and both
     # callers are told the same thing rather than one receiving a 500.
     try:
@@ -146,7 +155,8 @@ async def create_feedback(
 async def list_feedback(
     db: AsyncSession, user_id: int, *, limit: int = 30
 ) -> list[SessionFeedback]:
-    """The caller's most recent feedback rows, newest first.
+    """The caller's most recent ACTIVE feedback rows, newest first. Superseded rows are
+    kept for audit only (P2).
 
     Scoped by joining ``PlannedSession`` rather than filtering a column:
     ``SessionFeedback`` has no ``user_id`` of its own, and putting the ownership
@@ -155,7 +165,7 @@ async def list_feedback(
     result = await db.execute(
         select(SessionFeedback)
         .join(PlannedSession, SessionFeedback.planned_session_id == PlannedSession.id)
-        .where(PlannedSession.user_id == user_id)
+        .where(PlannedSession.user_id == user_id, SessionFeedback.superseded_at.is_(None))
         .order_by(SessionFeedback.created_at.desc(), SessionFeedback.id.desc())
         .limit(limit)
     )

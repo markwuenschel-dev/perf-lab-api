@@ -83,7 +83,7 @@ COSMETIC_DRIFT_BASELINE = {
     "modify_nullable": 27,
     "add_index": 13,
     "remove_index": 7,
-    "remove_constraint": 2,
+    "remove_constraint": 1,
 }
 
 
