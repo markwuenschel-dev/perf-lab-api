@@ -89,6 +89,14 @@ def downgrade() -> None:
     #   * any superseded row at all — even a single one would be reactivated;
     #   * any active row that would no longer describe its session once ``missed`` becomes
     #     ``pending`` below (feedback about a miss would sit on a pending session).
+    #
+    # The checks are only true if nothing writes between them and the schema change, and the
+    # API keeps serving during a rollback. EXCLUSIVE blocks every writer (including SELECT …
+    # FOR UPDATE, which all session/feedback writers start with) but not plain reads, and is
+    # held until this migration's transaction commits (Postgres DDL is transactional). A
+    # writer that got there first is waited out, so its changes are what the checks see.
+    # Order matches the writers' own: the session row, then its feedback.
+    op.execute("LOCK TABLE planned_sessions, session_feedback IN EXCLUSIVE MODE")
     bind = op.get_bind()
     superseded = bind.execute(
         sa.text("SELECT count(*) FROM session_feedback WHERE superseded_at IS NOT NULL")

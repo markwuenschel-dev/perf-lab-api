@@ -191,3 +191,80 @@ def test_a052_backfills_feedback_and_round_trips(_migrated_schema: None) -> None
     finally:
         engine.dispose()
         _admin(f'DROP DATABASE IF EXISTS "{probe_db}"')
+
+
+async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: None) -> None:
+    """Review repro: a coherent skipped session passes both checks; the REAL session-update
+    service then reopens it (superseding its feedback) before the first schema change; an
+    unlocked downgrade would drop superseded_at and reactivate that feedback. The writer here
+    holds its row lock while the downgrade starts — the downgrade must wait for it, then see
+    its commit and refuse."""
+    import asyncio
+    from datetime import date
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.models.mesocycle import SessionStatus
+    from app.schemas.planning import PlannedSessionUpdateRequest
+    from app.services import planning_service
+    from app.services.planned_session_protocol import lock_planned_session
+
+    probe_db = f"perflab_a052_race_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
+    _admin(f'DROP DATABASE IF EXISTS "{probe_db}"')
+    _admin(f'CREATE DATABASE "{probe_db}"')
+    engine = create_engine(_sync_url(probe_db))
+    async_engine = create_async_engine(
+        make_url(_ASYNC_BASE).set(database=probe_db).render_as_string(hide_password=False)
+    )
+    cfg = Config("alembic.ini")
+    try:
+        with engine.connect() as conn:
+            cfg.attributes["connection"] = conn
+            command.upgrade(cfg, "head")
+            uid = conn.execute(
+                text(
+                    "INSERT INTO users (email, hashed_password, is_active, created_at) "
+                    "VALUES ('a052-race@test.com', 'h', true, now()) RETURNING id"
+                )
+            ).scalar_one()
+            bid = conn.execute(
+                text(
+                    "INSERT INTO mesocycle_blocks (user_id, goal, status, duration_weeks, "
+                    "sessions_per_week, start_date, modality_mix, weekly_template) VALUES "
+                    "(:u, 'Strength', 'active', 4, 3, DATE '2026-09-28', '{}', '[]') RETURNING id"
+                ),
+                {"u": uid},
+            ).scalar_one()
+            sid = _session(conn, bid, uid, "skipped")
+            _p2_feedback(conn, sid, "skipped", "skipped")
+            conn.commit()
+
+            def downgrade() -> None:
+                command.downgrade(cfg, _BEFORE)
+
+            factory = async_sessionmaker(async_engine, expire_on_commit=False)
+            async with factory() as writer:
+                assert await lock_planned_session(writer, sid, uid) is not None
+                task = asyncio.create_task(asyncio.to_thread(downgrade))
+                await asyncio.sleep(0.5)
+                assert not task.done(), "downgrade did not wait for the in-flight writer"
+                await planning_service.update_session(
+                    writer, uid, sid,
+                    PlannedSessionUpdateRequest(status=SessionStatus.PENDING, scheduled_date=date.today()),
+                )
+            with pytest.raises(RuntimeError, match="Refusing to downgrade a052"):
+                await asyncio.wait_for(task, timeout=20)
+            conn.rollback()
+
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+                "a052_missed_sessions"
+            )
+            row = conn.execute(
+                text("SELECT superseded_at IS NOT NULL FROM session_feedback WHERE planned_session_id = :s"),
+                {"s": sid},
+            ).scalar_one()
+            assert row is True  # the writer's supersession survived, marker and all
+    finally:
+        engine.dispose()
+        await async_engine.dispose()
+        _admin(f'DROP DATABASE IF EXISTS "{probe_db}"')

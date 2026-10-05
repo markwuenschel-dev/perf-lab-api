@@ -179,6 +179,14 @@ such value. So the order is fixed:
    then deploy the older SHA right away; the running container errors on feedback reads in
    between. The downgrade also turns any remaining `missed` into `pending`.
 
+   The API doesn't need to be stopped for this. The downgrade first takes an `EXCLUSIVE` lock
+   on `planned_sessions` and `session_feedback` and holds it until it commits:
+   - Reads continue.
+   - A session or feedback write already in progress is waited out, so the checks below see
+     its result.
+   - Writes that arrive later wait until the downgrade commits, then fail against the old
+     schema; deploy the older SHA straight away.
+
    It **refuses, before changing anything**, in two cases:
    - **Any feedback row is superseded,** even a single one. Pre-P2 code has no supersession,
      so the row would become active again. The revert script in step 2 creates exactly these,
