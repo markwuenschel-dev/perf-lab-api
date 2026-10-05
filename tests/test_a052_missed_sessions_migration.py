@@ -57,6 +57,35 @@ def _feedback(conn: Connection, session_id: int, status: str) -> int:
     ).scalar_one()
 
 
+def _p2_feedback(
+    conn: Connection, session_id: int, status: str, describes: str, *, superseded: bool = False
+) -> int:
+    """A feedback row in its post-a052 shape."""
+    return conn.execute(
+        text(
+            "INSERT INTO session_feedback (planned_session_id, status, created_at, "
+            "describes_status, superseded_at) VALUES (:s, :st, now(), :d, "
+            "CASE WHEN :sup THEN now() END) RETURNING id"
+        ),
+        {"s": session_id, "st": status, "d": describes, "sup": superseded},
+    ).scalar_one()
+
+
+def _refuses_and_changes_nothing(conn: Connection, cfg: Config) -> None:
+    with pytest.raises(RuntimeError, match="Refusing to downgrade a052"):
+        command.downgrade(cfg, _BEFORE)
+    conn.rollback()
+    assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == (
+        "a052_missed_sessions"
+    )
+    assert conn.execute(
+        text(
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_name = 'session_feedback' AND column_name = 'superseded_at'"
+        )
+    ).scalar_one() == 1
+
+
 def _feedback_state(conn: Connection, feedback_id: int) -> tuple[str | None, bool]:
     row = conn.execute(
         text("SELECT describes_status, superseded_at IS NOT NULL FROM session_feedback WHERE id = :i"),
@@ -119,13 +148,27 @@ def test_a052_backfills_feedback_and_round_trips(_migrated_schema: None) -> None
                     _feedback(conn, skipped, "unknown")
 
             missed = _session(conn, bid, uid, "missed")
+            conn.execute(text("DELETE FROM session_feedback"))
             conn.commit()
 
-            # A session now has two feedback rows: the downgrade refuses rather than delete one.
-            with pytest.raises(RuntimeError, match="more than one feedback row"):
-                command.downgrade(cfg, _BEFORE)
-            conn.rollback()
-            conn.execute(text("DELETE FROM session_feedback WHERE id = :i"), {"i": fb_stranded})
+            # Review repro: a miss with feedback, then the revert script — the session is
+            # pending and its ONE feedback row superseded. Dropping the marker would make it
+            # active again on a pending session.
+            reverted = _session(conn, bid, uid, "pending")
+            _p2_feedback(conn, reverted, "skipped", "missed", superseded=True)
+            conn.commit()
+            _refuses_and_changes_nothing(conn, cfg)
+            conn.execute(text("DELETE FROM session_feedback"))
+
+            # Active feedback about a miss would describe a pending session after the
+            # downgrade turns missed into pending.
+            _p2_feedback(conn, missed, "skipped", "missed")
+            conn.commit()
+            _refuses_and_changes_nothing(conn, cfg)
+            conn.execute(text("DELETE FROM session_feedback"))
+
+            # Coherent active feedback only: the downgrade runs.
+            _p2_feedback(conn, skipped, "skipped", "skipped")
             conn.commit()
 
             command.downgrade(cfg, _BEFORE)

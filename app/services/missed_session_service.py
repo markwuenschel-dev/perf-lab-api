@@ -18,6 +18,18 @@ staged together and commit in one transaction, which this function owns.
 Callers are read endpoints, before their read query runs, so nothing of theirs is staged.
 Behind ``RECONCILE_MISSED_SESSIONS`` (off by default): ``missed`` may be written only once
 every reader understands it.
+
+**Writers do NOT reconcile, and they do not treat a stale PENDING row like MISSED.** Until a
+reconciling read has run, a past session is still PENDING to every writer:
+
+* feedback on it is a 409 (PENDING has no outcome); after reconciliation it is accepted;
+* a date-only move is allowed; after reconciliation it is a 409 (reopen it with
+  ``status=pending`` and the new date).
+
+The contract is therefore read-triggered: a client must have read the session through a
+reconciling endpoint (``/planning/sessions``, ``/today``, ``/week-review``) before it offers
+those actions, and must act on the status it was shown. The web gets every session id it
+acts on from those reads.
 """
 
 from __future__ import annotations

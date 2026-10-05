@@ -20,8 +20,9 @@ status is not the session's current status (possible only for rows written befor
 the transitions) is superseded at migration time.
 
 Downgrade turns every ``missed`` session back into ``pending``, rebuilds the enum without the
-value, and restores the unique constraint — it refuses to run while a session has more than one
-feedback row, since one of them would have to be deleted.
+value, and restores the unique constraint. Before touching the schema it refuses while any
+feedback is superseded (dropping the marker would reactivate it) or any active feedback would
+stop describing its session (feedback about a miss, once the miss becomes ``pending``).
 
 Revision ID: a052_missed_sessions
 Revises: a051_prescription_revisions
@@ -82,17 +83,32 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Every precondition is checked BEFORE any schema change. Pre-P2 code has no notion of
+    # supersession: dropping ``superseded_at`` would make every superseded row active again,
+    # and pre-P2 code reads any feedback row as the session's current outcome. So refuse:
+    #   * any superseded row at all — even a single one would be reactivated;
+    #   * any active row that would no longer describe its session once ``missed`` becomes
+    #     ``pending`` below (feedback about a miss would sit on a pending session).
     bind = op.get_bind()
-    duplicated = bind.execute(
+    superseded = bind.execute(
+        sa.text("SELECT count(*) FROM session_feedback WHERE superseded_at IS NOT NULL")
+    ).scalar_one()
+    stranded = bind.execute(
         sa.text(
-            "SELECT count(*) FROM (SELECT planned_session_id FROM session_feedback "
-            "GROUP BY planned_session_id HAVING count(*) > 1) d"
+            """
+            SELECT count(*) FROM session_feedback sf
+              JOIN planned_sessions ps ON ps.id = sf.planned_session_id
+             WHERE sf.superseded_at IS NULL
+               AND sf.describes_status IS DISTINCT FROM
+                   CASE ps.status::text WHEN 'missed' THEN 'pending' ELSE ps.status::text END
+            """
         )
     ).scalar_one()
-    if duplicated:
+    if superseded or stranded:
         raise RuntimeError(
-            f"{duplicated} planned session(s) have more than one feedback row (superseded "
-            "history); restoring one-per-session would delete feedback. Resolve them first."
+            f"Refusing to downgrade a052: {superseded} superseded feedback row(s) would become "
+            f"active again, and {stranded} active row(s) would describe an outcome their session "
+            "no longer has. Export and resolve them first (docs/DEPLOY.md, missed sessions)."
         )
 
     op.drop_index(_ACTIVE_INDEX, table_name="session_feedback")

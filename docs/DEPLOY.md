@@ -153,6 +153,10 @@ such value. So the order is fixed:
    `/opt/stack/infra/env/perf-lab-api.env`, then `sudo docker compose up -d perf-lab-api`.
    The first read of `/v1/planning/sessions`, `/today` or `/week-review` marks that athlete's
    past sessions: as of day D, anything dated before D−1 that is still pending.
+   Reconciliation happens **only on those reads**. Writers don't reconcile, and they treat a
+   stale pending row differently from a missed one: feedback is 409 before reconciliation and
+   accepted after; a date-only move is accepted before and 409 after. Clients must act on the
+   status a reconciling read showed them (`app/services/missed_session_service.py`).
 
 **Rollback** (in this order: the old code must never see a `missed` row):
 
@@ -175,10 +179,19 @@ such value. So the order is fixed:
    then deploy the older SHA right away; the running container errors on feedback reads in
    between. The downgrade also turns any remaining `missed` into `pending`.
 
-   It **refuses** while any session has more than one feedback row, because restoring
-   one-per-session would delete feedback. Superseded rows appear even with the flag off, when
-   a late log or a reopen follows feedback. List them with:
+   It **refuses, before changing anything**, in two cases:
+   - **Any feedback row is superseded,** even a single one. Pre-P2 code has no supersession,
+     so the row would become active again. The revert script in step 2 creates exactly these,
+     and so does a late log or a reopen after feedback, even with the flag off.
+   - **Any active feedback would stop describing its session,** such as feedback about a miss
+     once the miss becomes `pending`.
+
+   List them with:
    ```sql
    SELECT * FROM session_feedback WHERE superseded_at IS NOT NULL;
+   SELECT sf.* FROM session_feedback sf JOIN planned_sessions ps ON ps.id = sf.planned_session_id
+    WHERE sf.superseded_at IS NULL
+      AND sf.describes_status IS DISTINCT FROM
+          CASE ps.status::text WHEN 'missed' THEN 'pending' ELSE ps.status::text END;
    ```
    Export them, decide, and delete them before downgrading.
