@@ -16,7 +16,7 @@
 // shown invented distance/pace/HR plus a "Twin updated" screen backed by nothing.
 // The refusal lives at the boundary below rather than at the call site, so it
 // holds regardless of who opens the overlay.
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { createSessionFeedback } from "@/api/perfLabClient";
@@ -144,6 +144,12 @@ function AuthedFeedbackForm({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SessionFeedbackOut | null>(null);
+  // The success screen replaces the focused Record button; put focus on its Done button
+  // rather than letting it fall to <body>.
+  const doneRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (saved) doneRef.current?.focus();
+  }, [saved]);
 
   const set = <K extends keyof FeedbackForm>(key: K, value: FeedbackForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -210,6 +216,7 @@ function AuthedFeedbackForm({
           </div>
           <div className="mt-[10px] flex gap-[10px]">
             <button
+              ref={doneRef}
               onClick={actions.closeFeedback}
               className="rounded-[10px] border border-white/10 bg-white/[0.04] px-[18px] py-3 text-[12.5px] font-semibold leading-none text-soft"
             >
@@ -331,8 +338,10 @@ function AuthedFeedbackForm({
               </button>
               <button
                 onClick={() => void save()}
-                disabled={saving}
-                className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+                // aria-disabled, not disabled: disabling the focused button would drop focus
+                // to <body>, outside the dialog. save() itself ignores a click while saving.
+                aria-disabled={saving}
+                className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] aria-disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Record feedback →"}
               </button>
@@ -358,34 +367,57 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), textarea, select, a[href], [tabindex]:not([tabindex="-1"])';
 
 /**
- * A modal dialog: focus moves into it on open and Tab cycles inside it, so nothing behind
- * the backdrop (another session's Feedback button, say) can be reached from the keyboard.
+ * A modal dialog: nothing behind the backdrop (another session's Feedback button, say) can
+ * be reached from the keyboard while it is open.
+ *
+ * Focus can leave the dialog without any key press inside it — a focused control that is
+ * disabled or unmounted drops focus to <body>. So the guards live on the DOCUMENT, not on
+ * the dialog: a Tab from anywhere outside lands back inside, and focus that arrives on
+ * anything outside is pulled back. Callers also move focus deliberately when they replace
+ * the focused control (the success screen focuses Done).
  */
 function Shell({ children }: { children: ReactNode }) {
   const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    dialog.current?.focus();
-  }, []);
+    const box = dialog.current;
+    if (!box) return;
+    box.focus();
 
-  function containTab(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key !== "Tab" || !dialog.current) return;
-    const items = Array.from(dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (items.length === 0) {
-      e.preventDefault();
-      return;
+    const inside = (node: EventTarget | null) => node instanceof Node && box.contains(node);
+
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key !== "Tab" || !box) return;
+      const items = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) {
+        e.preventDefault();
+        box.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!inside(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === box)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    const inside = active instanceof Node && dialog.current.contains(active);
-    if (e.shiftKey && (active === first || active === dialog.current || !inside)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && (active === last || !inside)) {
-      e.preventDefault();
-      first.focus();
+    function onFocusIn(e: FocusEvent) {
+      if (!inside(e.target)) box?.focus();
     }
-  }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, []);
 
   return (
     <div
@@ -397,7 +429,6 @@ function Shell({ children }: { children: ReactNode }) {
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        onKeyDown={containTab}
         className="max-h-[92vh] w-[720px] max-w-full overflow-auto rounded-[18px] border border-white/[0.09] bg-surface shadow-[0_50px_110px_-30px_rgba(0,0,0,.78)] outline-none"
       >
         {children}

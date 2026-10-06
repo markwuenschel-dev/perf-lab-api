@@ -63,6 +63,7 @@ vi.mock("@/api/perfLabClient", () => ({ createSessionFeedback: (...a: unknown[])
 
 afterEach(() => {
   cleanup();
+  createSessionFeedback.mockReset();
   token = null;
   feedbackSessionId = null;
   feedbackSessionStatus = null;
@@ -195,6 +196,61 @@ describe("the outcomes offered follow the session's status (P2b)", () => {
     expect(document.activeElement).toBe(first);
     fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(record);
+  });
+});
+
+describe("focus cannot escape the dialog, during or after saving (P2b review)", () => {
+  const open = () => {
+    token = "tok";
+    feedbackSessionId = 42;
+    feedbackSessionStatus = "missed";
+    render(
+      <>
+        <button>Background control</button>
+        <FeedbackModal />
+      </>,
+    );
+    return { dialog: screen.getByRole("dialog"), record: screen.getByRole("button", { name: "Record feedback →" }) };
+  };
+
+  it("the focused Record button stays focused while saving, and a second press does nothing", async () => {
+    let resolve: (v: unknown) => void = () => {};
+    createSessionFeedback.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    const { record } = open();
+    record.focus();
+    fireEvent.click(record);
+    const saving = await screen.findByRole("button", { name: "Saving…" });
+    expect(saving).toBe(record);
+    expect(document.activeElement).toBe(record);
+    expect([record.hasAttribute("disabled"), record.getAttribute("aria-disabled")]).toEqual([false, "true"]);
+    fireEvent.click(record);
+    expect(createSessionFeedback).toHaveBeenCalledTimes(1);
+    resolve({ id: 9 });
+    await screen.findByText("Feedback recorded");
+  });
+
+  it("a successful save puts focus on Done, not <body>", async () => {
+    createSessionFeedback.mockResolvedValueOnce({ id: 9 } as never);
+    const { record } = open();
+    record.focus();
+    fireEvent.click(record);
+    await screen.findByText("Feedback recorded");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Done" }));
+  });
+
+  it("a Tab pressed while focus has fallen to <body> lands inside the dialog", () => {
+    const { dialog } = open();
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(dialog);
+  });
+
+  it("focus that arrives on a background control is pulled back", () => {
+    const { dialog } = open();
+    screen.getByRole("button", { name: "Background control" }).focus();
+    expect(dialog.contains(document.activeElement)).toBe(true);
   });
 });
 
