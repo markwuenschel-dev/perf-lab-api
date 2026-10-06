@@ -6507,6 +6507,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "describes_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The session status this feedback described when given.",
+            "title": "Describes Status"
+          },
           "followed_as_prescribed": {
             "anyOf": [
               {
@@ -6632,7 +6644,8 @@
           "pending",
           "completed",
           "skipped",
-          "rescheduled"
+          "rescheduled",
+          "missed"
         ],
         "title": "SessionStatus",
         "type": "string"
@@ -8228,6 +8241,11 @@
             "title": "Due",
             "type": "integer"
           },
+          "missed": {
+            "description": "Past sessions nothing was recorded for \u2014 the system's inference, not a skip.",
+            "title": "Missed",
+            "type": "integer"
+          },
           "modified": {
             "description": "Subset of completed.",
             "title": "Modified",
@@ -8242,6 +8260,7 @@
             "type": "integer"
           },
           "skipped": {
+            "description": "Sessions the athlete declared skipped.",
             "title": "Skipped",
             "type": "integer"
           }
@@ -8250,6 +8269,7 @@
           "planned",
           "completed",
           "skipped",
+          "missed",
           "modified",
           "pending",
           "due"
@@ -11881,7 +11901,7 @@
     },
     "/v1/planning/week-review": {
       "get": {
-        "description": "One block week in review: its sessions, counts, what the state did, and the facts\nalready determined for the week after. Display-only; reads nothing it could change.\n\nDefaults to the current block's current week. No active block, no state, or state that\nfails strict decoding answer ``200 {available: false, reason}`` \u2014 this surface gates\nnothing, so a decode failure is not a 409 here.",
+        "description": "One block week in review: its sessions, counts, what the state did, and the facts\nalready determined for the week after. Display-only; reads nothing it could change.\n\nDefaults to the current block's current week. No active block, no state, or state that\nfails strict decoding answer ``200 {available: false, reason}`` \u2014 this surface gates\nnothing, so a decode failure is not a 409 here.\n\nP2: missed-session reconciliation runs first, in its own committed transaction, so the\ncounts tell missed from pending.",
         "operationId": "get_week_review_v1_planning_week_review_get",
         "parameters": [
           {

@@ -29,6 +29,7 @@ async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
             sf.followed_as_prescribed
         FROM prescription_decisions pd
         LEFT JOIN session_feedback sf ON sf.planned_session_id = pd.planned_session_id
+            AND sf.superseded_at IS NULL  -- P2: active feedback only, one per session
         ORDER BY pd.athlete_id, pd.created_at
         LIMIT 100000
     """)

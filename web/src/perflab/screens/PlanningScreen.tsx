@@ -152,6 +152,9 @@ function loggedHalfFor(
     }
     case "skipped":
       return { state: "skipped", title: "Skipped", sub: "marked skipped", sessionId: s.id };
+    // P2: the server's own verdict on a past session nothing was logged for.
+    case "missed":
+      return { state: "missed", title: "Not logged", sub: "planned · missed", sessionId: s.id };
     // ADR-0069: a date move does not change status, but legacy rows may still
     // read `rescheduled` — either way the session has not happened yet.
     case "pending":

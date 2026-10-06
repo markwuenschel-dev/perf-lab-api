@@ -24,6 +24,7 @@ from app.schemas.planning import (
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import planning_projection_service, planning_service, week_review_service
+from app.services.missed_session_service import reconcile_missed
 from app.services.planning_service import create_block_with_sessions, get_today_session
 from app.services.prescription_service import prescribe_and_issue
 
@@ -80,6 +81,9 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[PlannedSession]:
+    # P2: past sessions nobody logged read as missed, not pending. Its own transaction,
+    # committed before the read below.
+    await reconcile_missed(db, current_user.id, date.today())
     return await planning_service.list_sessions(db, current_user.id, start_date, end_date)
 
 
@@ -133,7 +137,11 @@ async def get_week_review(
     Defaults to the current block's current week. No active block, no state, or state that
     fails strict decoding answer ``200 {available: false, reason}`` — this surface gates
     nothing, so a decode failure is not a 409 here.
+
+    P2: missed-session reconciliation runs first, in its own committed transaction, so the
+    counts tell missed from pending.
     """
+    await reconcile_missed(db, current_user.id, date.today())
     try:
         return await week_review_service.build_week_review(
             db, current_user.id, block_id=block_id, week_number=week_number
@@ -169,6 +177,7 @@ async def recheck_today(
 async def _today(
     db: AsyncSession, user_id: int, goal: str, *, allow_relax: bool
 ) -> TodaySessionResponse:
+    await reconcile_missed(db, user_id, date.today())
     session = await get_today_session(db, user_id)
     if not session:
         return TodaySessionResponse(session=None, prescription=None)

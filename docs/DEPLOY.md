@@ -138,3 +138,68 @@ build takes, do **not** use the one-shot deploy script for this release. Build f
    can be valid and the legacy branch in `app/core/auth.py` can be deleted (tracked follow-up).
 - **CRLF guard**: the deploy scripts strip `\r` on the remote side before bash reads the piped
   script — a CRLF checkout would otherwise make the box see `perf-lab-api\r` → "no such service".
+
+## Missed sessions (P2): turning reconciliation on, and rolling it back
+
+Migration `a052_missed_sessions` adds the `missed` session status and feedback supersession.
+Nothing writes `missed` until `RECONCILE_MISSED_SESSIONS=true`, and it stays off by default.
+Code that predates `missed` **cannot load a `missed` row**: its `SessionStatus` enum has no
+such value. So the order is fixed:
+
+1. Deploy the release with `a052` and the flag off. Every backend reader handles `missed`.
+2. Deploy the web release that renders `missed`. In the same release or a later one, confirm
+   that Planning, Week Review and the feedback flow show it.
+3. Turn the flag on: add `RECONCILE_MISSED_SESSIONS=true` to
+   `/opt/stack/infra/env/perf-lab-api.env`, then `sudo docker compose up -d perf-lab-api`.
+   The first read of `/v1/planning/sessions`, `/today` or `/week-review` marks that athlete's
+   past sessions: as of day D, anything dated before D−1 that is still pending.
+   Reconciliation happens **only on those reads**. Writers don't reconcile, and they treat a
+   stale pending row differently from a missed one: feedback is 409 before reconciliation and
+   accepted after; a date-only move is accepted before and 409 after. Clients must act on the
+   status a reconciling read showed them (`app/services/missed_session_service.py`).
+
+**Rollback** (in this order: the old code must never see a `missed` row):
+
+1. Set `RECONCILE_MISSED_SESSIONS=false` (or remove the line), then
+   `sudo docker compose up -d perf-lab-api`.
+2. Dry run, read the counts, then apply:
+   ```bash
+   sudo docker compose exec -T perf-lab-api python -m app.scripts.revert_missed_sessions
+   sudo docker compose exec -T perf-lab-api python -m app.scripts.revert_missed_sessions --apply
+   ```
+   `--apply` refuses while the flag is on. Feedback given about a miss is superseded, not
+   deleted.
+3. Only if code from before P2 must run again: older code **will not boot** on an `a052`
+   database. Its `alembic upgrade head` cannot find `a052`, and in production the boot
+   check fails closed (`app/main.py` `_check_alembic_head`). So downgrade the schema first,
+   **from the current image**, which is the only one that has `a052`'s downgrade:
+   ```bash
+   sudo docker compose exec -T perf-lab-api alembic downgrade a051_prescription_revisions
+   ```
+   then deploy the older SHA right away; the running container errors on feedback reads in
+   between. The downgrade also turns any remaining `missed` into `pending`.
+
+   The API doesn't need to be stopped for this. The downgrade first takes an `EXCLUSIVE` lock
+   on `planned_sessions` and `session_feedback` and holds it until it commits:
+   - Reads continue.
+   - A session or feedback write already in progress is waited out, so the checks below see
+     its result.
+   - Writes that arrive later wait until the downgrade commits, then fail against the old
+     schema; deploy the older SHA straight away.
+
+   It **refuses, before changing anything**, in two cases:
+   - **Any feedback row is superseded,** even a single one. Pre-P2 code has no supersession,
+     so the row would become active again. The revert script in step 2 creates exactly these,
+     and so does a late log or a reopen after feedback, even with the flag off.
+   - **Any active feedback would stop describing its session,** such as feedback about a miss
+     once the miss becomes `pending`.
+
+   List them with:
+   ```sql
+   SELECT * FROM session_feedback WHERE superseded_at IS NOT NULL;
+   SELECT sf.* FROM session_feedback sf JOIN planned_sessions ps ON ps.id = sf.planned_session_id
+    WHERE sf.superseded_at IS NULL
+      AND sf.describes_status IS DISTINCT FROM
+          CASE ps.status::text WHEN 'missed' THEN 'pending' ELSE ps.status::text END;
+   ```
+   Export them, decide, and delete them before downgrading.

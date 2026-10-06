@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -91,7 +91,7 @@ class SessionFeedback(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     planned_session_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("planned_sessions.id"), nullable=False, index=True, unique=True
+        Integer, ForeignKey("planned_sessions.id"), nullable=False, index=True
     )
     completed_workout_log_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("workout_logs.id"), nullable=True
@@ -109,6 +109,20 @@ class SessionFeedback(Base):
     soreness_flag: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    # P2: the session status this feedback described, and when the session left it. A
+    # superseded row is kept for audit and excluded from every reader; at most one row per
+    # session is active (partial unique index below).
+    describes_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_session_feedback_active_per_session",
+            "planned_session_id",
+            unique=True,
+            postgresql_where=text("superseded_at IS NULL"),
+        ),
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("modified_volume", False)

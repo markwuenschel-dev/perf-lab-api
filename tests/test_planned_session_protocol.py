@@ -38,11 +38,12 @@ from app.services import planning_service, prescription_service, state_service
 from app.services.planned_session_protocol import check_patch, lock_planned_session
 from app.services.state_chain_lock import lock_athlete_chain
 
-P, C, S, R = (
+P, C, S, R, M = (
     SessionStatus.PENDING,
     SessionStatus.COMPLETED,
     SessionStatus.SKIPPED,
     SessionStatus.RESCHEDULED,
+    SessionStatus.MISSED,
 )
 TODAY = date(2026, 10, 4)
 
@@ -58,11 +59,12 @@ _ALLOWED_STATUS = {
     (P, S), (P, R),
     (S, P), (S, R),
     (R, P), (R, S),
+    (M, P), (M, S), (M, R),  # P2: the athlete overrules the system's inference
 }
 
 
-@pytest.mark.parametrize("current", [P, C, S, R], ids=lambda s: s.value)
-@pytest.mark.parametrize("target", [P, C, S, R], ids=lambda s: s.value)
+@pytest.mark.parametrize("current", [P, C, S, R, M], ids=lambda s: s.value)
+@pytest.mark.parametrize("target", [P, C, S, R, M], ids=lambda s: s.value)
 def test_patch_status_table(current, target):
     """Exhaustive: every (from, to) pair either passes or is a 409, as the table says."""
     allowed = current == target or (current, target) in _ALLOWED_STATUS
@@ -80,7 +82,7 @@ def test_a_completed_session_cannot_be_moved():
     assert exc.value.status_code == 409
 
 
-@pytest.mark.parametrize("source", [S, R], ids=lambda s: s.value)
+@pytest.mark.parametrize("source", [S, R, M], ids=lambda s: s.value)
 def test_returning_to_pending_requires_today_or_later(source):
     past = TODAY - timedelta(days=2)
     with pytest.raises(HTTPException):
@@ -88,6 +90,15 @@ def test_returning_to_pending_requires_today_or_later(source):
     # ...unless it moves to today or later in the same change.
     check_patch(_row(source, past), new_status=P, new_date=TODAY, today=TODAY)
     check_patch(_row(source, TODAY), new_status=P, new_date=None, today=TODAY)
+
+
+def test_a_missed_session_is_moved_only_by_reopening_it():
+    """P2: MISSED is inferred from the date, so a date-only move would leave a missed
+    session on a future date."""
+    with pytest.raises(HTTPException) as exc:
+        check_patch(_row(M, TODAY - timedelta(days=3)), new_status=None, new_date=TODAY, today=TODAY)
+    assert exc.value.status_code == 409 and "pending" in str(exc.value.detail)
+    check_patch(_row(M, TODAY - timedelta(days=3)), new_status=P, new_date=TODAY, today=TODAY)
 
 
 def test_moving_a_pending_session_is_unconstrained():
@@ -367,6 +378,7 @@ def _session_writers() -> dict[str, ast.AST]:
 def test_the_session_writer_scan_finds_the_known_writers():
     assert {k.rsplit(":", 1)[1] for k in _session_writers()} == {
         "update_session", "issue_or_serve", "process_new_workout",
+        "reconcile_missed", "revert_with_db",  # P2
     }
 
 
@@ -457,29 +469,53 @@ async def _skipped_with_feedback(factory, email: str) -> tuple[int, int]:
     return uid, sid
 
 
+async def _feedback_rows(factory, sid: int) -> list[tuple[str, str | None, bool]]:
+    """(status, describes_status, superseded) for every feedback row of a session, by id."""
+    from sqlalchemy import select
+
+    from app.models.telemetry import SessionFeedback
+
+    async with factory() as db:
+        rows = (await db.execute(
+            select(SessionFeedback).where(SessionFeedback.planned_session_id == sid)
+            .order_by(SessionFeedback.id)
+        )).scalars().all()
+    return [(r.status, r.describes_status, r.superseded_at is not None) for r in rows]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target", [P, R], ids=lambda s: s.value)
-async def test_a_status_change_cannot_strand_existing_feedback(factory, target):
-    """Review repro: "skipped" feedback, then the session reopened or rescheduled — the
-    feedback kept describing an outcome the session no longer had."""
+async def test_a_status_change_supersedes_the_feedback_it_contradicts(factory, target):
+    """P2 (replaces F3's 409): "skipped" feedback, then the session reopened or rescheduled —
+    the change goes through and the feedback is kept but superseded, in the same commit."""
     uid, sid = await _skipped_with_feedback(factory, f"f3-fb-{target.value}@test.com")
     async with factory() as db:
-        with pytest.raises(HTTPException) as exc:
-            await planning_service.update_session(
-                db, uid, sid, PlannedSessionUpdateRequest(status=target)
-            )
-    assert exc.value.status_code == 409 and "feedback" in str(exc.value.detail)
-    assert (await _session(factory, sid)).status == S
+        await planning_service.update_session(
+            db, uid, sid,
+            PlannedSessionUpdateRequest(status=target, scheduled_date=date.today()),
+        )
+    assert (await _session(factory, sid)).status == target
+    assert await _feedback_rows(factory, sid) == [("skipped", "skipped", True)]
 
 
 @pytest.mark.asyncio
-async def test_a_late_log_cannot_strand_skipped_feedback(factory):
+async def test_a_late_log_supersedes_skipped_feedback_and_new_feedback_follows(factory):
+    from app.schemas.session_feedback import SessionFeedbackIn
+    from app.services import session_feedback_service
+
     uid, sid = await _skipped_with_feedback(factory, "f3-fb-late@test.com")
     async with factory() as db:
-        with pytest.raises(HTTPException) as exc:
-            await state_service.process_new_workout(db, uid, _log_today(sid))
-    assert exc.value.status_code == 409 and "feedback" in str(exc.value.detail)
-    assert (await _session(factory, sid)).status == S
+        await state_service.process_new_workout(db, uid, _log_today(sid))
+    assert (await _session(factory, sid)).status == C
+    assert await _feedback_rows(factory, sid) == [("skipped", "skipped", True)]
+    async with factory() as db:
+        await session_feedback_service.create_feedback(
+            db, uid, SessionFeedbackIn(planned_session_id=sid, status="completed")
+        )
+    assert await _feedback_rows(factory, sid) == [
+        ("skipped", "skipped", True),
+        ("completed", "completed", False),
+    ]
 
 
 @pytest.mark.asyncio

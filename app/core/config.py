@@ -137,6 +137,11 @@ class Settings(BaseSettings):
     # a value implausibly far in the future (`app.main._check_production_token_cutoff`).
     TYPED_TOKENS_SINCE: datetime | None = None
 
+    # P2: write `missed` for past PENDING sessions on read (missed_session_service). Off by
+    # default — turn it on only once every reader, the web included, understands `missed`.
+    # Rollback: turn it off, then `python -m app.scripts.revert_missed_sessions --apply`.
+    RECONCILE_MISSED_SESSIONS: bool = False
+
     # CORS — comma-separated list of allowed origins.
     # Defaults to local dev origins only. In production you MUST pin an explicit prod
     # origin here via ALLOWED_ORIGINS (e.g. https://perflab.44-198-76-44.nip.io) —

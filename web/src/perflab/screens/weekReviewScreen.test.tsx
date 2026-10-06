@@ -45,7 +45,7 @@ function liveReview(overrides: Partial<WeekReview> = {}): WeekReview {
   return {
     available: true,
     window: { block_id: 7, week_number: 2, duration_weeks: 6, start: "2026-09-21", end: "2026-09-27", is_current_week: true },
-    counts: { planned: 5, completed: 3, skipped: 1, modified: 1, pending: 1, due: 4, adherence_pct: 75 },
+    counts: { planned: 5, completed: 3, skipped: 1, missed: 0, modified: 1, pending: 1, due: 4, adherence_pct: 75 },
     moved: {
       mean_fatigue_previous_week_start: 30,
       mean_fatigue_start: 34,
@@ -91,8 +91,22 @@ describe("stat tiles read the backend's counts", () => {
     expect(screen.getByText("−6.0 this week · +4.0 prior week")).toBeTruthy();
   });
 
+  it("counts a missed session apart from skips and shows it as missed, not pending (P2)", async () => {
+    const base = liveReview();
+    response = liveReview({
+      counts: { ...base.counts!, missed: 1 },
+      sessions: [
+        ...base.sessions!,
+        { planned_session_id: 104, scheduled_date: "2026-09-23", week_number: 2, category: "endurance", modality: "run", status: "missed", is_deload: false, is_benchmark: false, prescribed_rpe: null, modified: false },
+      ],
+    });
+    render(<WeekReviewScreen />);
+    expect(await screen.findByText("1 skipped · 1 missed · 1 pending · 1 modified")).toBeTruthy();
+    expect(screen.getByTestId("felt-104").textContent).toContain("missed · nothing logged");
+  });
+
   it("shows a dash, not 0%, when nothing is due yet", async () => {
-    response = liveReview({ counts: { planned: 3, completed: 0, skipped: 0, modified: 0, pending: 3, due: 0, adherence_pct: null } });
+    response = liveReview({ counts: { planned: 3, completed: 0, skipped: 0, missed: 0, modified: 0, pending: 3, due: 0, adherence_pct: null } });
     render(<WeekReviewScreen />);
     expect(await screen.findByText("nothing due yet this week")).toBeTruthy();
     expect(screen.queryByText("0%")).toBeNull();

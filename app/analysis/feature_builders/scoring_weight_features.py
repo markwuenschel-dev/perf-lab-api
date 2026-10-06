@@ -167,6 +167,7 @@ async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
         FROM candidate_decision_logs cdl
         JOIN prescription_decisions pd ON pd.id = cdl.prescription_decision_id
         LEFT JOIN session_feedback sf ON sf.planned_session_id = pd.planned_session_id
+            AND sf.superseded_at IS NULL  -- P2: active feedback only, one per session
         ORDER BY cdl.prescription_decision_id, cdl.final_score DESC
         LIMIT 500000
     """)
