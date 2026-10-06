@@ -16,7 +16,7 @@
 // shown invented distance/pace/HR plus a "Twin updated" screen backed by nothing.
 // The refusal lives at the boundary below rather than at the call site, so it
 // holds regardless of who opens the overlay.
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { createSessionFeedback } from "@/api/perfLabClient";
@@ -35,7 +35,16 @@ export function FeedbackModal() {
 
   // A real session id is the only thing that makes this overlay able to write.
   if (state.feedbackSessionId != null) {
-    return <AuthedFeedbackForm plannedSessionId={state.feedbackSessionId} sessionStatus={state.feedbackSessionStatus} />;
+    // Keyed by session AND status: a draft belongs to one session's outcome. Opening another
+    // session (or the same one after its status changed) must start a fresh draft, never
+    // carry over an outcome the new form does not offer.
+    return (
+      <AuthedFeedbackForm
+        key={`${state.feedbackSessionId}:${state.feedbackSessionStatus ?? ""}`}
+        plannedSessionId={state.feedbackSessionId}
+        sessionStatus={state.feedbackSessionStatus}
+      />
+    );
   }
   // No session id => the guest demo. Signed in, there is nothing truthful to
   // show here, so show nothing.
@@ -128,7 +137,10 @@ function AuthedFeedbackForm({
   const { actions } = usePerfLab();
   const auth = useAuth();
   const outcomes = outcomesFor(sessionStatus);
+  // The draft starts on an offered outcome, and the form is remounted (keyed above) whenever
+  // the session or its status changes, so what is shown is what is sent.
   const [form, setForm] = useState<FeedbackForm>({ ...EMPTY_FORM, outcome: outcomes[0][0] });
+  const missed = sessionStatus === "missed";
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SessionFeedbackOut | null>(null);
@@ -182,9 +194,19 @@ function AuthedFeedbackForm({
               dose: it does not advance S(t), and claiming otherwise was the
               specific lie this screen used to tell. */}
           <div className="max-w-[400px] text-[13.5px] font-medium leading-[1.6] text-mute">
-            Saved against this session. Repeated skips or changes bias your next
-            prescription toward lighter work — your state vector is unchanged until
-            you log a workout.
+            {missed ? (
+              // P2: a miss stays a miss; this report explains it and changes nothing else.
+              <>
+                Saved against this session as why it was missed. The session stays missed,
+                and this report doesn't change your prescription or your state.
+              </>
+            ) : (
+              <>
+                Saved against this session. Repeated skips or changes bias your next
+                prescription toward lighter work — your state vector is unchanged until
+                you log a workout.
+              </>
+            )}
           </div>
           <div className="mt-[10px] flex gap-[10px]">
             <button
@@ -208,10 +230,9 @@ function AuthedFeedbackForm({
           </div>
 
           <div className="flex flex-col gap-[22px] p-6">
-            {sessionStatus === "missed" && (
+            {missed && (
               <p className="m-0 text-[12.5px] leading-[1.45] text-soft">
-                Nothing was logged for this session. If you trained, log the workout instead —
-                that completes it.
+                Nothing was logged for this session. Tell us why it didn't happen.
               </p>
             )}
             <Field label="Outcome">
@@ -296,7 +317,10 @@ function AuthedFeedbackForm({
                 saveError ? "text-hot" : "text-dim",
               )}
             >
-              {saveError ?? "Recorded against this session and used to bias your next prescription."}
+              {saveError ??
+                (missed
+                  ? "Kept with this missed session. It doesn't change your prescription."
+                  : "Recorded against this session and used to bias your next prescription.")}
             </span>
             <div className="flex flex-none gap-[9px]">
               <button
@@ -331,13 +355,51 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), textarea, select, a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * A modal dialog: focus moves into it on open and Tab cycles inside it, so nothing behind
+ * the backdrop (another session's Feedback button, say) can be reached from the keyboard.
+ */
 function Shell({ children }: { children: ReactNode }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    dialog.current?.focus();
+  }, []);
+
+  function containTab(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab" || !dialog.current) return;
+    const items = Array.from(dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+    if (items.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    const inside = active instanceof Node && dialog.current.contains(active);
+    if (e.shiftKey && (active === first || active === dialog.current || !inside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !inside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-[63] flex items-center justify-center p-8 backdrop-blur-[5px]"
       style={{ background: "rgba(4,5,8,.72)" }}
     >
-      <div className="max-h-[92vh] w-[720px] max-w-full overflow-auto rounded-[18px] border border-white/[0.09] bg-surface shadow-[0_50px_110px_-30px_rgba(0,0,0,.78)]">
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        onKeyDown={containTab}
+        className="max-h-[92vh] w-[720px] max-w-full overflow-auto rounded-[18px] border border-white/[0.09] bg-surface shadow-[0_50px_110px_-30px_rgba(0,0,0,.78)] outline-none"
+      >
         {children}
       </div>
     </div>

@@ -40,9 +40,21 @@ export function isMovable(status: SessionStatus): boolean {
 }
 
 /**
+ * The earliest day a missed session may be reopened onto. The server allows a reopen only on
+ * its own "today" or later (`check_patch`), and the server's date is UTC [assumed: the API
+ * container sets no TZ]. West of UTC the local calendar can still show yesterday — at
+ * 00:30Z New York reads the previous day — so the floor is the later of the two dates.
+ */
+export function reopenFloorIso(localTodayIso: string, now: Date = new Date()): string {
+  const utcToday = now.toISOString().slice(0, 10);
+  return utcToday > localTodayIso ? utcToday : localTodayIso;
+}
+
+/**
  * The PATCH a move sends. `missed` is inferred from the date, so the server refuses a
- * date-only move of a missed session; moving it reopens it in the same change. Moves only
- * ever target today or later (the week grid's drop rule), which reopening requires.
+ * date-only move of a missed session; moving it reopens it in the same change. The week grid
+ * only offers a missed session destinations on or after `reopenFloorIso`, which reopening
+ * requires.
  */
 export function moveRequest(status: SessionStatus | undefined, iso: string): PlannedSessionUpdateRequest {
   return status === "missed" ? { status: "pending", scheduled_date: iso } : { scheduled_date: iso };

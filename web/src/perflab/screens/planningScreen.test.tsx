@@ -81,6 +81,14 @@ const WEEK: PlannedSessionRead[] = [
 // P2b tests swap in a week whose past session the server has already reconciled to `missed`.
 let weekSessions: PlannedSessionRead[] = WEEK;
 
+// The server's "today" for a reopen is UTC; a test pins it one day ahead of the local
+// calendar (the west-of-UTC evening case) without depending on the machine's timezone.
+let reopenFloor: string | null = null;
+vi.mock("../sessionActions", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../sessionActions")>();
+  return { ...real, reopenFloorIso: (local: string) => reopenFloor ?? real.reopenFloorIso(local) };
+});
+
 const BLOCK_SESSIONS: PlannedSessionRead[] = [
   session({ id: 90, week_number: 4, is_deload: true }),
   session({ id: 91, week_number: 8, is_benchmark: true }),
@@ -140,6 +148,7 @@ beforeEach(() => {
   token = "real-token";
   projection = AVAILABLE;
   weekSessions = WEEK;
+  reopenFloor = null;
   updatePlannedSession.mockClear();
   getPlannedWeekProjection.mockClear();
   openLog.mockClear();
@@ -257,6 +266,43 @@ describe("a missed session (P2b)", () => {
     expect(updatePlannedSession).toHaveBeenCalledWith(
       12, { status: "pending", scheduled_date: "2026-10-01" }, "real-token",
     );
+  });
+});
+
+describe("reopening a miss respects the server's today (P2b review)", () => {
+  // Today (local) is Wed 30 Sep and left free; the server is already on Thu 1 Oct.
+  const OPEN_TODAY = WEEK.filter((s) => s.id !== 13).map((s) => (s.id === 12 ? { ...s, status: "missed" as const } : s));
+
+  it("a miss cannot be dropped on the local today the server has left; later days still work", async () => {
+    weekSessions = OPEN_TODAY;
+    reopenFloor = "2026-10-01";
+    const { container } = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    fireEvent.dragStart(cell(container, "2026-09-29", "planned"));
+    fireEvent.dragOver(cell(container, "2026-09-30", "planned"));
+    fireEvent.drop(cell(container, "2026-09-30", "planned"));
+    expect(updatePlannedSession).not.toHaveBeenCalled();
+    fireEvent.dragStart(cell(container, "2026-09-29", "planned"));
+    fireEvent.drop(cell(container, "2026-10-01", "planned"));
+    expect(updatePlannedSession).toHaveBeenCalledWith(
+      12, { status: "pending", scheduled_date: "2026-10-01" }, "real-token",
+    );
+  });
+
+  it("a miss's +1 day button is not offered onto that day; a pending move to local today still is", async () => {
+    weekSessions = OPEN_TODAY.map((s) => (s.id === 12 ? { ...s, scheduled_date: "2026-09-29" } : s));
+    reopenFloor = "2026-10-01";
+    const { container } = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    // Tue's miss → Wed (local today) would be refused by the server: no button.
+    expect(within(cell(container, "2026-09-29", "planned")).queryByRole("button", { name: /^Move / })).toBeNull();
+    // A pending session has no reopen floor: moving one onto local today is unchanged.
+    weekSessions = OPEN_TODAY.map((s) => (s.id === 12 ? { ...s, status: "pending" as const } : s));
+    cleanup();
+    const again = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    fireEvent.click(within(cell(again.container, "2026-09-29", "planned")).getByRole("button", { name: /^Move / }));
+    expect(updatePlannedSession).toHaveBeenCalledWith(12, { scheduled_date: "2026-09-30" }, "real-token");
   });
 });
 

@@ -12,7 +12,7 @@
 // The payload half is asserted against the pure builder so the mapping is pinned
 // exactly; the render half is asserted through the component so the boundary
 // holds regardless of who opens the overlay.
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildFeedbackBody, FeedbackModal } from "./FeedbackModal";
@@ -58,7 +58,8 @@ vi.mock("../sim", () => ({
   }),
 }));
 
-vi.mock("@/api/perfLabClient", () => ({ createSessionFeedback: vi.fn() }));
+const createSessionFeedback = vi.fn();
+vi.mock("@/api/perfLabClient", () => ({ createSessionFeedback: (...a: unknown[]) => createSessionFeedback(...a) }));
 
 afterEach(() => {
   cleanup();
@@ -126,13 +127,74 @@ describe("the outcomes offered follow the session's status (P2b)", () => {
     expect(offered()).toEqual(labels);
   });
 
-  it("a miss starts on Skipped and says how to report training that did happen", () => {
+  it("a miss starts on Skipped, promises nothing about logging, and claims no prescription effect", () => {
     token = "tok";
     feedbackSessionId = 42;
     feedbackSessionStatus = "missed";
-    render(<FeedbackModal />);
+    const { container } = render(<FeedbackModal />);
     expect(screen.getByText("Why did you skip it?")).toBeTruthy();
-    expect(screen.getByText(/If you trained, log the workout instead/)).toBeTruthy();
+    // The logger cannot target a past session, so the form must not promise that logging does.
+    expect(container.textContent).not.toMatch(/log the workout/i);
+    // Skipped feedback on a miss feeds no adherence input (backend policy), so no "bias" claim.
+    expect(container.textContent).not.toMatch(/bias/i);
+    expect(screen.getByText("Kept with this missed session. It doesn't change your prescription.")).toBeTruthy();
+  });
+
+  it("the success screen for a miss says the session stays missed and nothing else changed", async () => {
+    token = "tok";
+    feedbackSessionId = 42;
+    feedbackSessionStatus = "missed";
+    createSessionFeedback.mockResolvedValueOnce({ id: 1 } as never);
+    const { container } = render(<FeedbackModal />);
+    fireEvent.click(screen.getByRole("button", { name: "Record feedback →" }));
+    expect(await screen.findByText("Feedback recorded")).toBeTruthy();
+    expect(container.textContent).toMatch(/The session stays missed/);
+    expect(container.textContent).not.toMatch(/bias/i);
+  });
+
+  it("switching to another session starts a fresh draft and submits only what is shown", async () => {
+    token = "tok";
+    feedbackSessionId = 41;
+    feedbackSessionStatus = "completed";
+    const view = render(<FeedbackModal />);
+    fireEvent.click(screen.getByText("Changed it"));
+    fireEvent.change((() => { const all = screen.getAllByPlaceholderText("Optional"); return all[all.length - 1]; })(), { target: { value: "for 41" } });
+
+    // Review repro: the background Feedback button for a miss re-targets the open modal.
+    feedbackSessionId = 43;
+    feedbackSessionStatus = "missed";
+    view.rerender(<FeedbackModal />);
+    expect(screen.queryByText("Changed it")).toBeNull();
+    createSessionFeedback.mockResolvedValueOnce({ id: 2 } as never);
+    fireEvent.click(screen.getByRole("button", { name: "Record feedback →" }));
+    await screen.findByText("Feedback recorded");
+    const body = createSessionFeedback.mock.calls[createSessionFeedback.mock.calls.length - 1][0] as { planned_session_id: number; status: string; notes: string | null };
+    expect([body.planned_session_id, body.status, body.notes]).toEqual([43, "skipped", null]);
+  });
+
+  it("keeps keyboard focus inside the dialog", () => {
+    token = "tok";
+    feedbackSessionId = 42;
+    feedbackSessionStatus = "missed";
+    render(
+      <>
+        <button>Feedback for another session</button>
+        <FeedbackModal />
+      </>,
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    // jsdom does not move focus on Tab by itself, so each assertion names exactly where the
+    // trap must have put it: Tab off the last control wraps to the first, and back.
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input"));
+    const first = focusable[0];
+    const record = screen.getByRole("button", { name: "Record feedback →" });
+    expect(focusable[focusable.length - 1]).toBe(record);
+    record.focus();
+    fireEvent.keyDown(record, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(record);
   });
 });
 
