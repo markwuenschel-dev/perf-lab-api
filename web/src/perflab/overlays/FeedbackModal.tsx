@@ -20,8 +20,9 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { createSessionFeedback } from "@/api/perfLabClient";
-import type { ApiError, SessionFeedbackIn, SessionFeedbackOut } from "@/types";
+import type { ApiError, SessionFeedbackIn, SessionFeedbackOut, SessionStatus } from "@/types";
 import { usePerfLab } from "../store";
+import { outcomesFor, type Outcome } from "../sessionActions";
 import type { Feel } from "../store";
 import { COLORS, projectLogDose } from "../sim";
 import { CloseBtn } from "./LogWorkoutModal";
@@ -34,7 +35,7 @@ export function FeedbackModal() {
 
   // A real session id is the only thing that makes this overlay able to write.
   if (state.feedbackSessionId != null) {
-    return <AuthedFeedbackForm plannedSessionId={state.feedbackSessionId} />;
+    return <AuthedFeedbackForm plannedSessionId={state.feedbackSessionId} sessionStatus={state.feedbackSessionStatus} />;
   }
   // No session id => the guest demo. Signed in, there is nothing truthful to
   // show here, so show nothing.
@@ -45,8 +46,6 @@ export function FeedbackModal() {
 // ──────────────────────────────────────────────────────────────────────────
 // Authenticated: a real report against a real session.
 // ──────────────────────────────────────────────────────────────────────────
-
-type Outcome = "completed" | "modified" | "skipped";
 
 interface FeedbackForm {
   outcome: Outcome;
@@ -119,16 +118,17 @@ const chipCls = (active: boolean) =>
     active ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-panel text-mute",
   );
 
-const OUTCOMES: [Outcome, string][] = [
-  ["completed", "As prescribed"],
-  ["modified", "Changed it"],
-  ["skipped", "Skipped"],
-];
-
-function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) {
+function AuthedFeedbackForm({
+  plannedSessionId,
+  sessionStatus,
+}: {
+  plannedSessionId: number;
+  sessionStatus: SessionStatus | null;
+}) {
   const { actions } = usePerfLab();
   const auth = useAuth();
-  const [form, setForm] = useState<FeedbackForm>(EMPTY_FORM);
+  const outcomes = outcomesFor(sessionStatus);
+  const [form, setForm] = useState<FeedbackForm>({ ...EMPTY_FORM, outcome: outcomes[0][0] });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SessionFeedbackOut | null>(null);
@@ -208,9 +208,15 @@ function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) 
           </div>
 
           <div className="flex flex-col gap-[22px] p-6">
+            {sessionStatus === "missed" && (
+              <p className="m-0 text-[12.5px] leading-[1.45] text-soft">
+                Nothing was logged for this session. If you trained, log the workout instead —
+                that completes it.
+              </p>
+            )}
             <Field label="Outcome">
               <div className="flex gap-2">
-                {OUTCOMES.map(([key, label]) => (
+                {outcomes.map(([key, label]) => (
                   <div key={key} onClick={() => set("outcome", key)} className={segCls(form.outcome === key)}>
                     {label}
                   </div>

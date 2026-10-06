@@ -78,6 +78,9 @@ const WEEK: PlannedSessionRead[] = [
   session({ id: 14, scheduled_date: "2026-10-02", category: "tempo", modality: "running" }),
 ];
 
+// P2b tests swap in a week whose past session the server has already reconciled to `missed`.
+let weekSessions: PlannedSessionRead[] = WEEK;
+
 const BLOCK_SESSIONS: PlannedSessionRead[] = [
   session({ id: 90, week_number: 4, is_deload: true }),
   session({ id: 91, week_number: 8, is_benchmark: true }),
@@ -108,7 +111,7 @@ const getPlannedWeekProjection = vi.fn(() => Promise.resolve(projection));
 
 vi.mock("@/api/perfLabClient", () => ({
   listPlannedSessions: (_t: string, params?: { start_date?: string }) =>
-    Promise.resolve(params?.start_date === WEEK_START ? WEEK : BLOCK_SESSIONS),
+    Promise.resolve(params?.start_date === WEEK_START ? weekSessions : BLOCK_SESSIONS),
   listPlanningBlocks: () =>
     Promise.resolve([{ id: 7, goal: "strength", status: "active", start_date: "2026-09-14", end_date: null, duration_weeks: 8 }]),
   listWorkouts: () => Promise.resolve(WORKOUTS),
@@ -136,6 +139,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 8, 30, 12, 0, 0));
   token = "real-token";
   projection = AVAILABLE;
+  weekSessions = WEEK;
   updatePlannedSession.mockClear();
   getPlannedWeekProjection.mockClear();
   openLog.mockClear();
@@ -219,6 +223,40 @@ describe("rescheduling", () => {
     render(<PlanningScreen />);
     fireEvent.click(await screen.findByRole("button", { name: "Mark skipped" }));
     expect(updatePlannedSession).toHaveBeenCalledWith(12, { status: "skipped" }, "real-token");
+  });
+});
+
+describe("a missed session (P2b)", () => {
+  const RECONCILED = WEEK.map((s) => (s.id === 12 ? { ...s, status: "missed" as const } : s));
+
+  it("a persisted miss takes feedback, told it is a miss; a stale pending past day does not", async () => {
+    const { container, unmount } = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    // Server still says `pending` for Tue: it renders as missed, but has no outcome yet.
+    expect(cell(container, "2026-09-29", "logged").getAttribute("data-state")).toBe("missed");
+    expect(within(cell(container, "2026-09-29", "logged")).queryByRole("button", { name: "Feedback" })).toBeNull();
+    unmount();
+
+    weekSessions = RECONCILED;
+    const second = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    const missed = within(cell(second.container, "2026-09-29", "logged"));
+    expect(missed.getByRole("button", { name: "Mark skipped" })).toBeTruthy();
+    fireEvent.click(missed.getByRole("button", { name: "Feedback" }));
+    expect(openFeedback).toHaveBeenCalledWith(12, "missed");
+  });
+
+  it("moving a persisted miss reopens it with the new date; a pending move stays date-only", async () => {
+    weekSessions = RECONCILED;
+    const { container } = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    expect(cell(container, "2026-09-29", "planned").getAttribute("draggable")).toBe("true");
+    fireEvent.dragStart(cell(container, "2026-09-29", "planned"));
+    fireEvent.dragOver(cell(container, "2026-10-01", "planned"));
+    fireEvent.drop(cell(container, "2026-10-01", "planned"));
+    expect(updatePlannedSession).toHaveBeenCalledWith(
+      12, { status: "pending", scheduled_date: "2026-10-01" }, "real-token",
+    );
   });
 });
 

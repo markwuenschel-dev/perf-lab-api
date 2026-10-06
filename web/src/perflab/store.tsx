@@ -13,7 +13,7 @@ import type { Dispatch } from "react";
 // The phase durations now arrive with the openSession action, so the session state
 // machine is generic and the fixture stays with the surface that renders it.
 import type { CheckinState, SimParams } from "./sim";
-import type { MetricsResponse, ReadinessScore, UnifiedStateVector } from "../types";
+import type { MetricsResponse, ReadinessScore, SessionStatus, UnifiedStateVector } from "../types";
 
 export type Screen =
   | "overview"
@@ -140,6 +140,9 @@ export interface PerfLabState {
    *  guest preview, which has no real session behind it — the overlay uses this
    *  to decide whether it can write anything at all. */
   feedbackSessionId: number | null;
+  /** The status the opener was showing for that session, when it knows it (P2): it decides
+   *  which outcomes the form offers, so it never offers one the server will refuse. */
+  feedbackSessionStatus: SessionStatus | null;
   /** Bumped after feedback is recorded so the week strip re-reads session state. */
   feedbackRefreshKey: number;
   feel: Feel;
@@ -241,6 +244,7 @@ export function initialState(): PerfLabState {
     feedbackOpen: false,
     feedbackApplied: false,
     feedbackSessionId: null,
+    feedbackSessionStatus: null,
     feedbackRefreshKey: 0,
     feel: "controlled",
     blockCreateOpen: false,
@@ -357,7 +361,7 @@ export interface PerfLabActions {
   /** Report on a real planned session. The id is required: without it there is
    *  nothing to write to, and inferring one from what happens to be on screen is
    *  how feedback lands on the wrong session. */
-  openFeedback: (plannedSessionId: number) => void;
+  openFeedback: (plannedSessionId: number, status?: SessionStatus) => void;
   closeFeedback: () => void;
   applyFeedback: () => void;
   feedbackToTwin: () => void;
@@ -440,6 +444,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
         feedbackOpen: true,
         feedbackApplied: false,
         feedbackSessionId: null,
+        feedbackSessionStatus: null,
       }),
     openCheckin: () => merge({ checkinOpen: true }),
     closeCheckin: () => merge({ checkinOpen: false }),
@@ -456,12 +461,17 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     closeExplain: () => merge({ explainOpen: false }),
     setSim: (patch) => dispatch({ type: "mergeSim", patch }),
     simPreset: (name) => dispatch({ type: "mergeSim", patch: SIM_PRESETS[name] }),
-    openFeedback: (plannedSessionId) =>
-      merge({ feedbackOpen: true, feedbackApplied: false, feedbackSessionId: plannedSessionId }),
-    closeFeedback: () => merge({ feedbackOpen: false, feedbackSessionId: null }),
+    openFeedback: (plannedSessionId, status) =>
+      merge({
+        feedbackOpen: true,
+        feedbackApplied: false,
+        feedbackSessionId: plannedSessionId,
+        feedbackSessionStatus: status ?? null,
+      }),
+    closeFeedback: () => merge({ feedbackOpen: false, feedbackSessionId: null, feedbackSessionStatus: null }),
     applyFeedback: () => merge({ feedbackApplied: true }),
     feedbackToTwin: () =>
-      merge({ feedbackOpen: false, feedbackApplied: false, feedbackSessionId: null, screen: "twin" }),
+      merge({ feedbackOpen: false, feedbackApplied: false, feedbackSessionId: null, feedbackSessionStatus: null, screen: "twin" }),
     refreshFeedback: () => mergeFn((s) => ({ feedbackRefreshKey: s.feedbackRefreshKey + 1 })),
     setFeel: (feel, rpe) => merge({ feel, rpe }),
     setSetting: (key, value) => dispatch({ type: "mergeSettings", patch: { [key]: value } as Partial<Settings> }),

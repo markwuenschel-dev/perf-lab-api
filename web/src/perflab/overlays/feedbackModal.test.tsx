@@ -19,6 +19,7 @@ import { buildFeedbackBody, FeedbackModal } from "./FeedbackModal";
 
 let token: string | null = null;
 let feedbackSessionId: number | null = null;
+let feedbackSessionStatus: string | null = null;
 
 vi.mock("@/auth/useAuth", () => ({
   useAuth: () => ({ token, isGuest: token == null }),
@@ -30,6 +31,7 @@ vi.mock("../store", () => ({
       feedbackOpen: true,
       feedbackApplied: false,
       feedbackSessionId,
+      feedbackSessionStatus,
       feel: "controlled",
       rpe: null,
       sim: {},
@@ -62,6 +64,7 @@ afterEach(() => {
   cleanup();
   token = null;
   feedbackSessionId = null;
+  feedbackSessionStatus = null;
 });
 
 const FIXTURE_STRINGS = ["9.1 km", "53:20", "4:32", "168"];
@@ -103,6 +106,33 @@ describe("the authenticated athlete never sees the demo", () => {
     const { container } = render(<FeedbackModal />);
     expect(container.textContent).toContain("9.1 km");
     expect(container.textContent?.toLowerCase()).toContain("sample data");
+  });
+});
+
+describe("the outcomes offered follow the session's status (P2b)", () => {
+  const offered = () =>
+    ["As prescribed", "Changed it", "Skipped"].filter((label) => screen.queryByText(label) != null);
+
+  it.each([
+    ["missed", ["Skipped"]],
+    ["skipped", ["Skipped"]],
+    ["completed", ["As prescribed", "Changed it"]],
+    [null, ["As prescribed", "Changed it", "Skipped"]],
+  ] as const)("%s offers %j", (status, labels) => {
+    token = "tok";
+    feedbackSessionId = 42;
+    feedbackSessionStatus = status;
+    render(<FeedbackModal />);
+    expect(offered()).toEqual(labels);
+  });
+
+  it("a miss starts on Skipped and says how to report training that did happen", () => {
+    token = "tok";
+    feedbackSessionId = 42;
+    feedbackSessionStatus = "missed";
+    render(<FeedbackModal />);
+    expect(screen.getByText("Why did you skip it?")).toBeTruthy();
+    expect(screen.getByText(/If you trained, log the workout instead/)).toBeTruthy();
   });
 });
 

@@ -26,10 +26,12 @@ import type {
   PlannedWeekProjection,
   PrescriptionRevisionRead,
   ReadinessScore,
+  SessionStatus,
   WorkoutLogSummary,
   WorkoutPrescription,
 } from "@/types";
 import { usePerfLab } from "../store";
+import { canGiveFeedback, isMovable, moveRequest } from "../sessionActions";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, toResourceError, type AuthedResource } from "../resource";
 import { Card, MetricBar, ScreenHeader, SectionLabel, WeakPointTags } from "../ui";
@@ -118,6 +120,9 @@ interface LoggedHalf {
   title: string;
   sub: string;
   sessionId?: number;
+  /** The status the server returned — what every action on this cell keys off (P2). A past
+   *  `pending` session also renders as "missed" but has no outcome to give feedback on. */
+  status?: SessionStatus;
 }
 
 interface DayCell {
@@ -136,6 +141,16 @@ function loggedHalfFor(
   units: string,
 ): LoggedHalf {
   if (!s) return { state: "rest", title: "—", sub: "rest day" };
+  return { ...loggedView(s, iso, todayIso, workoutsById, units), status: s.status };
+}
+
+function loggedView(
+  s: PlannedSessionRead,
+  iso: string,
+  todayIso: string,
+  workoutsById: Map<number, WorkoutLogSummary> | null,
+  units: string,
+): LoggedHalf {
   switch (s.status) {
     case "completed": {
       const w = s.workout_log_id != null ? workoutsById?.get(s.workout_log_id) : undefined;
@@ -189,7 +204,7 @@ function buildDayCells(
           sub: [s.is_deload ? "deload" : null, humanize(s.modality)].filter(Boolean).join(" · "),
           isDeload: s.is_deload,
           isBenchmark: s.is_benchmark,
-          movable: s.status === "pending" || s.status === "rescheduled",
+          movable: isMovable(s.status),
           extra: onDay.length - 1,
         }
       : null;
@@ -309,10 +324,12 @@ function AuthedPlanningBody() {
             summary={`${completed} of ${planned} planned session${planned === 1 ? "" : "s"} logged · drag a card to reschedule`}
             busyId={write.busyId}
             error={write.error}
-            onMove={(id, iso) => patchSession(id, { scheduled_date: iso }, "move the session")}
+            onMove={(id, iso) =>
+              patchSession(id, moveRequest(sessions.data.find((s) => s.id === id)?.status, iso), "move the session")
+            }
             onSkip={(id) => patchSession(id, { status: "skipped" }, "mark the session skipped")}
             onLog={actions.openLog}
-            onFeedback={actions.openFeedback}
+            onFeedback={(id, status) => actions.openFeedback(id, status)}
           />
 
           <div className="grid grid-cols-1 items-start gap-[14px] lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -522,7 +539,7 @@ function WeekGrid({
   onMove?: (sessionId: number, iso: string) => void;
   onSkip?: (sessionId: number) => void;
   onLog?: () => void;
-  onFeedback?: (sessionId: number) => void;
+  onFeedback?: (sessionId: number, status: SessionStatus) => void;
 }) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overIso, setOverIso] = useState<string | null>(null);
@@ -646,8 +663,8 @@ function WeekGrid({
               {/* Feedback needs a session that actually has an outcome. The id
                   comes from this cell's own row, never from whatever the
                   prescription card happens to be showing. */}
-              {(l.state === "done" || l.state === "skipped") && onFeedback && l.sessionId != null && (
-                <button onClick={() => onFeedback(l.sessionId!)} className={CELL_BTN}>Feedback</button>
+              {l.status != null && canGiveFeedback(l.status) && onFeedback && l.sessionId != null && (
+                <button onClick={() => onFeedback(l.sessionId!, l.status!)} className={CELL_BTN}>Feedback</button>
               )}
             </div>
           );
