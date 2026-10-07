@@ -44,6 +44,11 @@ export function LogWorkoutModal() {
   // P3a: set when the workout was saved but the training-state update was omitted. The
   // form stays open to say so instead of closing as if the twin had advanced.
   const [recordedNotice, setRecordedNotice] = useState<string | null>(null);
+  // The modal stays mounted between opens, so a previous result must not survive into the
+  // next draft: every open starts with no result shown.
+  useEffect(() => {
+    if (state.logOpen) setRecordedNotice(null);
+  }, [state.logOpen]);
   const [sets, setSets] = useState<SetGroup[]>([]);
 
   const { logOpen, logType, rpe, durationMin, distanceKm } = state;
@@ -174,6 +179,9 @@ export function LogWorkoutModal() {
       }
       const sv = await logWorkout(body, auth.token);
       actions.cacheTwinState(sv);
+      // The workout exists now, whatever it did to the state: every screen that lists
+      // workouts or planned sessions re-reads (the record-only path stays on this screen).
+      actions.refreshWorkouts();
       const notice = dispositionNotice(sv.state_disposition, sv.state_disposition_reason);
       if (notice) {
         setRecordedNotice(notice);
@@ -319,7 +327,13 @@ export function LogWorkoutModal() {
           <div className="flex flex-none gap-[9px]">
             <button onClick={actions.closeLog} className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-[11px] text-[12.5px] font-semibold leading-none text-soft">Cancel</button>
             {recordedNotice ? (
-              <button onClick={actions.closeLog} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">
+              <button
+                onClick={() => {
+                  setRecordedNotice(null);
+                  actions.closeLog();
+                }}
+                className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10]"
+              >
                 Done
               </button>
             ) : (

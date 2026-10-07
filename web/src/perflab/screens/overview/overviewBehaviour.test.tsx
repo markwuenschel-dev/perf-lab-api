@@ -34,8 +34,12 @@ const storeState = {
   readinessRefreshKey: 0,
   objectivesRefreshKey: 0,
   macrocyclesRefreshKey: 0,
+  workoutsRefreshKey: 0,
   settings: { goal: "endurance" },
 };
+/** Every Overview read of the workout list / dashboard (P3a refresh). */
+let workoutReads = 0;
+let dashboardReads = 0;
 
 vi.mock("../../store", () => ({
   usePerfLab: () => ({
@@ -51,8 +55,11 @@ vi.mock("@/api/perfLabClient", () => ({
   getReadiness: () => Promise.resolve({ score: null, wellness_delta: 0, components: [] }),
   listWellness: () => Promise.resolve([]),
   getStateHistory: () => Promise.resolve([]),
-  listWorkouts: () => Promise.resolve([]),
-  getDashboardOverview: () => Promise.resolve({ training_load: { acwr: null, status: "insufficient", sweet_spot_low: 0.8, sweet_spot_high: 1.3 }, adherence: { pct: null, streak_days: 0, window_days: 28 } }),
+  listWorkouts: () => {
+    workoutReads += 1;
+    return Promise.resolve([]);
+  },
+  getDashboardOverview: () => (dashboardReads += 1, Promise.resolve({ training_load: { acwr: null, status: "insufficient", sweet_spot_low: 0.8, sweet_spot_high: 1.3 }, adherence: { pct: null, streak_days: 0, window_days: 28 } })),
   getTodayPlannedSession: () => Promise.resolve(todayResponse),
   listObjectives: () => Promise.resolve([]),
   listMacrocycles: () => Promise.resolve([]),
@@ -65,6 +72,23 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+describe("a saved workout refreshes Overview (P3a review)", () => {
+  it("bumping workoutsRefreshKey re-reads the workout list and the dashboard", async () => {
+    token = "real-token";
+    storeState.workoutsRefreshKey = 0;
+    const { AuthedOverview } = await import("./AuthedOverview");
+    const view = render(<AuthedOverview />);
+    await vi.waitFor(() => expect(workoutReads).toBeGreaterThan(0));
+    const [w0, d0] = [workoutReads, dashboardReads];
+
+    storeState.workoutsRefreshKey = 1; // what LogWorkoutModal's refreshWorkouts() does
+    view.rerender(<AuthedOverview />);
+    await vi.waitFor(() => expect(workoutReads).toBe(w0 + 1));
+    expect(dashboardReads).toBe(d0 + 1);
+    storeState.workoutsRefreshKey = 0;
+  });
+});
 
 describe("the simulated session player is closed to authenticated athletes (L3 / #188)", () => {
   it("renders nothing for an authenticated athlete even when the session is open", async () => {

@@ -102,13 +102,17 @@ export function AuthedOverview() {
     (t) => api.getStateHistory(t, 14),
     [state.readinessRefreshKey],
   );
-  const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 5), []);
-  const overviewRes = useAuthedResource<OverviewMetrics>((t) => api.getDashboardOverview(t), []);
+  // P3a: a saved workout (applied or record-only) re-reads everything derived from logs.
+  const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 5), [state.workoutsRefreshKey]);
+  const overviewRes = useAuthedResource<OverviewMetrics>((t) => api.getDashboardOverview(t), [state.workoutsRefreshKey]);
   const goal = state.settings.goal;
   // P1: today's session is an immutable revision; a re-check may replace it, after which
   // this reload serves the new one.
   const [todayKey, setTodayKey] = useState(0);
-  const todayRes = useAuthedResource<TodaySessionResponse>((t) => api.getTodayPlannedSession(goal, t), [goal, todayKey]);
+  const todayRes = useAuthedResource<TodaySessionResponse>(
+    (t) => api.getTodayPlannedSession(goal, t),
+    [goal, todayKey, state.workoutsRefreshKey],
+  );
   const recheckToday = async () => {
     if (!token) return;
     await api.recheckTodayPlannedSession(goal, token);
