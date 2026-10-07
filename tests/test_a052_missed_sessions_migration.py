@@ -220,7 +220,8 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
     try:
         with engine.connect() as conn:
             cfg.attributes["connection"] = conn
-            command.upgrade(cfg, "head")
+            # Exactly a052: this pins a052's downgrade, not whatever head is now.
+            command.upgrade(cfg, "a052_missed_sessions")
             uid = conn.execute(
                 text(
                     "INSERT INTO users (email, hashed_password, is_active, created_at) "

@@ -49,7 +49,7 @@ from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.repositories.benchmark_observation_repository import select_prescription_basis
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.history import WorkoutLogSummary
-from app.schemas.state import StateHistorySnapshotRead, UnifiedStateVector
+from app.schemas.state import LogWorkoutResponse, StateHistorySnapshotRead, UnifiedStateVector
 from app.schemas.workouts import (
     ExerciseEntry,
     ExternalIntensity,
@@ -1108,26 +1108,45 @@ async def process_new_workout(
     db: AsyncSession,
     user_id: int,
     log: WorkoutLog,
-) -> UnifiedStateVector:
+    *,
+    received_at: datetime | None = None,
+) -> LogWorkoutResponse:
     """
     Fetch S(t), resolve exercise phi vectors, compute D(t), evolve to S(t+1), persist.
 
     The state-chain lock is taken before S(t) is read and held to the commit below, so a
     concurrent writer cannot append from the same predecessor (F2).
+
+    P3a, the workout's effective time and what it does to state:
+
+    * ``timestamp_mode="event_time"`` (default): the client's timestamp is the event time.
+    * ``timestamp_mode="server_now"`` (a live submission): the effective time is the server's
+      clock, read once AFTER the chain lock, after any earlier writer committed its head,
+      so a live log can never land before a head written while it waited. The raw client
+      timestamp is stored for audit and still decides same-day planned-session matching
+      (it is the matching input, unchanged).
+    * A workout whose effective time precedes the current state head is **record-only**: the
+      workout, sets, strength evidence and planned-session link are saved; no state row is
+      written and the head is returned unchanged. The reason distinguishes an event before
+      the head from a head stamped in the server's future.
     """
     await lock_athlete_chain(db, user_id)
     last_record = await AthleteContextRepository(db).get_latest_state(user_id)
+    # Read under the lock: the server's "now" for this transition (P3a).
+    server_now = datetime.now(UTC).replace(tzinfo=None)
 
     # UTC-naive workout time — the anchor for this state transition. The DB stores naive
     # UTC; log.timestamp may arrive tz-aware in ANY offset. Convert to the UTC instant
     # before dropping tzinfo: `replace(tzinfo=None)` alone keeps the wall clock, so
     # 10:00+05:00 would be stored as 10:00 when the instant is 05:00 UTC — and that value
     # becomes the extracted evidence's performance time, which prescription freshness reads.
-    log_ts = (
+    client_ts = (
         log.timestamp.astimezone(UTC).replace(tzinfo=None)
         if log.timestamp.tzinfo
         else log.timestamp
     )
+    timestamp_basis = log.timestamp_mode
+    log_ts = server_now if timestamp_basis == "server_now" else client_ts
 
     if not last_record:
         # Build and stage the baseline row without committing yet — the whole
@@ -1150,10 +1169,29 @@ async def process_new_workout(
         initial_baseline.timestamp = anchor
         current_state.timestamp = anchor
 
+    # P3a: a workout before the current head cannot be applied. Applying it to the head and
+    # stamping it in the past (the old behavior) left its effect below the head, lost. It
+    # is recorded without a state update, and says why.
+    head_ts = (
+        current_state.timestamp.astimezone(UTC).replace(tzinfo=None)
+        if current_state.timestamp.tzinfo
+        else current_state.timestamp
+    )
+    record_only = log_ts < head_ts
+    disposition_reason: str | None = None
+    if record_only:
+        disposition_reason = (
+            "current_state_in_future" if head_ts > server_now else "event_before_current_state"
+        )
+
     # ADR-0031: a planned session's prescription seeds the log's exercises, so planned
     # work gets an exercise-aware dose without re-entry. Match the session up front
     # (also reused below for completion linkage).
     planned_session = await _match_planned_session(db, user_id, log)
+    if timestamp_basis == "server_now":
+        # Matched on the client's own timestamp above; from here on the workout happened at
+        # the effective (server) time: pre-log evidence reads, the dose and the shadows.
+        log = log.model_copy(update={"timestamp": log_ts.replace(tzinfo=UTC)})
 
     # An explicit planned_session_id is a caller-supplied FK. _match_planned_session
     # scopes the lookup to this user, so a miss means the id is either unknown or
@@ -1216,6 +1254,15 @@ async def process_new_workout(
         # Never the raw request field: only the ownership-verified match above.
         planned_session_id=planned_session.id if planned_session is not None else None,
         session_timestamp=log_ts,
+        timestamp_basis=timestamp_basis,
+        client_timestamp=client_ts,
+        received_at=(
+            received_at.astimezone(UTC).replace(tzinfo=None)
+            if received_at is not None and received_at.tzinfo
+            else received_at
+        ),
+        state_disposition="record_only" if record_only else "applied",
+        state_disposition_reason=disposition_reason,
         modality=log.modality,
         duration_minutes=log.duration_minutes,
         session_rpe=log.session_rpe,
@@ -1250,42 +1297,47 @@ async def process_new_workout(
             db, planned_session, log.prescription_revision_id
         )
 
-    # Physical decay interval since the current state, clamped non-negative so an
-    # out-of-order/backfilled log never applies negative decay. Same instant rule as
-    # log_ts: convert an aware value to UTC before dropping its offset.
-    state_ts = (
-        current_state.timestamp.astimezone(UTC).replace(tzinfo=None)
-        if current_state.timestamp.tzinfo
-        else current_state.timestamp
-    )
-    dt = timedelta(seconds=0) if log_ts < state_ts else log_ts - state_ts
+    if record_only:
+        # P3a: keep the workout and its links; omit the training-state update. The head is
+        # returned unchanged. No EKF predict: it would advance the shadow belief as if this
+        # workout happened now.
+        await db.commit()
+        assert last_record is not None  # no head means a fresh baseline: never record-only
+        result_state = unified_from_athlete_row(last_record)
+    else:
+        # Physical decay interval since the current state (never negative here: a workout
+        # before the head is record-only above).
+        dt = log_ts - head_ts
 
-    new_state_schema = update_athlete_state(current_state, dose, dt, log)
-    # The evolved state is valid "as of" the workout event; anchor its timestamp to the
-    # workout time. Identical to the engine's prev+dt in the normal forward case, and
-    # correct when dt was clamped for a historical log (keeps the timeline event-ordered).
-    new_state_schema.timestamp = log_ts
+        new_state_schema = update_athlete_state(current_state, dose, dt, log)
+        # The evolved state is valid "as of" the workout event; anchor its timestamp to the
+        # workout time (identical to the engine's prev+dt).
+        new_state_schema.timestamp = log_ts
 
-    kwargs = athlete_state_kwargs_from_unified(new_state_schema)
-    new_db_record = AthleteState(user_id=user_id, **kwargs)
-    db.add(new_db_record)
-    await db.commit()
-    await db.refresh(new_db_record)
+        kwargs = athlete_state_kwargs_from_unified(new_state_schema)
+        new_db_record = AthleteState(
+            user_id=user_id, source_workout_log_id=workout_log_id, **kwargs
+        )
+        db.add(new_db_record)
+        await db.commit()
+        await db.refresh(new_db_record)
 
-    # Materialize the return value BEFORE the shadow write: the EKF's best-effort
-    # commit/rollback expires ORM objects, which would break a later attribute read.
-    result = unified_from_athlete_row(new_db_record)
+        # Materialize the return value BEFORE the shadow write: the EKF's best-effort
+        # commit/rollback expires ORM objects, which would break a later attribute read.
+        result_state = unified_from_athlete_row(new_db_record)
 
-    # Shadow EKF (ADR-0041): advance the parallel full-covariance belief through this
-    # same workout. Best-effort and capture-only — never affects the returned state.
-    from app.services import ekf_shadow_service
+        # Shadow EKF (ADR-0041): advance the parallel full-covariance belief through this
+        # same workout. Best-effort and capture-only; never affects the returned state.
+        from app.services import ekf_shadow_service
 
-    await ekf_shadow_service.record_ekf_predict(db, user_id, dose, dt, log)
+        await ekf_shadow_service.record_ekf_predict(db, user_id, dose, dt, log)
 
-    # ADR-0045: write-time e1RM extraction. Top sets become benchmark observations
-    # (the measurement layer, PDR-0003) — never read back by scanning set logs. Runs
-    # after the workout commit; each observation advances max_strength on its own, so
-    # the returned state is re-materialized to reflect them.
+    # ADR-0045: write-time e1RM extraction. Top sets become benchmark observations (the
+    # measurement layer, PDR-0003), never read back by scanning set logs. Runs after the
+    # workout commit, for a record-only workout too: the evidence is kept and can inform
+    # prescribed loads. Workout-derived evidence never writes a state row itself (its
+    # capacity effect is a shadow-only floor candidate, benchmark_service), so re-reading
+    # the head here only picks up a concurrent writer.
     if e1rm_specs:
         written = await _extract_e1rm_observations(
             db, user_id, e1rm_specs, log_ts, workout_log_id
@@ -1293,7 +1345,7 @@ async def process_new_workout(
         if written:
             latest = await AthleteContextRepository(db).get_latest_state(user_id)
             if latest is not None:
-                result = unified_from_athlete_row(latest)
+                result_state = unified_from_athlete_row(latest)
 
     # ADR-0054: Model B per-exercise dose routing, shadow-only. Records the raw Σφ·D
     # routed dose + its 0–100 compatibility-scaled control-space values for offline
@@ -1312,18 +1364,28 @@ async def process_new_workout(
     # v1 against exactly what the athlete's state was built from.
     from app.services import dose_model_shadow_service
 
-    await dose_model_shadow_service.record_dose_model_shadow(
-        db, user_id, log, workout_log_id,
-        v0_dose=dose,
-        state_before=shadow_state_before,
-        session_at=log_ts,
-        external_intensity=session_external_intensity,
-        planned_domain=shadow_planned_domain,
-        planned_category=shadow_planned_category,
-        planned_block_id=shadow_planned_block_id,
-        prescription_branch=shadow_prescription_branch,
-        n_set_rows=shadow_n_set_rows,
-        linked_prescription=shadow_linked_prescription,
-    )
+    # Not for a record-only workout: its v0 dose never built a state, and `state_before`
+    # (the head) is not the state it happened in.
+    if not record_only:
+        await dose_model_shadow_service.record_dose_model_shadow(
+            db, user_id, log, workout_log_id,
+            v0_dose=dose,
+            state_before=shadow_state_before,
+            session_at=log_ts,
+            external_intensity=session_external_intensity,
+            planned_domain=shadow_planned_domain,
+            planned_category=shadow_planned_category,
+            planned_block_id=shadow_planned_block_id,
+            prescription_branch=shadow_prescription_branch,
+            n_set_rows=shadow_n_set_rows,
+            linked_prescription=shadow_linked_prescription,
+        )
 
-    return result
+    return LogWorkoutResponse(
+        **result_state.model_dump(),
+        workout_log_id=workout_log_id,
+        session_timestamp=log_ts,
+        timestamp_basis=timestamp_basis,
+        state_disposition="record_only" if record_only else "applied",
+        state_disposition_reason=disposition_reason,
+    )

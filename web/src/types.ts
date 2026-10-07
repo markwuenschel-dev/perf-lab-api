@@ -25,6 +25,8 @@ export type FatigueState = Schemas["FatigueState"];
 export type TissueState = Schemas["TissueState"];
 export type StressDoseSix = Schemas["StressDoseSix"];
 export type UnifiedStateVector = Schemas["UnifiedStateVector"];
+/** POST /v1/log-workout: the current state after the log, plus what the log did (P3a). */
+export type LogWorkoutResponse = Schemas["LogWorkoutResponse"];
 /** The canonical vector plus per-axis confidence *presentation* bands, projected
  *  for the Twin's time-travel view (GET /v1/state-history; ADR-0059). A structural
  *  superset of UnifiedStateVector. */

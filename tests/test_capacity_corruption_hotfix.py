@@ -229,6 +229,15 @@ async def test_benchmark_test_still_updates_capacity_bidirectionally(async_db):
     )
     # A protocol-grade benchmark DOES assimilate → a new capacity state row.
     assert await _state_count(async_db, user.id) == before + 1
+    # P3a: and that row names the observation that wrote it.
+    from sqlalchemy import select
+
+    from app.models.athlete_state import AthleteState
+    newest = (await async_db.execute(
+        select(AthleteState.source_observation_id).where(AthleteState.user_id == user.id)
+        .order_by(AthleteState.id.desc()).limit(1)
+    )).scalar_one()
+    assert newest == (await _obs(async_db, user.id))[0].id
 
 
 # ── end-to-end: easy training does not lower max_strength ─────────────────────

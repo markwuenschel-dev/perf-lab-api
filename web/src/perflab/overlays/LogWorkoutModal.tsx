@@ -26,6 +26,7 @@ import {
   missingRequiredReadings,
   type RequiredReading,
 } from "./workoutLogBody";
+import { dispositionNotice } from "../workoutDisposition";
 
 /** How each missing reading is named to the athlete in the footer prompt. */
 const READING_LABEL: Record<RequiredReading, string> = {
@@ -40,6 +41,9 @@ export function LogWorkoutModal() {
   const [doseSix, setDoseSix] = useState<number[] | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  // P3a: set when the workout was saved but the training-state update was omitted. The
+  // form stays open to say so instead of closing as if the twin had advanced.
+  const [recordedNotice, setRecordedNotice] = useState<string | null>(null);
   const [sets, setSets] = useState<SetGroup[]>([]);
 
   const { logOpen, logType, rpe, durationMin, distanceKm } = state;
@@ -170,6 +174,11 @@ export function LogWorkoutModal() {
       }
       const sv = await logWorkout(body, auth.token);
       actions.cacheTwinState(sv);
+      const notice = dispositionNotice(sv.state_disposition, sv.state_disposition_reason);
+      if (notice) {
+        setRecordedNotice(notice);
+        return;
+      }
       actions.applyLog();
     } catch (e) {
       setApplyError(
@@ -295,8 +304,12 @@ export function LogWorkoutModal() {
         </div>
 
         <div className="flex items-center justify-between gap-[9px] border-t border-white/[0.06] px-6 py-4">
-          <span className={cn("max-w-[320px] text-[11px] font-medium leading-[1.4]", applyError ? "text-hot" : "text-dim")}>
+          <span
+            role={recordedNotice ? "status" : undefined}
+            className={cn("max-w-[320px] text-[11px] font-medium leading-[1.4]", applyError ? "text-hot" : recordedNotice ? "text-soft" : "text-dim")}
+          >
             {applyError ??
+              recordedNotice ??
               (blocked
                 ? `Enter ${missingLabel} to log this session.`
                 : auth.token
@@ -305,9 +318,15 @@ export function LogWorkoutModal() {
           </span>
           <div className="flex flex-none gap-[9px]">
             <button onClick={actions.closeLog} className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-[11px] text-[12.5px] font-semibold leading-none text-soft">Cancel</button>
-            <button onClick={apply} disabled={applying || blocked} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">
-              {applying ? "Applying…" : auth.token ? "Apply to twin →" : "Sign in to apply →"}
-            </button>
+            {recordedNotice ? (
+              <button onClick={actions.closeLog} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10]">
+                Done
+              </button>
+            ) : (
+              <button onClick={apply} disabled={applying || blocked} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">
+                {applying ? "Applying…" : auth.token ? "Apply to twin →" : "Sign in to apply →"}
+              </button>
+            )}
           </div>
         </div>
       </div>

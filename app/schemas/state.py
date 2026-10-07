@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -106,3 +107,27 @@ class StateHistorySnapshotRead(UnifiedStateVector):
             capacity_confidence_status=statuses,
             confidence_presentation_policy_version=POLICY_VERSION,
         )
+
+
+#: Why a workout was recorded without updating the training state (P3a).
+#:   event_before_current_state — the workout's time precedes the athlete's current state.
+#:   current_state_in_future    — the current state is stamped after the server's "now" (a
+#:                                fast device clock earlier); nothing can be applied after it.
+RECORD_ONLY_REASONS = ("event_before_current_state", "current_state_in_future")
+
+
+class LogWorkoutResponse(UnifiedStateVector):
+    """``POST /v1/log-workout``: the athlete's current state after the log, plus what the
+    log did. A subclass, so a client reading it as a state vector keeps working.
+
+    ``record_only``: the workout, its sets, its strength evidence and any planned-session
+    link were saved, but the training-state update was omitted. The state returned is the
+    unchanged current one. Strength evidence from the workout can still inform prescribed
+    loads.
+    """
+
+    workout_log_id: int
+    session_timestamp: datetime = Field(description="The workout's effective time (UTC).")
+    timestamp_basis: Literal["event_time", "server_now"]
+    state_disposition: Literal["applied", "record_only"]
+    state_disposition_reason: Literal["event_before_current_state", "current_state_in_future"] | None = None

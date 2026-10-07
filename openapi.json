@@ -3601,6 +3601,156 @@
         "title": "LoadExplanation",
         "type": "object"
       },
+      "LogWorkoutResponse": {
+        "description": "``POST /v1/log-workout``: the athlete's current state after the log, plus what the\nlog did. A subclass, so a client reading it as a state vector keeps working.\n\n``record_only``: the workout, its sets, its strength evidence and any planned-session\nlink were saved, but the training-state update was omitted. The state returned is the\nunchanged current one. Strength evidence from the workout can still inform prescribed\nloads.",
+        "properties": {
+          "b_met_anaerobic": {
+            "description": "Anaerobic work capacity (W'/D')",
+            "title": "B Met Anaerobic",
+            "type": "number"
+          },
+          "c_met_aerobic": {
+            "description": "Aerobic capacity (e.g. CS / VO2 proxy)",
+            "title": "C Met Aerobic",
+            "type": "number"
+          },
+          "c_nm_force": {
+            "description": "Maximal strength / force capacity",
+            "title": "C Nm Force",
+            "type": "number"
+          },
+          "c_struct": {
+            "description": "Structural capacity / CSA proxy",
+            "title": "C Struct",
+            "type": "number"
+          },
+          "capacity_confidence": {
+            "$ref": "#/components/schemas/CapacityConfidence"
+          },
+          "capacity_x": {
+            "$ref": "#/components/schemas/CapacityState"
+          },
+          "f_met_systemic": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Met Systemic",
+            "type": "number"
+          },
+          "f_nm_central": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Nm Central",
+            "type": "number"
+          },
+          "f_nm_peripheral": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Nm Peripheral",
+            "type": "number"
+          },
+          "f_struct_damage": {
+            "default": 0.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "F Struct Damage",
+            "type": "number"
+          },
+          "fatigue_f": {
+            "$ref": "#/components/schemas/FatigueState"
+          },
+          "habit_strength": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Habit Strength",
+            "type": "number"
+          },
+          "model_version": {
+            "default": "v0.3",
+            "description": "State engine version",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "s_struct_signal": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "S Struct Signal",
+            "type": "number"
+          },
+          "session_timestamp": {
+            "description": "The workout's effective time (UTC).",
+            "format": "date-time",
+            "title": "Session Timestamp",
+            "type": "string"
+          },
+          "skill_state": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Skill State",
+            "type": "object"
+          },
+          "state_disposition": {
+            "enum": [
+              "applied",
+              "record_only"
+            ],
+            "title": "State Disposition",
+            "type": "string"
+          },
+          "state_disposition_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "event_before_current_state",
+                  "current_state_in_future"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Disposition Reason"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "timestamp_basis": {
+            "enum": [
+              "event_time",
+              "server_now"
+            ],
+            "title": "Timestamp Basis",
+            "type": "string"
+          },
+          "tissue_t": {
+            "$ref": "#/components/schemas/TissueState"
+          },
+          "workout_log_id": {
+            "title": "Workout Log Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timestamp",
+          "c_met_aerobic",
+          "c_nm_force",
+          "c_struct",
+          "b_met_anaerobic",
+          "workout_log_id",
+          "session_timestamp",
+          "timestamp_basis",
+          "state_disposition"
+        ],
+        "title": "LogWorkoutResponse",
+        "type": "object"
+      },
       "MacrocycleBlockSummary": {
         "description": "One training block under a macrocycle, for the program timeline.\n\nBlocks are generated one at a time and never persisted ahead (ADR-0040), so this\nlists only blocks that exist. ``phase`` is date-derived (``end_date`` before today \u2192\ncompleted, ``start_date`` after today \u2192 upcoming, else current); it is independent of\n``status``, which only changes by a manual PATCH. ``deload_weeks``/``benchmark_weeks``\nare the week numbers whose stored sessions are flagged deload/benchmark.\n``block_taper_week`` is the block-local final-week taper (3+ week blocks), not an\nevent taper (ADR-0061/0065).",
         "properties": {
@@ -9253,6 +9403,15 @@
             "title": "Timestamp",
             "type": "string"
           },
+          "timestamp_mode": {
+            "default": "event_time",
+            "enum": [
+              "event_time",
+              "server_now"
+            ],
+            "title": "Timestamp Mode",
+            "type": "string"
+          },
           "total_volume_load": {
             "anyOf": [
               {
@@ -9312,6 +9471,33 @@
             "format": "date-time",
             "title": "Session Timestamp",
             "type": "string"
+          },
+          "state_disposition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "applied",
+                  "record_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether this workout updated the training state; null for older logs.",
+            "title": "State Disposition"
+          },
+          "state_disposition_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Disposition Reason"
           },
           "total_volume_load": {
             "title": "Total Volume Load",
@@ -10689,7 +10875,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnifiedStateVector"
+                  "$ref": "#/components/schemas/LogWorkoutResponse"
                 }
               }
             },

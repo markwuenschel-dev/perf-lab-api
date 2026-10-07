@@ -159,6 +159,10 @@ export function buildWorkoutLog(
   // the server-defaulted remainder.
   return {
     timestamp: new Date().toISOString(),
+    // P3a: this form logs a session as it ends, so the server's clock decides when it
+    // happened (a slow or fast device can't misplace it). The device time is still sent and
+    // kept for audit, and still decides same-day planned-session matching.
+    timestamp_mode: "server_now",
     modality,
     // Non-null by the guard above: every required reading was supplied.
     duration_minutes: durationMin as number,

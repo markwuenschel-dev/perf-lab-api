@@ -32,6 +32,7 @@ import type {
 } from "@/types";
 import { usePerfLab } from "../store";
 import { canGiveFeedback, isMovable, moveRequest, reopenFloorIso } from "../sessionActions";
+import { dispositionTag } from "../workoutDisposition";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, toResourceError, type AuthedResource } from "../resource";
 import { Card, MetricBar, ScreenHeader, SectionLabel, WeakPointTags } from "../ui";
@@ -161,10 +162,12 @@ function loggedView(
       const first = [`RPE ${w.session_rpe}`, w.distance_meters > 0 ? fmtDist(w.distance_meters / 1000, units) : null]
         .filter(Boolean)
         .join(" · ");
+      // P3a: a workout saved without a training-state update says so on its row.
+      const tag = dispositionTag(w.state_disposition);
       return {
         state: "done",
         title: `${titleCase(w.modality)} · ${Math.round(w.duration_minutes)} min`,
-        sub: `${first}\nload ${Math.round(sessionLoad(w.session_rpe, w.duration_minutes))}`,
+        sub: `${first}\nload ${Math.round(sessionLoad(w.session_rpe, w.duration_minutes))}${tag ? `\n${tag}` : ""}`,
         sessionId: s.id,
       };
     }

@@ -48,6 +48,7 @@ import {
   type MetricState,
 } from "./overviewModel";
 import { EmptyLine, MetricText, NeutralRing, OverviewHeader, Snap, StatCol } from "./overviewLeaves";
+import { dispositionTag } from "../../workoutDisposition";
 
 const btnGhost =
   "rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft";
@@ -500,7 +501,7 @@ function HabitCard({ habit }: { habit: ReturnType<typeof habitSection> }) {
 
 // ---- Recent activity ---------------------------------------------------------------
 
-function RecentActivity({ resource }: { resource: AuthedResource<WorkoutLogSummary[]> }) {
+export function RecentActivity({ resource }: { resource: AuthedResource<WorkoutLogSummary[]> }) {
   switch (resource.status) {
     case "guest":
       return <EmptyLine>Sign in to see your logged sessions.</EmptyLine>;
@@ -517,7 +518,7 @@ function RecentActivity({ resource }: { resource: AuthedResource<WorkoutLogSumma
           {workouts.map((wk) => {
             const km = wk.distance_meters ? `${(wk.distance_meters / 1000).toFixed(1)} km` : null;
             const when = new Date(wk.logged_at).toLocaleDateString(undefined, { weekday: "short" });
-            const sub = [when, km, `RPE ${wk.session_rpe}`].filter(Boolean).join(" · ");
+            const sub = [when, km, `RPE ${wk.session_rpe}`, dispositionTag(wk.state_disposition)].filter(Boolean).join(" · ");
             return (
               <div key={wk.id} className="flex items-center gap-[13px] border-b border-white/[0.07] py-[11px] last:border-0">
                 <div className="h-[9px] w-[9px] flex-none rounded-full" style={{ background: dot(wk.session_rpe) }} />

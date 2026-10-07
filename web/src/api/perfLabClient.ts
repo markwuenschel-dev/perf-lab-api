@@ -42,7 +42,7 @@ import type {
   SyncResult,
   TokenResponse,
   TodaySessionResponse,
-  UnifiedStateVector,
+  LogWorkoutResponse,
   UserResponse,
   SessionFeedbackIn,
   SessionFeedbackOut,
@@ -235,12 +235,13 @@ export async function getNextSession(
 }
 
 /**
- * Digital Twin: Log a workout, update S_t -> S_{t+1}, return new state.
+ * Digital Twin: log a workout. Returns the current state after the log plus what the log did:
+ * `state_disposition` is `record_only` when the training-state update was omitted (P3a).
  */
 export async function logWorkout(
   log: WorkoutLog,
   token: string,
-): Promise<UnifiedStateVector> {
+): Promise<LogWorkoutResponse> {
   if (!API_V1_BASE) {
     throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   }
@@ -252,7 +253,7 @@ export async function logWorkout(
     },
     body: JSON.stringify(log),
   });
-  return handleResponse<UnifiedStateVector>(res, { sessionOn401: true });
+  return handleResponse<LogWorkoutResponse>(res, { sessionOn401: true });
 }
 
 /**
