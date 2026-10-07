@@ -30,6 +30,7 @@ const storeState = {
   planningRefreshKey: 0,
   feedbackRefreshKey: 0,
   readinessRefreshKey: 0,
+  workoutsRefreshKey: 0,
 };
 
 vi.mock("../store", () => ({
@@ -101,6 +102,12 @@ const WORKOUTS = [
   },
 ];
 
+// P3a tests swap in a workout whose training-state update was omitted.
+let workoutsFixture: typeof WORKOUTS = WORKOUTS;
+/** Calls the screen made, to prove a refresh re-reads (P3a review). */
+const listedWeeks: string[] = [];
+let workoutReads = 0;
+
 const AVAILABLE: PlannedWeekProjection = {
   available: true,
   reason: null,
@@ -118,11 +125,16 @@ const updatePlannedSession = vi.fn((id: number) => Promise.resolve(session({ id 
 const getPlannedWeekProjection = vi.fn(() => Promise.resolve(projection));
 
 vi.mock("@/api/perfLabClient", () => ({
-  listPlannedSessions: (_t: string, params?: { start_date?: string }) =>
-    Promise.resolve(params?.start_date === WEEK_START ? weekSessions : BLOCK_SESSIONS),
+  listPlannedSessions: (_t: string, params?: { start_date?: string }) => {
+    listedWeeks.push(params?.start_date ?? "");
+    return Promise.resolve(params?.start_date === WEEK_START ? weekSessions : BLOCK_SESSIONS);
+  },
   listPlanningBlocks: () =>
     Promise.resolve([{ id: 7, goal: "strength", status: "active", start_date: "2026-09-14", end_date: null, duration_weeks: 8 }]),
-  listWorkouts: () => Promise.resolve(WORKOUTS),
+  listWorkouts: () => {
+    workoutReads += 1;
+    return Promise.resolve(workoutsFixture);
+  },
   getPlannedWeekProjection: (...args: unknown[]) => getPlannedWeekProjection(...(args as [])),
   updatePlannedSession: (...args: unknown[]) => updatePlannedSession(...(args as [number])),
   getReadiness: () => Promise.resolve({ score: 71, band: "moderate", components: [] }),
@@ -148,6 +160,7 @@ beforeEach(() => {
   token = "real-token";
   projection = AVAILABLE;
   weekSessions = WEEK;
+  workoutsFixture = WORKOUTS;
   reopenFloor = null;
   updatePlannedSession.mockClear();
   getPlannedWeekProjection.mockClear();
@@ -303,6 +316,35 @@ describe("reopening a miss respects the server's today (P2b review)", () => {
     await screen.findByText("Tempo");
     fireEvent.click(within(cell(again.container, "2026-09-29", "planned")).getByRole("button", { name: /^Move / }));
     expect(updatePlannedSession).toHaveBeenCalledWith(12, { scheduled_date: "2026-09-30" }, "real-token");
+  });
+});
+
+describe("a saved workout refreshes Planning (P3a review)", () => {
+  it("bumping workoutsRefreshKey re-reads the week's sessions and logged workouts", async () => {
+    const sessionsReads = () => listedWeeks.filter((s) => s === WEEK_START).length;
+    const view = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    const [s0, w0] = [sessionsReads(), workoutReads];
+
+    storeState.workoutsRefreshKey = 1; // what LogWorkoutModal's refreshWorkouts() does
+    view.rerender(<PlanningScreen />);
+    await vi.waitFor(() => expect(sessionsReads()).toBe(s0 + 1));
+    expect(workoutReads).toBe(w0 + 1);
+    storeState.workoutsRefreshKey = 0;
+  });
+});
+
+describe("a record-only workout (P3a)", () => {
+  it("its completed cell says the training state was not updated; an applied one does not", async () => {
+    const { container, unmount } = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    expect(cell(container, "2026-09-28", "logged").textContent).not.toMatch(/training state not updated/);
+    unmount();
+
+    workoutsFixture = WORKOUTS.map((w) => ({ ...w, state_disposition: "record_only" as const }));
+    const again = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    expect(cell(again.container, "2026-09-28", "logged").textContent).toMatch(/training state not updated/);
   });
 });
 

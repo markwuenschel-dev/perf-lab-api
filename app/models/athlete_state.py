@@ -23,6 +23,24 @@ class AthleteState(Base):
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), index=True
     )
+    # P3a: the event that wrote this row (a workout, or a benchmark observation). NULL for
+    # baselines and for rows written before P3a.
+    source_workout_log_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "workout_logs.id", ondelete="SET NULL", name="fk_athlete_states_source_workout_log_id"
+        ),
+        nullable=True,
+    )
+    source_observation_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "benchmark_observations.id",
+            ondelete="SET NULL",
+            name="fk_athlete_states_source_observation_id",
+        ),
+        nullable=True,
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, index=True
     )

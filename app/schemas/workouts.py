@@ -100,6 +100,11 @@ class WorkoutLog(BaseModel):
     """
 
     timestamp: datetime
+    # P3a: what `timestamp` means. `event_time` (the default, for every existing caller):
+    # it is when the workout happened, kept as sent. `server_now`: a live submission — the
+    # effective time is the server's clock, resolved under the athlete-state lock; the
+    # client's value is kept for audit and still decides same-day planned-session matching.
+    timestamp_mode: Literal["event_time", "server_now"] = "event_time"
     modality: Literal["Running", "Strength", "Hypertrophy", "Power", "Mixed"]
 
     # Physical quantities: a session cannot last or cover a negative amount. Unbounded

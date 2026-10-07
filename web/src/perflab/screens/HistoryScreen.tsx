@@ -339,15 +339,15 @@ function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObse
 }
 
 export function HistoryScreen() {
-  const { actions } = usePerfLab();
+  const { state, actions } = usePerfLab();
   const { token } = useAuth();
   const { accent, colors } = useVizTheme();
   const [range, setRange] = useState<Range>("12w");
 
   // Real trends only — signed-in athletes never see a fabricated series. A large
   // history fetch backs the "All" window; the toggle filters client-side.
-  const historyRes = useAuthedResource<StateHistorySnapshotRead[]>((t) => api.getStateHistory(t, 365), []);
-  const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 300), []);
+  const historyRes = useAuthedResource<StateHistorySnapshotRead[]>((t) => api.getStateHistory(t, 365), [state.workoutsRefreshKey]);
+  const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 300), [state.workoutsRefreshKey]);
   const obsRes = useAuthedResource<BenchmarkObservationRead[]>(
     (t) => api.listBenchmarkObservations(t, { benchmarkCode: FIELD_TEST_CODE, limit: 10 }),
     [],

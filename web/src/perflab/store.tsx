@@ -150,6 +150,9 @@ export interface PerfLabState {
   blockCreateOpen: boolean;
   /** Bumped after a block is created so PlanningScreen's useAuthedResource re-fetches. */
   planningRefreshKey: number;
+  /** P3a: bumped after every saved workout, applied or record-only, so every reader of
+   *  logged workouts and planned sessions (Overview, Planning, History) re-fetches. */
+  workoutsRefreshKey: number;
   /** ISO date ("YYYY-MM-DD") anchoring the week PlanningScreen shows; null = current
    *  week. Set to a new block's start_date so its first week is what we display. */
   planningWeekAnchor: string | null;
@@ -249,6 +252,7 @@ export function initialState(): PerfLabState {
     feel: "controlled",
     blockCreateOpen: false,
     planningRefreshKey: 0,
+    workoutsRefreshKey: 0,
     planningWeekAnchor: null,
     objectiveCreateOpen: false,
     objectivesRefreshKey: 0,
@@ -367,6 +371,8 @@ export interface PerfLabActions {
   feedbackToTwin: () => void;
   /** Bump after feedback is recorded so dependents re-fetch. */
   refreshFeedback: () => void;
+  /** Bump after a workout is saved so its readers re-fetch (P3a). */
+  refreshWorkouts: () => void;
   setFeel: (feel: Feel, rpe: number) => void;
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   toggleNav: () => void;
@@ -473,6 +479,7 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     feedbackToTwin: () =>
       merge({ feedbackOpen: false, feedbackApplied: false, feedbackSessionId: null, feedbackSessionStatus: null, screen: "twin" }),
     refreshFeedback: () => mergeFn((s) => ({ feedbackRefreshKey: s.feedbackRefreshKey + 1 })),
+    refreshWorkouts: () => mergeFn((s) => ({ workoutsRefreshKey: s.workoutsRefreshKey + 1 })),
     setFeel: (feel, rpe) => merge({ feel, rpe }),
     setSetting: (key, value) => dispatch({ type: "mergeSettings", patch: { [key]: value } as Partial<Settings> }),
     toggleNav: () => mergeFn((s) => ({ navCollapsed: !s.navCollapsed })),

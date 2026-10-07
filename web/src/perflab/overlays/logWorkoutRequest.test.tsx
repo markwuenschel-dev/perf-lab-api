@@ -48,10 +48,17 @@ let nextSessionRx: { exercises: ExercisePrescription[] } = { exercises: [] };
 /** Every goal the modal asked GET /v1/next-session for. */
 const nextSessionGoals: string[] = [];
 
+/** What POST /v1/log-workout answers (P3a: it says whether the state was updated). */
+let logResponse: Record<string, unknown> = { timestamp: "2026-07-30T00:00:00Z", state_disposition: "applied" };
+const applyLog = vi.fn();
+const refreshWorkouts = vi.fn();
+/** The store's logOpen; flipped to simulate closing and reopening the (still mounted) modal. */
+let storeLogOpen = true;
+
 vi.mock("@/api/perfLabClient", () => ({
   logWorkout: (log: WorkoutLog) => {
     logged.push(log);
-    return Promise.resolve({ timestamp: "2026-07-30T00:00:00Z" });
+    return Promise.resolve(logResponse);
   },
   simulateDose: (log: WorkoutLog) => {
     simulated.push(log);
@@ -89,7 +96,7 @@ let storeGoal = "Hypertrophy";
 vi.mock("../store", () => ({
   usePerfLab: () => ({
     state: {
-      logOpen: true,
+      logOpen: storeLogOpen,
       logType: "strength",
       ...storeDraft,
       checkin: storeCheckin,
@@ -100,7 +107,8 @@ vi.mock("../store", () => ({
       closeLog: vi.fn(),
       openAuth: vi.fn(),
       cacheTwinState: vi.fn(),
-      applyLog: vi.fn(),
+      applyLog,
+      refreshWorkouts,
       setRpe: vi.fn(),
       setLogType: vi.fn(),
       setDur: vi.fn(),
@@ -159,6 +167,70 @@ async function submit(ci: CheckinState): Promise<Record<string, unknown>> {
   await vi.waitFor(() => expect(logged.length).toBe(1));
   return logged[0] as unknown as Record<string, unknown>;
 }
+
+describe("what the log did to the training state (P3a)", () => {
+  afterEach(() => {
+    logResponse = { timestamp: "2026-07-30T00:00:00Z", state_disposition: "applied" };
+    applyLog.mockClear();
+    refreshWorkouts.mockClear();
+    storeLogOpen = true;
+  });
+
+  it("asks the server to time a live log by its own clock", async () => {
+    const b = await submit(REAL_INITIAL_CHECKIN);
+    expect(b.timestamp_mode).toBe("server_now");
+    expect(typeof b.timestamp).toBe("string"); // the device time still goes along, for audit
+  });
+
+  it("an applied log closes to the twin as before, and tells workout readers to re-read", async () => {
+    await submit(REAL_INITIAL_CHECKIN);
+    await vi.waitFor(() => expect(applyLog).toHaveBeenCalledTimes(1));
+    expect(refreshWorkouts).toHaveBeenCalledTimes(1);
+  });
+
+  it("a record-only log stays open and says the training-state update was omitted", async () => {
+    logResponse = {
+      timestamp: "2026-07-30T00:00:00Z",
+      state_disposition: "record_only",
+      state_disposition_reason: "event_before_current_state",
+    };
+    await submit(REAL_INITIAL_CHECKIN);
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toMatch(/Training-state update omitted: it happened before your model's latest update/);
+    expect(status.textContent).toMatch(/strength evidence from it are kept/);
+    expect(applyLog).not.toHaveBeenCalled();
+    // The workout was saved: the screen behind the form must re-read it (review repro).
+    expect(refreshWorkouts).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(screen.queryByText(/Apply to twin/)).toBeNull();
+  });
+
+  it.each(["Done", "Cancel"])("closing with %s and reopening starts a fresh draft that can be submitted again (review repro)", async (closeWith) => {
+    logResponse = {
+      timestamp: "2026-07-30T00:00:00Z",
+      state_disposition: "record_only",
+      state_disposition_reason: "event_before_current_state",
+    };
+    storeCheckin = REAL_INITIAL_CHECKIN;
+    const view = render(<LogWorkoutModal />);
+    fireEvent.click(screen.getByText(/Apply to twin/));
+    await screen.findByRole("status");
+    fireEvent.click(screen.getByRole("button", { name: closeWith }));
+
+    // The store closes the modal, then the athlete opens it again for the next session.
+    storeLogOpen = false;
+    view.rerender(<LogWorkoutModal />);
+    storeLogOpen = true;
+    view.rerender(<LogWorkoutModal />);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+
+    logResponse = { timestamp: "2026-07-30T00:00:00Z", state_disposition: "applied" };
+    fireEvent.click(screen.getByText(/Apply to twin/));
+    await vi.waitFor(() => expect(logged.length).toBe(2));
+    await vi.waitFor(() => expect(applyLog).toHaveBeenCalledTimes(1));
+  });
+});
 
 describe("the object handed to logWorkout (#199)", () => {
   it("NO CHECK-IN: omits sleep_quality AND life_stress_inverse entirely", async () => {

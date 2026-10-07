@@ -50,6 +50,13 @@ class WorkoutLog(Base):
     session_timestamp: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, comment="When the workout actually occurred"
     )
+    # P3a: how session_timestamp was chosen, and the raw input it came from (audit).
+    timestamp_basis: Mapped[str | None] = mapped_column(String, nullable=True)
+    client_timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # P3a: whether this workout updated the training state. NULL = logged before P3a.
+    state_disposition: Mapped[str | None] = mapped_column(String, nullable=True)
+    state_disposition_reason: Mapped[str | None] = mapped_column(String, nullable=True)
 
     modality: Mapped[str] = mapped_column(String, nullable=False)
     duration_minutes: Mapped[float] = mapped_column(Float, nullable=False)

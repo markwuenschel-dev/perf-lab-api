@@ -532,7 +532,8 @@ async def stage_observation(
                 obs.applied_capacity_effect = oa.CE_BIDIRECTIONAL_UPDATE
         if new_state is not None:
             kwargs = athlete_state_kwargs_from_unified(new_state)
-            db.add(AthleteState(user_id=user_id, **kwargs))
+            # P3a: the observation that wrote this row (obs is flushed above).
+            db.add(AthleteState(user_id=user_id, source_observation_id=obs.id, **kwargs))
     elif is_valid and effect == oa.CE_UPWARD_LOWER_BOUND:
         # Deferred floor-ratchet (ADR-0058): the authority is resolved but NOT promoted
         # to a live mutation. Record the candidate — proposed floor, projected uplift,

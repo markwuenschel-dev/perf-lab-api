@@ -32,6 +32,7 @@ import type {
 } from "@/types";
 import { usePerfLab } from "../store";
 import { canGiveFeedback, isMovable, moveRequest, reopenFloorIso } from "../sessionActions";
+import { dispositionTag } from "../workoutDisposition";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, toResourceError, type AuthedResource } from "../resource";
 import { Card, MetricBar, ScreenHeader, SectionLabel, WeakPointTags } from "../ui";
@@ -161,10 +162,12 @@ function loggedView(
       const first = [`RPE ${w.session_rpe}`, w.distance_meters > 0 ? fmtDist(w.distance_meters / 1000, units) : null]
         .filter(Boolean)
         .join(" · ");
+      // P3a: a workout saved without a training-state update says so on its row.
+      const tag = dispositionTag(w.state_disposition);
       return {
         state: "done",
         title: `${titleCase(w.modality)} · ${Math.round(w.duration_minutes)} min`,
-        sub: `${first}\nload ${Math.round(sessionLoad(w.session_rpe, w.duration_minutes))}`,
+        sub: `${first}\nload ${Math.round(sessionLoad(w.session_rpe, w.duration_minutes))}${tag ? `\n${tag}` : ""}`,
         sessionId: s.id,
       };
     }
@@ -237,7 +240,10 @@ function AuthedPlanningBody() {
   );
   // Bumped after this screen's own writes (reschedule, mark skipped) so the week,
   // the block cadence and the projection re-read what the server now holds.
-  const [writeKey, setWriteKey] = useState(0);
+  const [ownWriteKey, setWriteKey] = useState(0);
+  // This screen's own writes, plus any saved workout (P3a: a record-only log keeps the
+  // athlete here, so the week, its logged row and the projection must re-read).
+  const writeKey = ownWriteKey + state.workoutsRefreshKey;
   const [write, setWrite] = useState<{ busyId: number | null; error: string | null }>({ busyId: null, error: null });
 
   // `planningRefreshKey` is bumped by BlockCreateModal after a successful
@@ -873,6 +879,7 @@ interface TodayPrescription {
 
 function PrescribedSessionCard({ goal }: { goal: string }) {
   const { token } = useAuth();
+  const { state } = usePerfLab();
   const [todayKey, setTodayKey] = useState(0);
   const today = useAuthedResource<TodayPrescription>(async (t) => {
     const res = await api.getTodayPlannedSession(goal, t);
@@ -880,7 +887,7 @@ function PrescribedSessionCard({ goal }: { goal: string }) {
       return { prescription: res.prescription, revision: res.revision ?? null, planned: true };
     }
     return { prescription: await api.getNextSession(goal, t), revision: null, planned: false };
-  }, [goal, todayKey]);
+  }, [goal, todayKey, state.workoutsRefreshKey]);
   const prescription: AuthedResource<WorkoutPrescription> =
     today.status === "success" ? { ...today, data: today.data.prescription } : today;
   const revision = today.status === "success" ? today.data.revision : null;

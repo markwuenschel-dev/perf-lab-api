@@ -2571,6 +2571,107 @@ export interface components {
             status: "recommended" | "no_qualifying_evidence" | "not_supported";
         };
         /**
+         * LogWorkoutResponse
+         * @description ``POST /v1/log-workout``: the athlete's current state after the log, plus what the
+         *     log did. A subclass, so a client reading it as a state vector keeps working.
+         *
+         *     ``record_only``: the workout, its sets, its strength evidence and any planned-session
+         *     link were saved, but the training-state update was omitted. The state returned is the
+         *     unchanged current one. Strength evidence from the workout can still inform prescribed
+         *     loads.
+         */
+        LogWorkoutResponse: {
+            /**
+             * B Met Anaerobic
+             * @description Anaerobic work capacity (W'/D')
+             */
+            b_met_anaerobic: number;
+            /**
+             * C Met Aerobic
+             * @description Aerobic capacity (e.g. CS / VO2 proxy)
+             */
+            c_met_aerobic: number;
+            /**
+             * C Nm Force
+             * @description Maximal strength / force capacity
+             */
+            c_nm_force: number;
+            /**
+             * C Struct
+             * @description Structural capacity / CSA proxy
+             */
+            c_struct: number;
+            capacity_confidence?: components["schemas"]["CapacityConfidence"];
+            capacity_x?: components["schemas"]["CapacityState"];
+            /**
+             * F Met Systemic
+             * @default 0
+             */
+            f_met_systemic: number;
+            /**
+             * F Nm Central
+             * @default 0
+             */
+            f_nm_central: number;
+            /**
+             * F Nm Peripheral
+             * @default 0
+             */
+            f_nm_peripheral: number;
+            /**
+             * F Struct Damage
+             * @default 0
+             */
+            f_struct_damage: number;
+            fatigue_f?: components["schemas"]["FatigueState"];
+            /**
+             * Habit Strength
+             * @default 0
+             */
+            habit_strength: number;
+            /**
+             * Model Version
+             * @description State engine version
+             * @default v0.3
+             */
+            model_version: string;
+            /**
+             * S Struct Signal
+             * @default 0
+             */
+            s_struct_signal: number;
+            /**
+             * Session Timestamp
+             * Format: date-time
+             * @description The workout's effective time (UTC).
+             */
+            session_timestamp: string;
+            /** Skill State */
+            skill_state?: {
+                [key: string]: number;
+            };
+            /**
+             * State Disposition
+             * @enum {string}
+             */
+            state_disposition: "applied" | "record_only";
+            /** State Disposition Reason */
+            state_disposition_reason?: ("event_before_current_state" | "current_state_in_future") | null;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /**
+             * Timestamp Basis
+             * @enum {string}
+             */
+            timestamp_basis: "event_time" | "server_now";
+            tissue_t?: components["schemas"]["TissueState"];
+            /** Workout Log Id */
+            workout_log_id: number;
+        };
+        /**
          * MacrocycleBlockSummary
          * @description One training block under a macrocycle, for the program timeline.
          *
@@ -4882,6 +4983,12 @@ export interface components {
              */
             timestamp: string;
             /**
+             * Timestamp Mode
+             * @default event_time
+             * @enum {string}
+             */
+            timestamp_mode: "event_time" | "server_now";
+            /**
              * Total Volume Load
              * @default 0
              */
@@ -4915,6 +5022,13 @@ export interface components {
              * Format: date-time
              */
             session_timestamp: string;
+            /**
+             * State Disposition
+             * @description Whether this workout updated the training state; null for older logs.
+             */
+            state_disposition?: ("applied" | "record_only") | null;
+            /** State Disposition Reason */
+            state_disposition_reason?: string | null;
             /** Total Volume Load */
             total_volume_load: number;
         };
@@ -5713,7 +5827,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UnifiedStateVector"];
+                    "application/json": components["schemas"]["LogWorkoutResponse"];
                 };
             };
             /** @description Validation Error */
