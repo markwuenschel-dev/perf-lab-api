@@ -16,12 +16,13 @@
 // shown invented distance/pace/HR plus a "Twin updated" screen backed by nothing.
 // The refusal lives at the boundary below rather than at the call site, so it
 // holds regardless of who opens the overlay.
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { createSessionFeedback } from "@/api/perfLabClient";
-import type { ApiError, SessionFeedbackIn, SessionFeedbackOut } from "@/types";
+import type { ApiError, SessionFeedbackIn, SessionFeedbackOut, SessionStatus } from "@/types";
 import { usePerfLab } from "../store";
+import { outcomesFor, type Outcome } from "../sessionActions";
 import type { Feel } from "../store";
 import { COLORS, projectLogDose } from "../sim";
 import { CloseBtn } from "./LogWorkoutModal";
@@ -34,7 +35,16 @@ export function FeedbackModal() {
 
   // A real session id is the only thing that makes this overlay able to write.
   if (state.feedbackSessionId != null) {
-    return <AuthedFeedbackForm plannedSessionId={state.feedbackSessionId} />;
+    // Keyed by session AND status: a draft belongs to one session's outcome. Opening another
+    // session (or the same one after its status changed) must start a fresh draft, never
+    // carry over an outcome the new form does not offer.
+    return (
+      <AuthedFeedbackForm
+        key={`${state.feedbackSessionId}:${state.feedbackSessionStatus ?? ""}`}
+        plannedSessionId={state.feedbackSessionId}
+        sessionStatus={state.feedbackSessionStatus}
+      />
+    );
   }
   // No session id => the guest demo. Signed in, there is nothing truthful to
   // show here, so show nothing.
@@ -45,8 +55,6 @@ export function FeedbackModal() {
 // ──────────────────────────────────────────────────────────────────────────
 // Authenticated: a real report against a real session.
 // ──────────────────────────────────────────────────────────────────────────
-
-type Outcome = "completed" | "modified" | "skipped";
 
 interface FeedbackForm {
   outcome: Outcome;
@@ -119,19 +127,29 @@ const chipCls = (active: boolean) =>
     active ? "border-ac/40 bg-ac/[0.12] text-ac" : "border-white/10 bg-panel text-mute",
   );
 
-const OUTCOMES: [Outcome, string][] = [
-  ["completed", "As prescribed"],
-  ["modified", "Changed it"],
-  ["skipped", "Skipped"],
-];
-
-function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) {
+function AuthedFeedbackForm({
+  plannedSessionId,
+  sessionStatus,
+}: {
+  plannedSessionId: number;
+  sessionStatus: SessionStatus | null;
+}) {
   const { actions } = usePerfLab();
   const auth = useAuth();
-  const [form, setForm] = useState<FeedbackForm>(EMPTY_FORM);
+  const outcomes = outcomesFor(sessionStatus);
+  // The draft starts on an offered outcome, and the form is remounted (keyed above) whenever
+  // the session or its status changes, so what is shown is what is sent.
+  const [form, setForm] = useState<FeedbackForm>({ ...EMPTY_FORM, outcome: outcomes[0][0] });
+  const missed = sessionStatus === "missed";
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SessionFeedbackOut | null>(null);
+  // The success screen replaces the focused Record button; put focus on its Done button
+  // rather than letting it fall to <body>.
+  const doneRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (saved) doneRef.current?.focus();
+  }, [saved]);
 
   const set = <K extends keyof FeedbackForm>(key: K, value: FeedbackForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -182,12 +200,23 @@ function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) 
               dose: it does not advance S(t), and claiming otherwise was the
               specific lie this screen used to tell. */}
           <div className="max-w-[400px] text-[13.5px] font-medium leading-[1.6] text-mute">
-            Saved against this session. Repeated skips or changes bias your next
-            prescription toward lighter work — your state vector is unchanged until
-            you log a workout.
+            {missed ? (
+              // P2: a miss stays a miss; this report explains it and changes nothing else.
+              <>
+                Saved against this session as why it was missed. The session stays missed,
+                and this report doesn't change your prescription or your state.
+              </>
+            ) : (
+              <>
+                Saved against this session. Repeated skips or changes bias your next
+                prescription toward lighter work — your state vector is unchanged until
+                you log a workout.
+              </>
+            )}
           </div>
           <div className="mt-[10px] flex gap-[10px]">
             <button
+              ref={doneRef}
               onClick={actions.closeFeedback}
               className="rounded-[10px] border border-white/10 bg-white/[0.04] px-[18px] py-3 text-[12.5px] font-semibold leading-none text-soft"
             >
@@ -208,9 +237,14 @@ function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) 
           </div>
 
           <div className="flex flex-col gap-[22px] p-6">
+            {missed && (
+              <p className="m-0 text-[12.5px] leading-[1.45] text-soft">
+                Nothing was logged for this session. Tell us why it didn't happen.
+              </p>
+            )}
             <Field label="Outcome">
               <div className="flex gap-2">
-                {OUTCOMES.map(([key, label]) => (
+                {outcomes.map(([key, label]) => (
                   <div key={key} onClick={() => set("outcome", key)} className={segCls(form.outcome === key)}>
                     {label}
                   </div>
@@ -290,7 +324,10 @@ function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) 
                 saveError ? "text-hot" : "text-dim",
               )}
             >
-              {saveError ?? "Recorded against this session and used to bias your next prescription."}
+              {saveError ??
+                (missed
+                  ? "Kept with this missed session. It doesn't change your prescription."
+                  : "Recorded against this session and used to bias your next prescription.")}
             </span>
             <div className="flex flex-none gap-[9px]">
               <button
@@ -301,8 +338,10 @@ function AuthedFeedbackForm({ plannedSessionId }: { plannedSessionId: number }) 
               </button>
               <button
                 onClick={() => void save()}
-                disabled={saving}
-                className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+                // aria-disabled, not disabled: disabling the focused button would drop focus
+                // to <body>, outside the dialog. save() itself ignores a click while saving.
+                aria-disabled={saving}
+                className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] aria-disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Record feedback →"}
               </button>
@@ -325,13 +364,73 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), textarea, select, a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * A modal dialog: nothing behind the backdrop (another session's Feedback button, say) can
+ * be reached from the keyboard while it is open.
+ *
+ * Focus can leave the dialog without any key press inside it — a focused control that is
+ * disabled or unmounted drops focus to <body>. So the guards live on the DOCUMENT, not on
+ * the dialog: a Tab from anywhere outside lands back inside, and focus that arrives on
+ * anything outside is pulled back. Callers also move focus deliberately when they replace
+ * the focused control (the success screen focuses Done).
+ */
 function Shell({ children }: { children: ReactNode }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const box = dialog.current;
+    if (!box) return;
+    box.focus();
+
+    const inside = (node: EventTarget | null) => node instanceof Node && box.contains(node);
+
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key !== "Tab" || !box) return;
+      const items = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (items.length === 0) {
+        e.preventDefault();
+        box.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!inside(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (active === first || active === box)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    function onFocusIn(e: FocusEvent) {
+      if (!inside(e.target)) box?.focus();
+    }
+
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-[63] flex items-center justify-center p-8 backdrop-blur-[5px]"
       style={{ background: "rgba(4,5,8,.72)" }}
     >
-      <div className="max-h-[92vh] w-[720px] max-w-full overflow-auto rounded-[18px] border border-white/[0.09] bg-surface shadow-[0_50px_110px_-30px_rgba(0,0,0,.78)]">
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        className="max-h-[92vh] w-[720px] max-w-full overflow-auto rounded-[18px] border border-white/[0.09] bg-surface shadow-[0_50px_110px_-30px_rgba(0,0,0,.78)] outline-none"
+      >
         {children}
       </div>
     </div>

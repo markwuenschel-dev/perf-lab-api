@@ -21,8 +21,9 @@ import { useState, type ReactNode } from "react";
 import * as api from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
 import { cn } from "@/lib/utils";
-import type { WeekReview, WeekReviewAxisMove, WeekReviewNextItem, WeekReviewSession } from "@/types";
+import type { SessionStatus, WeekReview, WeekReviewAxisMove, WeekReviewNextItem, WeekReviewSession } from "@/types";
 import { usePerfLab } from "../store";
+import { canGiveFeedback } from "../sessionActions";
 import { useAuthedResource } from "../useAuthedResource";
 import { ResourceState } from "../ResourceState";
 import { resourceData } from "../resource";
@@ -160,7 +161,7 @@ function AuthedWeekReview() {
                   />
                 ) : null
               }
-              onFeedback={(id) => actions.openFeedback(id)}
+              onFeedback={(id, status) => actions.openFeedback(id, status)}
             />
           ) : (
             <UnavailableNotice reason={review.reason ?? null} onPlanning={() => actions.setScreen("planning")} />
@@ -238,7 +239,7 @@ function ReviewBody({ review, stepper, onFeedback, sample = false }: {
   review: WeekReview;
   stepper?: ReactNode;
   /** Absent for the guest sample: its sessions are not real, so nothing can be reported. */
-  onFeedback?: (plannedSessionId: number) => void;
+  onFeedback?: (plannedSessionId: number, status: SessionStatus) => void;
   sample?: boolean;
 }) {
   return (
@@ -394,12 +395,12 @@ function feedbackNote(s: WeekReviewSession): string | null {
 
 const chip = "rounded-[7px] border px-[9px] py-[6px] text-[11px] font-semibold leading-none";
 
-function FeltRow({ s, onFeedback }: { s: WeekReviewSession; onFeedback?: (id: number) => void }) {
+function FeltRow({ s, onFeedback }: { s: WeekReviewSession; onFeedback?: (id: number, status: SessionStatus) => void }) {
   const kind = titleCase(s.category || s.modality);
   const mode = s.modality && s.modality !== s.category ? ` · ${titleCase(s.modality)}` : "";
   const name = `${kind}${mode} (${dayOf(s.scheduled_date)})`;
   const meta = s.prescribed_rpe != null ? `prescribed RPE ${fmtRpe(s.prescribed_rpe)}` : "no RPE prescribed";
-  const terminal = s.status === "completed" || s.status === "skipped";
+  const terminal = canGiveFeedback(s.status);
   const note = feedbackNote(s);
 
   let body: ReactNode;
@@ -434,12 +435,13 @@ function FeltRow({ s, onFeedback }: { s: WeekReviewSession; onFeedback?: (id: nu
       <div className="flex flex-wrap items-center gap-2">
         {body}
         {note && <span className="text-[11px] font-medium leading-none text-dim">· {note}</span>}
-        {/* Feedback describes an outcome, so only completed/skipped sessions can take
-            it (ADR-0070), and only once. It goes through the existing FeedbackModal. */}
+        {/* Feedback describes an outcome, so only completed/skipped/missed sessions can
+            take it (ADR-0070, P2), and only once. It goes through the existing FeedbackModal,
+            which offers only the outcomes coherent with this status. */}
         {terminal && note == null && onFeedback && (
           <button
             type="button"
-            onClick={() => onFeedback(s.planned_session_id)}
+            onClick={() => onFeedback(s.planned_session_id, s.status)}
             className="ml-auto rounded-[8px] border border-white/[0.07] bg-white/[0.04] px-[10px] py-[7px] text-[11px] font-semibold leading-none text-soft"
           >
             Add feedback
@@ -452,7 +454,7 @@ function FeltRow({ s, onFeedback }: { s: WeekReviewSession; onFeedback?: (id: nu
 
 function HowItFeltCard({ sessions, onFeedback, sample }: {
   sessions: WeekReviewSession[];
-  onFeedback?: (id: number) => void;
+  onFeedback?: (id: number, status: SessionStatus) => void;
   sample: boolean;
 }) {
   const ordered = [...sessions].sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));

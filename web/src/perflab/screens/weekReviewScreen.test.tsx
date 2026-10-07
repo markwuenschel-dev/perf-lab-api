@@ -8,7 +8,7 @@
 //     not claim anything reviewed next week
 //   - there are no Accept / Override buttons (no backend exists for them)
 //   - every `available: false` reason renders honest copy, never numbers
-//   - feedback for an unreviewed completed session goes through openFeedback(id)
+//   - feedback for an unreviewed completed session goes through openFeedback(id, status)
 //   - a guest sees a labelled sample and no request is made
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -103,6 +103,11 @@ describe("stat tiles read the backend's counts", () => {
     render(<WeekReviewScreen />);
     expect(await screen.findByText("1 skipped · 1 missed · 1 pending · 1 modified")).toBeTruthy();
     expect(screen.getByTestId("felt-104").textContent).toContain("missed · nothing logged");
+    // P2b: a miss is an outcome the athlete may explain; the modal is told it is a miss.
+    fireEvent.click(within(screen.getByTestId("felt-104")).getByRole("button", { name: "Add feedback" }));
+    expect(openFeedback).toHaveBeenCalledWith(104, "missed");
+    // A session still pending has no outcome: no feedback offered.
+    expect(within(screen.getByTestId("felt-103")).queryByRole("button", { name: "Add feedback" })).toBeNull();
   });
 
   it("shows a dash, not 0%, when nothing is due yet", async () => {
@@ -134,7 +139,7 @@ describe("how it felt", () => {
     expect(within(tue).getByText("felt RPE 9")).toBeTruthy();
     expect(within(tue).getByText("above prescribed")).toBeTruthy();
     fireEvent.click(within(tue).getByRole("button", { name: "Add feedback" }));
-    expect(openFeedback).toHaveBeenCalledWith(101);
+    expect(openFeedback).toHaveBeenCalledWith(101, "completed");
 
     // Already reviewed: its note, no second feedback affordance.
     const thu = screen.getByTestId("felt-102");
