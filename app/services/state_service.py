@@ -1147,6 +1147,10 @@ async def process_new_workout(
     )
     timestamp_basis = log.timestamp_mode
     log_ts = server_now if timestamp_basis == "server_now" else client_ts
+    if log_ts - datetime.min < timedelta(seconds=1):
+        # A first workout re-anchors S0 one second before it; at datetime.min there is no such
+        # instant (OverflowError → 500). Refused before anything is staged.
+        raise HTTPException(status_code=422, detail="The workout's timestamp is too early to record")
 
     if not last_record:
         # Build and stage the baseline row without committing yet — the whole

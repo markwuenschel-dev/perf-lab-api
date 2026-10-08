@@ -117,15 +117,14 @@ async def test_an_on_time_measurement_is_applied_and_links_its_state_row(async_d
     assert newest == obs.id  # it is the new head
 
 
-async def test_a_late_measurement_is_kept_but_writes_no_state_ekf_or_decline(async_db):
+async def test_a_late_measurement_is_kept_but_writes_no_state_or_ekf(async_db):
     user = await _user(async_db, "pre-late@test.com")
     await _seed_definition(async_db)
     await _seed_head(async_db, user.id, _now() - timedelta(hours=1))
     before = await _count(async_db, AthleteState, user.id)
 
-    # Low enough that, applied, it would open a decline candidate against the head.
     read = await benchmark_service.create_observation(
-        async_db, user.id, _measurement(_now() - timedelta(days=1), raw=45.0)
+        async_db, user.id, _measurement(_now() - timedelta(days=1))
     )
 
     obs = await _only_obs(async_db, user.id)
@@ -135,8 +134,57 @@ async def test_a_late_measurement_is_kept_but_writes_no_state_ekf_or_decline(asy
     assert read.state_disposition == "record_only"
     assert await _count(async_db, AthleteState, user.id) == before
     assert await _count(async_db, EkfShadowLog, user.id) == 0
-    assert await _count(async_db, StrengthDeclineCandidate, user.id) == 0
-    assert obs.applied_capacity_effect is None and obs.decline_transition_status is None
+
+
+async def _with_watermark(db, email: str) -> int:
+    """An athlete whose squat watermark (150 kg) comes from a real, applied, on-time
+    measurement — the premise the decline machine needs to judge a low reading at all."""
+    user = await _user(db, email)
+    await _seed_definition(db)
+    await _seed_head(db, user.id, _now() - timedelta(hours=6))
+    await benchmark_service.create_observation(db, user.id, _measurement(_now() - timedelta(hours=5), raw=150.0))
+    return user.id
+
+
+async def _candidates(db, user_id: int) -> list[tuple[str, int]]:
+    rows = (await db.execute(
+        select(StrengthDeclineCandidate.status, StrengthDeclineCandidate.trigger_observation_id)
+        .where(StrengthDeclineCandidate.user_id == user_id).order_by(StrengthDeclineCandidate.id)
+    )).all()
+    return [tuple(r) for r in rows]
+
+
+async def test_an_on_time_low_reading_opens_a_candidate_control(async_db):
+    """Control: with a real watermark, an ON-TIME low reading reaches the decline machine and
+    opens a candidate. Without this, the late test below could pass for the wrong reason."""
+    uid = await _with_watermark(async_db, "pre-decline-control@test.com")
+
+    await benchmark_service.create_observation(async_db, uid, _measurement(_now() - timedelta(hours=1), raw=45.0))
+
+    assert len(await _candidates(async_db, uid)) == 1
+
+
+async def test_a_late_low_reading_opens_no_candidate(async_db):
+    uid = await _with_watermark(async_db, "pre-decline-late@test.com")
+
+    read = await benchmark_service.create_observation(
+        async_db, uid, _measurement(_now() - timedelta(days=1), raw=45.0)
+    )
+
+    assert read.state_disposition == "record_only"
+    assert await _candidates(async_db, uid) == []
+
+
+async def test_a_late_low_reading_leaves_an_existing_candidate_untouched(async_db):
+    uid = await _with_watermark(async_db, "pre-decline-preserve@test.com")
+    await benchmark_service.create_observation(async_db, uid, _measurement(_now() - timedelta(hours=4), raw=45.0))
+    opened = await _candidates(async_db, uid)
+    assert len(opened) == 1
+
+    # A late, independent low reading: had it reached the machine it could confirm or update.
+    await benchmark_service.create_observation(async_db, uid, _measurement(_now() - timedelta(days=20), raw=44.0))
+
+    assert await _candidates(async_db, uid) == opened
 
 
 async def test_a_head_in_the_future_gets_its_own_reason_and_is_not_moved(async_db):
@@ -228,6 +276,22 @@ async def test_a_future_observed_at_is_refused_and_writes_nothing(async_db):
         resp = await c.post("/v1/benchmarks/observations", json=body)
     assert resp.status_code == 422 and "future" in resp.text
     assert await _count(async_db, BenchmarkObservation, user.id) == 0
+
+
+async def test_an_unrepresentable_early_time_is_refused_before_any_write(async_db):
+    """Review repro: a fresh athlete's baseline is anchored one second before the observation;
+    at 0001-01-01 there is no such instant, which raised OverflowError (a 500)."""
+    user = await _user(async_db, "pre-min@test.com")
+    await _seed_definition(async_db)
+    body = {
+        "benchmark_code": "pl_e1rm_squat", "raw_value": 150.0, "source": "benchmark_test",
+        "observed_at": "0001-01-01T00:00:00Z",
+    }
+    async for c in _client(async_db, user):
+        resp = await c.post("/v1/benchmarks/observations", json=body)
+    assert resp.status_code == 422 and "too early" in resp.text
+    assert await _count(async_db, BenchmarkObservation, user.id) == 0
+    assert await _count(async_db, AthleteState, user.id) == 0
 
 
 async def test_the_route_reports_the_disposition(async_db):

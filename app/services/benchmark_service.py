@@ -418,6 +418,10 @@ async def stage_observation(
     # A client may send observed_at with an offset. Stored timestamps are naive UTC, and the
     # same value becomes the new state's timestamp and any decline candidate's clock.
     observation_time = utc_naive(body.observed_at or datetime.now(UTC))
+    if observation_time - datetime.min < timedelta(seconds=1):
+        # A baseline staged for a fresh athlete is anchored one second before the observation;
+        # at datetime.min there is no such instant (OverflowError → 500). Refused before any write.
+        raise HTTPException(status_code=422, detail="observed_at is too early to record")
     obs = BenchmarkObservation(
         user_id=user_id,
         benchmark_definition_id=definition.id,
