@@ -85,6 +85,11 @@ class WorkoutLog(Base):
         JSONB, nullable=True, comment="StressDose dict at time of logging"
     )
 
+    # P3b-1: the operator's inputs exactly as the state transition saw them (final modality,
+    # movement pattern, wellness, and the dose actually used). Written once, immutable (a DB
+    # trigger refuses a change). NULL = logged before P3b-1: not replayable. See alembic a055.
+    replay_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
     # For benchmark sessions: store results
     is_benchmark: Mapped[bool] = mapped_column(Boolean, default=False)
     benchmark_results: Mapped[dict[str, Any] | None] = mapped_column(

@@ -202,7 +202,12 @@ async def repair_with_db(db: AsyncSession, apply: bool) -> RepairReport:
             fixed.capacity_x.max_strength = watermark
             fixed.timestamp = datetime.now(UTC).replace(tzinfo=None)
             kwargs = athlete_state_kwargs_from_unified(fixed)
-            row = AthleteState(user_id=uid, **kwargs)
+            row = AthleteState(
+                user_id=uid,
+                event_kind="repair",
+                predecessor_state_id=latest_row.id,
+                **kwargs,
+            )
             row.engine_state = {
                 **(row.engine_state or {}),
                 "correction": {

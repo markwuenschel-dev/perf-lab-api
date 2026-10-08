@@ -35,6 +35,7 @@ from app.logic.dose_engine_v0 import (
     build_session_external_intensity,
 )
 from app.logic.goal_seed_emphasis import apply_goal_emphasis
+from app.logic.replay_inputs import workout_replay_input
 from app.logic.state_update_v0 import update_athlete_state
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -64,6 +65,7 @@ from app.services.planned_session_protocol import (
     supersede_feedback,
 )
 from app.services.state_chain_lock import lock_athlete_chain
+from app.services.transition_identity_service import ensure_current_identity
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +202,9 @@ def _build_baseline_vector(
     plan = _baseline_tier_plan(squat_1rm_kg, deadlift_1rm_kg, bench_1rm_kg, run_5k_seconds)
     for axis, variance in sv.seed_confidence_overrides(plan).items():
         setattr(u.capacity_confidence, axis, variance)
-    row = AthleteState(user_id=user_id, **athlete_state_kwargs_from_unified(u))
+    row = AthleteState(
+        user_id=user_id, event_kind="baseline", **athlete_state_kwargs_from_unified(u)
+    )
     return u, row
 
 
@@ -1170,6 +1174,8 @@ async def process_new_workout(
     # collapses every later row's timestamp onto S0's and breaks recency ordering.
     if initial_baseline is not None:
         anchor = log_ts - timedelta(seconds=1)
+        if initial_baseline.anchored_from is None:
+            initial_baseline.anchored_from = initial_baseline.timestamp  # P3b-1: keep the first
         initial_baseline.timestamp = anchor
         current_state.timestamp = anchor
 
@@ -1253,6 +1259,7 @@ async def process_new_workout(
     shadow_n_set_rows = len(set_rows)
 
     # Persist raw workout event for replay/audit and planning linkage.
+    dose_dict = dose.model_dump()
     workout_row = WorkoutLogORM(
         user_id=user_id,
         # Never the raw request field: only the ownership-verified match above.
@@ -1275,7 +1282,17 @@ async def process_new_workout(
         total_volume_load=log.total_volume_load or 0.0,
         sleep_quality=log.sleep_quality,
         life_stress_inverse=log.life_stress_inverse,
-        dose_snapshot=dose.model_dump(),
+        dose_snapshot=dose_dict,
+        # P3b-1: the operator's inputs exactly as it will see them below (the final log after
+        # set rollup and phi resolution, and the dose actually used). Captured for a
+        # record-only workout too, so a later repair can consider it.
+        replay_input=workout_replay_input(
+            modality=log.modality,
+            dominant_movement_pattern=log.dominant_movement_pattern,
+            sleep_quality=log.sleep_quality,
+            life_stress_inverse=log.life_stress_inverse,
+            dose=dose_dict,
+        ),
         is_benchmark=log.is_benchmark,
         benchmark_results=log.benchmark_results,
     )
@@ -1319,8 +1336,15 @@ async def process_new_workout(
         new_state_schema.timestamp = log_ts
 
         kwargs = athlete_state_kwargs_from_unified(new_state_schema)
+        predecessor_row = last_record if last_record is not None else initial_baseline
+        assert predecessor_row is not None  # the baseline is staged above and flushed (has an id)
         new_db_record = AthleteState(
-            user_id=user_id, source_workout_log_id=workout_log_id, **kwargs
+            user_id=user_id,
+            source_workout_log_id=workout_log_id,
+            event_kind="workout",
+            predecessor_state_id=predecessor_row.id,
+            transition_identity=await ensure_current_identity(db),
+            **kwargs,
         )
         db.add(new_db_record)
         await db.commit()

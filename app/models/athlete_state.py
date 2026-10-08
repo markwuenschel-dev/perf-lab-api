@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +44,28 @@ class AthleteState(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, index=True
     )
+
+    # P3b-1: what kind of event wrote this row, which row it was computed from, and which
+    # operator/parameter identity computed it. NULL on rows written before P3b-1: such a row
+    # cannot be replayed. See alembic a055.
+    event_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    predecessor_state_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey(
+            "athlete_states.id", ondelete="SET NULL", name="fk_athlete_states_predecessor_state_id"
+        ),
+        nullable=True,
+    )
+    transition_identity: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey(
+            "engine_transition_identities.digest", name="fk_athlete_states_transition_identity"
+        ),
+        nullable=True,
+    )
+    # A baseline's own timestamp is the wall-clock time it was created. The first training
+    # event re-anchors it to just before that event; this keeps the timestamp it had.
+    anchored_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Capacities
     c_met_aerobic: Mapped[float] = mapped_column(Float, nullable=False)
