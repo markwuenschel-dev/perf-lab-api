@@ -36,7 +36,7 @@ from app.logic.dose_engine_v0 import (
 )
 from app.logic.goal_seed_emphasis import apply_goal_emphasis
 from app.logic.replay_inputs import workout_replay_input
-from app.logic.state_update_v0 import update_athlete_state
+from app.logic.state_transitions import apply_workout_transition
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -1330,10 +1330,11 @@ async def process_new_workout(
         # before the head is record-only above).
         dt = log_ts - head_ts
 
-        new_state_schema = update_athlete_state(current_state, dose, dt, log)
-        # The evolved state is valid "as of" the workout event; anchor its timestamp to the
-        # workout time (identical to the engine's prev+dt).
-        new_state_schema.timestamp = log_ts
+        # The evolved state is valid "as of" the workout event (timestamp = workout time,
+        # identical to the engine's prev+dt). Shared with the tail replay: one definition.
+        new_state_schema = apply_workout_transition(
+            current_state, dose, dt, log, event_time=log_ts
+        )
 
         kwargs = athlete_state_kwargs_from_unified(new_state_schema)
         predecessor_row = last_record if last_record is not None else initial_baseline

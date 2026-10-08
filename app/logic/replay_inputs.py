@@ -15,10 +15,12 @@ replayable.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+from app.logic.state_transitions import BenchmarkOperatorInput
 
 REPLAY_INPUT_VERSION = 1
 
@@ -89,14 +91,8 @@ class MappingSnapshot:
 
 
 def benchmark_replay_input(
+    op: BenchmarkOperatorInput,
     *,
-    observed_at: datetime,
-    raw_value: float,
-    normalized_value: float | None,
-    score01: float | None,
-    better_direction: str,
-    observation_weight_used: float,
-    mappings: Iterable[Any],
     effect: str,
     authority_policy_version: str | None,
     evaluation: str,
@@ -116,13 +112,13 @@ def benchmark_replay_input(
     return {
         "v": REPLAY_INPUT_VERSION,
         "kind": "benchmark",
-        "observed_at": observed_at.isoformat(),
-        "raw_value": _finite(raw_value, "raw_value"),
-        "normalized_value": _finite(normalized_value, "normalized_value"),
-        "score01": _finite(score01, "score01"),
-        "better_direction": better_direction,
-        "observation_weight_used": _finite(observation_weight_used, "observation_weight_used"),
-        "mappings": [snapshot_mapping(m) for m in mappings],
+        "observed_at": op.observed_at.isoformat(),
+        "raw_value": _finite(op.raw_value, "raw_value"),
+        "normalized_value": _finite(op.normalized_value, "normalized_value"),
+        "score01": _finite(op.score01, "score01"),
+        "better_direction": op.better_direction,
+        "observation_weight_used": _finite(op.observation_weight_used, "observation_weight_used"),
+        "mappings": [snapshot_mapping(m) for m in op.mappings],
         "effect": effect,
         "authority_policy_version": authority_policy_version,
         "evaluation": evaluation,
@@ -130,3 +126,18 @@ def benchmark_replay_input(
         "state_row_written": state_row_written,
         "predecessor_state_id": predecessor_state_id,
     }
+
+
+def operator_input_from_snapshot(snap: Mapping[str, Any]) -> BenchmarkOperatorInput:
+    """Rebuild the benchmark operator's input from a ``benchmark`` snapshot."""
+    if snap.get("v") != REPLAY_INPUT_VERSION or snap.get("kind") != "benchmark":
+        raise ValueError("not a version-1 benchmark snapshot")
+    return BenchmarkOperatorInput(
+        observed_at=datetime.fromisoformat(snap["observed_at"]),
+        raw_value=snap["raw_value"],
+        normalized_value=snap["normalized_value"],
+        score01=snap["score01"],
+        better_direction=snap["better_direction"],
+        observation_weight_used=snap["observation_weight_used"],
+        mappings=[MappingSnapshot.from_dict(m) for m in snap["mappings"]],
+    )

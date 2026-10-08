@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete_state import AthleteState
@@ -96,6 +96,65 @@ class AthleteContextRepository:
             .limit(1)
         )
         return result.scalars().first()
+
+    async def list_states_at_or_before(
+        self, user_id: int, ts: datetime, *, limit: int, offset: int = 0
+    ) -> Sequence[AthleteState]:
+        """Rows with ``timestamp <= ts``, newest first, a page at a time (tail replay's
+        checkpoint search walks back past rows a correction made stale)."""
+        result = await self.session.execute(
+            select(AthleteState)
+            .where(AthleteState.user_id == user_id, AthleteState.timestamp <= ts)
+            .order_by(AthleteState.timestamp.desc(), AthleteState.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return result.scalars().all()
+
+    async def list_states_after(
+        self, user_id: int, ts: datetime, row_id: int
+    ) -> Sequence[AthleteState]:
+        """Rows strictly after position ``(ts, row_id)`` in the chain's total order, oldest
+        first: later in time, or the same time with a higher id."""
+        result = await self.session.execute(
+            select(AthleteState)
+            .where(
+                AthleteState.user_id == user_id,
+                or_(
+                    AthleteState.timestamp > ts,
+                    and_(AthleteState.timestamp == ts, AthleteState.id > row_id),
+                ),
+            )
+            .order_by(AthleteState.timestamp, AthleteState.id)
+        )
+        return result.scalars().all()
+
+    async def list_states_by_workout_ids(self, ids: Sequence[int]) -> Sequence[AthleteState]:
+        """The rows written by the given workouts (``source_workout_log_id``)."""
+        if not ids:
+            return []
+        result = await self.session.execute(
+            select(AthleteState).where(AthleteState.source_workout_log_id.in_(ids))
+        )
+        return result.scalars().all()
+
+    async def list_states_by_observation_ids(self, ids: Sequence[int]) -> Sequence[AthleteState]:
+        """The rows written by the given benchmark observations (``source_observation_id``)."""
+        if not ids:
+            return []
+        result = await self.session.execute(
+            select(AthleteState).where(AthleteState.source_observation_id.in_(ids))
+        )
+        return result.scalars().all()
+
+    async def list_states_by_correction_ids(self, ids: Sequence[int]) -> Sequence[AthleteState]:
+        """The correction heads (``source_correction_id``) of the given receipts."""
+        if not ids:
+            return []
+        result = await self.session.execute(
+            select(AthleteState).where(AthleteState.source_correction_id.in_(ids))
+        )
+        return result.scalars().all()
 
     async def list_states_ascending(self, user_id: int) -> Sequence[AthleteState]:
         """The athlete's full ``AthleteState`` history, oldest first (for feature-building)."""

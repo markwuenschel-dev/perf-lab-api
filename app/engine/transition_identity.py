@@ -7,7 +7,8 @@ read, with the component digests kept beside the overall one so a mismatch can b
 
 What it covers, and what it leaves out, on purpose:
 
-* **In:** the transitive ``app`` import closure of ``state_update_v0`` (``TRANSITION_MODULES``;
+* **In:** the transitive ``app`` import closure of the operators and of ``state_transitions``,
+  which the live writers and the replay share (``TRANSITION_MODULES``;
   an architecture test recomputes the closure from the source and fails if this tuple drifts),
   including the tissue-routing table ``phi_table`` that ``tissue_impulse_from_dose`` reads, and
   the canonical serialization of ``default_parameters()``, which the operators call internally.
@@ -36,8 +37,11 @@ from app.logic.state_update_v0 import STATE_UPDATE_MODEL_VERSION
 
 IDENTITY_SCHEMA_VERSION = 1
 
-# The transitive ``app`` import closure of ``app.logic.state_update_v0``, sorted. Package
-# ``__init__`` modules are included: importing a submodule executes them.
+# The roots the closure is computed from: the operators, and the shared transitions that wrap them.
+TRANSITION_ROOTS: tuple[str, ...] = ("app.logic.state_transitions", "app.logic.state_update_v0")
+
+# The transitive ``app`` import closure of ``TRANSITION_ROOTS``, sorted. Package ``__init__``
+# modules are included: importing a submodule executes them.
 TRANSITION_MODULES: tuple[str, ...] = (
     "app",
     "app.domain",
@@ -51,6 +55,7 @@ TRANSITION_MODULES: tuple[str, ...] = (
     "app.logic.confidence_presentation",
     "app.logic.cross_talk",
     "app.logic.interference",
+    "app.logic.state_transitions",
     "app.logic.state_update_v0",
     "app.schemas",
     "app.schemas.engine_vectors",

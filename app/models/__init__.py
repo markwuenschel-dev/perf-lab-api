@@ -27,6 +27,7 @@ from app.models.personalization_shadow import PersonalizationShadowLog  # noqa: 
 from app.models.planning_override import PlanningOverride  # noqa: F401
 from app.models.prescription_revision import PrescriptionRevision  # noqa: F401
 from app.models.recovery_shadow import RecoveryShadowLog  # noqa: F401
+from app.models.state_correction import StateCorrection, StateCorrectionEvent  # noqa: F401
 from app.models.strength_decline_candidate import StrengthDeclineCandidate  # noqa: F401
 from app.models.strength_decline_shadow import StrengthDeclineShadow  # noqa: F401
 from app.models.telemetry import (  # noqa: F401
