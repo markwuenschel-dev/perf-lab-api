@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, cast
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -27,6 +27,7 @@ from app.models.benchmark_observation import BenchmarkObservation
 from app.models.weak_point import WeakPoint, WeakPointSource
 from app.models.workout_log import WorkoutLog
 from app.models.workout_set_log import WorkoutSetLog
+from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.schemas.benchmarks import BenchmarkObservationCreate, BenchmarkObservationRead
 from app.schemas.state import UnifiedStateVector
 from app.services import (
@@ -37,6 +38,9 @@ from app.services import (
 from app.services.state_chain_lock import lock_athlete_chain
 
 logger = logging.getLogger(__name__)
+
+#: The values the a054 CHECK constraint allows on benchmark_observations.state_disposition.
+_Disposition = Literal["applied", "record_only"] | None
 
 
 def _capacity_changed(prior: Any, updated: Any, *, eps: float = 1e-9) -> bool:
@@ -184,6 +188,8 @@ async def list_observations(
                 normalized_value=obs.normalized_value,
                 validity_status=obs.validity_status,
                 source=obs.source,
+                state_disposition=cast(_Disposition, obs.state_disposition),
+                state_disposition_reason=obs.state_disposition_reason,
             )
         )
     return out
@@ -486,8 +492,37 @@ async def stage_observation(
     # Set by the deferred floor-ratchet branch below. The shadow row is written only
     # AFTER the commit, so a capture failure cannot abort the observation it describes.
     floor_shadow_candidate: tuple[UnifiedStateVector, UnifiedStateVector] | None = None
+    # P3-pre: chronology. The state effect is evaluated against the head, so an observation
+    # dated before the head cannot be applied: doing so used to stamp the head-derived result
+    # with the past time, below the head, where its effect was lost (the bug P3a fixed for
+    # workouts). It is kept as evidence and its state update omitted. The decline machine does
+    # not run for it either, because its outcomes act on the state row.
+    current: UnifiedStateVector | None = None
     if apply_state:
+        fresh_athlete = await state_service.load_current_state(db, user_id) is None
         current = await _current_or_staged_baseline(db, user_id)
+        if fresh_athlete:
+            # The baseline was staged in this transaction for this observation: anchor it
+            # just before the observation, as process_new_workout anchors S0 before a first
+            # workout. A pre-existing baseline is never moved.
+            staged = await AthleteContextRepository(db).get_latest_state(user_id)
+            assert staged is not None
+            staged.timestamp = observation_time - timedelta(seconds=1)
+            current.timestamp = staged.timestamp
+        head_ts = utc_naive(current.timestamp)
+        if observation_time < head_ts:
+            obs.state_disposition = "record_only"
+            obs.state_disposition_reason = (
+                "current_state_in_future"
+                if head_ts > utc_naive(datetime.now(UTC))
+                else "event_before_current_state"
+            )
+            apply_state = False
+            ekf_specs = []  # the shadow EKF would assimilate it at the head, as if it were now
+        else:
+            obs.state_disposition = "applied"
+    if apply_state:
+        assert current is not None
 
         new_state = apply_benchmark_observation(
             current,
@@ -633,4 +668,6 @@ async def complete_observation(
         normalized_value=obs.normalized_value,
         validity_status=obs.validity_status,
         source=obs.source,
+        state_disposition=cast(_Disposition, obs.state_disposition),
+        state_disposition_reason=obs.state_disposition_reason,
     )

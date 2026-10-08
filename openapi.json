@@ -1034,6 +1034,32 @@
             "title": "Source",
             "type": "string"
           },
+          "state_disposition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "applied",
+                  "record_only"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Disposition"
+          },
+          "state_disposition_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Disposition Reason"
+          },
           "user_id": {
             "title": "User Id",
             "type": "integer"

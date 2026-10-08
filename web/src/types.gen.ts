@@ -1491,6 +1491,10 @@ export interface components {
             secondary_value: number | null;
             /** Source */
             source: string;
+            /** State Disposition */
+            state_disposition?: ("applied" | "record_only") | null;
+            /** State Disposition Reason */
+            state_disposition_reason?: string | null;
             /** User Id */
             user_id: number;
             /** Validity Status */

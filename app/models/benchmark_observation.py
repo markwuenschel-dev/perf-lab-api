@@ -107,6 +107,11 @@ class BenchmarkObservation(Base):
     applied_capacity_effect: Mapped[str | None] = mapped_column(String(30), nullable=True)
     decline_transition_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
+    # P3-pre: whether the state effect was evaluated in time order. NULL = no state
+    # authority, or written before this release. See alembic a054.
+    state_disposition: Mapped[str | None] = mapped_column(String, nullable=True)
+    state_disposition_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # Confidence hook (ADR-0058 structural; #106 assigns the numbers).
     confidence_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
     confidence_model_version: Mapped[str | None] = mapped_column(String(30), nullable=True)

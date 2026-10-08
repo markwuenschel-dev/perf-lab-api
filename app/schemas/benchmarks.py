@@ -171,6 +171,11 @@ class BenchmarkObservationRead(BaseModel):
     normalized_value: float | None
     validity_status: str
     source: str
+    # P3-pre: whether this observation updated the training state. `record_only` means it
+    # was dated before the athlete's current state: kept as evidence, state update omitted.
+    # Null: it carried no state authority, or it predates dispositions.
+    state_disposition: Literal["applied", "record_only"] | None = None
+    state_disposition_reason: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

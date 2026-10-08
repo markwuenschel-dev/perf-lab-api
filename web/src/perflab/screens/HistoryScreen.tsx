@@ -11,6 +11,7 @@ import { resourceData, type AuthedResource } from "../resource";
 import { Card, ScreenHeader, SectionLabel, Track } from "../ui";
 import { Chart, Area, Axis, Bars, TableView, useChart, useVizTheme } from "../viz";
 import { aerobicValue, fatigueDisplayProxy } from "../stateVector";
+import { dispositionTag } from "../workoutDisposition";
 import { AEROBIC_CEILING, RANGES, RANGE_WEEKS, filterHistoryWindow, weeklyLoad, type Range } from "./historyData";
 
 /** Compact load formatter — real volume-load totals run large, so thousands
@@ -291,7 +292,7 @@ function RecentWellnessCard() {
   );
 }
 
-function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObservationRead[]> }) {
+export function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObservationRead[]> }) {
   return (
     <Card className="px-[22px] py-5">
       <SectionLabel className={cn(LABEL, "mb-2")}>Field test log</SectionLabel>
@@ -329,7 +330,11 @@ function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObse
                 observation.normalized_value == null ? null : Math.round(observation.normalized_value),
                 "/100",
               ),
-              validity: observation.validity_status,
+              // P3-pre: a field test dated before the model's latest update is kept, but did
+              // not update the training state; say so beside its validity.
+              validity: [observation.validity_status, dispositionTag(observation.state_disposition)]
+                .filter(Boolean)
+                .join(" · "),
             }))}
           />
         )}
