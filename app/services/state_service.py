@@ -10,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.config import settings
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
@@ -57,6 +58,7 @@ from app.schemas.workouts import (
     WorkoutLog,
     WorkoutSetEntry,
 )
+from app.services.late_event_service import fold_late_events
 from app.services.planned_session_protocol import (
     LINKABLE_BY_EXPLICIT_LOG,
     LINKABLE_BY_SAME_DAY_MATCH,
@@ -65,6 +67,7 @@ from app.services.planned_session_protocol import (
     supersede_feedback,
 )
 from app.services.state_chain_lock import lock_athlete_chain
+from app.services.tail_replay_service import NewEventRef
 from app.services.transition_identity_service import ensure_current_identity
 
 logger = logging.getLogger(__name__)
@@ -1318,13 +1321,26 @@ async def process_new_workout(
             db, planned_session, log.prescription_revision_id
         )
 
+    folded = False
     if record_only:
         # P3a: keep the workout and its links; omit the training-state update. The head is
         # returned unchanged. No EKF predict: it would advance the shadow belief as if this
         # workout happened now.
-        await db.commit()
         assert last_record is not None  # no head means a fresh baseline: never record-only
-        result_state = unified_from_athlete_row(last_record)
+        outcome = None
+        if settings.APPLY_LATE_EVENTS and disposition_reason == "event_before_current_state":
+            # P3b-3: fold it into the state by exact tail replay, atomically with the log. A
+            # refusal leaves it record-only exactly as before.
+            outcome = await fold_late_events(
+                db, user_id, [NewEventRef("workout", workout_log_id)]
+            )
+        if outcome is not None and outcome.applied:
+            assert outcome.head is not None
+            folded = True
+            result_state = unified_from_athlete_row(outcome.head)
+        else:
+            result_state = unified_from_athlete_row(last_record)
+        await db.commit()
     else:
         # Physical decay interval since the current state (never negative here: a workout
         # before the head is record-only above).
@@ -1415,6 +1431,6 @@ async def process_new_workout(
         workout_log_id=workout_log_id,
         session_timestamp=log_ts,
         timestamp_basis=timestamp_basis,
-        state_disposition="record_only" if record_only else "applied",
-        state_disposition_reason=disposition_reason,
+        state_disposition="record_only" if record_only and not folded else "applied",
+        state_disposition_reason=None if folded else disposition_reason,
     )

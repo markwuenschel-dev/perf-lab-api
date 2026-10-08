@@ -18,8 +18,7 @@ from __future__ import annotations
 
 import ast
 import itertools
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,19 +41,15 @@ from app.logic.tail_replay import (
     is_stale,
     order_events,
     replay,
-    row_columns,
     state_columns,
 )
 from app.models.athlete_state import AthleteState
-from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.engine_transition_identity import EngineTransitionIdentity
-from app.models.observation_mapping import ObservationMapping
 from app.models.state_correction import StateCorrection, StateCorrectionEvent
-from app.models.user import User
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.schemas.benchmarks import BenchmarkObservationCreate
-from app.schemas.workouts import StressDose, WorkoutLog
+from app.schemas.workouts import StressDose
 from app.services import benchmark_service, state_service
 from app.services.tail_replay_service import (
     ALGORITHM_VERSION,
@@ -215,155 +210,25 @@ def test_the_workout_operator_reads_only_the_fields_a_snapshot_captures():
 # Against the live writers
 # --------------------------------------------------------------------------- #
 
-def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
-
-
-BASE = _now() - timedelta(hours=60)  # events land between BASE and BASE + 40 h: all in the past
-
-
-@dataclass
-class Ev:
-    kind: str
-    hours: float
-    raw: float = 0.0
-    extra: dict[str, Any] | None = None
-
-    @property
-    def ts(self) -> datetime:
-        return BASE + timedelta(hours=self.hours)
-
-
-def W(hours: float, **extra: Any) -> Ev:
-    return Ev("workout", hours, extra={"modality": "Strength", "duration_minutes": 60.0,
-                                       "session_rpe": 8.0, **extra})
-
-
-def B(hours: float, raw: float = 55.0) -> Ev:
-    return Ev("benchmark", hours, raw=raw)
-
-
-async def _user(db, email: str) -> User:
-    u = User(email=email, hashed_password="x", is_active=True)
-    db.add(u)
-    await db.commit()
-    await db.refresh(u)
-    return u
-
-
-async def _definitions(db) -> None:
-    if (await db.execute(
-        select(BenchmarkDefinition.id).where(BenchmarkDefinition.code == "aero_test")
-    )).first() is not None:
-        return
-    aero = BenchmarkDefinition(
-        code="aero_test", name="Aerobic test", domain="endurance", metric_type="load", unit="u",
-        better_direction="higher", observation_weight=0.8,
-        standardization_rules={"floor": 10.0, "cap": 100.0},
-    )
-    strength = BenchmarkDefinition(
-        code="pl_e1rm_squat", name="Squat e1RM", domain="powerlifting", metric_type="load",
-        unit="kg", better_direction="higher", observation_weight=1.0,
-        standardization_rules={"floor": 40.0, "cap": 250.0},
-    )
-    db.add_all([aero, strength])
-    await db.flush()
-    db.add_all([
-        ObservationMapping(
-            benchmark_definition_id=aero.id, target_vector="capacity", target_key="aerobic",
-            mapping_type="residual", coefficient=1.0, intercept=0.0,
-        ),
-        ObservationMapping(
-            benchmark_definition_id=aero.id, target_vector="tissue", target_key="lumbar",
-            mapping_type="direct", coefficient=0.5, intercept=20.0, config={"scale": 25.0, "amp": 3.0},
-        ),
-        ObservationMapping(
-            benchmark_definition_id=strength.id, target_vector="capacity", target_key="max_strength",
-            mapping_type="residual", coefficient=1.0, intercept=0.0,
-        ),
-    ])
-    await db.commit()
-
-
-async def _athlete(db, email: str, *, captured: bool = True, seed: bool = True) -> int:
-    """An athlete with two baseline rows before BASE (so no first-event re-anchor applies), or
-    none at all (``seed=False``: the first event stages the baseline)."""
-    uid = (await _user(db, email)).id
-    for ts in (BASE - timedelta(days=2), BASE - timedelta(days=1)) if seed else ():
-        _, row = state_service._build_baseline_vector(uid)
-        row.timestamp = ts
-        if not captured:
-            row.event_kind = None
-        db.add(row)
-        await db.commit()
-    return uid
-
-
-async def _arrive(db, uid: int, ev: Ev) -> NewEventRef:
-    user = await db.get(User, uid)
-    assert user is not None
-    if ev.kind == "workout":
-        await state_service.process_new_workout(
-            db, uid, WorkoutLog(timestamp=ev.ts.replace(tzinfo=UTC), **(ev.extra or {})),
-            received_at=datetime.now(UTC),
-        )
-        wid = (await db.execute(
-            select(WorkoutLogORM.id).where(WorkoutLogORM.user_id == uid).order_by(WorkoutLogORM.id.desc()).limit(1)
-        )).scalar_one()
-        return NewEventRef("workout", wid)
-    await benchmark_service.create_observation(
-        db, uid, BenchmarkObservationCreate(
-            benchmark_code="aero_test", raw_value=ev.raw, source="benchmark_test", observed_at=ev.ts,
-        ),
-    )
-    oid = (await db.execute(
-        select(BenchmarkObservation.id).where(BenchmarkObservation.user_id == uid)
-        .order_by(BenchmarkObservation.id.desc()).limit(1)
-    )).scalar_one()
-    return NewEventRef("benchmark", oid)
-
-
-async def _head(db, uid: int) -> AthleteState:
-    row = (await db.execute(
-        select(AthleteState).where(AthleteState.user_id == uid)
-        .order_by(AthleteState.timestamp.desc(), AthleteState.id.desc()).limit(1)
-    )).scalar_one()
-    await db.refresh(row)
-    return row
-
-
-async def _record_only(db, ref: NewEventRef) -> bool:
-    model = WorkoutLogORM if ref.kind == "workout" else BenchmarkObservation
-    row = await db.get(model, ref.event_id)
-    assert row is not None
-    await db.refresh(row)
-    return row.state_disposition == "record_only"
-
-
-async def _oracle(db, email: str, events: list[Ev]) -> dict[str, Any]:
-    """The same events through the live writers, in true chronological order."""
-    uid = await _athlete(db, email)
-    for ev in sorted(events, key=lambda e: e.hours):  # stable: equal hours keep their given order
-        await _arrive(db, uid, ev)
-    return row_columns(await _head(db, uid))
-
-
-async def _subject(db, email: str, arrivals: list[Ev]) -> tuple[int, list[NewEventRef], list[NewEventRef]]:
-    """Events arriving in the given order. Returns (user, late refs in arrival order, all refs)."""
-    uid = await _athlete(db, email)
-    late: list[NewEventRef] = []
-    refs: list[NewEventRef] = []
-    for ev in arrivals:
-        ref = await _arrive(db, uid, ev)
-        refs.append(ref)
-        if await _record_only(db, ref):
-            late.append(ref)
-    return uid, late, refs
+from replay_support import (  # noqa: E402
+    BASE,
+    B,
+    Ev,
+    W,
+    arrive_all,
+    arrive_event,
+    head_row,
+    is_record_only,
+    make_user,
+    oracle_head,
+    seed_definitions,
+    seeded_athlete,
+)
 
 
 async def _assert_plan_equals_chronological(db, tag: str, arrivals: list[Ev], expect_late: int) -> TailReplayPlan:
-    oracle = await _oracle(db, f"{tag}-oracle@test.com", arrivals)
-    uid, late, _ = await _subject(db, f"{tag}-subject@test.com", arrivals)
+    oracle = await oracle_head(db, f"{tag}-oracle@test.com", arrivals)
+    uid, late, _ = await arrive_all(db, f"{tag}-subject@test.com", arrivals)
     assert len(late) == expect_late
     plan = await plan_tail_replay(db, uid, late)
     assert diff_columns(state_columns(plan.corrected_head), oracle) == []
@@ -372,7 +237,7 @@ async def _assert_plan_equals_chronological(db, tag: str, arrivals: list[Ev], ex
 
 
 async def test_a_late_workout_between_two_others(async_db):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     plan = await _assert_plan_equals_chronological(
         async_db, "w-mid", [W(5, dominant_movement_pattern="squat"), W(20), W(10, dominant_movement_pattern="hinge", sleep_quality=4.0, life_stress_inverse=3.0)], 1,
     )
@@ -381,14 +246,14 @@ async def test_a_late_workout_between_two_others(async_db):
 
 
 async def test_a_late_workout_just_after_the_baseline(async_db):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     plan = await _assert_plan_equals_chronological(async_db, "w-first", [W(10), W(2)], 1)
     ck = await async_db.get(AthleteState, plan.checkpoint_row_id)
     assert ck is not None and ck.event_kind == "baseline"  # nothing but the seeded baseline precedes it
 
 
 async def test_a_late_benchmark_among_workouts(async_db):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     plan = await _assert_plan_equals_chronological(
         async_db, "b-late", [W(4), W(12), W(20), B(8, raw=70.0)], 1,
     )
@@ -396,7 +261,7 @@ async def test_a_late_benchmark_among_workouts(async_db):
 
 
 async def test_a_tail_that_already_holds_a_benchmark_is_replayed_exactly(async_db):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     plan = await _assert_plan_equals_chronological(
         async_db, "b-tail", [W(4), B(10, raw=60.0), W(14), W(22), W(8, dominant_movement_pattern="hinge")], 1,
     )
@@ -405,7 +270,7 @@ async def test_a_tail_that_already_holds_a_benchmark_is_replayed_exactly(async_d
 
 @pytest.mark.parametrize("order", list(itertools.permutations(range(3))))
 async def test_a_batch_of_three_late_events_in_every_arrival_order(async_db, order):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     late_events = [W(6, dominant_movement_pattern="squat"), B(9, raw=65.0), W(13, sleep_quality=3.0)]
     arrivals = [W(24), *[late_events[i] for i in order]]
     tag = "batch" + "".join(map(str, order))
@@ -414,7 +279,7 @@ async def test_a_batch_of_three_late_events_in_every_arrival_order(async_db, ord
 
 
 async def test_a_late_event_sharing_an_existing_events_timestamp_goes_after_it(async_db):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     # First W(5) arrives on time; the second W(5) arrives after the head and is late. Arrival order
     # decides the tie, so the oracle receives them in that order too.
     plan = await _assert_plan_equals_chronological(
@@ -426,8 +291,8 @@ async def test_a_late_event_sharing_an_existing_events_timestamp_goes_after_it(a
 
 
 async def test_the_plan_writes_nothing(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "ro@test.com", [W(5), W(20), W(10)])
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "ro@test.com", [W(5), W(20), W(10)])
     counts = lambda: [  # noqa: E731
         select(func.count()).select_from(m).where(m.user_id == uid)
         for m in (AthleteState, WorkoutLogORM, BenchmarkObservation, StateCorrection)
@@ -481,24 +346,24 @@ async def _apply_for_test(
 
 @pytest.mark.parametrize("second_late_hours", [3, 7, 11, 16])
 async def test_a_second_correction_includes_the_first_exactly_once(async_db, second_late_hours):
-    await _definitions(async_db)
+    await seed_definitions(async_db)
     # chronological truth: 4, 7(first late), 11, 16, 18 (on time, after the first correction), + the second late event.
     first_late = W(7, dominant_movement_pattern="hinge")
     second_late = W(second_late_hours, sleep_quality=4.0, life_stress_inverse=6.0)
     truth = [W(4), first_late, W(11), W(16), W(18), second_late]
-    oracle = await _oracle(async_db, f"two-oracle-{second_late_hours}@test.com", truth)
+    oracle = await oracle_head(async_db, f"two-oracle-{second_late_hours}@test.com", truth)
 
-    uid = await _athlete(async_db, f"two-subject-{second_late_hours}@test.com")
+    uid = await seeded_athlete(async_db, f"two-subject-{second_late_hours}@test.com")
     for ev in (W(4), W(11), W(16)):
-        await _arrive(async_db, uid, ev)
-    r1 = await _arrive(async_db, uid, first_late)
-    assert await _record_only(async_db, r1)
+        await arrive_event(async_db, uid, ev)
+    r1 = await arrive_event(async_db, uid, first_late)
+    assert await is_record_only(async_db, r1)
 
     plan1 = await plan_tail_replay(async_db, uid, [r1])
     await _apply_for_test(async_db, uid, plan1)
-    await _arrive(async_db, uid, W(18))  # an on-time event on top of the correction head
-    r2 = await _arrive(async_db, uid, second_late)
-    assert await _record_only(async_db, r2)
+    await arrive_event(async_db, uid, W(18))  # an on-time event on top of the correction head
+    r2 = await arrive_event(async_db, uid, second_late)
+    assert await is_record_only(async_db, r2)
 
     plan2 = await plan_tail_replay(async_db, uid, [r2])
 
@@ -514,14 +379,14 @@ async def test_a_second_correction_includes_the_first_exactly_once(async_db, sec
 
 
 async def test_a_receipt_is_never_a_training_event(async_db):
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "rcpt@test.com")
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "rcpt@test.com")
     for ev in (W(4), W(11), W(16)):
-        await _arrive(async_db, uid, ev)
-    r1 = await _arrive(async_db, uid, W(7))
+        await arrive_event(async_db, uid, ev)
+    r1 = await arrive_event(async_db, uid, W(7))
     plan1 = await plan_tail_replay(async_db, uid, [r1])
     await _apply_for_test(async_db, uid, plan1)
-    r2 = await _arrive(async_db, uid, W(9))  # late again, against the correction head
+    r2 = await arrive_event(async_db, uid, W(9))  # late again, against the correction head
 
     plan2 = await plan_tail_replay(async_db, uid, [r2])
 
@@ -531,11 +396,11 @@ async def test_a_receipt_is_never_a_training_event(async_db):
 
 
 async def test_an_event_already_introduced_cannot_be_introduced_again(async_db):
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "again@test.com")
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "again@test.com")
     for ev in (W(4), W(16)):
-        await _arrive(async_db, uid, ev)
-    r1 = await _arrive(async_db, uid, W(7))
+        await arrive_event(async_db, uid, ev)
+    r1 = await arrive_event(async_db, uid, W(7))
     await _apply_for_test(async_db, uid, await plan_tail_replay(async_db, uid, [r1]))
 
     with pytest.raises(ReplayUnsupported) as exc:
@@ -555,27 +420,27 @@ async def _code(db, uid: int, refs: list[NewEventRef], **kw: Any) -> str:
 
 
 async def test_rows_written_before_capture_are_not_a_trustworthy_checkpoint(async_db):
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "legacy@test.com", captured=False)
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "legacy@test.com", captured=False)
     for ev in (W(10), W(20)):
-        await _arrive(async_db, uid, ev)
-    late = await _arrive(async_db, uid, W(5))
+        await arrive_event(async_db, uid, ev)
+    late = await arrive_event(async_db, uid, W(5))
     assert await _code(async_db, uid, [late]) == "untrusted_checkpoint"
 
 
 async def test_no_state_at_or_before_the_earliest_event(async_db):
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "early@test.com")
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "early@test.com")
     for ev in (W(10), W(20)):
-        await _arrive(async_db, uid, ev)
-    late = await _arrive(async_db, uid, W(-60))  # before the seeded baselines
+        await arrive_event(async_db, uid, ev)
+    late = await arrive_event(async_db, uid, W(-60))  # before the seeded baselines
     assert await _code(async_db, uid, [late]) == "no_checkpoint"
 
 
 async def test_a_repair_row_in_the_tail_is_refused(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "repair@test.com", [W(5), W(20), W(10)])
-    head = await _head(async_db, uid)
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "repair@test.com", [W(5), W(20), W(10)])
+    head = await head_row(async_db, uid)
     async_db.add(AthleteState(
         user_id=uid, event_kind="repair", predecessor_state_id=head.id,
         timestamp=head.timestamp + timedelta(minutes=1),
@@ -589,24 +454,24 @@ async def test_a_repair_row_in_the_tail_is_refused(async_db):
 
 
 async def test_a_benchmark_the_decline_machine_could_judge_is_refused(async_db):
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "decline@test.com")
-    await _arrive(async_db, uid, W(5))
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "decline@test.com")
+    await arrive_event(async_db, uid, W(5))
     await benchmark_service.create_observation(
         async_db, uid, BenchmarkObservationCreate(
             benchmark_code="pl_e1rm_squat", raw_value=150.0, source="benchmark_test",
             observed_at=BASE + timedelta(hours=12),
         ),
     )
-    await _arrive(async_db, uid, W(20))
-    late = await _arrive(async_db, uid, W(3))
+    await arrive_event(async_db, uid, W(20))
+    late = await arrive_event(async_db, uid, W(3))
     assert await _code(async_db, uid, [late]) == "decline_policy_engaged"
 
 
 async def test_a_late_benchmark_on_the_strength_axis_is_refused(async_db):
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "decline-late@test.com")
-    await _arrive(async_db, uid, W(20))
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "decline-late@test.com")
+    await arrive_event(async_db, uid, W(20))
     await benchmark_service.create_observation(
         async_db, uid, BenchmarkObservationCreate(
             benchmark_code="pl_e1rm_squat", raw_value=150.0, source="benchmark_test",
@@ -618,19 +483,19 @@ async def test_a_late_benchmark_on_the_strength_axis_is_refused(async_db):
 
 
 async def test_rows_from_other_code_are_refused(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "ident@test.com", [W(5), W(20), W(10)])
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "ident@test.com", [W(5), W(20), W(10)])
     async_db.add(EngineTransitionIdentity(digest="f" * 64, components={}))
     await async_db.flush()
-    head = await _head(async_db, uid)
+    head = await head_row(async_db, uid)
     head.transition_identity = "f" * 64
     await async_db.commit()
     assert await _code(async_db, uid, late) == "identity_mismatch"
 
 
 async def test_an_inconsistent_registry_is_refused(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "registry@test.com", [W(5), W(20), W(10)])
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "registry@test.com", [W(5), W(20), W(10)])
     reg = await async_db.get(EngineTransitionIdentity, current_identity().digest)
     assert reg is not None
     reg.components = {**reg.components, "parameters": "0" * 64}
@@ -639,9 +504,9 @@ async def test_an_inconsistent_registry_is_refused(async_db):
 
 
 async def test_a_stored_row_the_capture_cannot_reproduce_fails_the_proof(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "proof@test.com", [W(5), W(20), W(10)])
-    head = await _head(async_db, uid)
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "proof@test.com", [W(5), W(20), W(10)])
+    head = await head_row(async_db, uid)
     head.f_nm_central = head.f_nm_central + 0.01  # something changed the row outside the capture
     await async_db.commit()
     with pytest.raises(ReplayUnsupported) as exc:
@@ -650,25 +515,25 @@ async def test_a_stored_row_the_capture_cannot_reproduce_fails_the_proof(async_d
 
 
 async def test_a_broken_predecessor_link_is_refused(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "lineage@test.com", [W(5), W(20), W(10)])
-    head = await _head(async_db, uid)
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "lineage@test.com", [W(5), W(20), W(10)])
+    head = await head_row(async_db, uid)
     head.predecessor_state_id = None
     await async_db.commit()
     assert await _code(async_db, uid, late) == "lineage"
 
 
 async def test_another_athletes_event_is_refused(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "own-a@test.com", [W(5), W(20), W(10)])
-    other, other_late, _ = await _subject(async_db, "own-b@test.com", [W(5), W(20), W(10)])
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "own-a@test.com", [W(5), W(20), W(10)])
+    other, other_late, _ = await arrive_all(async_db, "own-b@test.com", [W(5), W(20), W(10)])
     assert await _code(async_db, uid, other_late) == "ownership"
     assert other != uid and late
 
 
 async def test_an_event_that_is_not_before_the_head_is_not_late(async_db):
-    await _definitions(async_db)
-    uid, _, refs = await _subject(async_db, "notlate@test.com", [W(5), W(20)])
+    await seed_definitions(async_db)
+    uid, _, refs = await arrive_all(async_db, "notlate@test.com", [W(5), W(20)])
     donor = await async_db.get(WorkoutLogORM, refs[0].event_id)
     assert donor is not None and donor.replay_input is not None
     row = WorkoutLogORM(
@@ -683,14 +548,14 @@ async def test_an_event_that_is_not_before_the_head_is_not_late(async_db):
 
 
 async def test_an_applied_event_is_not_a_late_event(async_db):
-    await _definitions(async_db)
-    uid, _, refs = await _subject(async_db, "applied@test.com", [W(5), W(20)])
+    await seed_definitions(async_db)
+    uid, _, refs = await arrive_all(async_db, "applied@test.com", [W(5), W(20)])
     assert await _code(async_db, uid, [refs[0]]) == "not_record_only"
 
 
 async def test_a_late_event_without_capture_is_refused(async_db):
-    await _definitions(async_db)
-    uid, _, _ = await _subject(async_db, "nocap@test.com", [W(5), W(20)])
+    await seed_definitions(async_db)
+    uid, _, _ = await arrive_all(async_db, "nocap@test.com", [W(5), W(20)])
     row = WorkoutLogORM(
         user_id=uid, session_timestamp=BASE + timedelta(hours=2), modality="Running",
         duration_minutes=30.0, session_rpe=6.0, state_disposition="record_only",
@@ -702,15 +567,15 @@ async def test_a_late_event_without_capture_is_refused(async_db):
 
 
 async def test_the_caller_can_bound_the_window_and_the_tail(async_db):
-    await _definitions(async_db)
-    uid, late, _ = await _subject(async_db, "bounds@test.com", [W(5), W(30), W(10)])
+    await seed_definitions(async_db)
+    uid, late, _ = await arrive_all(async_db, "bounds@test.com", [W(5), W(30), W(10)])
     assert await _code(async_db, uid, late, max_gap=timedelta(hours=10)) == "window_exceeded"
     assert await _code(async_db, uid, late, max_events=1) == "tail_too_long"
     await plan_tail_replay(async_db, uid, late, max_gap=timedelta(hours=40), max_events=2)
 
 
 async def test_no_new_events_is_an_error(async_db):
-    uid = (await _user(async_db, "none@test.com")).id
+    uid = (await make_user(async_db, "none@test.com")).id
     assert await _code(async_db, uid, []) == "no_new_events"
 
 
@@ -729,12 +594,12 @@ async def test_an_initial_prior_in_the_tail_is_refused_not_reapplied(async_db):
     """Review repro. The live writer applies an initial prior only while the athlete has no
     state. A workout slipped in just before it would make chronological logging skip the prior;
     replaying it anyway produced a head that disagreed (aerobic 580.8 vs 300.1)."""
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "init-high@test.com", seed=False)
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "init-high@test.com", seed=False)
     await _onramp(async_db, uid, 10, raw=100.0)  # stages the baseline 1 s before itself, then applies
-    await _arrive(async_db, uid, W(20))
-    late = await _arrive(async_db, uid, W(10 - 0.5 / 3600))  # inside the 1 s between baseline and prior
-    assert await _record_only(async_db, late)
+    await arrive_event(async_db, uid, W(20))
+    late = await arrive_event(async_db, uid, W(10 - 0.5 / 3600))  # inside the 1 s between baseline and prior
+    assert await is_record_only(async_db, late)
 
     assert await _code(async_db, uid, [late]) == "initializer_tail"
 
@@ -744,11 +609,11 @@ async def test_an_applied_benchmark_that_wrote_no_row_is_refused(async_db):
     order. It was accepted once and then broke the next correction; it is refused up front.
     Built directly: the live writers only produce one as an initial prior, which the next
     workout re-anchors out of any replayable window."""
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "rowless@test.com")
-    await _arrive(async_db, uid, W(4))
-    donor_ref = await _arrive(async_db, uid, B(8, raw=60.0))
-    await _arrive(async_db, uid, W(20))
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "rowless@test.com")
+    await arrive_event(async_db, uid, W(4))
+    donor_ref = await arrive_event(async_db, uid, B(8, raw=60.0))
+    await arrive_event(async_db, uid, W(20))
     donor = await async_db.get(BenchmarkObservation, donor_ref.event_id)
     assert donor is not None and donor.replay_input is not None
     at = BASE + timedelta(hours=12)
@@ -759,8 +624,8 @@ async def test_an_applied_benchmark_that_wrote_no_row_is_refused(async_db):
         replay_input={**donor.replay_input, "observed_at": at.isoformat(), "state_row_written": False},
     ))
     await async_db.commit()
-    late = await _arrive(async_db, uid, W(6))
-    assert await _record_only(async_db, late)
+    late = await arrive_event(async_db, uid, W(6))
+    assert await is_record_only(async_db, late)
 
     assert await _code(async_db, uid, [late]) == "event_without_row"
 
@@ -771,37 +636,37 @@ async def _second_late_after(
     """An athlete with one (possibly malformed) applied correction and a second late event.
     ``after_correction`` puts that event after the correction head's time, so the correction
     head is the checkpoint rather than part of the tail."""
-    await _definitions(db)
-    uid = await _athlete(db, f"{tag}@test.com")
+    await seed_definitions(db)
+    uid = await seeded_athlete(db, f"{tag}@test.com")
     for ev in (W(4), W(16)):
-        await _arrive(db, uid, ev)
-    r1 = await _arrive(db, uid, W(7))
+        await arrive_event(db, uid, ev)
+    r1 = await arrive_event(db, uid, W(7))
     await _apply_for_test(db, uid, await plan_tail_replay(db, uid, [r1]), **apply_kw)
     if after_correction:
-        await _arrive(db, uid, W(24))
-        return uid, await _arrive(db, uid, W(20))
-    return uid, await _arrive(db, uid, W(9))
+        await arrive_event(db, uid, W(24))
+        return uid, await arrive_event(db, uid, W(20))
+    return uid, await arrive_event(db, uid, W(9))
 
 
 async def test_a_receipt_whose_checkpoint_belongs_to_another_athlete_is_refused(async_db):
-    other = await _athlete(async_db, "rc-other@test.com")
-    foreign = await _head(async_db, other)
+    other = await seeded_athlete(async_db, "rc-other@test.com")
+    foreign = await head_row(async_db, other)
     uid, r2 = await _second_late_after(async_db, "rc-ck", receipt={"checkpoint_state_id": foreign.id})
     assert await _code(async_db, uid, [r2]) == "ownership"
 
 
 async def test_a_receipt_whose_old_head_belongs_to_another_athlete_is_refused(async_db):
-    other = await _athlete(async_db, "rc-other2@test.com")
-    foreign = await _head(async_db, other)
+    other = await seeded_athlete(async_db, "rc-other2@test.com")
+    foreign = await head_row(async_db, other)
     uid, r2 = await _second_late_after(async_db, "rc-before", receipt={"head_before_state_id": foreign.id})
     assert await _code(async_db, uid, [r2]) == "ownership"
 
 
 async def test_a_receipt_that_disagrees_with_its_correction_head_is_refused(async_db):
     # The head claims a predecessor other than the old head the receipt names.
-    await _definitions(async_db)
-    probe = await _athlete(async_db, "rc-pred-probe@test.com")
-    wrong = (await _head(async_db, probe)).id
+    await seed_definitions(async_db)
+    probe = await seeded_athlete(async_db, "rc-pred-probe@test.com")
+    wrong = (await head_row(async_db, probe)).id
     uid, r2 = await _second_late_after(async_db, "rc-pred", head_predecessor=wrong)
     assert await _code(async_db, uid, [r2]) == "lineage"
 
@@ -814,8 +679,8 @@ async def test_a_receipt_with_the_wrong_start_time_is_refused(async_db):
 
 
 async def test_a_receipt_listing_another_athletes_event_is_refused(async_db):
-    await _definitions(async_db)
-    other_uid, other_late, _ = await _subject(async_db, "rc-ev-other@test.com", [W(5), W(20), W(8)])
+    await seed_definitions(async_db)
+    other_uid, other_late, _ = await arrive_all(async_db, "rc-ev-other@test.com", [W(5), W(20), W(8)])
     uid, r2 = await _second_late_after(async_db, "rc-event", events=other_late)
     assert await _code(async_db, uid, [r2]) == "ownership"
 
@@ -823,11 +688,11 @@ async def test_a_receipt_listing_another_athletes_event_is_refused(async_db):
 async def test_a_receipts_membership_cannot_be_deleted(async_db):
     """Review repro: deleting a member left the receipt and its correction head standing and
     released the event's uniqueness protection. Neither the member nor the receipt can go."""
-    await _definitions(async_db)
-    uid = await _athlete(async_db, "rc-delete@test.com")
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "rc-delete@test.com")
     for ev in (W(4), W(16)):
-        await _arrive(async_db, uid, ev)
-    r1 = await _arrive(async_db, uid, W(7))
+        await arrive_event(async_db, uid, ev)
+    r1 = await arrive_event(async_db, uid, W(7))
     await _apply_for_test(async_db, uid, await plan_tail_replay(async_db, uid, [r1]))
 
     for table in ("state_correction_events", "state_corrections"):
@@ -842,9 +707,9 @@ async def test_a_receipts_membership_cannot_be_deleted(async_db):
 async def test_a_receipt_is_validated_even_when_its_head_is_only_the_checkpoint(async_db):
     """The predecessor chain only covers rows in the tail. A correction head that is the
     checkpoint is outside it, so its receipt has to be checked on its own."""
-    await _definitions(async_db)
-    probe = await _athlete(async_db, "rc-ck-probe@test.com")
-    wrong = (await _head(async_db, probe)).id
+    await seed_definitions(async_db)
+    probe = await seeded_athlete(async_db, "rc-ck-probe@test.com")
+    wrong = (await head_row(async_db, probe)).id
     uid, r2 = await _second_late_after(
         async_db, "rc-ck-head", after_correction=True, head_predecessor=wrong
     )

@@ -117,6 +117,10 @@ class BenchmarkObservation(Base):
     # before P3b-1: not replayable. See alembic a055.
     replay_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # P3b-3: the stable code that kept this record-only event out of the state when a fold was
+    # attempted (late_event_service); NULL = not attempted, or folded in. See alembic a057.
+    replay_refusal: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # Confidence hook (ADR-0058 structural; #106 assigns the numbers).
     confidence_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
     confidence_model_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
