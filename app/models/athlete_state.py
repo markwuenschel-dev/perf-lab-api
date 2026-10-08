@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,15 @@ class AthleteState(Base):
     One user can have many AthleteState records over time.
     """
     __tablename__ = "athlete_states"
+    __table_args__ = (
+        # One correction head per receipt. See alembic a056.
+        Index(
+            "uq_athlete_states_source_correction",
+            "source_correction_id",
+            unique=True,
+            postgresql_where=text("source_correction_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int | None] = mapped_column(
@@ -61,6 +70,13 @@ class AthleteState(Base):
         ForeignKey(
             "engine_transition_identities.digest", name="fk_athlete_states_transition_identity"
         ),
+        nullable=True,
+    )
+    # P3b-2: set exactly on a correction head (event_kind = 'correction'): the receipt for the
+    # exact-replay correction that produced it. See alembic a056.
+    source_correction_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("state_corrections.id", name="fk_athlete_states_source_correction_id"),
         nullable=True,
     )
     # A baseline's own timestamp is the wall-clock time it was created. The first training
