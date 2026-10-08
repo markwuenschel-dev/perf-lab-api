@@ -16,8 +16,8 @@ Ordering. A position is ``(timestamp, row_key, ordinal)``:
   the correction's batch, so it sorts after every event that arrived before the correction;
 * a new event keys after everything (``NEW_EVENT_ROW_KEY``), then its ordinal.
 
-Events at the same timestamp are ordered by that key. An event with no key (a benchmark that
-wrote no row) sharing a timestamp with another event is ambiguous: refused.
+Events at the same timestamp are ordered by that key. Every event has one: an applied event that
+wrote no row has no place in the order and is refused before it gets here.
 """
 from __future__ import annotations
 
@@ -29,11 +29,7 @@ from typing import Any, Literal
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic.replay_inputs import REPLAY_INPUT_VERSION, operator_input_from_snapshot
-from app.logic.state_transitions import (
-    apply_workout_transition,
-    floor_if_raised,
-    run_benchmark_operator,
-)
+from app.logic.state_transitions import apply_workout_transition, run_benchmark_operator
 from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose
 
@@ -71,7 +67,7 @@ class ReplayEvent:
     kind: EventKind
     event_id: int
     timestamp: datetime  # naive UTC
-    row_key: int | None  # the id of the state row that gives this event its place, if any
+    row_key: int  # the id of the state row that gives this event its place in the order
     ordinal: int
     replay_input: Mapping[str, Any]
     own_state_row_id: int | None = None  # the row this event wrote live
@@ -79,8 +75,6 @@ class ReplayEvent:
 
     @property
     def position(self) -> tuple[datetime, int, int]:
-        if self.row_key is None:
-            raise ReplayUnsupported("ambiguous_tie", f"{self.kind} {self.event_id} has no row key")
         return (self.timestamp, self.row_key, self.ordinal)
 
 
@@ -109,14 +103,8 @@ def order_events(events: Sequence[ReplayEvent]) -> list[ReplayEvent]:
         if ident in seen:
             raise ReplayUnsupported("double_membership", f"{e.kind} {e.event_id} appears twice")
         seen.add(ident)
-    by_time: dict[datetime, list[ReplayEvent]] = {}
-    for e in events:
-        by_time.setdefault(e.timestamp, []).append(e)
-    for ts, group in by_time.items():
-        if len(group) > 1 and any(e.row_key is None for e in group):
-            raise ReplayUnsupported("ambiguous_tie", f"{len(group)} events at {ts.isoformat()}")
-    ordered = sorted(events, key=lambda e: (e.timestamp, e.row_key if e.row_key is not None else -1, e.ordinal))
-    positions = [(e.timestamp, e.row_key, e.ordinal) for e in ordered]
+    ordered = sorted(events, key=lambda e: e.position)
+    positions = [e.position for e in ordered]
     if len(set(positions)) != len(positions):
         raise ReplayUnsupported("ambiguous_tie", "two events share a position")
     return ordered
@@ -157,7 +145,12 @@ def _benchmark_step(current: UnifiedStateVector, event: ReplayEvent) -> ReplaySt
     if decline is not None and decline.get("intercepted"):
         raise ReplayUnsupported("decline_outcome", f"benchmark {event.event_id}")
     effect = ri.get("effect")
-    if effect not in ("bidirectional_update", "initialize_prior"):
+    if effect == "initialize_prior":
+        # The live writer applies an initial prior only while the athlete has no state at all.
+        # Replay puts an earlier event in front of it, and then that guard would skip it; the
+        # replay would apply it anyway and disagree with chronological logging.
+        raise ReplayUnsupported("initializer_tail", f"benchmark {event.event_id}")
+    if effect != "bidirectional_update":
         raise ReplayUnsupported("unsupported_effect", f"benchmark {event.event_id}: {effect}")
     try:
         if targets_decline_axis(ri):
@@ -167,12 +160,7 @@ def _benchmark_step(current: UnifiedStateVector, event: ReplayEvent) -> ReplaySt
         raise ReplayUnsupported("capture_invalid", f"benchmark {event.event_id}: {exc}") from exc
     if op.observed_at != event.timestamp:
         raise ReplayUnsupported("timestamp_mismatch", f"benchmark {event.event_id}")
-    new_state: UnifiedStateVector | None = run_benchmark_operator(current, op)
-    if effect == "initialize_prior":
-        new_state = floor_if_raised(current, new_state)
-    if new_state is None:
-        return ReplayStep(event=event, state=current, wrote_row=False)
-    return ReplayStep(event=event, state=new_state, wrote_row=True)
+    return ReplayStep(event=event, state=run_benchmark_operator(current, op), wrote_row=True)
 
 
 def replay(checkpoint: UnifiedStateVector, events: Sequence[ReplayEvent]) -> list[ReplayStep]:
