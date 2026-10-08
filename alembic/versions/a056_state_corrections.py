@@ -6,15 +6,20 @@ state. The rows between the earliest introduced event and the old head stay stor
 date ("stale"); nothing is deleted. The receipt says which events the correction introduced,
 where it started, and which code ran it, so a later correction can include them exactly once.
 
-* ``state_corrections``: one receipt per correction. Immutable (a trigger refuses an UPDATE).
+* ``state_corrections``: one receipt per correction. Append-only (a trigger refuses an UPDATE or
+  a DELETE).
 * ``state_correction_events``: the events it introduced, in batch order. An event is introduced
-  at most once, ever (unique indexes). A receipt is never a training event: replay reads training
-  events from the workout and observation tables, and introduced events from here.
+  at most once, ever (unique indexes), and the membership set cannot be edited or shrunk (the
+  same trigger): deleting a member would also release its uniqueness protection. A receipt is
+  never a training event: replay reads training events from the workout and observation tables,
+  and introduced events from here.
 * ``athlete_states.source_correction_id``: set exactly on ``event_kind = 'correction'`` rows.
 * ``event_kind`` gains ``correction``; a correction row, like a workout or benchmark row, must
   carry a transition identity.
 
-Nothing writes these yet (P3b-3 applies corrections).
+Nothing writes these yet (P3b-3 applies corrections). Removing a receipt is a deliberate
+operator act (``ALTER TABLE ... DISABLE TRIGGER``); TRUNCATE (test cleanup) is not row-level and
+is unaffected.
 
 The downgrade refuses while any correction exists: dropping the receipts would leave corrected
 heads that no longer say how they were made.
@@ -108,9 +113,9 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE FUNCTION forbid_receipt_update() RETURNS trigger AS $$
+        CREATE FUNCTION forbid_receipt_change() RETURNS trigger AS $$
         BEGIN
-            RAISE EXCEPTION 'receipts are immutable (% id %)', TG_TABLE_NAME, OLD.id
+            RAISE EXCEPTION 'receipts are append-only (% on % id %)', TG_OP, TG_TABLE_NAME, OLD.id
                 USING ERRCODE = '23514';
         END;
         $$ LANGUAGE plpgsql
@@ -118,8 +123,8 @@ def upgrade() -> None:
     )
     for table in ("state_corrections", "state_correction_events"):
         op.execute(
-            f"CREATE TRIGGER trg_{table}_immutable BEFORE UPDATE ON {table} "
-            f"FOR EACH ROW EXECUTE FUNCTION forbid_receipt_update()"
+            f"CREATE TRIGGER trg_{table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+            f"FOR EACH ROW EXECUTE FUNCTION forbid_receipt_change()"
         )
 
 
@@ -131,8 +136,8 @@ def downgrade() -> None:
             "corrected heads were made; dropping them would leave heads with no lineage."
         )
     for table in ("state_corrections", "state_correction_events"):
-        op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_immutable ON {table}")
-    op.execute("DROP FUNCTION IF EXISTS forbid_receipt_update()")
+        op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_append_only ON {table}")
+    op.execute("DROP FUNCTION IF EXISTS forbid_receipt_change()")
 
     op.drop_constraint("ck_athlete_states_correction_link", "athlete_states", type_="check")
     op.drop_constraint("ck_athlete_states_transition_has_identity", "athlete_states", type_="check")

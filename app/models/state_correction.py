@@ -17,7 +17,7 @@ from app.core.db import Base
 
 
 class StateCorrection(Base):
-    """Receipt for one exact-replay correction (P3b-2). Immutable; never a training event.
+    """Receipt for one exact-replay correction (P3b-2). Append-only; never a training event.
 
     The correction head is the ``athlete_states`` row whose ``source_correction_id`` is this
     receipt's id. See alembic a056.

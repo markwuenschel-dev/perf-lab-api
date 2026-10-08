@@ -138,11 +138,15 @@ def test_a056_guards_receipts_and_correction_heads_and_round_trips(_migrated_sch
             _expect(conn, "INSERT INTO state_correction_events (correction_id, ordinal, workout_log_id) "
                     "VALUES (:c, 0, :w)", {"c": cid, "w": w1}, "uq_state_correction_events_ordinal")
 
-            # Receipts are immutable.
+            # Receipts are append-only: no edit, and no deletion of a receipt or a member.
             _expect(conn, "UPDATE state_corrections SET algorithm_version = 'x' WHERE id = :c",
-                    {"c": cid}, "receipts are immutable")
+                    {"c": cid}, "receipts are append-only")
             _expect(conn, "UPDATE state_correction_events SET ordinal = 5 WHERE correction_id = :c",
-                    {"c": cid}, "receipts are immutable")
+                    {"c": cid}, "receipts are append-only")
+            _expect(conn, "DELETE FROM state_correction_events WHERE correction_id = :c",
+                    {"c": cid}, "receipts are append-only")
+            _expect(conn, "DELETE FROM state_corrections WHERE id = :c",
+                    {"c": cid}, "receipts are append-only")
             conn.commit()
 
             # The downgrade refuses while a receipt exists.
@@ -150,7 +154,10 @@ def test_a056_guards_receipts_and_correction_heads_and_round_trips(_migrated_sch
                 command.downgrade(cfg, "a055_replay_capture")
             conn.rollback()
 
-            # Receipts and correction heads reference each other: peel them in dependency order.
+            # Removing receipts is a deliberate operator act: disable the guard, then peel them in
+            # dependency order (receipts and correction heads reference each other).
+            for table in ("state_corrections", "state_correction_events"):
+                conn.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER trg_{table}_append_only"))
             conn.execute(text("DELETE FROM state_correction_events"))
             conn.execute(text("DELETE FROM state_corrections WHERE id = :c"), {"c": cid2})
             conn.execute(text("DELETE FROM athlete_states WHERE source_correction_id IS NOT NULL"))

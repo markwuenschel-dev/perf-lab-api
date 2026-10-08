@@ -26,8 +26,11 @@ record-only. What it refuses, and why:
 * ``decline_outcome`` / ``decline_policy_engaged``: a benchmark the strength-decline machine
   judged or could re-judge. Its code is outside the transition identity.
 * ``event_without_row`` / ``row_flag_mismatch`` / ``disposition_conflict`` / ``double_membership``:
-  the event tables and the state rows disagree about what was applied.
-* ``ambiguous_tie``: two events share a timestamp and the order cannot be recovered.
+  the event tables and the state rows disagree about what was applied. An applied event that
+  wrote no row has no place in the order, so it is refused (the only benchmarks that write no
+  row are initial priors and decline-held readings, both unsupported).
+* ``initializer_tail``: an initial prior is in the tail; see ``tail_replay``.
+* ``ambiguous_tie``: two events share one position and the order cannot be recovered.
 * ``reconstruction_mismatch``: the proof failed: replaying the stored events from the checkpoint
   did not reproduce a stored row, which means something the capture does not cover changed it.
 * ``not_late`` / ``unsupported_reason`` / ``already_introduced`` / ``not_record_only``: the new
@@ -124,7 +127,54 @@ async def _load_corrections(
         head_row = heads.get(c.id)
         if head_row is None or head_row.user_id != user_id or head_row.event_kind != "correction":
             raise ReplayUnsupported("lineage", f"correction {c.id} has no correction head row")
+        await _validate_receipt(db, user_id, c, events[c.id], head_row)
     return corrections, events, heads
+
+
+async def _validate_receipt(
+    db: AsyncSession,
+    user_id: int,
+    c: StateCorrection,
+    events: list[StateCorrectionEvent],
+    head_row: AthleteState,
+) -> None:
+    """A receipt is evidence only if everything it points at belongs to this athlete and agrees
+    with the correction head it produced. Checked for every receipt before any is used."""
+    checkpoint = await db.get(AthleteState, c.checkpoint_state_id)
+    before = await db.get(AthleteState, c.head_before_state_id)
+    if (
+        checkpoint is None or before is None
+        or checkpoint.user_id != user_id or before.user_id != user_id
+    ):
+        raise ReplayUnsupported("ownership", f"correction {c.id} references another athlete's state")
+    if (
+        head_row.predecessor_state_id != before.id
+        or head_row.transition_identity != c.transition_identity
+        or head_row.timestamp != before.timestamp
+        or head_row.id <= before.id
+    ):
+        raise ReplayUnsupported("lineage", f"correction {c.id} disagrees with its head row {head_row.id}")
+    if _key(checkpoint) >= _key(before) or checkpoint.timestamp > c.affected_from:
+        raise ReplayUnsupported("lineage", f"correction {c.id} has an impossible checkpoint")
+    if [e.ordinal for e in events] != list(range(len(events))) or not events:
+        raise ReplayUnsupported("lineage", f"correction {c.id} has a gapped or empty event list")
+    times: list[datetime] = []
+    for ce in events:
+        if (ce.workout_log_id is None) == (ce.observation_id is None):
+            raise ReplayUnsupported("lineage", f"correction {c.id} event {ce.id}")
+        if ce.workout_log_id is not None:
+            w = await db.get(WorkoutLog, ce.workout_log_id)
+            if w is None or w.user_id != user_id:
+                raise ReplayUnsupported("ownership", f"correction {c.id}: workout {ce.workout_log_id}")
+            times.append(w.session_timestamp)
+        else:
+            assert ce.observation_id is not None
+            o = await db.get(BenchmarkObservation, ce.observation_id)
+            if o is None or o.user_id != user_id:
+                raise ReplayUnsupported("ownership", f"correction {c.id}: observation {ce.observation_id}")
+            times.append(o.observed_at)
+    if min(times) != c.affected_from:
+        raise ReplayUnsupported("lineage", f"correction {c.id} affected_from is not its earliest event")
 
 
 async def _select_checkpoint(
@@ -194,7 +244,7 @@ def _check_rows(
 
 
 def _workout_event(
-    w: WorkoutLog, *, row_key: int | None, ordinal: int, own: AthleteState | None, is_new: bool
+    w: WorkoutLog, *, row_key: int, ordinal: int, own: AthleteState | None, is_new: bool
 ) -> ReplayEvent:
     if w.replay_input is None:
         raise ReplayUnsupported("no_capture", f"workout {w.id}")
@@ -206,7 +256,7 @@ def _workout_event(
 
 
 def _benchmark_event(
-    o: BenchmarkObservation, *, row_key: int | None, ordinal: int, own: AthleteState | None,
+    o: BenchmarkObservation, *, row_key: int, ordinal: int, own: AthleteState | None,
     is_new: bool,
 ) -> ReplayEvent:
     if o.replay_input is None:
@@ -336,8 +386,9 @@ async def _members(
             if (event.timestamp, head_row.id) > _key(ck):
                 add(event)
 
-    # Applied events that wrote no row: a benchmark that raised nothing is legitimate; a
-    # workout always writes one.
+    # Applied events that wrote no row have no place in the order. A workout always writes one;
+    # a benchmark writes none only as an initial prior or a decline-held reading, both of which
+    # the stepper refuses.
     candidates_w = list(
         (await db.execute(
             select(WorkoutLog).where(
@@ -374,17 +425,9 @@ async def _members(
     for o in candidates_o:
         if ("benchmark", o.id) in seen:
             continue
-        own = own_o.get(o.id)
-        if own is not None:
+        if o.id in own_o:
             continue  # its row sits before the checkpoint
-        ri = o.replay_input
-        if ri is None:
-            raise ReplayUnsupported("no_capture", f"observation {o.id}")
-        if ri.get("state_row_written"):
-            raise ReplayUnsupported("event_without_row", f"observation {o.id}")
-        if o.observed_at == ck.timestamp:
-            raise ReplayUnsupported("ambiguous_tie", f"observation {o.id} ties the checkpoint")
-        add(_benchmark_event(o, row_key=None, ordinal=0, own=None, is_new=False))
+        raise ReplayUnsupported("event_without_row", f"observation {o.id}")
     return members
 
 
@@ -399,7 +442,7 @@ def _prove(
 
     for step in steps:
         ev = step.event
-        plain = ev.own_state_row_id is not None or ev.row_key is None  # not introduced by a correction
+        plain = ev.own_state_row_id is not None  # wrote its own row: not introduced by a correction
         if ev.kind == "benchmark" and plain:
             # What the transition produced now must match what the live writer recorded then:
             # a row exactly when the capture says one was written.
