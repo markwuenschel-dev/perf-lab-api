@@ -19,7 +19,7 @@ import logging
 import math
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from app.domain.vectors import CapacityConfidence, FatigueState, TissueState, capacity_ceiling
 from app.engine.parameters import EngineParameters, default_parameters
@@ -29,11 +29,29 @@ from app.logic import cross_talk
 from app.logic.benchmark_validity import BenchmarkValidityProfile, effective_variance
 from app.logic.interference import directional_interference_multiplier
 from app.schemas.state import UnifiedStateVector
-from app.schemas.workouts import StressDose, WorkoutLog
+from app.schemas.workouts import StressDose
 
 logger = logging.getLogger(__name__)
 
 _VECTOR_ATTR = {"capacity": "capacity_x", "fatigue": "fatigue_f", "tissue": "tissue_t"}
+
+
+class WorkoutOperatorLog(Protocol):
+    """The only fields of a workout log the transition reads. A replay builds one from the
+    captured ``replay_input``; a test pins that the operator reads nothing else."""
+
+    # Read-only properties, so a model whose field is narrower (a Literal modality) satisfies it.
+    @property
+    def modality(self) -> str: ...
+
+    @property
+    def dominant_movement_pattern(self) -> str | None: ...
+
+    @property
+    def sleep_quality(self) -> float | None: ...
+
+    @property
+    def life_stress_inverse(self) -> float | None: ...
 
 
 def _read_axis(state: UnifiedStateVector, vector: str, key: str) -> float:
@@ -440,7 +458,7 @@ def fatigue_impulse_from_dose(dose: StressDose) -> FatigueState:
     )
 
 
-def tissue_impulse_from_dose(dose: StressDose, log: WorkoutLog) -> dict[str, float]:
+def tissue_impulse_from_dose(dose: StressDose, log: WorkoutOperatorLog) -> dict[str, float]:
     movement = log.dominant_movement_pattern or (
         "run" if log.modality == "Running" else "mixed"
     )
@@ -575,7 +593,7 @@ def update_athlete_state(
     prev_state: UnifiedStateVector,
     dose: StressDose,
     time_delta: timedelta,
-    log: WorkoutLog,
+    log: WorkoutOperatorLog,
 ) -> UnifiedStateVector:
     hours = time_delta.total_seconds() / 3600.0
     if hours < 0:

@@ -21,9 +21,12 @@ from app.logic.replay_inputs import (
     EVALUATION_RECORD_ONLY,
     benchmark_replay_input,
 )
+from app.logic.state_transitions import (
+    BenchmarkOperatorInput,
+    floor_if_raised,
+    run_benchmark_operator,
+)
 from app.logic.state_update_v0 import (
-    apply_benchmark_observation,
-    capacity_increased,
     floor_capacity_at_prior,
     normalize_score01,
 )
@@ -543,26 +546,26 @@ async def stage_observation(
         else:
             obs.state_disposition = "applied"
             evaluation = EVALUATION_APPLIED
+    # The operator's inputs, built once: the live call below, the deferred floor-ratchet
+    # shadow, and the P3b-1 capture all read this same object (the replay reads its snapshot).
+    operator_input = BenchmarkOperatorInput(
+        observed_at=observation_time,
+        raw_value=body.raw_value,
+        normalized_value=normalized_value,
+        score01=score01,
+        better_direction=definition.better_direction,
+        observation_weight_used=float(definition.observation_weight),
+        mappings=mappings,
+    )
     if apply_state:
         assert current is not None
 
-        new_state = apply_benchmark_observation(
-            current,
-            raw_value=body.raw_value,
-            normalized_value=normalized_value,
-            better_direction=definition.better_direction,
-            observation_weight=float(definition.observation_weight),
-            mappings=mappings,
-            observed_at=observation_time,
-            score01=score01,
-        )
+        new_state = run_benchmark_operator(current, operator_input)
         if effect in (oa.CE_UPWARD_LOWER_BOUND, oa.CE_INITIALIZE_PRIOR):
             # Non-regressing: clamp capacity axes up to at least their prior. If the
             # lower bound lands below the current watermark it raised nothing — record
             # the observation for history but write no redundant capacity row.
-            new_state = floor_capacity_at_prior(current, new_state)
-            if not capacity_increased(current, new_state):
-                new_state = None
+            new_state = floor_if_raised(current, new_state)
         elif effect == oa.CE_BIDIRECTIONAL_UPDATE:
             # INT-02 (ADR-0066): a single low bidirectional benchmark must not durably
             # regress max_strength. The decline machine holds the axis on first
@@ -614,27 +617,12 @@ async def stage_observation(
         # application-policy version, not-applied reason — as shadow evidence, separate
         # from any applied transition. Canonical capacity is untouched.
         current = await _current_or_staged_baseline(db, user_id)
-        candidate = apply_benchmark_observation(
-            current,
-            raw_value=body.raw_value,
-            normalized_value=normalized_value,
-            better_direction=definition.better_direction,
-            observation_weight=float(definition.observation_weight),
-            mappings=mappings,
-            observed_at=observation_time,
-            score01=score01,
-        )
+        candidate = run_benchmark_operator(current, operator_input)
         floor_shadow_candidate = (current, floor_capacity_at_prior(current, candidate))
 
     # P3b-1: the operator's inputs and what happened around it, written once (immutable).
     obs.replay_input = benchmark_replay_input(
-        observed_at=observation_time,
-        raw_value=body.raw_value,
-        normalized_value=normalized_value,
-        score01=score01,
-        better_direction=definition.better_direction,
-        observation_weight_used=float(definition.observation_weight),
-        mappings=mappings,
+        operator_input,
         effect=effect,
         authority_policy_version=obs.authority_policy_version,
         evaluation=evaluation,

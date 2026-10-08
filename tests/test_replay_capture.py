@@ -38,6 +38,7 @@ from app.logic.replay_inputs import (
     benchmark_replay_input,
     workout_replay_input,
 )
+from app.logic.state_transitions import BenchmarkOperatorInput
 from app.logic.state_update_v0 import apply_benchmark_observation, update_athlete_state
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -104,7 +105,7 @@ def _closure(roots: tuple[str, ...]) -> set[str]:
 def test_declared_modules_are_the_operators_whole_import_closure():
     """A module added to (or dropped from) what the operators import must change the identity,
     so the declared tuple has to follow the source."""
-    assert set(ti.TRANSITION_MODULES) == _closure(("app.logic.state_update_v0",))
+    assert set(ti.TRANSITION_MODULES) == _closure(ti.TRANSITION_ROOTS)
     assert list(ti.TRANSITION_MODULES) == sorted(ti.TRANSITION_MODULES)
 
 
@@ -216,9 +217,12 @@ def _mapping(**kw: Any) -> Any:
 def test_benchmark_snapshot_keeps_mapping_order_and_round_trips_through_a_reader():
     maps = [_mapping(id=9, target_key="b"), _mapping(id=2, target_key="a", config={"k": 0.1 + 0.2})]
     snap = benchmark_replay_input(
-        observed_at=datetime(2026, 10, 8, 12, 30, 15, 123456), raw_value=150.0,
-        normalized_value=52.5, score01=None, better_direction="higher",
-        observation_weight_used=0.5, mappings=maps, effect="bidirectional_update",
+        BenchmarkOperatorInput(
+            observed_at=datetime(2026, 10, 8, 12, 30, 15, 123456), raw_value=150.0,
+            normalized_value=52.5, score01=None, better_direction="higher",
+            observation_weight_used=0.5, mappings=maps,
+        ),
+        effect="bidirectional_update",
         authority_policy_version="authority_policy_v1", evaluation="applied",
         decline=None, state_row_written=True, predecessor_state_id=7,
     )
@@ -230,8 +234,10 @@ def test_benchmark_snapshot_keeps_mapping_order_and_round_trips_through_a_reader
     assert rebuilt[1].config == {"k": 0.30000000000000004} and rebuilt[0].target_key == "b"
     with pytest.raises(ValueError):
         benchmark_replay_input(
-            observed_at=datetime(2026, 1, 1), raw_value=float("inf"), normalized_value=None,
-            score01=None, better_direction="higher", observation_weight_used=1.0, mappings=[],
+            BenchmarkOperatorInput(
+                observed_at=datetime(2026, 1, 1), raw_value=float("inf"), normalized_value=None,
+                score01=None, better_direction="higher", observation_weight_used=1.0, mappings=[],
+            ),
             effect="none", authority_policy_version=None, evaluation="not_evaluated",
             decline=None, state_row_written=False, predecessor_state_id=None,
         )
