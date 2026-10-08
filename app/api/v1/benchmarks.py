@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +56,15 @@ async def post_benchmark_observation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> BenchmarkObservationRead:
+    # P3-pre: an observation dated in the future cannot have happened yet. Accepting it would
+    # make it the state head and push every later event before it.
+    if body.observed_at is not None:
+        observed = body.observed_at if body.observed_at.tzinfo else body.observed_at.replace(tzinfo=UTC)
+        if observed > datetime.now(UTC):
+            raise HTTPException(
+                status_code=422,
+                detail="observed_at is in the future. Send the time the test was performed, or omit it.",
+            )
     try:
         return await benchmark_service.create_observation(db, current_user.id, body)
     except ValueError as e:

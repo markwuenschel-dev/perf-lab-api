@@ -344,6 +344,23 @@ async def test_a_first_workout_of_any_date_is_applied_by_the_baseline_re_anchor(
     assert first == ts - timedelta(seconds=1)
 
 
+async def test_an_unrepresentable_early_workout_time_is_refused_before_any_write(async_db):
+    """A first workout re-anchors S0 one second before it; at 0001-01-01 there is no such
+    instant, which raised OverflowError (a 500). Found beside the P3-pre benchmark repro."""
+    user = await _user(async_db, "p3a-min@test.com")
+
+    resp = await _post(async_db, user, {
+        "timestamp": "0001-01-01T00:00:00Z", "modality": "Running", "duration_minutes": 30.0,
+        "session_rpe": 6.0,
+    })
+
+    assert resp.status_code == 422 and "too early" in resp.text
+    logs = (await async_db.execute(
+        select(func.count()).select_from(WorkoutLogORM).where(WorkoutLogORM.user_id == user.id)
+    )).scalar_one()
+    assert (logs, await _state_count(async_db, user.id)) == (0, 0)
+
+
 def _payload_with_other_calendar_day(instant: datetime) -> datetime:
     """``instant`` (UTC-aware) written in an offset whose calendar day differs from the UTC
     day, so the test discriminates the two whatever the time of day it runs."""

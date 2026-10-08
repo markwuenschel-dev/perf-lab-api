@@ -171,6 +171,12 @@ class BenchmarkObservationRead(BaseModel):
     normalized_value: float | None
     validity_status: str
     source: str
+    # P3-pre (alembic a054). `applied`: its state effect was evaluated against the current
+    # state, in time order; a state row is written only if capacity changed. `record_only`:
+    # dated before the athlete's current state, so kept as evidence with the state update
+    # omitted. Null: it carried no state authority, or it predates dispositions.
+    state_disposition: Literal["applied", "record_only"] | None = None
+    state_disposition_reason: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
