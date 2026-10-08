@@ -15,6 +15,12 @@ from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
 from app.logic.ekf.observation import mapping_specs_from_orm
 from app.logic.prescription_evidence import utc_naive
+from app.logic.replay_inputs import (
+    EVALUATION_APPLIED,
+    EVALUATION_NOT_EVALUATED,
+    EVALUATION_RECORD_ONLY,
+    benchmark_replay_input,
+)
 from app.logic.state_update_v0 import (
     apply_benchmark_observation,
     capacity_increased,
@@ -36,6 +42,7 @@ from app.services import (
     strength_decline_service,
 )
 from app.services.state_chain_lock import lock_athlete_chain
+from app.services.transition_identity_service import ensure_current_identity
 
 logger = logging.getLogger(__name__)
 
@@ -502,17 +509,26 @@ async def stage_observation(
     # workouts). It is kept as evidence and its state update omitted. The decline machine does
     # not run for it either, because its outcomes act on the state row.
     current: UnifiedStateVector | None = None
+    # P3b-1 capture: how the operator was used, the head row it started from, what the decline
+    # machine decided, and whether a state row came out. Recorded in obs.replay_input below.
+    evaluation = EVALUATION_NOT_EVALUATED
+    head_row_id: int | None = None
+    decline: dict[str, Any] | None = None
+    state_row_written = False
     if apply_state:
         fresh_athlete = await state_service.load_current_state(db, user_id) is None
         current = await _current_or_staged_baseline(db, user_id)
+        head_row = await AthleteContextRepository(db).get_latest_state(user_id)
+        assert head_row is not None  # either it existed, or the baseline was just staged
+        head_row_id = head_row.id
         if fresh_athlete:
             # The baseline was staged in this transaction for this observation: anchor it
             # just before the observation, as process_new_workout anchors S0 before a first
             # workout. A pre-existing baseline is never moved.
-            staged = await AthleteContextRepository(db).get_latest_state(user_id)
-            assert staged is not None
-            staged.timestamp = observation_time - timedelta(seconds=1)
-            current.timestamp = staged.timestamp
+            if head_row.anchored_from is None:
+                head_row.anchored_from = head_row.timestamp
+            head_row.timestamp = observation_time - timedelta(seconds=1)
+            current.timestamp = head_row.timestamp
         head_ts = utc_naive(current.timestamp)
         if observation_time < head_ts:
             obs.state_disposition = "record_only"
@@ -522,9 +538,11 @@ async def stage_observation(
                 else "event_before_current_state"
             )
             apply_state = False
+            evaluation = EVALUATION_RECORD_ONLY
             ekf_specs = []  # the shadow EKF would assimilate it at the head, as if it were now
         else:
             obs.state_disposition = "applied"
+            evaluation = EVALUATION_APPLIED
     if apply_state:
         assert current is not None
 
@@ -554,6 +572,13 @@ async def stage_observation(
                 db, user_id, current=current, observation=obs, definition=definition,
                 mappings=mappings, observed_raw=body.raw_value,
             )
+            decline = {
+                "intercepted": outcome.intercepted,
+                "hold_axis": outcome.hold_axis,
+                "apply_posterior": outcome.apply_posterior,
+                "applied_capacity_effect": outcome.applied_capacity_effect,
+                "decline_transition_status": outcome.decline_transition_status,
+            }
             if outcome.intercepted:
                 if outcome.apply_posterior is not None:
                     # Confirmed decline: a bounded, auditable downward axis move.
@@ -571,8 +596,18 @@ async def stage_observation(
                 obs.applied_capacity_effect = oa.CE_BIDIRECTIONAL_UPDATE
         if new_state is not None:
             kwargs = athlete_state_kwargs_from_unified(new_state)
+            state_row_written = True
             # P3a: the observation that wrote this row (obs is flushed above).
-            db.add(AthleteState(user_id=user_id, source_observation_id=obs.id, **kwargs))
+            db.add(
+                AthleteState(
+                    user_id=user_id,
+                    source_observation_id=obs.id,
+                    event_kind="benchmark",
+                    predecessor_state_id=head_row_id,
+                    transition_identity=await ensure_current_identity(db),
+                    **kwargs,
+                )
+            )
     elif is_valid and effect == oa.CE_UPWARD_LOWER_BOUND:
         # Deferred floor-ratchet (ADR-0058): the authority is resolved but NOT promoted
         # to a live mutation. Record the candidate — proposed floor, projected uplift,
@@ -590,6 +625,23 @@ async def stage_observation(
             score01=score01,
         )
         floor_shadow_candidate = (current, floor_capacity_at_prior(current, candidate))
+
+    # P3b-1: the operator's inputs and what happened around it, written once (immutable).
+    obs.replay_input = benchmark_replay_input(
+        observed_at=observation_time,
+        raw_value=body.raw_value,
+        normalized_value=normalized_value,
+        score01=score01,
+        better_direction=definition.better_direction,
+        observation_weight_used=float(definition.observation_weight),
+        mappings=mappings,
+        effect=effect,
+        authority_policy_version=obs.authority_policy_version,
+        evaluation=evaluation,
+        decline=decline,
+        state_row_written=state_row_written,
+        predecessor_state_id=head_row_id,
+    )
 
     # Weak-point feedback: flag deficits, resolve improvements. Gated on measurement-
     # grade (bidirectional) authority — training-derived / estimated / seeding evidence

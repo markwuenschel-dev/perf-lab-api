@@ -112,6 +112,11 @@ class BenchmarkObservation(Base):
     state_disposition: Mapped[str | None] = mapped_column(String, nullable=True)
     state_disposition_reason: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # P3b-1: everything the state operator was given for this observation, and what the decline
+    # machine decided. Written once, immutable (a DB trigger refuses a change). NULL = written
+    # before P3b-1: not replayable. See alembic a055.
+    replay_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
     # Confidence hook (ADR-0058 structural; #106 assigns the numbers).
     confidence_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
     confidence_model_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
