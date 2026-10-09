@@ -244,3 +244,19 @@ SELECT replay_refusal, count(*) FROM benchmark_observations WHERE state_disposit
 append-only (a trigger refuses UPDATE and DELETE); removing them is a deliberate operator act
 (`ALTER TABLE ... DISABLE TRIGGER`) and leaves correction heads with no lineage, so don't, unless
 you are discarding the corrected history on purpose. `a057`'s downgrade drops `replay_refusal`.
+
+**Folding events that are already waiting (P3c).** `APPLY_LATE_EVENTS` folds events as they
+arrive. Ones recorded earlier (before the flag, or refused for a reason that has since gone) are
+folded by an operator, through the same function and the same proof:
+
+```bash
+sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events            # report: does every fold, keeps none
+sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events --apply    # write
+sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events --user-id 7
+```
+
+It needs no flag. Per athlete it reports events considered, folded, refused by code, **not
+capturable** (recorded before `a055`: no captured inputs, so they are never repaired), and
+**ambiguous tie** (another event shares the exact timestamp and the arrival order can't be
+recovered; left alone). Events fold oldest first, one correction each, one transaction each.
+Read the dry run first: it is exactly what `--apply` will do. A second run finds nothing.
