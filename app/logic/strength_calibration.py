@@ -63,6 +63,72 @@ FIDELITY_CONF_MULTIPLIER: dict[str, float] = {
     "missing": 0.2,
 }
 
+# ---------------------------------------------------------------------------------
+# Effort: ONE rule for how RPE and RIR combine (P4-1). Every consumer that reads a set's
+# effort calls resolve_effort(); none may implement its own `10 - rir` or failure threshold
+# (tests/test_effort_resolver.py::test_no_other_module_implements_the_effort_rule).
+# ---------------------------------------------------------------------------------
+
+# RPE and RIR describe the same thing (RPE = 10 - RIR). Within this many RPE steps they
+# agree (the boundary is inclusive); further apart they conflict.
+EFFORT_AGREEMENT_TOLERANCE = 0.5
+# Decimal inputs do not subtract exactly: 8.3 - (10 - 2.2) is 0.5000000000000009 in floats. A
+# difference this close to the boundary is rounding, not disagreement; anything the API can
+# send that is genuinely beyond it (0.51, 0.5000001) is still far larger than this.
+_EFFORT_ROUNDING_SLACK = 1e-9
+# A set at or beyond this effort is treated as taken to failure.
+FAILURE_RPE = 9.5
+
+
+@dataclass(frozen=True)
+class Effort:
+    """A set's effort, resolved once.
+
+    ``eff_rpe`` is the single RPE-scale figure to use, or None when no effort was reported.
+    ``conflict`` means RPE and RIR were both given and disagree by more than the tolerance;
+    ``eff_rpe`` then stays the RPE (the dose ladder keeps preferring it), but such a set is
+    not admissible as e1RM evidence. ``to_failure`` is an explicit statement or an effort at
+    or beyond ``FAILURE_RPE``.
+    """
+
+    eff_rpe: float | None
+    conflict: bool
+    to_failure: bool
+
+    @property
+    def known(self) -> bool:
+        return self.eff_rpe is not None
+
+    @property
+    def admissible(self) -> bool:
+        """Effort that can qualify a set as e1RM evidence: reported, and not self-contradictory."""
+        return self.eff_rpe is not None and not self.conflict
+
+
+def resolve_effort(
+    rpe: float | None, rir: float | None, explicit_failure: bool = False
+) -> Effort:
+    """Combine a set's RPE and RIR into one effort.
+
+    * both reported and within ``EFFORT_AGREEMENT_TOLERANCE`` of each other: use the RPE;
+    * both reported and further apart: ``conflict`` (the RPE is kept for the dose ladder);
+    * one reported: use it (``10 - rir`` when only RIR);
+    * neither: unknown (``eff_rpe`` None).
+    """
+    if rpe is not None and rir is not None:
+        gap = abs(float(rpe) - (10.0 - float(rir)))
+        conflict = gap > EFFORT_AGREEMENT_TOLERANCE + _EFFORT_ROUNDING_SLACK
+        eff: float | None = float(rpe)
+    elif rpe is not None:
+        conflict, eff = False, float(rpe)
+    elif rir is not None:
+        conflict, eff = False, 10.0 - float(rir)
+    else:
+        conflict, eff = False, None
+    failure = bool(explicit_failure) or (eff is not None and eff >= FAILURE_RPE)
+    return Effort(eff_rpe=eff, conflict=conflict, to_failure=failure)
+
+
 # What an UNRECOGNIZED fidelity string earns: the least trust any known rung earns.
 # Fail-closed — unproven provenance can never inherit set_level authority by default.
 MOST_CONSERVATIVE_CONF_MULTIPLIER: float = min(FIDELITY_CONF_MULTIPLIER.values())
@@ -280,9 +346,9 @@ def external_intensity_for_set(
         )
 
     # 2. RPE/RIR chart — when effort is known.
-    if reps is not None and (rpe is not None or rir is not None):
-        eff_rpe = float(rpe) if rpe is not None else (10.0 - float(rir))  # type: ignore[arg-type]
-        pct = max(PCT_MIN, min(PCT_MAX_DOSE, _chart_percent(reps, eff_rpe)))
+    effort = resolve_effort(rpe, rir)
+    if reps is not None and effort.eff_rpe is not None:
+        pct = max(PCT_MIN, min(PCT_MAX_DOSE, _chart_percent(reps, effort.eff_rpe)))
         return CalibrationResult(
             value=pct,
             source=SRC_RPE_RIR_CHART,

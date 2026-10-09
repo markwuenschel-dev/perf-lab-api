@@ -906,9 +906,7 @@ async def _apply_sets_to_log(
         for r in rows:
             if not (sc.is_loaded(r.load_type) and r.load_kg and r.reps):
                 continue
-            to_failure = (r.rir is not None and r.rir <= 0) or (
-                r.rpe is not None and r.rpe >= 9.5
-            )
+            to_failure = sc.resolve_effort(r.rpe, r.rir).to_failure
             result = sc.external_intensity_for_set(
                 reps=r.reps,
                 load_kg=r.load_kg,

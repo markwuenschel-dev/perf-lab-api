@@ -114,10 +114,6 @@ class ModelBRouting:
     contributions: list[ExerciseRoutingContribution]
 
 
-def _to_failure(reps: float | None, rpe: float | None, rir: float | None) -> bool:
-    return (rir is not None and rir <= 0) or (rpe is not None and rpe >= 9.5)
-
-
 def _struct_weight(phi_adapt: dict[str, Any]) -> float:
     """Structural (strength-family) share of an exercise's adaptation φ.
 
@@ -153,7 +149,7 @@ def _route_one(
             rpe=entry.avg_rpe,
             rir=entry.avg_rir,
             e1rm_pre=e1rm_pre,
-            to_failure=_to_failure(entry.reps, entry.avg_rpe, entry.avg_rir),
+            to_failure=sc.resolve_effort(entry.avg_rpe, entry.avg_rir).to_failure,
         )
     d_i = base * (intensity.value ** p.dose_alpha)
 
