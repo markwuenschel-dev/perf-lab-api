@@ -32,19 +32,34 @@ from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 
 
-def demonstrated_strength_clause() -> ColumnElement[bool]:
-    """SQL form of :func:`app.logic.observation_authority.is_demonstrated_strength`, plus the
-    query-level conditions (valid, not quarantined). A test pins the two forms to each other."""
-    current = and_(
+def _usable_row() -> ColumnElement[bool]:
+    return and_(
+        # Positively valid: an unknown or pending status never qualifies (ingestion requires
+        # "valid", and a pending row has received no state application).
+        BenchmarkObservation.validity_status == "valid",
+        BenchmarkObservation.quarantined_at.is_(None),
+    )
+
+
+def _current_provenance() -> ColumnElement[bool]:
+    return and_(
         BenchmarkObservation.source_type.in_(oa.DEMONSTRATED_SOURCE_TYPES),
         BenchmarkObservation.evidence_type.in_(oa.DEMONSTRATED_EVIDENCE_TYPES),
         BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
-        or_(
-            BenchmarkObservation.protocol_validity.is_(None),
-            BenchmarkObservation.protocol_validity != oa.PV_INVALID,
-        ),
+        _not_protocol_invalid(),
     )
-    migrated_legacy = and_(
+
+
+def _not_protocol_invalid() -> ColumnElement[bool]:
+    return or_(
+        BenchmarkObservation.protocol_validity.is_(None),
+        BenchmarkObservation.protocol_validity != oa.PV_INVALID,
+    )
+
+
+def _migrated_legacy() -> ColumnElement[bool]:
+    return and_(
+        _not_protocol_invalid(),
         BenchmarkObservation.source_type == oa.ST_LEGACY_UNKNOWN,
         BenchmarkObservation.provenance_operation == oa.OP_SCHEMA_BACKFILL,
         BenchmarkObservation.migration_version == oa.LEGACY_MIGRATION_VERSION,
@@ -53,13 +68,35 @@ def demonstrated_strength_clause() -> ColumnElement[bool]:
         BenchmarkObservation.evidence_type == oa.se.EV_DIRECT_MEASUREMENT,
         BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
     )
-    return and_(
-        # Positively valid: an unknown or pending status never qualifies (ingestion requires
-        # "valid", and a pending row has received no state application).
-        BenchmarkObservation.validity_status == "valid",
-        BenchmarkObservation.quarantined_at.is_(None),
-        or_(current, migrated_legacy),
+
+
+def demonstrated_strength_clause() -> ColumnElement[bool]:
+    """SQL form of :func:`app.logic.observation_authority.is_demonstrated_strength`, plus the
+    query-level conditions (valid, not quarantined). A test pins the two forms to each other."""
+    return and_(_usable_row(), _current_provenance())
+
+
+def decline_protection_clause() -> ColumnElement[bool]:
+    """SQL form of :func:`app.logic.observation_authority.is_decline_protection_evidence`:
+    demonstrated strength, or a row carrying the legacy migration's whole record."""
+    return and_(_usable_row(), or_(_current_provenance(), _migrated_legacy()))
+
+
+async def _max_raw(
+    db: AsyncSession, user_id: int, code: str, clause: ColumnElement[bool],
+    *, exclude_observation_id: int | None, as_of: datetime | None,
+) -> float | None:
+    conditions = [BenchmarkObservation.user_id == user_id, BenchmarkDefinition.code == code, clause]
+    if exclude_observation_id is not None:
+        conditions.append(BenchmarkObservation.id != exclude_observation_id)
+    if as_of is not None:
+        conditions.append(BenchmarkObservation.observed_at <= as_of)
+    res = await db.execute(
+        select(func.max(BenchmarkObservation.raw_value))
+        .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
+        .where(*conditions)
     )
+    return res.scalar_one_or_none()
 
 
 async def demonstrated_watermark(
@@ -67,25 +104,30 @@ async def demonstrated_watermark(
 ) -> float | None:
     """The best currently valid DEMONSTRATED e1RM for this athlete and lift (ADR-0066).
 
-    The one watermark a strength decline is measured against, and the public "best validated"
-    figure. Only measured max tests count (see ``oa.is_demonstrated_strength``): a high training
-    estimate can never make an honest test look like a decline, and a falling measured test still
-    does. Derived from ``max(raw_value)``, so it is monotone while valid tests are added and may
-    fall when the top one is corrected or quarantined (a data correction, not a decline).
+    The public "best validated" figure. Only measured max tests by current provenance count (see
+    ``oa.is_demonstrated_strength``); migrated legacy history never does, because the migration
+    cannot prove a max. Derived from ``max(raw_value)``, so it is monotone while valid tests are
+    added and may fall when the top one is corrected or quarantined (a data correction, not a
+    decline).
     """
-    conditions = [
-        BenchmarkObservation.user_id == user_id,
-        BenchmarkDefinition.code == code,
-        demonstrated_strength_clause(),
-    ]
-    if exclude_observation_id is not None:
-        conditions.append(BenchmarkObservation.id != exclude_observation_id)
-    res = await db.execute(
-        select(func.max(BenchmarkObservation.raw_value))
-        .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
-        .where(*conditions)
+    return await _max_raw(
+        db, user_id, code, demonstrated_strength_clause(),
+        exclude_observation_id=exclude_observation_id, as_of=None,
     )
-    return res.scalar_one_or_none()
+
+
+async def decline_prior_watermark(
+    db: AsyncSession, user_id: int, code: str, *,
+    exclude_observation_id: int | None = None, as_of: datetime | None = None,
+) -> float | None:
+    """The prior a strength decline is judged against (ADR-0066): demonstrated strength plus the
+    legacy migration's tests, so an older athlete's next low test is still a candidate. A training
+    estimate is never in it, however high. ``as_of`` limits it to tests dated at or before that
+    moment: the prior a candidate was opened against."""
+    return await _max_raw(
+        db, user_id, code, decline_protection_clause(),
+        exclude_observation_id=exclude_observation_id, as_of=as_of,
+    )
 
 
 async def estimated_pr_baseline(

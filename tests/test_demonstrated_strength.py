@@ -40,6 +40,7 @@ from app.models.observation_mapping import ObservationMapping
 from app.models.strength_decline_candidate import StrengthDeclineCandidate
 from app.models.user import User
 from app.repositories.benchmark_observation_repository import (
+    decline_protection_clause,
     demonstrated_strength_clause,
     demonstrated_watermark,
     estimated_pr_baseline,
@@ -129,8 +130,12 @@ def test_the_predicate_on_the_cases_that_matter():
         assert not oa.is_demonstrated_strength(**{**ok, field: None})
 
 
-def test_a_legacy_unknown_row_counts_only_with_the_whole_migration_record():
-    assert oa.is_demonstrated_strength(**_MIGRATED)
+def test_a_legacy_unknown_row_is_decline_protection_only_with_the_whole_migration_record():
+    assert oa.is_decline_protection_evidence(**_MIGRATED)
+    # …and it is never demonstrated strength, whatever it carries.
+    assert not oa.is_demonstrated_strength(
+        **{k: _MIGRATED[k] for k in ("source_type", "evidence_type", "value_semantics", "protocol_validity")}
+    )
     for field, forged in [
         ("provenance_operation", oa.OP_LIVE_WRITE),
         ("provenance_operation", None),
@@ -141,11 +146,17 @@ def test_a_legacy_unknown_row_counts_only_with_the_whole_migration_record():
         ("observation_model", "workout_e1rm_extraction_v1"),
         ("evidence_type", se.EV_ESTIMATED_FROM_TRAINING_SET),
         ("value_semantics", se.VS_ESTIMATED),
+        ("protocol_validity", oa.PV_INVALID),  # a measurement the protocol rejected, migrated or not
     ]:
-        assert not oa.is_demonstrated_strength(**{**_MIGRATED, field: forged}), (field, forged)
+        assert not oa.is_decline_protection_evidence(**{**_MIGRATED, field: forged}), (field, forged)
     # And the bare source type, which is what a live write of an unrecognised source gets:
-    assert not oa.is_demonstrated_strength(
+    assert not oa.is_decline_protection_evidence(
         source_type=oa.ST_LEGACY_UNKNOWN, evidence_type=se.EV_DIRECT_MEASUREMENT,
+        value_semantics=se.VS_MEASURED, protocol_validity=oa.PV_VALID,
+    )
+    # Current provenance is decline-protection evidence too.
+    assert oa.is_decline_protection_evidence(
+        source_type=oa.ST_ATHLETE_ENTRY, evidence_type=se.EV_DIRECT_MEASUREMENT,
         value_semantics=se.VS_MEASURED, protocol_validity=oa.PV_VALID,
     )
 
@@ -194,9 +205,9 @@ async def test_the_sql_clause_and_the_predicate_both_match_the_independent_table
         ) is _expected_demonstrated(st, ev, vs, pv)
 
 
-async def test_the_sql_clause_admits_a_migrated_legacy_row_and_none_of_its_forgeries(async_db):
-    """The migration branch, field by field, in SQL: the whole record qualifies; changing any one
-    field of it does not (so a live write cannot claim it)."""
+async def test_the_sql_clauses_admit_a_migrated_legacy_row_for_decline_only_and_none_of_its_forgeries(async_db):
+    """The migration branch, field by field, in SQL: the whole record is decline-protection evidence
+    and nothing else; changing any one field of it removes it; and it is never in the public set."""
     user = await _user(async_db, "dem-migrated@test.com")
     d = await _seed(async_db)
     variants: list[tuple[str, dict[str, str | None]]] = [("whole record", {})]
@@ -206,7 +217,7 @@ async def test_the_sql_clause_admits_a_migrated_legacy_row_and_none_of_its_forge
         ("authority_resolution_reason", "anything_else"), ("authority_resolution_reason", None),
         ("observation_model", "workout_e1rm_extraction_v1"), ("observation_model", None),
         ("evidence_type", "estimated_from_training_set"), ("value_semantics", "estimated"),
-        ("source_type", "athlete_entry_typo"),
+        ("source_type", "athlete_entry_typo"), ("protocol_validity", "invalid"),
     ]:
         variants.append((f"{field}={forged}", {field: forged}))
     rows = []
@@ -220,11 +231,15 @@ async def test_the_sql_clause_admits_a_migrated_legacy_row_and_none_of_its_forge
     async_db.add_all(rows)
     await async_db.commit()
 
-    in_sql = set((await async_db.execute(
+    decline = set((await async_db.execute(
+        select(BenchmarkObservation.id).where(decline_protection_clause())
+    )).scalars())
+    public = set((await async_db.execute(
         select(BenchmarkObservation.id).where(demonstrated_strength_clause())
     )).scalars())
 
-    assert {r.raw_value for r in rows if r.id in in_sql} == {100.0}  # only the whole record
+    assert {r.raw_value for r in rows if r.id in decline} == {100.0}  # only the whole record
+    assert public == set()  # and it is never demonstrated strength
 
 
 async def test_only_a_positively_valid_row_is_ever_demonstrated(async_db):
@@ -265,7 +280,7 @@ async def test_quarantined_and_invalid_rows_are_never_demonstrated(async_db):
 
 # ----- one function behind both watermarks -------------------------------------------------------- #
 
-async def test_the_decline_prior_and_the_public_best_validated_figure_are_the_same_function(async_db):
+async def test_the_decline_prior_and_the_public_figure_agree_on_current_provenance_and_differ_only_by_legacy(async_db):
     user = await _user(async_db, "dem-same@test.com")
     d = await _seed(async_db)
     base = datetime.now(UTC).replace(tzinfo=None)
@@ -273,7 +288,7 @@ async def test_the_decline_prior_and_the_public_best_validated_figure_are_the_sa
         (150.0, "athlete_entry", "direct_measurement", "measured"),
         (175.0, "workout_extraction", "estimated_from_training_set", "estimated"),
         (160.0, "athlete_entry", "reported_estimate", "estimated"),
-        (140.0, "legacy_unknown", "direct_measurement", "measured"),
+        (140.0, "athlete_entry", "protocol_grade_estimate", "measured"),
     ]:
         async_db.add(BenchmarkObservation(
             user_id=user.id, benchmark_definition_id=d.id, raw_value=raw, observed_at=base,
@@ -284,8 +299,16 @@ async def test_the_decline_prior_and_the_public_best_validated_figure_are_the_sa
 
     public = await state_service.best_currently_validated_e1rm(async_db, user.id, CODE)
     prior = await sds._prior_watermark(async_db, user.id, CODE, exclude_observation_id=-1)
-
     assert public == prior == 150.0  # the 175 estimate and the 160 reported estimate do not count
+
+    # A migrated legacy test can raise the decline prior, never the public figure.
+    async_db.add(BenchmarkObservation(
+        user_id=user.id, benchmark_definition_id=d.id, raw_value=165.0, observed_at=base,
+        validity_status="valid", source="benchmark_test", **_MIGRATED,
+    ))
+    await async_db.commit()
+    assert await state_service.best_currently_validated_e1rm(async_db, user.id, CODE) == 150.0
+    assert await sds._prior_watermark(async_db, user.id, CODE, exclude_observation_id=-1) == 165.0
 
 
 async def test_the_decline_prior_excludes_the_observation_being_judged(async_db):
@@ -367,30 +390,36 @@ async def test_genuinely_declining_measured_tests_still_open_a_candidate_against
     assert await _max_strength(async_db, user.id) == pytest.approx(before)  # held: one test never regresses it
 
 
-async def test_legacy_provenance_keeps_its_protection_through_the_migration_record(async_db):
+async def test_legacy_history_protects_against_a_decline_without_becoming_validated_strength(async_db):
     """A tested max written before provenance existed carries what migrations a025/a028 stamped on
-    it. It still anchors the decline machine, so one low test after the migration is a candidate,
-    not a silent 'first measurement'."""
+    it. It anchors the decline machine, so one low test after the migration is a candidate and strength
+    is held, not a silent 'first measurement'. But the migration cannot prove a max, so the public
+    best-validated figure stays empty."""
     user = await _user(async_db, "dem-legacy@test.com")
-    d = await _seed(async_db)
+    await _seed(async_db)
     await initialize_athlete_state(async_db, user.id)
     t0 = datetime.now(UTC) + timedelta(minutes=1)
-    async_db.add(BenchmarkObservation(
-        user_id=user.id, benchmark_definition_id=d.id, raw_value=150.0,
-        observed_at=t0.replace(tzinfo=None) - timedelta(days=60), validity_status="valid",
-        source="benchmark_test", source_type="legacy_unknown", evidence_type="direct_measurement",
-        value_semantics="measured", observation_model="benchmark_protocol",
-        collection_mode="legacy_unknown", capacity_effect="none", protocol_validity="not_evaluated",
-        provenance_operation="schema_backfill", migration_version="a028",
-        authority_resolution_reason="schema_backfill_conservative_legacy",
-    ))
+    await _bench(async_db, user.id, 150.0, t0)  # applied to the athlete's state then
+    tested = (await async_db.execute(
+        select(BenchmarkObservation).where(BenchmarkObservation.raw_value == 150.0)
+    )).scalar_one()
+    for field, value in {  # …and relabelled by the legacy migration, as every pre-existing test was
+        **_MIGRATED, "collection_mode": "legacy_unknown", "capacity_effect": "none",
+        "actor_type": "unknown",
+    }.items():
+        setattr(tested, field, value)
     await async_db.commit()
-    assert await state_service.best_currently_validated_e1rm(async_db, user.id, CODE) == 150.0
+    assert await state_service.best_currently_validated_e1rm(async_db, user.id, CODE) is None  # not validated
+    assert await demonstrated_watermark(async_db, user.id, CODE) is None
+    before = await _max_strength(async_db, user.id)
 
-    await _bench(async_db, user.id, 132.0, t0)
+    await _bench(async_db, user.id, 132.0, t0 + timedelta(days=10))  # the first lower measured test
 
     (candidate,) = await _candidates(async_db, user.id)
-    assert candidate.prior_mean == 150.0
+    assert candidate.prior_mean == 150.0 and candidate.status == "active"
+    last = await _last_observation(async_db, user.id)
+    assert (last.decline_transition_status, last.applied_capacity_effect) == ("decline_candidate", "none")
+    assert await _max_strength(async_db, user.id) == pytest.approx(before)  # canonical strength preserved
 
 
 async def test_a_new_write_of_an_unrecognised_source_is_not_demonstrated(async_db):
@@ -538,3 +567,108 @@ async def test_the_estimated_pr_bar_is_per_formula_and_never_a_demonstrated_wate
     assert await estimated_pr_baseline(async_db, user.id, CODE, formula="rpe_rir_chart") == 172.0
     assert await estimated_pr_baseline(async_db, user.id, CODE, formula="other") == 140.0  # the tested max still counts
     assert await demonstrated_watermark(async_db, user.id, CODE) == 140.0  # estimates never do
+
+
+# ----- a higher maximum today does not rehabilitate a candidate opened on the wrong evidence ----------- #
+
+async def test_a_later_higher_maximum_does_not_rehabilitate_an_obsolete_candidate(async_db):
+    """Review repro: an old candidate (prior 100, trigger 90); a workout advances the head; a backdated
+    measured 200 arrives record-only; then an on-time measured 180. The old candidate's prior was
+    never the evidence for that moment (a test of 200 was dated before the trigger), so it is retired
+    and the fresh assessment is 180 against 200, with its own ceiling."""
+    from app.schemas.workouts import WorkoutLog
+
+    user = await _user(async_db, "dem-rehab@test.com")
+    d = await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    t0 = datetime.now(UTC) + timedelta(minutes=1)
+    await _bench(async_db, user.id, 90.0, t0)  # the trigger (a first measurement, applied)
+    trigger = (await async_db.execute(
+        select(BenchmarkObservation).where(BenchmarkObservation.raw_value == 90.0)
+    )).scalar_one()
+    obsolete = await _old_code_candidate(async_db, user, d, prior=100.0, trigger=trigger)
+    await state_service.process_new_workout(
+        async_db, user.id,
+        WorkoutLog(timestamp=t0 + timedelta(days=1), modality="Strength", duration_minutes=45.0, session_rpe=6.0),
+        received_at=datetime.now(UTC),
+    )  # the head advances
+    await _bench(async_db, user.id, 200.0, t0 - timedelta(days=2))  # backdated: recorded, not applied
+    assert (await _last_observation(async_db, user.id)).state_disposition == "record_only"
+
+    await _bench(async_db, user.id, 180.0, t0 + timedelta(days=2))  # on time
+
+    await async_db.refresh(obsolete)
+    assert (obsolete.status, obsolete.resolution_reason) == ("dismissed", "prior_not_demonstrated")
+    fresh = [c for c in await _candidates(async_db, user.id) if c.id != obsolete.id]
+    assert len(fresh) == 1 and fresh[0].prior_mean == 200.0 and fresh[0].observed_value == 180.0
+    last = await _last_observation(async_db, user.id)
+    assert (last.decline_transition_status, last.applied_capacity_effect) == ("decline_candidate", "none")
+    decision = await sds.resolve_prescription_basis(
+        async_db, user.id, code=CODE, latest_raw=180.0, current_axis=60.0,
+        rules=d.standardization_rules, mode=sds.BASIS_MODE_ON,
+    )
+    assert decision.candidate_id == fresh[0].id
+    assert decision.ceiling == pytest.approx(187.56, abs=0.01)  # 180 + 4.2% (not the obsolete 93.78)
+
+
+async def _real_candidate(db, tag: str):
+    user = await _user(db, f"dem-sup-{tag}@test.com")
+    d = await _seed(db)
+    await initialize_athlete_state(db, user.id)
+    t0 = datetime.now(UTC) + timedelta(minutes=1)
+    await _bench(db, user.id, 150.0, t0)
+    await _bench(db, user.id, 132.0, t0 + timedelta(days=10))
+    (candidate,) = await _candidates(db, user.id)
+    trigger = (await db.execute(
+        select(BenchmarkObservation).where(BenchmarkObservation.raw_value == 132.0)
+    )).scalar_one()
+    return user, d, candidate, trigger
+
+
+async def test_a_candidate_on_current_evidence_is_supported(async_db):
+    _, _, candidate, _ = await _real_candidate(async_db, "ok")
+    assert await sds._candidate_is_supported(async_db, candidate) is True
+
+
+@pytest.mark.parametrize("change", ["trigger_corrected_up", "trigger_quarantined", "trigger_lost_authority", "other_policy"])
+async def test_a_candidate_whose_original_evidence_or_policy_changed_is_not_supported(async_db, change):
+    user, d, candidate, trigger = await _real_candidate(async_db, change)
+    if change == "trigger_corrected_up":
+        trigger.raw_value = 160.0  # a data correction raised the trigger above the recorded value
+    elif change == "trigger_quarantined":
+        trigger.validity_status = "quarantined"
+        trigger.quarantined_at = datetime.now(UTC).replace(tzinfo=None)
+    elif change == "trigger_lost_authority":
+        trigger.capacity_effect = "none"  # no longer a measurement the decline machine may act on
+    else:
+        candidate.decline_policy_version = "strength_decline_policy_v0"
+    await async_db.commit()
+
+    assert await sds._candidate_is_supported(async_db, candidate) is False
+    decision = await sds.resolve_prescription_basis(
+        async_db, user.id, code=CODE, latest_raw=150.0, current_axis=60.0,
+        rules=d.standardization_rules, mode=sds.BASIS_MODE_ON,
+    )
+    assert (decision.candidate_id, decision.ceiling) == (None, None)  # no ceiling from unsupported evidence
+
+
+async def test_strength_tested_after_the_trigger_leaves_a_candidate_supported_and_is_a_re_demonstration(async_db):
+    """The as-of date matters in both directions: a higher test dated BEFORE the trigger voids the
+    candidate (above); one dated AFTER it does not. It is a re-demonstration, which dismisses the
+    candidate for the right reason."""
+    user, _, candidate, trigger = await _real_candidate(async_db, "after")
+    later = trigger.observed_at + timedelta(days=10)
+    async_db.add(BenchmarkObservation(
+        user_id=user.id, benchmark_definition_id=candidate.benchmark_definition_id, raw_value=160.0,
+        observed_at=later, validity_status="valid", source="benchmark_test",
+        source_type="athlete_entry", evidence_type="direct_measurement", value_semantics="measured",
+        protocol_validity="valid",
+    ))
+    await async_db.commit()
+    assert await sds._candidate_is_supported(async_db, candidate) is True  # opened on evidence that still holds
+
+    await _bench(async_db, user.id, 165.0, later + timedelta(days=1))  # arrives: at or above the watermark
+
+    await async_db.refresh(candidate)
+    assert (candidate.status, candidate.resolution_reason) == ("dismissed", "re_demonstrated_at_or_above_watermark")
+    assert candidate.confirmation_observation_id is not None

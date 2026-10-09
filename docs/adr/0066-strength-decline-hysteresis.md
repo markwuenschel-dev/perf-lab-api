@@ -52,21 +52,28 @@ label**, and one definition serves both the decline machine's prior and
 * never an estimate: a training-derived e1RM, a reported estimate, or any `estimated` /
   `lower_bound` row, however high.
 
-**History is preserved through the migration record, not a source label.** `legacy_unknown` is
-what the resolver writes for a source it does not recognise, and a028 itself calls the rows it
+**History is preserved for the decline machine only, through the migration record.** `legacy_unknown`
+is what the resolver writes for a source it does not recognise, and a028 itself calls the rows it
 relabelled "ambiguous legacy history"; a025's measured/direct labels were assigned in bulk from
-`source` and cannot prove a max. So `legacy_unknown` does not qualify by itself. Rows that carry
-the whole migration record do (`provenance_operation = schema_backfill`, `migration_version =
-a028`, the a028 resolution reason, observation model `benchmark_protocol`, measured/direct): a
-named compatibility rule (`is_migrated_legacy_test`) that keeps an older athlete's pre-migration
-tests as their decline protection, since without a watermark the next low test would pass through
-as a "first measurement". No live write can produce those fields.
+`source` and cannot prove a max. So `legacy_unknown` is never *demonstrated strength* and is never
+reported as the public best-validated figure. Rows that carry the whole migration record
+(`provenance_operation = schema_backfill`, `migration_version = a028`, the a028 resolution reason,
+observation model `benchmark_protocol`, measured/direct, and not protocol-invalid) are
+**decline-protection evidence** (`is_decline_protection_evidence`): they may be the prior a decline is
+judged against, so an older athlete's next low test is still a candidate and not a silent "first
+measurement". The decline prior is therefore `decline_prior_watermark` (demonstrated strength plus
+those rows); the public figure is `demonstrated_watermark` (current provenance only). No live write
+can produce the migration fields.
 
-**A candidate is only as good as its prior.** An `active` candidate whose recorded prior is no
-longer demonstrated (it was opened against a training estimate under the old watermark, or the
-row behind it has since been quarantined) is retired (`dismissed`, reason
-`prior_not_demonstrated`) before it can confirm a regression, and it is ignored by the
-prescription ceiling, which stays read-only and leaves the retirement to the next observation.
+**A candidate is only as good as the evidence it was opened on.** It is *supported* while it was
+opened under the current decline policy, its trigger is still a valid, unquarantined, protocol-valid
+measured test with the recorded value, and its recorded prior equals the prior derivable for that
+moment (decline-protection evidence dated at or before the trigger, excluding the trigger). A prior
+that was a training estimate under the old watermark, one changed by a backdated higher test or by a
+quarantine, or a trigger corrected since, makes it unsupported; a higher maximum today never
+rehabilitates it. An unsupported `active` candidate is retired (`dismissed`, reason
+`prior_not_demonstrated`) when the next observation arrives, and until then it is ignored by the
+prescription ceiling (which stays read-only).
 
 Training estimates keep their own bar for "is this a PR" (`estimated_pr_baseline`), per formula:
 estimates from different formulas are not comparable and a formula change is not progress.

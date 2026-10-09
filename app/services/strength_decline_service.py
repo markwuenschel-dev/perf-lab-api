@@ -50,7 +50,7 @@ from app.models.strength_decline_candidate import (
     StrengthDeclineCandidate,
 )
 from app.models.strength_decline_shadow import StrengthDeclineShadow
-from app.repositories.benchmark_observation_repository import demonstrated_watermark
+from app.repositories.benchmark_observation_repository import decline_prior_watermark
 from app.schemas.engine_vectors import FatigueState
 from app.schemas.state import UnifiedStateVector
 
@@ -244,7 +244,7 @@ async def _prior_watermark(
     observation — the prior a decline is measured against. Measured max tests only: a training
     estimate (however high) is not strength the athlete demonstrated, so it cannot make a
     later honest test look like a decline."""
-    return await demonstrated_watermark(
+    return await decline_prior_watermark(
         db, user_id, code, exclude_observation_id=exclude_observation_id
     )
 
@@ -265,20 +265,43 @@ async def _active_candidate(
     return res.scalars().first()
 
 
-# A candidate's prior is what the athlete had demonstrated when it opened. If that is no longer
-# demonstrated (the prior was a training estimate under the old watermark, or the row behind it has
-# been quarantined), the candidate was opened against strength nobody showed and must not be allowed
-# to confirm a regression or cap a prescription.
+# A candidate is only as good as the evidence it was opened on. It is SUPPORTED while all of these
+# still hold, each recomputed from the rows as they are now:
+#   * it was opened under the current decline policy;
+#   * its trigger is still a valid, unquarantined, protocol-valid measured test with the value the
+#     candidate recorded (a trigger corrected, quarantined or rejected since no longer supports it);
+#   * its prior is exactly the prior that is derivable for that moment: the decline-protection
+#     evidence dated at or before the trigger, excluding the trigger. A prior that was a training
+#     estimate under the old watermark no longer matches; neither does one that a backdated higher
+#     test (dated before the trigger) or a quarantine has since changed. Strength tested AFTER the
+#     trigger is not part of it (that is a re-demonstration, handled when it arrives), and a higher
+#     maximum today never rehabilitates a candidate opened on the wrong evidence.
+# An unsupported candidate must not confirm a regression or cap a prescription.
 _PRIOR_EPSILON = 1e-6
 RESOLUTION_PRIOR_NOT_DEMONSTRATED = "prior_not_demonstrated"
 
 
-async def _prior_is_still_demonstrated(db: AsyncSession, candidate: StrengthDeclineCandidate) -> bool:
-    prior = await demonstrated_watermark(
+async def _candidate_is_supported(db: AsyncSession, candidate: StrengthDeclineCandidate) -> bool:
+    if candidate.decline_policy_version != policy.POLICY_VERSION:
+        return False
+    trigger = (await db.execute(
+        select(BenchmarkObservation)
+        .where(BenchmarkObservation.id == candidate.trigger_observation_id)
+        .execution_options(populate_existing=True)
+    )).scalar_one_or_none()
+    if (
+        trigger is None
+        or trigger.validity_status != "valid"
+        or trigger.quarantined_at is not None
+        or trigger.capacity_effect != oa.CE_BIDIRECTIONAL_UPDATE
+        or trigger.raw_value != candidate.observed_value
+    ):
+        return False
+    prior = await decline_prior_watermark(
         db, candidate.user_id, candidate.benchmark_code,
-        exclude_observation_id=candidate.trigger_observation_id,
+        exclude_observation_id=trigger.id, as_of=trigger.observed_at,
     )
-    return prior is not None and candidate.prior_mean <= prior + _PRIOR_EPSILON
+    return prior is not None and abs(candidate.prior_mean - prior) <= _PRIOR_EPSILON
 
 
 async def _current_active_candidate(
@@ -286,7 +309,7 @@ async def _current_active_candidate(
 ) -> StrengthDeclineCandidate | None:
     """The active candidate, after retiring one whose prior is no longer demonstrated."""
     active = await _active_candidate(db, user_id, axis)
-    if active is None or await _prior_is_still_demonstrated(db, active):
+    if active is None or await _candidate_is_supported(db, active):
         return active
     active.status = STATUS_DISMISSED
     active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
@@ -686,7 +709,7 @@ async def resolve_prescription_basis(
     active = await _active_candidate(db, user_id)
     # Read-only: a stale candidate is ignored here and retired by the next observation write (this
     # resolver must stay side-effect free; see test_resolver_purity).
-    if active is not None and not await _prior_is_still_demonstrated(db, active):
+    if active is not None and not await _candidate_is_supported(db, active):
         active = None
     ceiling: float | None = None
     candidate_id: int | None = None

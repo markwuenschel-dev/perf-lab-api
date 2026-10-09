@@ -93,16 +93,20 @@ def is_migrated_legacy_test(
     migration_version: str | None,
     authority_resolution_reason: str | None,
     observation_model: str | None,
+    protocol_validity: str | None = None,
 ) -> bool:
     """Is this row one the legacy migration relabelled, and that it had labelled a measured test?
 
     A compatibility rule, named as one so it can be retired: it keeps an athlete's pre-migration
-    tests as their decline watermark (otherwise their next low test would look like a first
-    measurement and regress strength in one step). It is evidence of the migration's assumption,
-    not proof of a max.
+    tests as the prior a DECLINE is judged against (otherwise their next low test would look like a
+    first measurement and regress strength in one step). It is evidence of the migration's
+    assumption, not proof of a max, so it is decline-protection evidence only: it is never
+    ``is_demonstrated_strength`` and never the public best-validated figure. A protocol-rejected
+    measurement is refused here as everywhere.
     """
     return (
-        source_type == ST_LEGACY_UNKNOWN
+        protocol_validity != PV_INVALID
+        and source_type == ST_LEGACY_UNKNOWN
         and provenance_operation == OP_SCHEMA_BACKFILL
         and migration_version == LEGACY_MIGRATION_VERSION
         and authority_resolution_reason == LEGACY_MIGRATION_REASON
@@ -118,28 +122,47 @@ def is_demonstrated_strength(
     evidence_type: str | None,
     value_semantics: str | None,
     protocol_validity: str | None,
-    provenance_operation: str | None = None,
-    migration_version: str | None = None,
-    authority_resolution_reason: str | None = None,
-    observation_model: str | None = None,
 ) -> bool:
-    """Is this observation a measured max test (the only thing a decline is judged against)?
+    """Is this observation a measured max test, by current provenance?
 
-    Either current provenance (an athlete's own measured test the protocol did not reject), or the
-    migration-record compatibility rule above. Fail-closed on every unstated field.
+    An athlete's own measured test that the protocol did not reject. This is what the public
+    best-validated figure reports. Fail-closed on every unstated field.
     ``protocol_validity == invalid`` is a measurement the protocol check rejected; it demonstrates
     nothing. (Row validity and quarantine are a separate, query-level condition.)
     """
-    current = (
+    return (
         source_type in DEMONSTRATED_SOURCE_TYPES
         and evidence_type in DEMONSTRATED_EVIDENCE_TYPES
         and value_semantics == se.VS_MEASURED
         and protocol_validity != PV_INVALID
     )
-    return current or is_migrated_legacy_test(
+
+
+def is_decline_protection_evidence(
+    *,
+    source_type: str | None,
+    evidence_type: str | None,
+    value_semantics: str | None,
+    protocol_validity: str | None,
+    provenance_operation: str | None = None,
+    migration_version: str | None = None,
+    authority_resolution_reason: str | None = None,
+    observation_model: str | None = None,
+) -> bool:
+    """May this row be the prior a strength decline is judged against?
+
+    Demonstrated strength, or a row carrying the legacy migration's whole record. Kept apart from
+    :func:`is_demonstrated_strength` on purpose: the decline machine needs a conservative prior even
+    where history cannot prove a max, but nothing may present that history as validated strength.
+    """
+    return is_demonstrated_strength(
+        source_type=source_type, evidence_type=evidence_type,
+        value_semantics=value_semantics, protocol_validity=protocol_validity,
+    ) or is_migrated_legacy_test(
         source_type=source_type, evidence_type=evidence_type, value_semantics=value_semantics,
         provenance_operation=provenance_operation, migration_version=migration_version,
         authority_resolution_reason=authority_resolution_reason, observation_model=observation_model,
+        protocol_validity=protocol_validity,
     )
 
 
