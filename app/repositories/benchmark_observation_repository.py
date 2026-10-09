@@ -31,6 +31,10 @@ from app.logic.prescription_evidence import BasisSelection, EvidenceRow, select_
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 
+# A point in an athlete's observation order: ``(observed_at, id)``. Time alone cannot order two
+# tests recorded for the same instant; the id (arrival order) does.
+Position = tuple[datetime, int]
+
 
 def _usable_row() -> ColumnElement[bool]:
     return and_(
@@ -84,15 +88,24 @@ def decline_protection_clause() -> ColumnElement[bool]:
 
 async def _max_raw(
     db: AsyncSession, user_id: int, code: str, clause: ColumnElement[bool],
-    *, exclude_observation_id: int | None, as_of: datetime | None, after: datetime | None = None,
+    *, exclude_observation_id: int | None, before: Position | None = None,
+    after: Position | None = None,
 ) -> float | None:
     conditions = [BenchmarkObservation.user_id == user_id, BenchmarkDefinition.code == code, clause]
     if exclude_observation_id is not None:
         conditions.append(BenchmarkObservation.id != exclude_observation_id)
-    if as_of is not None:
-        conditions.append(BenchmarkObservation.observed_at <= as_of)
+    if before is not None:
+        at, oid = before
+        conditions.append(or_(
+            BenchmarkObservation.observed_at < at,
+            and_(BenchmarkObservation.observed_at == at, BenchmarkObservation.id < oid),
+        ))
     if after is not None:
-        conditions.append(BenchmarkObservation.observed_at > after)
+        at, oid = after
+        conditions.append(or_(
+            BenchmarkObservation.observed_at > at,
+            and_(BenchmarkObservation.observed_at == at, BenchmarkObservation.id > oid),
+        ))
     res = await db.execute(
         select(func.max(BenchmarkObservation.raw_value))
         .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
@@ -114,23 +127,25 @@ async def demonstrated_watermark(
     """
     return await _max_raw(
         db, user_id, code, demonstrated_strength_clause(),
-        exclude_observation_id=exclude_observation_id, as_of=None,
+        exclude_observation_id=exclude_observation_id,
     )
 
 
 async def decline_prior_watermark(
     db: AsyncSession, user_id: int, code: str, *,
-    exclude_observation_id: int | None = None, as_of: datetime | None = None,
-    after: datetime | None = None,
+    exclude_observation_id: int | None = None, before: Position | None = None,
+    after: Position | None = None,
 ) -> float | None:
     """The prior a strength decline is judged against (ADR-0066): demonstrated strength plus the
     legacy migration's tests, so an older athlete's next low test is still a candidate. A training
-    estimate is never in it, however high. ``as_of`` limits it to tests dated at or before that
-    moment (the prior a candidate was opened against); ``after`` to tests dated strictly after it
-    (what has been demonstrated since)."""
+    estimate is never in it, however high. ``before`` limits it to tests strictly before a position
+    in the established ``(observed_at, id)`` order (the prior a candidate was opened against);
+    ``after`` to tests strictly after one (what has been demonstrated since). Two tests with the
+    same timestamp are ordered by id, so a tied test that arrived earlier belongs to the prior and a
+    tied test that arrived later belongs to what came after."""
     return await _max_raw(
         db, user_id, code, decline_protection_clause(),
-        exclude_observation_id=exclude_observation_id, as_of=as_of, after=after,
+        exclude_observation_id=exclude_observation_id, before=before, after=after,
     )
 
 

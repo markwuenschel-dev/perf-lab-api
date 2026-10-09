@@ -763,3 +763,71 @@ async def test_a_trigger_moved_in_time_cannot_shorten_the_retest_interval(async_
     await async_db.refresh(candidate)
     assert candidate.status == "dismissed" and candidate.confirmation_observation_id is None
     assert [c for c in await _candidates(async_db, user.id) if c.status == "confirmed"] == []
+
+
+# ----- tied timestamps: (observed_at, id) is the order ------------------------------------------------- #
+
+async def test_a_tied_test_that_arrived_later_retires_the_candidate_and_the_next_low_test_starts_fresh(async_db):
+    """Review repro: a measured 150 with the trigger's exact timestamp but a larger id, recorded after
+    the head moved on, is a re-demonstration. The 137.54 ceiling must not survive it, and a later 135
+    must not confirm the obsolete candidate."""
+    from app.schemas.workouts import WorkoutLog
+
+    user, d, candidate, trigger = await _real_candidate(async_db, "tie-later")
+    await state_service.process_new_workout(
+        async_db, user.id,
+        WorkoutLog(timestamp=trigger.observed_at + timedelta(days=2), modality="Strength", duration_minutes=45.0, session_rpe=6.0),
+        received_at=datetime.now(UTC),
+    )  # the head advances
+    await _bench(async_db, user.id, 150.0, trigger.observed_at.replace(tzinfo=UTC))  # same instant, larger id
+    tied = await _last_observation(async_db, user.id)
+    assert tied.observed_at == trigger.observed_at and tied.id > trigger.id
+    assert tied.state_disposition == "record_only"
+    assert await sds._unsupported_reason(async_db, candidate) == "re_demonstrated_by_a_later_test"
+    decision = await sds.resolve_prescription_basis(
+        async_db, user.id, code=CODE, latest_raw=150.0, current_axis=60.0,
+        rules=d.standardization_rules, mode=sds.BASIS_MODE_ON,
+    )
+    assert (decision.candidate_id, decision.ceiling) == (None, None)  # no obsolete ceiling
+    before = await _max_strength(async_db, user.id)
+
+    await _bench(async_db, user.id, 135.0, trigger.observed_at + timedelta(days=20))
+
+    await async_db.refresh(candidate)
+    assert (candidate.status, candidate.resolution_reason) == ("dismissed", "re_demonstrated_by_a_later_test")
+    assert [c for c in await _candidates(async_db, user.id) if c.status == "confirmed"] == []
+    (fresh,) = [c for c in await _candidates(async_db, user.id) if c.id != candidate.id]
+    assert fresh.prior_mean == 150.0 and fresh.observed_value == 135.0
+    assert await _max_strength(async_db, user.id) == pytest.approx(before)  # held
+
+
+async def test_a_tied_test_that_arrived_earlier_is_part_of_the_prior_not_a_re_demonstration(async_db):
+    """The other side of the same boundary: a 150 recorded for the trigger's own instant BEFORE the
+    trigger is what the trigger fell from. The candidate stays supported (a plain `>=` would void it)."""
+    user = await _user(async_db, "dem-tie-earlier@test.com")
+    await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    t1 = datetime.now(UTC) + timedelta(minutes=1)
+    await _bench(async_db, user.id, 150.0, t1)
+    await _bench(async_db, user.id, 132.0, t1)  # same instant, larger id: not late, so it is judged
+    (candidate,) = await _candidates(async_db, user.id)
+    assert candidate.prior_mean == 150.0
+
+    assert await sds._unsupported_reason(async_db, candidate) is None
+
+
+async def test_a_higher_tied_test_that_arrived_later_is_recovery_not_part_of_the_prior(async_db):
+    """The prior and the recovery boundary use the same order: a tied 160 recorded after the trigger
+    is what came AFTER it (a re-demonstration), so it must not be folded into the prior the
+    candidate was opened against (which would blame its prior instead)."""
+    from app.schemas.workouts import WorkoutLog
+
+    user, _, candidate, trigger = await _real_candidate(async_db, "tie-higher")
+    await state_service.process_new_workout(
+        async_db, user.id,
+        WorkoutLog(timestamp=trigger.observed_at + timedelta(days=2), modality="Strength", duration_minutes=45.0, session_rpe=6.0),
+        received_at=datetime.now(UTC),
+    )
+    await _bench(async_db, user.id, 160.0, trigger.observed_at.replace(tzinfo=UTC))
+
+    assert await sds._unsupported_reason(async_db, candidate) == "re_demonstrated_by_a_later_test"

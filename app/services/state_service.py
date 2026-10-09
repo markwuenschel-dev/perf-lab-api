@@ -1018,8 +1018,9 @@ async def best_currently_validated_e1rm(
     Data correction and physiological decline are distinct transition reasons; a
     watermark drop from quarantine is NOT a decline candidate. DEMONSTRATED strength only:
     measured max tests, never a training-derived estimate (P4-2a; see
-    ``observation_authority.is_demonstrated_strength``). The strength-decline machine's prior is
-    the same function, so the two cannot disagree.
+    ``observation_authority.is_demonstrated_strength``). The strength-decline machine's prior
+    (``decline_prior_watermark``) is a separate rule over the same definition: it also counts the
+    legacy migration's tests, which this public figure never reports.
     """
     return await demonstrated_watermark(db, user_id, code)
 

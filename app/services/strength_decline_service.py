@@ -275,12 +275,14 @@ async def _active_candidate(
 #     what the row is entitled to, and the database constraint does not enforce the whole rule;
 #   * its trigger still has the value AND the time the candidate recorded (the retest interval is
 #     measured from `created_at`, so a trigger moved in time would leave a stale clock running);
-#   * its prior is exactly the prior derivable for that moment: decline-protection evidence dated
-#     at or before the trigger, excluding it. A prior that was a training estimate under the old
+#   * its prior is exactly the prior derivable for that moment: decline-protection evidence strictly
+#     before the trigger in `(observed_at, id)` order (so a test tied with the trigger that arrived
+#     earlier is in it, one that arrived later is not). A prior that was a training estimate under the old
 #     watermark no longer matches; neither does one a backdated higher test (dated before the
 #     trigger) or a quarantine has changed; and a higher maximum today never rehabilitates a
 #     candidate opened on the wrong evidence;
-#   * nothing demonstrated AFTER the trigger has re-demonstrated at or above its prior. A test the
+#   * nothing demonstrated AFTER the trigger (strictly after it in that same order, so a tied test
+#     that arrived later counts) has re-demonstrated at or above its prior. A test the
 #     machine never saw (it arrived record-only) must not leave the candidate's ceiling standing.
 #     The observation being processed is left out of this: the machine handles its own
 #     re-demonstration, with its own reason.
@@ -312,15 +314,15 @@ async def _unsupported_reason(
         or trigger.observed_at != candidate.created_at
     ):
         return RESOLUTION_TRIGGER_NOT_CURRENT
+    where_it_was = (trigger.observed_at, trigger.id)
     prior = await decline_prior_watermark(
-        db, candidate.user_id, candidate.benchmark_code,
-        exclude_observation_id=trigger.id, as_of=trigger.observed_at,
+        db, candidate.user_id, candidate.benchmark_code, before=where_it_was,
     )
     if prior is None or abs(candidate.prior_mean - prior) > _PRIOR_EPSILON:
         return RESOLUTION_PRIOR_NOT_DEMONSTRATED
     since = await decline_prior_watermark(
         db, candidate.user_id, candidate.benchmark_code,
-        exclude_observation_id=current_observation_id, after=trigger.observed_at,
+        exclude_observation_id=current_observation_id, after=where_it_was,
     )
     if since is not None and since >= candidate.prior_mean - _PRIOR_EPSILON:
         return RESOLUTION_REDEMONSTRATED_LATER

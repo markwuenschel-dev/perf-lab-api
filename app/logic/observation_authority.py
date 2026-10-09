@@ -126,9 +126,11 @@ def is_demonstrated_strength(
     """Is this observation a measured max test, by current provenance?
 
     An athlete's own measured test that the protocol did not reject. This is what the public
-    best-validated figure reports. Fail-closed on every unstated field.
-    ``protocol_validity == invalid`` is a measurement the protocol check rejected; it demonstrates
-    nothing. (Row validity and quarantine are a separate, query-level condition.)
+    best-validated figure reports. An unstated source, evidence type or semantics fails closed.
+    Protocol validity is the one field where unstated is not a rejection: only
+    ``protocol_validity == invalid`` (a measurement the protocol check rejected) disqualifies,
+    and a test whose protocol has not been evaluated still counts. (Row validity and quarantine are
+    a separate, query-level condition.)
     """
     return (
         source_type in DEMONSTRATED_SOURCE_TYPES
