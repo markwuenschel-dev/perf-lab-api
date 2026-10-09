@@ -70,8 +70,12 @@ FIDELITY_CONF_MULTIPLIER: dict[str, float] = {
 # ---------------------------------------------------------------------------------
 
 # RPE and RIR describe the same thing (RPE = 10 - RIR). Within this many RPE steps they
-# agree; further apart they conflict.
+# agree (the boundary is inclusive); further apart they conflict.
 EFFORT_AGREEMENT_TOLERANCE = 0.5
+# Decimal inputs do not subtract exactly: 8.3 - (10 - 2.2) is 0.5000000000000009 in floats. A
+# difference this close to the boundary is rounding, not disagreement; anything the API can
+# send that is genuinely beyond it (0.51, 0.5000001) is still far larger than this.
+_EFFORT_ROUNDING_SLACK = 1e-9
 # A set at or beyond this effort is treated as taken to failure.
 FAILURE_RPE = 9.5
 
@@ -112,7 +116,8 @@ def resolve_effort(
     * neither: unknown (``eff_rpe`` None).
     """
     if rpe is not None and rir is not None:
-        conflict = abs(float(rpe) - (10.0 - float(rir))) > EFFORT_AGREEMENT_TOLERANCE
+        gap = abs(float(rpe) - (10.0 - float(rir)))
+        conflict = gap > EFFORT_AGREEMENT_TOLERANCE + _EFFORT_ROUNDING_SLACK
         eff: float | None = float(rpe)
     elif rpe is not None:
         conflict, eff = False, float(rpe)

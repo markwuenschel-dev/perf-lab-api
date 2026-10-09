@@ -19,6 +19,7 @@ Pinned here:
 from __future__ import annotations
 
 import ast
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -112,31 +113,84 @@ def test_no_effort_is_still_neutral_not_a_guess():
 # The gate: what is deliberately different
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("fidelity", [se.FIDELITY_SET_LEVEL, "group_level", "missing"])
-def test_the_gate_agrees_with_the_old_rule_wherever_the_effort_is_unambiguous(fidelity):
-    """One field given, or both given and in agreement with the RPE on the same side of the bar:
-    unchanged. Checked exhaustively on a grid against the old either-field rule."""
-    def old(reps, rpe, rir):
-        if reps is None or reps < 1 or reps > 5:
+def _exact_gate(reps, rpe, rir, fidelity) -> bool:
+    """The gate's rule restated independently, in exact arithmetic (inputs are decimal strings):
+    1-5 reps; effort known; RPE decides where both are given and they agree within 0.5 (a
+    contradiction is not evidence); the bar is RPE 8 for per-set effort and 9 below it."""
+    if reps is None or reps < 1 or reps > 5 or (rpe is None and rir is None):
+        return False
+    r = Fraction(rpe) if rpe is not None else None
+    i = Fraction(rir) if rir is not None else None
+    if r is not None and i is not None:
+        if abs(r - (10 - i)) > Fraction(1, 2):
             return False
+        eff = r
+    else:
+        eff = r if r is not None else 10 - i  # type: ignore[operator]
+    return eff >= (8 if fidelity == se.FIDELITY_SET_LEVEL else 9)
+
+
+_GRID_RPE = [None, "6", "6.5", "7", "7.4", "7.5", "7.6", "8", "8.3", "8.4", "8.5", "8.6", "9", "9.3", "9.5", "10"]
+_GRID_RIR = [None, "0", "0.5", "1", "1.5", "2", "2.2", "2.5", "3", "4"]
+
+
+@pytest.mark.parametrize("fidelity", [se.FIDELITY_SET_LEVEL, "group_level", "missing"])
+def test_the_gate_gives_the_exact_expected_answer_for_every_combination(fidelity):
+    """Every cell, both ways: an agreeing pair must still be accepted (not just a bad one
+    rejected), an unambiguous single field must be unchanged, a contradiction must be refused."""
+    for reps in (None, 0, 1, 3, 5, 6):
+        for rpe in _GRID_RPE:
+            for rir in _GRID_RIR:
+                got = se.is_e1rm_informative(
+                    reps, float(rpe) if rpe else None, float(rir) if rir else None, fidelity
+                )
+                assert got is _exact_gate(reps, rpe, rir, fidelity), (reps, rpe, rir, fidelity)
+
+
+@pytest.mark.parametrize("fidelity", [se.FIDELITY_SET_LEVEL, "group_level", "missing"])
+def test_a_single_field_is_judged_exactly_as_the_old_rule_judged_it(fidelity):
+    """Where only one of RPE/RIR is given nothing changed."""
+    def old(rpe, rir):
         if fidelity != se.FIDELITY_SET_LEVEL:
             return (rpe is not None and rpe >= 9.0) or (rir is not None and rir <= 1.0)
         return (rpe is not None and rpe >= 8.0) or (rir is not None and rir <= 2.0)
 
-    rpes = [None, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0]
-    rirs = [None, 0.0, 1.0, 2.0, 3.0, 4.0]
-    different = []
-    for reps in (None, 0, 1, 3, 5, 6):
-        for rpe in rpes:
-            for rir in rirs:
-                new = se.is_e1rm_informative(reps, rpe, rir, fidelity)
-                if new != old(reps, rpe, rir):
-                    different.append((reps, rpe, rir))
-                if rpe is None or rir is None:
-                    assert new == old(reps, rpe, rir), (reps, rpe, rir)  # one field: never changes
-    # Everything that did change had BOTH fields, and the new answer is the stricter one.
-    assert all(rpe is not None and rir is not None for _, rpe, rir in different)
-    assert all(not se.is_e1rm_informative(r, p, i, fidelity) for r, p, i in different)
+    for rpe in _GRID_RPE:
+        for rir in _GRID_RIR:
+            if (rpe is None) == (rir is None):
+                continue  # none or both
+            a, b = (float(rpe) if rpe else None), (float(rir) if rir else None)
+            assert se.is_e1rm_informative(3, a, b, fidelity) is bool(old(a, b)), (rpe, rir)
+
+
+def test_every_agreeing_decimal_pair_is_accepted_and_every_contradiction_refused():
+    """The 0.5 agreement boundary on decimal inputs, checked against exact arithmetic over the
+    whole 0.1-step plane. (8.3, 2.2) subtracts to 0.5000000000000009 in floats; it is 0.5."""
+    checked = 0
+    for x in range(60, 101):
+        for y in range(0, 41):
+            rpe, rir = f"{x // 10}.{x % 10}", f"{y // 10}.{y % 10}"
+            expected = abs(Fraction(rpe) - (10 - Fraction(rir))) > Fraction(1, 2)
+            assert sc.resolve_effort(float(rpe), float(rir)).conflict is expected, (rpe, rir)
+            checked += 1
+    assert checked == 41 * 41
+
+
+@pytest.mark.parametrize(
+    ("rpe", "rir", "conflict"),
+    [
+        (8.3, 2.2, False),  # the review's repro: float gap 0.5000000000000009
+        (8.2, 2.3, False),
+        (7.7, 2.2, False),
+        (8.31, 2.2, True),  # 0.51
+        (8.3000001, 2.2, True),  # 0.5000001: genuinely past it
+        (8.6, 2.1, True),
+        (7.2, 2.2, True),
+    ],
+)
+def test_the_decimal_agreement_boundary_in_both_directions(rpe, rir, conflict):
+    assert sc.resolve_effort(rpe, rir).conflict is conflict
+    assert se.is_e1rm_informative(5, rpe, rir, se.FIDELITY_SET_LEVEL) is (not conflict and rpe >= 8.0)
 
 
 @pytest.mark.parametrize(
@@ -238,31 +292,56 @@ def _names(node: ast.AST) -> set[str]:
     }
 
 
+def _module_numbers(tree: ast.AST) -> dict[str, float]:
+    """Module-level ``NAME = <number>``, so ``rpe >= FAILURE_THRESHOLD`` resolves to 9.5."""
+    out: dict[str, float] = {}
+    for node in getattr(tree, "body", []):
+        if (
+            isinstance(node, ast.Assign) and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and isinstance(node.value, ast.Constant) and isinstance(node.value.value, (int, float))
+        ):
+            out[node.targets[0].id] = float(node.value.value)
+    return out
+
+
+def _number(node: ast.AST, consts: dict[str, float]) -> float | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return float(node.value)
+    if isinstance(node, ast.Name):
+        return consts.get(node.id)
+    return None
+
+
 def _implements_the_effort_rule(tree: ast.AST) -> list[int]:
+    """Line numbers where a module spells out the effort rule in one of the syntactic forms below.
+
+    What this guards, and what it does not: it recognizes ``10 - <rir>`` (the literal, or a module
+    constant equal to 10), any comparison of an ``rpe`` expression with 9.5 (the literal or a
+    module constant, either operand order, any operator), and any comparison of ``rir`` /
+    ``avg_rir`` with 0 (either order). It is a guard against those patterns, not a proof that no
+    one re-derives the rule some other way; a new spelling needs a probe added below.
+    """
+    consts = _module_numbers(tree)
     hits: list[int] = []
     for node in ast.walk(tree):
-        # `10 - <something named rir>`: converting reps-in-reserve to RPE
         if (
             isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub)
-            and isinstance(node.left, ast.Constant) and node.left.value in (10, 10.0)
+            and _number(node.left, consts) == 10.0
             and any("rir" in n.lower() for n in _names(node.right))
         ):
             hits.append(node.lineno)
-        # `<something named rpe> >= 9.5`: the failure threshold
-        if (
-            isinstance(node, ast.Compare) and any(isinstance(op, ast.GtE) for op in node.ops)
-            and any(isinstance(c, ast.Constant) and c.value == 9.5 for c in node.comparators)
-            and any("rpe" in n.lower() for n in _names(node.left))
-        ):
-            hits.append(node.lineno)
-        # `<something named rir> <= 0`: the other half of the old failure test
-        if (
-            isinstance(node, ast.Compare) and any(isinstance(op, ast.LtE) for op in node.ops)
-            and any(isinstance(c, ast.Constant) and c.value in (0, 0.0) for c in node.comparators)
-            and any(n.lower() in ("rir", "avg_rir") for n in _names(node.left))
-        ):
-            hits.append(node.lineno)
-    return hits
+        if isinstance(node, ast.Compare):
+            operands = [node.left, *node.comparators]
+            for a, b in zip(operands, operands[1:], strict=False):
+                for side, other in ((a, b), (b, a)):
+                    if _number(other, consts) == 9.5 and any("rpe" in n.lower() for n in _names(side)):
+                        hits.append(node.lineno)
+                    if _number(other, consts) == 0.0 and any(
+                        n.lower() in ("rir", "avg_rir") for n in _names(side)
+                    ):
+                        hits.append(node.lineno)
+    return sorted(set(hits))
 
 
 def test_no_other_module_implements_the_effort_rule():
@@ -280,10 +359,34 @@ def test_no_other_module_implements_the_effort_rule():
     )
 
 
-def test_the_architecture_test_sees_what_it_claims_to():
-    seeded = ast.parse("def f(rir, rpe):\n    a = 10.0 - rir\n    b = rpe >= 9.5\n    c = rir <= 0\n")
-    assert len(_implements_the_effort_rule(seeded)) == 3
-    clean = ast.parse("def f(rir, rpe):\n    return sc.resolve_effort(rpe, rir).to_failure\n")
-    assert _implements_the_effort_rule(clean) == []
-    unrelated = ast.parse("def f(x):\n    return 10.0 - x, x >= 9.5, x <= 0\n")
-    assert _implements_the_effort_rule(unrelated) == []
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f(rir):\n    return 10.0 - rir\n",
+        "def f(avg_rir):\n    return 10 - avg_rir\n",
+        "TEN = 10.0\ndef f(rir):\n    return TEN - rir\n",
+        "def f(rpe):\n    return rpe >= 9.5\n",
+        "def f(rpe):\n    return 9.5 <= rpe\n",
+        "def f(rpe):\n    return rpe > 9.5\n",
+        "FAILURE_THRESHOLD = 9.5\ndef f(rpe):\n    return rpe >= FAILURE_THRESHOLD\n",
+        "def f(s):\n    return s.avg_rpe >= 9.5\n",
+        "def f(rir):\n    return rir <= 0\n",
+        "def f(rir):\n    return 0 >= rir\n",
+        "def f(r):\n    return r.rir == 0\n",
+    ],
+)
+def test_the_scanner_recognizes_each_spelling_it_claims_to(source):
+    assert _implements_the_effort_rule(ast.parse(source)) != []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f(rir, rpe):\n    return sc.resolve_effort(rpe, rir).to_failure\n",
+        "def f(x):\n    return 10.0 - x, x >= 9.5, x <= 0\n",  # unrelated names
+        "def f(rpe):\n    return rpe >= 8.0\n",  # a different threshold
+        "def f(rir):\n    return max(0.0, rir)\n",  # no comparison with 0
+    ],
+)
+def test_the_scanner_leaves_unrelated_code_alone(source):
+    assert _implements_the_effort_rule(ast.parse(source)) == []
