@@ -65,12 +65,51 @@ REJECTED_SOURCE_TYPES: frozenset[str] = frozenset(
 # estimate produced. Training-derived e1RM (an Epley or chart estimate from a working set) and
 # a reported estimate are NOT demonstrated, however high they are.
 #
-# ``legacy_unknown`` counts because history is preserved, not discarded: migration a025/a028
-# gave every pre-existing non-extraction row ``direct_measurement`` / ``measured`` and source
-# type ``legacy_unknown`` (no new authority, but they were tests). Dropping them would remove an
-# athlete's watermark and let one low test regress strength as a "first measurement".
-DEMONSTRATED_SOURCE_TYPES: tuple[str, ...] = (ST_ATHLETE_ENTRY, ST_LEGACY_UNKNOWN)
+# ``legacy_unknown`` does NOT count as a source type: it is what the resolver writes for a source
+# it does not recognise, and migration a028 itself calls the rows it relabelled "ambiguous
+# legacy history". But history is preserved, not discarded, through an explicit compatibility
+# rule tied to the MIGRATION RECORD (below), so an athlete's pre-migration tests keep their
+# decline protection without any live write being able to claim it.
+DEMONSTRATED_SOURCE_TYPES: tuple[str, ...] = (ST_ATHLETE_ENTRY,)
 DEMONSTRATED_EVIDENCE_TYPES: tuple[str, ...] = (se.EV_DIRECT_MEASUREMENT, se.EV_PROTOCOL_GRADE_ESTIMATE)
+
+# What migrations a025/a028 stamped on every pre-existing non-extraction row: a025 labelled it
+# ``direct_measurement`` / ``measured`` / ``benchmark_protocol`` (it assumed, from ``source``, that
+# anything but a workout extraction was a test; it could not prove a max), and a028 recorded the
+# backfill with the fields below. Only a migration writes them: ``provenance_operation`` is chosen
+# by the server (never the request) and ``live_write`` / ``strength_report`` are the only values a
+# writer uses.
+LEGACY_MIGRATION_VERSION = "a028"
+LEGACY_MIGRATION_REASON = "schema_backfill_conservative_legacy"
+LEGACY_OBSERVATION_MODEL = "benchmark_protocol"
+
+
+def is_migrated_legacy_test(
+    *,
+    source_type: str | None,
+    evidence_type: str | None,
+    value_semantics: str | None,
+    provenance_operation: str | None,
+    migration_version: str | None,
+    authority_resolution_reason: str | None,
+    observation_model: str | None,
+) -> bool:
+    """Is this row one the legacy migration relabelled, and that it had labelled a measured test?
+
+    A compatibility rule, named as one so it can be retired: it keeps an athlete's pre-migration
+    tests as their decline watermark (otherwise their next low test would look like a first
+    measurement and regress strength in one step). It is evidence of the migration's assumption,
+    not proof of a max.
+    """
+    return (
+        source_type == ST_LEGACY_UNKNOWN
+        and provenance_operation == OP_SCHEMA_BACKFILL
+        and migration_version == LEGACY_MIGRATION_VERSION
+        and authority_resolution_reason == LEGACY_MIGRATION_REASON
+        and observation_model == LEGACY_OBSERVATION_MODEL
+        and evidence_type == se.EV_DIRECT_MEASUREMENT
+        and value_semantics == se.VS_MEASURED
+    )
 
 
 def is_demonstrated_strength(
@@ -79,18 +118,28 @@ def is_demonstrated_strength(
     evidence_type: str | None,
     value_semantics: str | None,
     protocol_validity: str | None,
+    provenance_operation: str | None = None,
+    migration_version: str | None = None,
+    authority_resolution_reason: str | None = None,
+    observation_model: str | None = None,
 ) -> bool:
     """Is this observation a measured max test (the only thing a decline is judged against)?
 
-    Fail-closed on every unstated field. ``protocol_validity == invalid`` is a measurement the
-    protocol check rejected; it demonstrates nothing. (Row validity and quarantine are a
-    separate, query-level condition.)
+    Either current provenance (an athlete's own measured test the protocol did not reject), or the
+    migration-record compatibility rule above. Fail-closed on every unstated field.
+    ``protocol_validity == invalid`` is a measurement the protocol check rejected; it demonstrates
+    nothing. (Row validity and quarantine are a separate, query-level condition.)
     """
-    return (
+    current = (
         source_type in DEMONSTRATED_SOURCE_TYPES
         and evidence_type in DEMONSTRATED_EVIDENCE_TYPES
         and value_semantics == se.VS_MEASURED
         and protocol_validity != PV_INVALID
+    )
+    return current or is_migrated_legacy_test(
+        source_type=source_type, evidence_type=evidence_type, value_semantics=value_semantics,
+        provenance_operation=provenance_operation, migration_version=migration_version,
+        authority_resolution_reason=authority_resolution_reason, observation_model=observation_model,
     )
 
 

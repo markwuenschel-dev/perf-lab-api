@@ -265,6 +265,35 @@ async def _active_candidate(
     return res.scalars().first()
 
 
+# A candidate's prior is what the athlete had demonstrated when it opened. If that is no longer
+# demonstrated (the prior was a training estimate under the old watermark, or the row behind it has
+# been quarantined), the candidate was opened against strength nobody showed and must not be allowed
+# to confirm a regression or cap a prescription.
+_PRIOR_EPSILON = 1e-6
+RESOLUTION_PRIOR_NOT_DEMONSTRATED = "prior_not_demonstrated"
+
+
+async def _prior_is_still_demonstrated(db: AsyncSession, candidate: StrengthDeclineCandidate) -> bool:
+    prior = await demonstrated_watermark(
+        db, candidate.user_id, candidate.benchmark_code,
+        exclude_observation_id=candidate.trigger_observation_id,
+    )
+    return prior is not None and candidate.prior_mean <= prior + _PRIOR_EPSILON
+
+
+async def _current_active_candidate(
+    db: AsyncSession, user_id: int, axis: str = DECLINE_AXIS
+) -> StrengthDeclineCandidate | None:
+    """The active candidate, after retiring one whose prior is no longer demonstrated."""
+    active = await _active_candidate(db, user_id, axis)
+    if active is None or await _prior_is_still_demonstrated(db, active):
+        return active
+    active.status = STATUS_DISMISSED
+    active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
+    active.resolution_reason = RESOLUTION_PRIOR_NOT_DEMONSTRATED
+    return None
+
+
 def _qualifies_as_confirmation(
     candidate: StrengthDeclineCandidate,
     *,
@@ -309,6 +338,9 @@ async def resolve_bidirectional_observation(
     """
     if not _targets_axis(mappings):
         return _PASSTHROUGH
+    # Retire a candidate opened against a prior that is no longer demonstrated BEFORE anything
+    # reads it, including when there is no demonstrated prior left at all.
+    await _current_active_candidate(db, user_id)
     prior = await _prior_watermark(db, user_id, definition.code, observation.id)
     if prior is None:
         return _PASSTHROUGH  # first measurement — nothing to decline from
@@ -316,7 +348,7 @@ async def resolve_bidirectional_observation(
     if observed_raw >= prior:
         # Re-demonstration at/above the watermark: dismiss an active candidate and
         # apply the (upward) observation normally.
-        active = await _active_candidate(db, user_id)
+        active = await _current_active_candidate(db, user_id)
         if active is not None:
             active.status = STATUS_DISMISSED
             active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
@@ -332,7 +364,7 @@ async def resolve_bidirectional_observation(
     # Downward vs the watermark.
     error = _measurement_error_from_definition(definition)
     mean_fatigue = _mean_fatigue(current)
-    active = await _active_candidate(db, user_id)
+    active = await _current_active_candidate(db, user_id)
 
     if active is not None:
         # Expire a stale candidate, then treat this observation as a fresh first one.
@@ -652,6 +684,10 @@ async def resolve_prescription_basis(
     if normal is None:
         normal = legacy
     active = await _active_candidate(db, user_id)
+    # Read-only: a stale candidate is ignored here and retired by the next observation write (this
+    # resolver must stay side-effect free; see test_resolver_purity).
+    if active is not None and not await _prior_is_still_demonstrated(db, active):
+        active = None
     ceiling: float | None = None
     candidate_id: int | None = None
     if active is not None and active.benchmark_code == code:

@@ -38,19 +38,35 @@ calibration, explicitly provisional (`strength_decline_policy_v1`, `synthetic_an
 ## Amendment (2026-10-09, P4-2a): what "demonstrated" means
 
 The decline watermark was `max(raw_value)` over every valid row of the lift, workout-derived
-estimates included. That held only while a training estimate could not exceed what the athlete
-can lift. Once estimates can (the chart-based e1RM of ADR-0056, P4-2b), a high estimate would make
-an honest test look like a decline. **Demonstrated strength is now provenance, not a label**, and
-one definition serves both the decline machine's prior and `best_currently_validated_e1rm`
-(`observation_authority.is_demonstrated_strength`, SQL form in `benchmark_observation_repository`):
+estimates included. An estimate is a model's extrapolation, not a lift: Epley could already
+overshoot what an athlete can do, and the chart estimate of ADR-0056 will too. Judged against such
+a prior, an honest test looks like a decline. **Demonstrated strength is now provenance, not a
+label**, and one definition serves both the decline machine's prior and
+`best_currently_validated_e1rm` (`observation_authority.is_demonstrated_strength`, SQL form in
+`benchmark_observation_repository`):
 
 * a **measured max test**: `value_semantics = measured`, evidence `direct_measurement` or
   `protocol_grade_estimate`, source type `athlete_entry`, and not protocol-invalid;
-* **legacy history is preserved**: rows migrated to `legacy_unknown` with measured/direct evidence
-  still count, so an athlete's pre-migration tests keep their decline protection (dropping them
-  would turn the next low test into a silent "first measurement");
+* the row is **positively `valid`** and not quarantined. An unknown or pending status never
+  qualifies: ingestion requires `valid`, and a pending row has received no state application;
 * never an estimate: a training-derived e1RM, a reported estimate, or any `estimated` /
   `lower_bound` row, however high.
+
+**History is preserved through the migration record, not a source label.** `legacy_unknown` is
+what the resolver writes for a source it does not recognise, and a028 itself calls the rows it
+relabelled "ambiguous legacy history"; a025's measured/direct labels were assigned in bulk from
+`source` and cannot prove a max. So `legacy_unknown` does not qualify by itself. Rows that carry
+the whole migration record do (`provenance_operation = schema_backfill`, `migration_version =
+a028`, the a028 resolution reason, observation model `benchmark_protocol`, measured/direct): a
+named compatibility rule (`is_migrated_legacy_test`) that keeps an older athlete's pre-migration
+tests as their decline protection, since without a watermark the next low test would pass through
+as a "first measurement". No live write can produce those fields.
+
+**A candidate is only as good as its prior.** An `active` candidate whose recorded prior is no
+longer demonstrated (it was opened against a training estimate under the old watermark, or the
+row behind it has since been quarantined) is retired (`dismissed`, reason
+`prior_not_demonstrated`) before it can confirm a regression, and it is ignored by the
+prescription ceiling, which stays read-only and leaves the retirement to the next observation.
 
 Training estimates keep their own bar for "is this a PR" (`estimated_pr_baseline`), per formula:
 estimates from different formulas are not comparable and a formula change is not progress.

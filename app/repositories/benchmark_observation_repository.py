@@ -35,9 +35,7 @@ from app.models.benchmark_observation import BenchmarkObservation
 def demonstrated_strength_clause() -> ColumnElement[bool]:
     """SQL form of :func:`app.logic.observation_authority.is_demonstrated_strength`, plus the
     query-level conditions (valid, not quarantined). A test pins the two forms to each other."""
-    return and_(
-        BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
-        BenchmarkObservation.quarantined_at.is_(None),
+    current = and_(
         BenchmarkObservation.source_type.in_(oa.DEMONSTRATED_SOURCE_TYPES),
         BenchmarkObservation.evidence_type.in_(oa.DEMONSTRATED_EVIDENCE_TYPES),
         BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
@@ -45,6 +43,22 @@ def demonstrated_strength_clause() -> ColumnElement[bool]:
             BenchmarkObservation.protocol_validity.is_(None),
             BenchmarkObservation.protocol_validity != oa.PV_INVALID,
         ),
+    )
+    migrated_legacy = and_(
+        BenchmarkObservation.source_type == oa.ST_LEGACY_UNKNOWN,
+        BenchmarkObservation.provenance_operation == oa.OP_SCHEMA_BACKFILL,
+        BenchmarkObservation.migration_version == oa.LEGACY_MIGRATION_VERSION,
+        BenchmarkObservation.authority_resolution_reason == oa.LEGACY_MIGRATION_REASON,
+        BenchmarkObservation.observation_model == oa.LEGACY_OBSERVATION_MODEL,
+        BenchmarkObservation.evidence_type == oa.se.EV_DIRECT_MEASUREMENT,
+        BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
+    )
+    return and_(
+        # Positively valid: an unknown or pending status never qualifies (ingestion requires
+        # "valid", and a pending row has received no state application).
+        BenchmarkObservation.validity_status == "valid",
+        BenchmarkObservation.quarantined_at.is_(None),
+        or_(current, migrated_legacy),
     )
 
 
@@ -93,7 +107,7 @@ async def estimated_pr_baseline(
             or_(
                 demonstrated_strength_clause(),
                 and_(
-                    BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
+                    BenchmarkObservation.validity_status == "valid",
                     BenchmarkObservation.quarantined_at.is_(None),
                     BenchmarkObservation.formula == formula,
                 ),
