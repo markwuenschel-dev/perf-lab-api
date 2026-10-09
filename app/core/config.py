@@ -142,6 +142,12 @@ class Settings(BaseSettings):
     # Rollback: turn it off, then `python -m app.scripts.revert_missed_sessions --apply`.
     RECONCILE_MISSED_SESSIONS: bool = False
 
+    # P3b-3: fold a late workout/benchmark (one dated before the athlete's state head) into the
+    # state by exact tail replay (late_event_service). Off by default: a late event is recorded
+    # record-only, as since P3a. Turning it off stops new corrections; corrections already made
+    # stay (they are the more accurate state, and their receipts say how they were made).
+    APPLY_LATE_EVENTS: bool = False
+
     # CORS — comma-separated list of allowed origins.
     # Defaults to local dev origins only. In production you MUST pin an explicit prod
     # origin here via ALLOWED_ORIGINS (e.g. https://perflab.44-198-76-44.nip.io) —

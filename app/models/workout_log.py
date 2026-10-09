@@ -90,6 +90,11 @@ class WorkoutLog(Base):
     # trigger refuses a change). NULL = logged before P3b-1: not replayable. See alembic a055.
     replay_input: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    # P3b-3: the stable code that kept this record-only event out of the state when a fold was
+    # attempted (late_event_service); NULL = not attempted, or folded in. Mutable (a retry
+    # overwrites it). See alembic a057.
+    replay_refusal: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # For benchmark sessions: store results
     is_benchmark: Mapped[bool] = mapped_column(Boolean, default=False)
     benchmark_results: Mapped[dict[str, Any] | None] = mapped_column(

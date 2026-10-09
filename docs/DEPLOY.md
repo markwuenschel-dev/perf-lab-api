@@ -203,3 +203,44 @@ such value. So the order is fixed:
           CASE ps.status::text WHEN 'missed' THEN 'pending' ELSE ps.status::text END;
    ```
    Export them, decide, and delete them before downgrading.
+
+## Late events (P3b): turning exact-replay correction on, and stopping it
+
+Migrations `a053`–`a057` add the state-correction chain: dispositions on workouts and benchmark
+observations (`a053`, `a054`), replay capture (`a055`), correction receipts (`a056`), and the
+refusal code (`a057`). Deploying them changes nothing for athletes: a workout or benchmark dated
+before the athlete's current state is recorded and **not applied to the state** (`record_only`),
+as since `a053`. Rows written before `a055` carry no capture and are never replayable.
+
+`APPLY_LATE_EVENTS=true` (off by default) makes the writers try to fold such an event into the
+state by exact tail replay, in the same transaction as the log (`app/services/late_event_service.py`).
+It folds only inside the declared policy (`MAX_REPLAY_GAP` 48 h, `MAX_REPLAY_EVENTS` 8,
+`MAX_BATCH` 4) and only after the replay of the **stored** history has reproduced every stored
+row exactly; otherwise the event stays `record_only` and `replay_refusal` says why. The refusal
+codes are listed in `app/services/tail_replay_service.py`.
+
+**Turning it on:** add `APPLY_LATE_EVENTS=true` to `/opt/stack/infra/env/perf-lab-api.env`, then
+`sudo docker compose up -d perf-lab-api`. A correction adds one `athlete_states` row at the old
+head's timestamp (`event_kind = 'correction'`); nothing is deleted or rewritten, and rows between
+the earliest folded event and the old head stay stored but out of date.
+
+**Stopping it:** set the flag to `false` (or remove the line) and recreate the container. New late
+events are recorded record-only again. **Corrections already made stay**: they are the more
+accurate state, and their receipts say how they were made. There is no automated revert; undoing
+one would discard every event logged after it.
+
+**Looking at it** (read-only):
+```sql
+-- corrections, newest first, with how many events each folded in
+SELECT c.id, c.user_id, c.created_at, c.affected_from, count(e.id) AS events
+  FROM state_corrections c JOIN state_correction_events e ON e.correction_id = c.id
+ GROUP BY c.id ORDER BY c.id DESC LIMIT 20;
+-- why late events stayed out of the state
+SELECT replay_refusal, count(*) FROM workout_logs WHERE state_disposition = 'record_only' GROUP BY 1;
+SELECT replay_refusal, count(*) FROM benchmark_observations WHERE state_disposition = 'record_only' GROUP BY 1;
+```
+
+**Schema rollback.** `a056`'s downgrade refuses while any correction exists. Its receipts are
+append-only (a trigger refuses UPDATE and DELETE); removing them is a deliberate operator act
+(`ALTER TABLE ... DISABLE TRIGGER`) and leaves correction heads with no lineage, so don't, unless
+you are discarding the corrected history on purpose. `a057`'s downgrade drops `replay_refusal`.

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
@@ -44,7 +45,9 @@ from app.services import (
     state_service,
     strength_decline_service,
 )
+from app.services.late_event_service import fold_late_events
 from app.services.state_chain_lock import lock_athlete_chain
+from app.services.tail_replay_service import NewEventRef
 from app.services.transition_identity_service import ensure_current_identity
 
 logger = logging.getLogger(__name__)
@@ -630,6 +633,16 @@ async def stage_observation(
         state_row_written=state_row_written,
         predecessor_state_id=head_row_id,
     )
+
+    # P3b-3: a late observation is folded into the state by exact tail replay, in this same
+    # transaction (the caller commits). A refusal leaves it record-only exactly as before.
+    if (
+        settings.APPLY_LATE_EVENTS
+        and obs.state_disposition == "record_only"
+        and obs.state_disposition_reason == "event_before_current_state"
+    ):
+        await db.flush()
+        await fold_late_events(db, user_id, [NewEventRef("benchmark", obs.id)])
 
     # Weak-point feedback: flag deficits, resolve improvements. Gated on measurement-
     # grade (bidirectional) authority — training-derived / estimated / seeding evidence
