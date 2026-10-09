@@ -23,6 +23,7 @@ from app.models.exercise import Exercise
 from app.models.user import User
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.models.workout_set_log import WorkoutSetLog
+from app.repositories.benchmark_observation_repository import estimated_pr_baseline
 from app.schemas.prescription import ExercisePrescription, WorkoutPrescription
 from app.schemas.workouts import WorkoutLog, WorkoutSetEntry
 from app.services.prescription_service import _enrich_exercises_with_load
@@ -97,15 +98,18 @@ async def _session_intensities(db, user_id: int) -> list[dict]:
 async def test_a_gated_set_below_the_watermark_is_eligible_and_capacity_is_unchanged(async_db):
     user = await _athlete(async_db, "s2-ingest-decouple@test.com")
     await process_new_workout(async_db, user.id, _squat_session(T1, load=150.0, reps=1, rpe=9.5))
-    watermark_before = await best_currently_validated_e1rm(async_db, user.id, _CODE)
+    pr_bar_before = await estimated_pr_baseline(async_db, user.id, _CODE, formula="epley")
 
     t2 = T1 + timedelta(days=1)
     await process_new_workout(async_db, user.id, _squat_session(t2, load=120.0, reps=3, rpe=9.0))
     pr, below = await _extracted(async_db, user.id)
 
-    # Capacity side: exactly as before S2.
-    assert watermark_before == pytest.approx(150.0)
-    assert await best_currently_validated_e1rm(async_db, user.id, _CODE) == pytest.approx(150.0)
+    # Capacity side: exactly as before S2. The bar a training estimate must clear is the best
+    # earlier estimate; training evidence is NOT demonstrated strength (P4-2a), so the
+    # public best-validated figure stays empty until a max is actually tested.
+    assert pr_bar_before == pytest.approx(150.0)
+    assert await estimated_pr_baseline(async_db, user.id, _CODE, formula="epley") == pytest.approx(150.0)
+    assert await best_currently_validated_e1rm(async_db, user.id, _CODE) is None
     assert below.raw_value == pytest.approx(sc.epley_e1rm(120.0, 3), abs=0.1)
     assert (below.evidence_type, below.value_semantics) == ("estimated_from_training_set", "estimated")
     assert (pr.evidence_type, pr.value_semantics) == ("lower_bound", "lower_bound")

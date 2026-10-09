@@ -23,12 +23,84 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic import observation_authority as oa
 from app.logic.prescription_evidence import BasisSelection, EvidenceRow, select_basis
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
+
+
+def demonstrated_strength_clause() -> ColumnElement[bool]:
+    """SQL form of :func:`app.logic.observation_authority.is_demonstrated_strength`, plus the
+    query-level conditions (valid, not quarantined). A test pins the two forms to each other."""
+    return and_(
+        BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
+        BenchmarkObservation.quarantined_at.is_(None),
+        BenchmarkObservation.source_type.in_(oa.DEMONSTRATED_SOURCE_TYPES),
+        BenchmarkObservation.evidence_type.in_(oa.DEMONSTRATED_EVIDENCE_TYPES),
+        BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
+        or_(
+            BenchmarkObservation.protocol_validity.is_(None),
+            BenchmarkObservation.protocol_validity != oa.PV_INVALID,
+        ),
+    )
+
+
+async def demonstrated_watermark(
+    db: AsyncSession, user_id: int, code: str, *, exclude_observation_id: int | None = None
+) -> float | None:
+    """The best currently valid DEMONSTRATED e1RM for this athlete and lift (ADR-0066).
+
+    The one watermark a strength decline is measured against, and the public "best validated"
+    figure. Only measured max tests count (see ``oa.is_demonstrated_strength``): a high training
+    estimate can never make an honest test look like a decline, and a falling measured test still
+    does. Derived from ``max(raw_value)``, so it is monotone while valid tests are added and may
+    fall when the top one is corrected or quarantined (a data correction, not a decline).
+    """
+    conditions = [
+        BenchmarkObservation.user_id == user_id,
+        BenchmarkDefinition.code == code,
+        demonstrated_strength_clause(),
+    ]
+    if exclude_observation_id is not None:
+        conditions.append(BenchmarkObservation.id != exclude_observation_id)
+    res = await db.execute(
+        select(func.max(BenchmarkObservation.raw_value))
+        .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
+        .where(*conditions)
+    )
+    return res.scalar_one_or_none()
+
+
+async def estimated_pr_baseline(
+    db: AsyncSession, user_id: int, code: str, *, formula: str
+) -> float | None:
+    """The bar a training-derived e1RM must clear to be a PR (extraction's ``is_pr``).
+
+    The best of the athlete's demonstrated strength and their earlier estimates made by the
+    SAME formula. Estimates from a different formula are not comparable (a formula change is not
+    progress), and an estimate is never a demonstrated watermark: this is PR tracking for
+    estimates only, kept apart from :func:`demonstrated_watermark`.
+    """
+    res = await db.execute(
+        select(func.max(BenchmarkObservation.raw_value))
+        .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
+        .where(
+            BenchmarkObservation.user_id == user_id,
+            BenchmarkDefinition.code == code,
+            or_(
+                demonstrated_strength_clause(),
+                and_(
+                    BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
+                    BenchmarkObservation.quarantined_at.is_(None),
+                    BenchmarkObservation.formula == formula,
+                ),
+            ),
+        )
+    )
+    return res.scalar_one_or_none()
 
 
 async def select_prescription_basis(

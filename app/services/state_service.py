@@ -39,8 +39,6 @@ from app.logic.goal_seed_emphasis import apply_goal_emphasis
 from app.logic.replay_inputs import workout_replay_input
 from app.logic.state_transitions import apply_workout_transition
 from app.models.athlete_state import AthleteState
-from app.models.benchmark_definition import BenchmarkDefinition
-from app.models.benchmark_observation import BenchmarkObservation
 from app.models.exercise import Exercise
 from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.prescription_revision import PrescriptionRevision
@@ -48,7 +46,11 @@ from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.models.workout_set_log import WorkoutSetLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
-from app.repositories.benchmark_observation_repository import select_prescription_basis
+from app.repositories.benchmark_observation_repository import (
+    demonstrated_watermark,
+    estimated_pr_baseline,
+    select_prescription_basis,
+)
 from app.schemas.engine_vectors import FatigueState, TissueState
 from app.schemas.history import WorkoutLogSummary
 from app.schemas.state import LogWorkoutResponse, StateHistorySnapshotRead, UnifiedStateVector
@@ -1014,34 +1016,12 @@ async def best_currently_validated_e1rm(
     **allowed to fall** when the top observation is corrected, invalidated, or
     quarantined — a bad observation must not stay immortal to preserve monotonicity.
     Data correction and physiological decline are distinct transition reasons; a
-    watermark drop from quarantine is NOT a decline candidate. Delegates to
-    :func:`_e1rm_watermark`, the existing derivation.
+    watermark drop from quarantine is NOT a decline candidate. DEMONSTRATED strength only:
+    measured max tests, never a training-derived estimate (P4-2a; see
+    ``observation_authority.is_demonstrated_strength``). The strength-decline machine's prior is
+    the same function, so the two cannot disagree.
     """
-    return await _e1rm_watermark(db, user_id, code)
-
-
-async def _e1rm_watermark(db: AsyncSession, user_id: int, code: str) -> float | None:
-    """Highest e1RM observed for this code (demonstrated high-watermark).
-
-    Excludes quarantined/invalid rows. Used to keep training-derived evidence
-    upward-only — a set below the watermark is history, never a lower bound.
-
-    Prefer the public :func:`best_currently_validated_e1rm` alias at call sites that
-    mean "best currently valid demonstrated strength" (ADR-0066 semantics).
-    """
-    res = await db.execute(
-        select(func.max(BenchmarkObservation.raw_value))
-        .join(
-            BenchmarkDefinition,
-            BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id,
-        )
-        .where(
-            BenchmarkObservation.user_id == user_id,
-            BenchmarkDefinition.code == code,
-            BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
-        )
-    )
-    return res.scalar_one_or_none()
+    return await demonstrated_watermark(db, user_id, code)
 
 
 async def _extract_e1rm_observations(
@@ -1064,7 +1044,9 @@ async def _extract_e1rm_observations(
     written = 0
     for spec in specs:
         try:
-            watermark = await _e1rm_watermark(db, user_id, spec["code"])
+            # The PR bar for an ESTIMATE: the best demonstrated strength or an earlier estimate
+            # by the same formula. Kept apart from the demonstrated watermark on purpose.
+            watermark = await estimated_pr_baseline(db, user_id, spec["code"], formula="epley")
             is_pr = watermark is None or spec["raw_value"] > watermark * 1.005
             fidelity = spec.get("effort_fidelity", "set_level")
             await benchmark_service.create_observation(

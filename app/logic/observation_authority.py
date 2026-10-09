@@ -59,6 +59,41 @@ REJECTED_SOURCE_TYPES: frozenset[str] = frozenset(
     {ST_COACH_ENTRY, ST_DEVICE_IMPORT, ST_THIRD_PARTY_IMPORT}
 )
 
+# What counts as DEMONSTRATED strength (P4-2a), one definition for every reader that needs it
+# (the strength-decline watermark and the public best-validated watermark). It is provenance,
+# not a label: a measured max test, whoever's hands it was in, as opposed to anything an
+# estimate produced. Training-derived e1RM (an Epley or chart estimate from a working set) and
+# a reported estimate are NOT demonstrated, however high they are.
+#
+# ``legacy_unknown`` counts because history is preserved, not discarded: migration a025/a028
+# gave every pre-existing non-extraction row ``direct_measurement`` / ``measured`` and source
+# type ``legacy_unknown`` (no new authority, but they were tests). Dropping them would remove an
+# athlete's watermark and let one low test regress strength as a "first measurement".
+DEMONSTRATED_SOURCE_TYPES: tuple[str, ...] = (ST_ATHLETE_ENTRY, ST_LEGACY_UNKNOWN)
+DEMONSTRATED_EVIDENCE_TYPES: tuple[str, ...] = (se.EV_DIRECT_MEASUREMENT, se.EV_PROTOCOL_GRADE_ESTIMATE)
+
+
+def is_demonstrated_strength(
+    *,
+    source_type: str | None,
+    evidence_type: str | None,
+    value_semantics: str | None,
+    protocol_validity: str | None,
+) -> bool:
+    """Is this observation a measured max test (the only thing a decline is judged against)?
+
+    Fail-closed on every unstated field. ``protocol_validity == invalid`` is a measurement the
+    protocol check rejected; it demonstrates nothing. (Row validity and quarantine are a
+    separate, query-level condition.)
+    """
+    return (
+        source_type in DEMONSTRATED_SOURCE_TYPES
+        and evidence_type in DEMONSTRATED_EVIDENCE_TYPES
+        and value_semantics == se.VS_MEASURED
+        and protocol_validity != PV_INVALID
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dimension 2 — collection_mode (workflow context)
 # ---------------------------------------------------------------------------

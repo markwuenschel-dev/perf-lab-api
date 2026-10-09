@@ -50,6 +50,7 @@ from app.models.strength_decline_candidate import (
     StrengthDeclineCandidate,
 )
 from app.models.strength_decline_shadow import StrengthDeclineShadow
+from app.repositories.benchmark_observation_repository import demonstrated_watermark
 from app.schemas.engine_vectors import FatigueState
 from app.schemas.state import UnifiedStateVector
 
@@ -239,22 +240,13 @@ def _occurrence(user_id: int, code: str, observed_at: datetime | None) -> str:
 async def _prior_watermark(
     db: AsyncSession, user_id: int, code: str, exclude_observation_id: int
 ) -> float | None:
-    """Best currently valid demonstrated e1RM for the code, EXCLUDING the current
-    observation — the prior a decline is measured against."""
-    res = await db.execute(
-        select(func.max(BenchmarkObservation.raw_value))
-        .join(
-            BenchmarkDefinition,
-            BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id,
-        )
-        .where(
-            BenchmarkObservation.user_id == user_id,
-            BenchmarkDefinition.code == code,
-            BenchmarkObservation.id != exclude_observation_id,
-            BenchmarkObservation.validity_status.notin_(("quarantined", "invalid")),
-        )
+    """Best currently valid DEMONSTRATED e1RM for the code, EXCLUDING the current
+    observation — the prior a decline is measured against. Measured max tests only: a training
+    estimate (however high) is not strength the athlete demonstrated, so it cannot make a
+    later honest test look like a decline."""
+    return await demonstrated_watermark(
+        db, user_id, code, exclude_observation_id=exclude_observation_id
     )
-    return res.scalar_one_or_none()
 
 
 async def _active_candidate(

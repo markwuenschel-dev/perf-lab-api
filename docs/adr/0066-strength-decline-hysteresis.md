@@ -34,3 +34,23 @@ capacity updates require independent corroborating protocol-valid evidence and a
 variance-aware estimator move. Thresholds are protocol/uncertainty-derived and, absent
 calibration, explicitly provisional (`strength_decline_policy_v1`, `synthetic_and_expert_prior`)
 — a global percentage retune is out of scope and requires shadow calibration first.
+
+## Amendment (2026-10-09, P4-2a): what "demonstrated" means
+
+The decline watermark was `max(raw_value)` over every valid row of the lift, workout-derived
+estimates included. That held only while a training estimate could not exceed what the athlete
+can lift. Once estimates can (the chart-based e1RM of ADR-0056, P4-2b), a high estimate would make
+an honest test look like a decline. **Demonstrated strength is now provenance, not a label**, and
+one definition serves both the decline machine's prior and `best_currently_validated_e1rm`
+(`observation_authority.is_demonstrated_strength`, SQL form in `benchmark_observation_repository`):
+
+* a **measured max test**: `value_semantics = measured`, evidence `direct_measurement` or
+  `protocol_grade_estimate`, source type `athlete_entry`, and not protocol-invalid;
+* **legacy history is preserved**: rows migrated to `legacy_unknown` with measured/direct evidence
+  still count, so an athlete's pre-migration tests keep their decline protection (dropping them
+  would turn the next low test into a silent "first measurement");
+* never an estimate: a training-derived e1RM, a reported estimate, or any `estimated` /
+  `lower_bound` row, however high.
+
+Training estimates keep their own bar for "is this a PR" (`estimated_pr_baseline`), per formula:
+estimates from different formulas are not comparable and a formula change is not progress.
