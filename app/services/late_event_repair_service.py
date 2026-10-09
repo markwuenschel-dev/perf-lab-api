@@ -20,9 +20,21 @@ observations have no common arrival clock), or one of the same kind that arrived
 already in the state. A same-kind event that arrived earlier is fine, and so is one that arrived
 later but is still waiting: it folds after this one, in id order.
 
-One athlete at a time, one fold per transaction (each takes the athlete's chain lock and commits,
-so the lock is short). ``dry_run`` performs every fold and rolls them all back, so its report is
-exactly what ``--apply`` would do.
+**Discovery is a hint; the decision is made under the athlete's chain lock.** The list of waiting
+events is read without the lock and goes stale: a live writer can fold a later event at the same
+timestamp, or fold the candidate itself, at any moment. So for every candidate, the chain lock is
+taken first and held through the fold and its commit, and only then is the candidate re-read and
+its eligibility (still waiting, captured, no tie that breaks the order) decided from fresh data.
+A candidate that stopped being eligible is counted (``gone``, ``ambiguous_tie``) and skipped.
+
+Locking. An apply run takes the lock per candidate and commits after each, so an athlete's writers
+wait at most one fold. A dry run is different: its folds must stay visible to the next one, so it
+is one transaction, and it holds the athlete's lock from its first candidate until its final
+rollback. Its report equals what ``--apply`` would do only if the athlete's history does not
+change in between.
+
+Repeat runs. Only folded events leave the waiting set. Refused, not-capturable and ambiguous
+events are reported again every run (a refusal code is rewritten each time ``--apply`` retries).
 """
 from __future__ import annotations
 
@@ -36,21 +48,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.workout_log import WorkoutLog
 from app.services.late_event_service import fold_late_events
+from app.services.state_chain_lock import lock_athlete_chain
 from app.services.tail_replay_service import NewEventRef
 
 logger = logging.getLogger(__name__)
 
 _REASON = "event_before_current_state"
 
+_ELIGIBLE = "eligible"
+_GONE = "gone"
+_NOT_CAPTURABLE = "not_capturable"
+_AMBIGUOUS = "ambiguous_tie"
+
 
 @dataclass
 class AthleteRepair:
     user_id: int
-    pending: int = 0  # record-only events with captured inputs that were considered
+    considered: int = 0  # record-only events found when the run looked
     folded: int = 0
     refused: dict[str, int] = field(default_factory=lambda: {})
     not_capturable: int = 0  # record-only events written before capture existed
     ambiguous_tie: int = 0
+    gone: int = 0  # no longer waiting when their turn came (a writer folded them first)
 
 
 @dataclass
@@ -64,7 +83,7 @@ class RepairReport:
 
 
 @dataclass(frozen=True)
-class _Pending:
+class _Waiting:
     kind: str
     event_id: int
     timestamp: datetime
@@ -82,80 +101,96 @@ async def users_with_pending_events(db: AsyncSession) -> list[int]:
     return sorted(ids)
 
 
-async def _pending(db: AsyncSession, user_id: int, result: AthleteRepair) -> list[_Pending]:
-    """The record-only events to try, oldest first, minus those that cannot be repaired."""
-    workouts = list((await db.execute(
-        select(WorkoutLog).where(
+async def _discover(db: AsyncSession, user_id: int) -> list[_Waiting]:
+    """The athlete's waiting events, oldest first. Unlocked, so only a list of candidates."""
+    waiting: list[_Waiting] = []
+    for wid, ts in (await db.execute(
+        select(WorkoutLog.id, WorkoutLog.session_timestamp).where(
             WorkoutLog.user_id == user_id, WorkoutLog.state_disposition == "record_only",
             WorkoutLog.state_disposition_reason == _REASON,
         )
-    )).scalars())
-    observations = list((await db.execute(
-        select(BenchmarkObservation).where(
+    )).all():
+        waiting.append(_Waiting("workout", wid, ts))
+    for oid, ts in (await db.execute(
+        select(BenchmarkObservation.id, BenchmarkObservation.observed_at).where(
             BenchmarkObservation.user_id == user_id,
             BenchmarkObservation.state_disposition == "record_only",
             BenchmarkObservation.state_disposition_reason == _REASON,
         )
-    )).scalars())
-
-    candidates: list[_Pending] = []
-    for w in workouts:
-        if w.replay_input is None:
-            result.not_capturable += 1
-        else:
-            candidates.append(_Pending("workout", w.id, w.session_timestamp))
-    for o in observations:
-        if o.replay_input is None:
-            result.not_capturable += 1
-        else:
-            candidates.append(_Pending("benchmark", o.id, o.observed_at))
-
-    # Every event of this athlete, by timestamp, for the tie rule.
-    by_time: dict[datetime, list[tuple[str, int, str | None]]] = {}
-    for wid, ts, disposition in (await db.execute(
-        select(WorkoutLog.id, WorkoutLog.session_timestamp, WorkoutLog.state_disposition).where(
-            WorkoutLog.user_id == user_id)
     )).all():
-        by_time.setdefault(ts, []).append(("workout", wid, disposition))
-    for oid, ts, disposition in (await db.execute(
-        select(
-            BenchmarkObservation.id, BenchmarkObservation.observed_at,
-            BenchmarkObservation.state_disposition,
-        ).where(BenchmarkObservation.user_id == user_id)
-    )).all():
-        by_time.setdefault(ts, []).append(("benchmark", oid, disposition))
+        waiting.append(_Waiting("benchmark", oid, ts))
+    return sorted(waiting, key=lambda w: (w.timestamp, w.kind, w.event_id))
 
-    def blocks(c: _Pending, kind: str, event_id: int, disposition: str | None) -> bool:
-        """Does another event at this timestamp make folding ``c`` now risk the wrong order?"""
-        if (kind, event_id) == (c.kind, c.event_id):
-            return False
-        if kind != c.kind:
-            return True  # workouts and observations have no common arrival clock
-        if event_id < c.event_id:
-            return False  # arrived first: the new event correctly goes after it
+
+async def _classify(db: AsyncSession, user_id: int, w: _Waiting) -> str:
+    """Decide from fresh data. The caller holds the athlete's chain lock."""
+    row: WorkoutLog | BenchmarkObservation | None
+    if w.kind == "workout":
+        row = (await db.execute(
+            select(WorkoutLog).where(WorkoutLog.id == w.event_id).execution_options(populate_existing=True)
+        )).scalar_one_or_none()
+        timestamp = row.session_timestamp if row is not None else w.timestamp
+    else:
+        row = (await db.execute(
+            select(BenchmarkObservation).where(BenchmarkObservation.id == w.event_id)
+            .execution_options(populate_existing=True)
+        )).scalar_one_or_none()
+        timestamp = row.observed_at if row is not None else w.timestamp
+    if (
+        row is None or row.user_id != user_id or row.state_disposition != "record_only"
+        or row.state_disposition_reason != _REASON
+    ):
+        return _GONE
+    if row.replay_input is None:
+        return _NOT_CAPTURABLE
+
+    others: list[tuple[str, int, str | None]] = []
+    for wid, disposition in (await db.execute(
+        select(WorkoutLog.id, WorkoutLog.state_disposition).where(
+            WorkoutLog.user_id == user_id, WorkoutLog.session_timestamp == timestamp)
+    )).all():
+        others.append(("workout", wid, disposition))
+    for oid, disposition in (await db.execute(
+        select(BenchmarkObservation.id, BenchmarkObservation.state_disposition).where(
+            BenchmarkObservation.user_id == user_id, BenchmarkObservation.observed_at == timestamp)
+    )).all():
+        others.append(("benchmark", oid, disposition))
+
+    for kind, event_id, disposition in others:
+        if (kind, event_id) == (w.kind, w.event_id):
+            continue
+        if kind != w.kind:
+            return _AMBIGUOUS  # workouts and observations have no common arrival clock
+        if event_id < w.event_id:
+            continue  # arrived first: the new event correctly goes after it
         # Arrived later: harmless while it is still waiting (it folds after this one, in id
         # order); wrong if it is already in the state.
-        return disposition == "applied"
-
-    keep: list[_Pending] = []
-    for c in candidates:
-        if any(blocks(c, *other) for other in by_time[c.timestamp]):
-            result.ambiguous_tie += 1
-        else:
-            keep.append(c)
-    result.pending = len(candidates)
-    return sorted(keep, key=lambda c: (c.timestamp, c.kind, c.event_id))
+        if disposition == "applied":
+            return _AMBIGUOUS
+    return _ELIGIBLE
 
 
 async def repair_athlete(db: AsyncSession, user_id: int, *, apply: bool) -> AthleteRepair:
     result = AthleteRepair(user_id=user_id)
-    for event in await _pending(db, user_id, result):
-        outcome = await fold_late_events(db, user_id, [NewEventRef(event.kind, event.event_id)])
-        if outcome.applied:
-            result.folded += 1
+    candidates = await _discover(db, user_id)
+    result.considered = len(candidates)
+    for w in candidates:
+        # The lock first, held through the fold and its commit; everything below reads fresh.
+        await lock_athlete_chain(db, user_id)
+        verdict = await _classify(db, user_id, w)
+        if verdict == _ELIGIBLE:
+            outcome = await fold_late_events(db, user_id, [NewEventRef(w.kind, w.event_id)])
+            if outcome.applied:
+                result.folded += 1
+            else:
+                code = outcome.refusal or "unknown"
+                result.refused[code] = result.refused.get(code, 0) + 1
+        elif verdict == _GONE:
+            result.gone += 1
+        elif verdict == _NOT_CAPTURABLE:
+            result.not_capturable += 1
         else:
-            code = outcome.refusal or "unknown"
-            result.refused[code] = result.refused.get(code, 0) + 1
+            result.ambiguous_tie += 1
         if apply:
             await db.commit()  # each fold is atomic; the chain lock ends here
     if not apply:

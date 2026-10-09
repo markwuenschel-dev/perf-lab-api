@@ -255,8 +255,22 @@ sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events 
 sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events --user-id 7
 ```
 
-It needs no flag. Per athlete it reports events considered, folded, refused by code, **not
-capturable** (recorded before `a055`: no captured inputs, so they are never repaired), and
+It needs no flag. Per athlete it reports events found waiting, folded, refused by code, **not
+capturable** (recorded before `a055`: no captured inputs, so they are never repaired),
 **ambiguous tie** (another event shares the exact timestamp and the arrival order can't be
-recovered; left alone). Events fold oldest first, one correction each, one transaction each.
-Read the dry run first: it is exactly what `--apply` will do. A second run finds nothing.
+recovered; left alone) and **gone** (folded by a live writer before its turn). Events fold oldest
+first, one correction each.
+
+- **Each event is decided under the athlete's chain lock, from fresh data.** The list of waiting
+  events is only a hint, so a live writer cannot slip a tied event in behind it.
+- **An apply run** takes the lock per event and commits after each: that athlete's writers wait at
+  most one fold.
+- **A dry run is different.** Its folds must stay visible to the next one, so it is a single
+  transaction per athlete that holds the athlete's lock from its first event until its final
+  rollback. That athlete's writes wait for it, so run it when the athlete is quiet or the number
+  of waiting events is small.
+- **The dry run's report is what `--apply` would do only if the history doesn't change in
+  between.** A writer can add events, and those change what folds.
+- **Only folded events leave the waiting set.** Refused, not-capturable and ambiguous events show
+  up again on every run (a refusal code is rewritten each time `--apply` retries). A run that
+  reports nothing folded is not proof that nothing is waiting.

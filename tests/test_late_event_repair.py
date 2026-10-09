@@ -27,21 +27,25 @@ from replay_support import (
     seed_definitions,
     seeded_athlete,
 )
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import settings
 from app.logic.tail_replay import row_columns
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.state_correction import StateCorrection
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
 from app.scripts.fold_late_events import _print
+from app.services import late_event_repair_service as repair
 from app.services.late_event_repair_service import (
     AthleteRepair,
     RepairReport,
     repair_all,
     users_with_pending_events,
 )
+from app.services.late_event_service import fold_late_events
+from app.services.state_chain_lock import STATE_CHAIN_LOCK_NAMESPACE
 from app.services.tail_replay_service import NewEventRef
 
 
@@ -95,7 +99,7 @@ async def test_a_dry_run_does_every_fold_and_keeps_none_of_it(async_db, factory)
     report = await repair_all(factory, apply=False)
 
     (a,) = report.athletes
-    assert (a.user_id, a.pending, a.folded, a.refused) == (uid, 3, 3, {})  # what --apply would do…
+    assert (a.user_id, a.considered, a.folded, a.refused) == (uid, 3, 3, {})  # what --apply would do…
     assert not report.applied
     assert await _snapshot(async_db) == before  # …and nothing kept
     assert await _head_cols(async_db, uid) == head_before
@@ -110,13 +114,13 @@ async def test_apply_folds_oldest_first_and_the_head_equals_chronological_loggin
     report = await repair_all(factory, apply=True)
 
     (a,) = report.athletes
-    assert (a.pending, a.folded, a.refused) == (3, 3, {})
+    assert (a.considered, a.folded, a.refused) == (3, 3, {})
     assert await _head_cols(async_db, uid) == oracle
     assert (await _snapshot(async_db))["receipts"] == 3  # one correction per event
     assert await users_with_pending_events(async_db) == []
 
 
-async def test_a_second_run_finds_nothing(async_db, factory):
+async def test_a_second_run_finds_nothing_left_to_fold(async_db, factory):
     await seed_definitions(async_db)
     await _athlete_with_pending(async_db, "again", [W(5), W(20)], [W(8)])
     await repair_all(factory, apply=True)
@@ -203,7 +207,7 @@ async def test_events_written_before_capture_are_counted_and_untouched(async_db,
     report = await repair_all(factory, apply=True)
 
     a = report.athletes[0]
-    assert (a.not_capturable, a.pending, a.folded) == (1, 0, 0)
+    assert (a.not_capturable, a.considered, a.folded) == (1, 1, 0)
     assert await _snapshot(async_db) == before
 
 
@@ -239,10 +243,10 @@ async def test_only_athletes_with_waiting_events_are_listed(async_db):
 
 def test_the_report_reads_plainly(capsys):
     _print(RepairReport(applied=False, athletes=[
-        AthleteRepair(user_id=7, pending=3, folded=2, refused={"window_exceeded": 1}, not_capturable=4, ambiguous_tie=0),
+        AthleteRepair(user_id=7, considered=3, folded=2, refused={"window_exceeded": 1}, not_capturable=4, ambiguous_tie=0, gone=1),
     ]))
     out = capsys.readouterr().out
-    assert "user 7: considered 3, folded 2, refused [window_exceeded=1], not capturable 4" in out
+    assert "user 7: considered 3, folded 2, refused [window_exceeded=1], not capturable 4, ambiguous tie 0, gone 1" in out
     assert "Would fold 2 event(s)" in out and "Nothing was written" in out
     _print(RepairReport(applied=True, athletes=[]))
     assert "Nothing to do" in capsys.readouterr().out
@@ -262,3 +266,124 @@ async def test_a_dry_run_on_a_callers_session_leaves_nothing_even_if_the_caller_
 
     assert result.folded == 1
     assert await _snapshot(async_db) == before
+
+
+# ----- discovery is a hint: eligibility is decided under the lock, from fresh data ---------------- #
+
+async def _live_write(factory, uid: int, ev: Ev) -> None:
+    """A live writer, on its own connection, with the fold-on-arrival flag on."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(settings, "APPLY_LATE_EVENTS", True)
+        async with factory() as other:
+            await arrive_event(other, uid, ev)
+
+
+async def test_a_tied_event_a_writer_folds_after_discovery_is_not_overtaken(async_db, factory, monkeypatch):
+    """Review repro: discovery saw a lone W(8); before its turn a live writer folded a later W(8).
+    Folding the older one now would place it after the newer, against arrival order."""
+    await seed_definitions(async_db)
+    uid, refs = await _athlete_with_pending(async_db, "race-disc", [W(5), W(20)], [W(8, dominant_movement_pattern="squat")])
+    newer = W(8, dominant_movement_pattern="hinge")
+    oracle = await oracle_head(async_db, "race-disc-oracle@test.com", [W(5), newer, W(20)])  # the applied events
+    real_discover = repair._discover
+
+    async def discover_then_a_writer_arrives(db, user_id):
+        found = await real_discover(db, user_id)
+        await _live_write(factory, user_id, newer)
+        return found
+
+    monkeypatch.setattr(repair, "_discover", discover_then_a_writer_arrives)
+
+    report = await repair_all(factory, apply=True)
+
+    a = report.athletes[0]
+    assert (a.considered, a.folded, a.ambiguous_tie) == (1, 0, 1)
+    assert await is_record_only(async_db, refs[0])  # left as it was
+    assert await _head_cols(async_db, uid) == oracle
+
+
+async def test_a_tied_event_a_writer_folds_between_two_repairs_is_not_overtaken(async_db, factory, monkeypatch):
+    """The second gap: the first fold commits, a writer gets in before the second candidate's
+    turn. Re-checking only at discovery would miss it."""
+    await seed_definitions(async_db)
+    uid, refs = await _athlete_with_pending(
+        async_db, "race-commit", [W(5), W(20)], [W(8, dominant_movement_pattern="squat"), W(12)]
+    )
+    newer = W(12, sleep_quality=3.0)
+    oracle = await oracle_head(
+        async_db, "race-commit-oracle@test.com",
+        [W(5), W(8, dominant_movement_pattern="squat"), newer, W(20)],  # the second candidate stays out
+    )
+    real_lock = repair.lock_athlete_chain
+    calls = {"n": 0}
+
+    async def lock_after_a_writer_got_in(db, user_id):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the first candidate has been folded and committed
+            await _live_write(factory, user_id, newer)
+        await real_lock(db, user_id)
+
+    monkeypatch.setattr(repair, "lock_athlete_chain", lock_after_a_writer_got_in)
+
+    report = await repair_all(factory, apply=True)
+
+    a = report.athletes[0]
+    assert (a.considered, a.folded, a.ambiguous_tie) == (2, 1, 1)
+    assert [await is_record_only(async_db, ref) for ref in refs] == [False, True]
+    assert await _head_cols(async_db, uid) == oracle
+
+
+async def test_a_candidate_a_writer_already_folded_is_counted_as_gone(async_db, factory, monkeypatch):
+    await seed_definitions(async_db)
+    uid, refs = await _athlete_with_pending(async_db, "gone", [W(5), W(20)], [W(8)])
+    real_discover = repair._discover
+    held: list[object] = []  # the identity map only weakly references rows
+
+    async def discover_then_it_is_folded(db, user_id):
+        found = await real_discover(db, user_id)
+        held.append(await db.get(WorkoutLogORM, refs[0].event_id))  # held strongly: the session has the row as it was
+        async with factory() as other:
+            outcome = await fold_late_events(other, user_id, [refs[0]])
+            await other.commit()
+            assert outcome.applied
+        return found
+
+    monkeypatch.setattr(repair, "_discover", discover_then_it_is_folded)
+
+    report = await repair_all(factory, apply=True)
+
+    a = report.athletes[0]
+    assert (a.considered, a.folded, a.gone) == (1, 0, 1)
+
+
+async def _lock_is_held(factory, uid: int) -> bool:
+    async with factory() as probe:
+        got = (await probe.execute(
+            text("SELECT pg_try_advisory_xact_lock(:ns, :uid)"),
+            {"ns": STATE_CHAIN_LOCK_NAMESPACE, "uid": uid},
+        )).scalar_one()
+        await probe.rollback()
+    return not got
+
+
+@pytest.mark.parametrize("apply", [False, True])
+async def test_the_lock_is_held_between_a_dry_runs_events_and_released_between_an_applys(
+    async_db, factory, monkeypatch, apply
+):
+    """What the runbook says: a dry run holds the athlete's lock from its first event until its
+    rollback; an apply run lets go after each fold."""
+    await seed_definitions(async_db)
+    uid, _ = await _athlete_with_pending(async_db, f"lock-{apply}", [W(5), W(20)], [W(8), W(12)])
+    real_lock = repair.lock_athlete_chain
+    held_before_each: list[bool] = []
+
+    async def observing_lock(db, user_id):
+        held_before_each.append(await _lock_is_held(factory, user_id))
+        await real_lock(db, user_id)
+
+    monkeypatch.setattr(repair, "lock_athlete_chain", observing_lock)
+
+    await repair_all(factory, apply=apply)
+
+    assert held_before_each == [False, not apply]  # the second candidate: held iff a dry run
+    assert not await _lock_is_held(factory, uid)  # and released at the end either way
