@@ -244,3 +244,33 @@ SELECT replay_refusal, count(*) FROM benchmark_observations WHERE state_disposit
 append-only (a trigger refuses UPDATE and DELETE); removing them is a deliberate operator act
 (`ALTER TABLE ... DISABLE TRIGGER`) and leaves correction heads with no lineage, so don't, unless
 you are discarding the corrected history on purpose. `a057`'s downgrade drops `replay_refusal`.
+
+**Folding events that are already waiting (P3c).** `APPLY_LATE_EVENTS` folds events as they
+arrive. Ones recorded earlier (before the flag, or refused for a reason that has since gone) are
+folded by an operator, through the same function and the same proof:
+
+```bash
+sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events            # report: does every fold, keeps none
+sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events --apply    # write
+sudo docker compose exec -T perf-lab-api python -m app.scripts.fold_late_events --user-id 7
+```
+
+It needs no flag. Per athlete it reports events found waiting, folded, refused by code, **not
+capturable** (recorded before `a055`: no captured inputs, so they are never repaired),
+**ambiguous tie** (another event shares the exact timestamp and the arrival order can't be
+recovered; left alone) and **gone** (folded by a live writer before its turn). Events fold oldest
+first, one correction each.
+
+- **Each event is decided under the athlete's chain lock, from fresh data.** The list of waiting
+  events is only a hint, so a live writer cannot slip a tied event in behind it.
+- **An apply run** takes the lock per event and commits after each: that athlete's writers wait at
+  most one fold.
+- **A dry run is different.** Its folds must stay visible to the next one, so it is a single
+  transaction per athlete that holds the athlete's lock from its first event until its final
+  rollback. That athlete's writes wait for it, so run it when the athlete is quiet or the number
+  of waiting events is small.
+- **The dry run's report is what `--apply` would do only if the history doesn't change in
+  between.** A writer can add events, and those change what folds.
+- **Only folded events leave the waiting set.** Refused, not-capturable and ambiguous events show
+  up again on every run (a refusal code is rewritten each time `--apply` retries). A run that
+  reports nothing folded is not proof that nothing is waiting.
