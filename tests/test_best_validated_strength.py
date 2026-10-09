@@ -40,10 +40,13 @@ async def _definition(db) -> BenchmarkDefinition:
 
 
 async def _obs(db, user_id: int, def_id: int, raw: float, *, validity: str = "valid") -> BenchmarkObservation:
+    # A tested max, as the writers record one: the provenance is what makes it "demonstrated".
     o = BenchmarkObservation(
         user_id=user_id, benchmark_definition_id=def_id, raw_value=raw,
         observed_at=datetime.now(UTC).replace(tzinfo=None), validity_status=validity,
-        source="benchmark_test",
+        source="benchmark_test", source_type="athlete_entry", collection_mode="retest",
+        evidence_type="direct_measurement", value_semantics="measured",
+        protocol_validity="valid", capacity_effect="bidirectional_update",
     )
     db.add(o)
     await db.commit()

@@ -23,12 +23,159 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic import observation_authority as oa
 from app.logic.prescription_evidence import BasisSelection, EvidenceRow, select_basis
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
+
+# A point in an athlete's observation order: ``(observed_at, id)``. Time alone cannot order two
+# tests recorded for the same instant; the id (arrival order) does.
+Position = tuple[datetime, int]
+
+
+def _usable_row() -> ColumnElement[bool]:
+    return and_(
+        # Positively valid: an unknown or pending status never qualifies (ingestion requires
+        # "valid", and a pending row has received no state application).
+        BenchmarkObservation.validity_status == "valid",
+        BenchmarkObservation.quarantined_at.is_(None),
+    )
+
+
+def _current_provenance() -> ColumnElement[bool]:
+    return and_(
+        BenchmarkObservation.source_type.in_(oa.DEMONSTRATED_SOURCE_TYPES),
+        BenchmarkObservation.evidence_type.in_(oa.DEMONSTRATED_EVIDENCE_TYPES),
+        BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
+        _not_protocol_invalid(),
+    )
+
+
+def _not_protocol_invalid() -> ColumnElement[bool]:
+    return or_(
+        BenchmarkObservation.protocol_validity.is_(None),
+        BenchmarkObservation.protocol_validity != oa.PV_INVALID,
+    )
+
+
+def _migrated_legacy() -> ColumnElement[bool]:
+    return and_(
+        _not_protocol_invalid(),
+        BenchmarkObservation.source_type == oa.ST_LEGACY_UNKNOWN,
+        BenchmarkObservation.provenance_operation == oa.OP_SCHEMA_BACKFILL,
+        BenchmarkObservation.migration_version == oa.LEGACY_MIGRATION_VERSION,
+        BenchmarkObservation.authority_resolution_reason == oa.LEGACY_MIGRATION_REASON,
+        BenchmarkObservation.observation_model == oa.LEGACY_OBSERVATION_MODEL,
+        BenchmarkObservation.evidence_type == oa.se.EV_DIRECT_MEASUREMENT,
+        BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
+    )
+
+
+def demonstrated_strength_clause() -> ColumnElement[bool]:
+    """SQL form of :func:`app.logic.observation_authority.is_demonstrated_strength`, plus the
+    query-level conditions (valid, not quarantined). A test pins the two forms to each other."""
+    return and_(_usable_row(), _current_provenance())
+
+
+def decline_protection_clause() -> ColumnElement[bool]:
+    """SQL form of :func:`app.logic.observation_authority.is_decline_protection_evidence`:
+    demonstrated strength, or a row carrying the legacy migration's whole record."""
+    return and_(_usable_row(), or_(_current_provenance(), _migrated_legacy()))
+
+
+async def _max_raw(
+    db: AsyncSession, user_id: int, code: str, clause: ColumnElement[bool],
+    *, exclude_observation_id: int | None, before: Position | None = None,
+    after: Position | None = None,
+) -> float | None:
+    conditions = [BenchmarkObservation.user_id == user_id, BenchmarkDefinition.code == code, clause]
+    if exclude_observation_id is not None:
+        conditions.append(BenchmarkObservation.id != exclude_observation_id)
+    if before is not None:
+        at, oid = before
+        conditions.append(or_(
+            BenchmarkObservation.observed_at < at,
+            and_(BenchmarkObservation.observed_at == at, BenchmarkObservation.id < oid),
+        ))
+    if after is not None:
+        at, oid = after
+        conditions.append(or_(
+            BenchmarkObservation.observed_at > at,
+            and_(BenchmarkObservation.observed_at == at, BenchmarkObservation.id > oid),
+        ))
+    res = await db.execute(
+        select(func.max(BenchmarkObservation.raw_value))
+        .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
+        .where(*conditions)
+    )
+    return res.scalar_one_or_none()
+
+
+async def demonstrated_watermark(
+    db: AsyncSession, user_id: int, code: str, *, exclude_observation_id: int | None = None
+) -> float | None:
+    """The best currently valid DEMONSTRATED e1RM for this athlete and lift (ADR-0066).
+
+    The public "best validated" figure. Only measured max tests by current provenance count (see
+    ``oa.is_demonstrated_strength``); migrated legacy history never does, because the migration
+    cannot prove a max. Derived from ``max(raw_value)``, so it is monotone while valid tests are
+    added and may fall when the top one is corrected or quarantined (a data correction, not a
+    decline).
+    """
+    return await _max_raw(
+        db, user_id, code, demonstrated_strength_clause(),
+        exclude_observation_id=exclude_observation_id,
+    )
+
+
+async def decline_prior_watermark(
+    db: AsyncSession, user_id: int, code: str, *,
+    exclude_observation_id: int | None = None, before: Position | None = None,
+    after: Position | None = None,
+) -> float | None:
+    """The prior a strength decline is judged against (ADR-0066): demonstrated strength plus the
+    legacy migration's tests, so an older athlete's next low test is still a candidate. A training
+    estimate is never in it, however high. ``before`` limits it to tests strictly before a position
+    in the established ``(observed_at, id)`` order (the prior a candidate was opened against);
+    ``after`` to tests strictly after one (what has been demonstrated since). Two tests with the
+    same timestamp are ordered by id, so a tied test that arrived earlier belongs to the prior and a
+    tied test that arrived later belongs to what came after."""
+    return await _max_raw(
+        db, user_id, code, decline_protection_clause(),
+        exclude_observation_id=exclude_observation_id, before=before, after=after,
+    )
+
+
+async def estimated_pr_baseline(
+    db: AsyncSession, user_id: int, code: str, *, formula: str
+) -> float | None:
+    """The bar a training-derived e1RM must clear to be a PR (extraction's ``is_pr``).
+
+    The best of the athlete's demonstrated strength and their earlier estimates made by the
+    SAME formula. Estimates from a different formula are not comparable (a formula change is not
+    progress), and an estimate is never a demonstrated watermark: this is PR tracking for
+    estimates only, kept apart from :func:`demonstrated_watermark`.
+    """
+    res = await db.execute(
+        select(func.max(BenchmarkObservation.raw_value))
+        .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
+        .where(
+            BenchmarkObservation.user_id == user_id,
+            BenchmarkDefinition.code == code,
+            or_(
+                demonstrated_strength_clause(),
+                and_(
+                    BenchmarkObservation.validity_status == "valid",
+                    BenchmarkObservation.quarantined_at.is_(None),
+                    BenchmarkObservation.formula == formula,
+                ),
+            ),
+        )
+    )
+    return res.scalar_one_or_none()
 
 
 async def select_prescription_basis(
