@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.logic.strength_calibration import resolve_effort
+
 # --- Provenance vocabularies (persisted as text; enforced in code) -----------
 
 SOURCE_BENCHMARK_TEST = "benchmark_test"
@@ -140,6 +142,9 @@ def is_e1rm_informative(
     """
     if reps is None or reps < 1 or reps > 5:
         return False
-    if effort_fidelity != FIDELITY_SET_LEVEL:
-        return (rpe is not None and rpe >= 9.0) or (rir is not None and rir <= 1.0)
-    return (rpe is not None and rpe >= 8.0) or (rir is not None and rir <= 2.0)
+    effort = resolve_effort(rpe, rir)
+    if not effort.admissible:
+        return False  # unreported, or RPE and RIR contradict each other
+    assert effort.eff_rpe is not None
+    bar = 8.0 if effort_fidelity == FIDELITY_SET_LEVEL else 9.0
+    return effort.eff_rpe >= bar
