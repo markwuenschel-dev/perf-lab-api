@@ -116,12 +116,35 @@ async def apply_plan(db: AsyncSession, user_id: int, plan: TailReplayPlan) -> At
     return head
 
 
+async def _owned_event_rows(
+    db: AsyncSession, user_id: int, refs: list[NewEventRef]
+) -> list[WorkoutLog | BenchmarkObservation] | None:
+    """The events behind ``refs``, or None if any is unknown or belongs to another athlete.
+    Checked before anything is written, so a bad reference can never cause a write to
+    someone else's event."""
+    rows: list[WorkoutLog | BenchmarkObservation] = []
+    for ref in refs:
+        if ref.kind == "workout":
+            row: WorkoutLog | BenchmarkObservation | None = await db.get(WorkoutLog, ref.event_id)
+        elif ref.kind == "benchmark":
+            row = await db.get(BenchmarkObservation, ref.event_id)
+        else:
+            return None
+        if row is None or row.user_id != user_id:
+            return None
+        rows.append(row)
+    return rows
+
+
 async def fold_late_events(
     db: AsyncSession, user_id: int, refs: list[NewEventRef]
 ) -> FoldOutcome:
     """Try to fold record-only ``refs`` into the state. Never raises for a refusal and never
     commits; see the module docstring."""
     await lock_athlete_chain(db, user_id)
+    rows = await _owned_event_rows(db, user_id, refs)
+    if rows is None:
+        return FoldOutcome(applied=False, refusal="ownership")  # writes nothing, anywhere
     refusal: str | None = None
     head: AthleteState | None = None
     correction_id: int | None = None
@@ -142,8 +165,13 @@ async def fold_late_events(
             logger.exception("late-event fold failed for user %s; kept record-only", user_id)
             refusal = "internal_error"
     if refusal is not None:
-        for ref in refs:
-            (await _event_row(db, ref)).replay_refusal = refusal
+        for row in rows:
+            # A rolled-back savepoint expires what it touched: read the rows afresh. Only an
+            # event that is actually waiting (record-only) carries a refusal; an applied one has
+            # nothing to explain.
+            await db.refresh(row)
+            if row.state_disposition == "record_only":
+                row.replay_refusal = refusal
         return FoldOutcome(applied=False, refusal=refusal)
     return FoldOutcome(applied=True, correction_id=correction_id, head=head)
 

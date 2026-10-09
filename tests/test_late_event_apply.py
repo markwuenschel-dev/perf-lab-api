@@ -37,6 +37,7 @@ from replay_support import (
     W,
     arrive_event,
     head_row,
+    is_record_only,
     oracle_head,
     seed_definitions,
     seeded_athlete,
@@ -420,9 +421,9 @@ async def test_two_late_events_racing_on_separate_connections_both_fold_exactly(
 @pytest.mark.parametrize("seed", range(12))
 async def test_random_sequences_within_the_declared_policy_match_chronological_logging(async_db, flag, seed):
     """Up to ``MAX_REPLAY_EVENTS`` events in a random arrival order (so up to that many
-    corrections), mixed workouts and benchmarks, some timestamps tied. The head must equal the
-    chronological one every time the live writer folds, and a refusal must leave the event
-    record-only (never a wrong head)."""
+    corrections), mixed workouts and benchmarks, some timestamps tied. Every case is inside the
+    declared policy, so every late event must fold, and the head must equal the one the same
+    events produce logged chronologically (equal times in arrival order)."""
     await seed_definitions(async_db)
     rng = random.Random(seed)
     n = rng.randint(4, MAX_REPLAY_EVENTS)
@@ -436,32 +437,31 @@ async def test_random_sequences_within_the_declared_policy_match_chronological_l
                             sleep_quality=rng.choice([None, 3.0, 8.0])))
     arrival = list(events)
     rng.shuffle(arrival)
-    # Reference order: by time, equal times in arrival order (the tie rule).
-    chronological = sorted(arrival, key=lambda e: e.hours)
-    oracle = await oracle_head(async_db, f"rnd-oracle-{seed}@test.com", chronological)
+    oracle = await oracle_head(async_db, f"rnd-oracle-{seed}@test.com", sorted(arrival, key=lambda e: e.hours))
     uid = await seeded_athlete(async_db, f"rnd-{seed}@test.com")
 
-    for ev in arrival:
-        await arrive_event(async_db, uid, ev)
+    refs = [await arrive_event(async_db, uid, ev) for ev in arrival]
 
-    unfolded = (await async_db.execute(
-        select(func.count()).select_from(WorkoutLogORM).where(
-            WorkoutLogORM.user_id == uid, WorkoutLogORM.state_disposition == "record_only")
-    )).scalar_one() + (await async_db.execute(
-        select(func.count()).select_from(BenchmarkObservation).where(
-            BenchmarkObservation.user_id == uid, BenchmarkObservation.state_disposition == "record_only")
-    )).scalar_one()
-    if unfolded == 0:
-        assert await _head_cols(async_db, uid) == oracle
-    else:
-        # Something was refused (outside the declared policy): it must say why, and nothing
-        # applied may be wrong; the head can only differ by the refused events.
-        refused = (await async_db.execute(
-            select(func.count()).select_from(WorkoutLogORM).where(
-                WorkoutLogORM.user_id == uid, WorkoutLogORM.state_disposition == "record_only",
-                WorkoutLogORM.replay_refusal.is_(None))
-        )).scalar_one()
-        assert refused == 0
+    assert [await is_record_only(async_db, ref) for ref in refs] == [False] * n  # all folded
+    assert await _head_cols(async_db, uid) == oracle
+
+
+async def test_a_refusal_mid_sequence_leaves_a_head_equal_to_the_events_actually_applied(async_db, flag):
+    """A refused event must not leave the head wrong for the others. The strength-axis
+    benchmark is refused (the decline machine could judge it); the head must equal
+    chronological logging of exactly the events that were applied."""
+    await seed_definitions(async_db)
+    refused = Ev("benchmark", 9, raw=150.0, code="pl_e1rm_squat")
+    arrivals = [W(4), W(20), W(8, dominant_movement_pattern="hinge"), refused, W(12, sleep_quality=3.0)]
+    uid = await seeded_athlete(async_db, "subset@test.com")
+
+    refs = [await arrive_event(async_db, uid, ev) for ev in arrivals]
+
+    state = [await is_record_only(async_db, ref) for ref in refs]
+    assert state == [False, False, False, True, False]  # only the strength benchmark stays out
+    applied = [ev for ev, waiting in zip(arrivals, state, strict=True) if not waiting]
+    oracle = await oracle_head(async_db, "subset-oracle@test.com", sorted(applied, key=lambda e: e.hours))
+    assert await _head_cols(async_db, uid) == oracle
 
 
 # ----- real safety decisions -------------------------------------------------------------------- #
@@ -513,3 +513,116 @@ async def test_off_by_default_a_late_benchmark_stays_record_only(async_db):
     await async_db.refresh(obs)
     assert (obs.state_disposition, obs.replay_refusal) == ("record_only", None)  # never attempted
     assert await _count(async_db, StateCorrection, uid) == 0
+
+
+# ----- ownership: a bad reference never writes to someone else's event -------------------------- #
+
+async def test_a_foreign_reference_is_refused_without_writing_to_the_foreign_event(async_db):
+    await seed_definitions(async_db)
+    mine = await seeded_athlete(async_db, "own-mine@test.com")
+    theirs = await seeded_athlete(async_db, "own-theirs@test.com")
+    for uid in (mine, theirs):
+        await arrive_event(async_db, uid, W(5))
+        await arrive_event(async_db, uid, W(20))
+    foreign = await arrive_event(async_db, theirs, W(10))  # theirs, record-only
+    own = await arrive_event(async_db, mine, W(10))
+
+    outcome = await fold_late_events(async_db, mine, [own, foreign])
+
+    assert (outcome.applied, outcome.refusal) == (False, "ownership")
+    for ref in (foreign, own):
+        row = await _workout(async_db, ref.event_id)
+        assert (row.state_disposition, row.replay_refusal) == ("record_only", None)
+    assert await _count(async_db, StateCorrection) == 0
+
+
+async def test_an_oversized_batch_with_a_foreign_reference_is_refused_as_ownership_first(async_db):
+    await seed_definitions(async_db)
+    mine = await seeded_athlete(async_db, "own-big@test.com")
+    theirs = await seeded_athlete(async_db, "own-big-t@test.com")
+    for uid in (mine, theirs):
+        await arrive_event(async_db, uid, W(30))
+    foreign = await arrive_event(async_db, theirs, W(3))
+    refs = [await arrive_event(async_db, mine, W(h)) for h in range(1, 5)] + [foreign]  # five
+
+    outcome = await fold_late_events(async_db, mine, refs)
+
+    assert outcome.refusal == "ownership"
+    assert (await _workout(async_db, foreign.event_id)).replay_refusal is None
+    for r in refs:
+        assert (await _workout(async_db, r.event_id)).replay_refusal is None
+
+
+async def test_an_unknown_reference_is_refused(async_db):
+    uid = await seeded_athlete(async_db, "own-unknown@test.com")
+
+    outcome = await fold_late_events(async_db, uid, [NewEventRef("workout", 987654)])
+
+    assert (outcome.applied, outcome.refusal) == (False, "ownership")
+
+
+async def test_a_refusal_is_not_written_onto_an_event_that_is_already_applied(async_db):
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "own-applied@test.com")
+    on_time = await arrive_event(async_db, uid, W(5))
+    await arrive_event(async_db, uid, W(20))
+
+    outcome = await fold_late_events(async_db, uid, [on_time])
+    await async_db.flush()  # a pending write would be visible to the read below
+
+    assert outcome.refusal == "not_record_only"
+    assert (await _workout(async_db, on_time.event_id)).replay_refusal is None
+
+
+# ----- the declared limits, at exactly the boundary --------------------------------------------- #
+
+def _boundary_events() -> tuple[list[Ev], list[Ev]]:
+    """Four on-time events (the head at 50 h) and four late ones; the earliest late event is
+    exactly 48 h before the head, and 4 + 4 = 8 events are replayed."""
+    tail = [W(20), W(30, dominant_movement_pattern="squat"), W(40), W(50, sleep_quality=4.0)]
+    late = [W(2), B(8, raw=70.0), W(14, dominant_movement_pattern="hinge"), W(35, sleep_quality=3.0)]
+    return tail, late
+
+
+@pytest.mark.parametrize("order", list(itertools.permutations(range(4))))
+async def test_a_four_event_batch_over_eight_replayed_events_at_exactly_48_hours_in_every_order(async_db, order):
+    await seed_definitions(async_db)
+    tail, late = _boundary_events()
+    tag = "edge" + "".join(map(str, order))
+    oracle = await oracle_head(async_db, f"{tag}-oracle@test.com", sorted([*tail, *late], key=lambda e: e.hours))
+    uid = await seeded_athlete(async_db, f"{tag}@test.com")
+    for ev in tail:
+        await arrive_event(async_db, uid, ev)
+    refs = [await arrive_event(async_db, uid, late[i]) for i in order]  # flag off: record-only
+
+    outcome = await fold_late_events(async_db, uid, refs)
+    await async_db.commit()
+
+    assert outcome.applied, outcome.refusal
+    assert await _head_cols(async_db, uid) == oracle
+
+
+async def test_one_second_past_the_window_is_refused(async_db):
+    await seed_definitions(async_db)
+    tail, late = _boundary_events()
+    late[0] = W(2 - 1 / 3600)  # 48 h and one second before the head
+    uid = await seeded_athlete(async_db, "edge-window@test.com")
+    for ev in tail:
+        await arrive_event(async_db, uid, ev)
+    refs = [await arrive_event(async_db, uid, ev) for ev in late]
+
+    outcome = await fold_late_events(async_db, uid, refs)
+
+    assert (outcome.applied, outcome.refusal) == (False, "window_exceeded")
+
+
+async def test_nine_replayed_events_are_refused(async_db):
+    await seed_definitions(async_db)
+    uid = await seeded_athlete(async_db, "edge-tail@test.com")
+    for h in (20, 25, 30, 35, 40):
+        await arrive_event(async_db, uid, W(h))
+    refs = [await arrive_event(async_db, uid, W(h)) for h in (10, 12, 14, 16)]  # 5 + 4 = 9
+
+    outcome = await fold_late_events(async_db, uid, refs)
+
+    assert (outcome.applied, outcome.refusal) == (False, "tail_too_long")

@@ -36,6 +36,7 @@ class Ev:
     hours: float
     raw: float = 0.0
     extra: dict[str, Any] | None = None
+    code: str = "aero_test"  # the benchmark definition (benchmarks only)
 
     @property
     def ts(self) -> datetime:
@@ -121,7 +122,7 @@ async def arrive_event(db, uid: int, ev: Ev) -> NewEventRef:
         return NewEventRef("workout", wid)
     await benchmark_service.create_observation(
         db, uid, BenchmarkObservationCreate(
-            benchmark_code="aero_test", raw_value=ev.raw, source="benchmark_test", observed_at=ev.ts,
+            benchmark_code=ev.code, raw_value=ev.raw, source="benchmark_test", observed_at=ev.ts,
         ),
     )
     oid = (await db.execute(
