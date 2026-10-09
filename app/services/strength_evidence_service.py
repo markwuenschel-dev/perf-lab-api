@@ -66,6 +66,7 @@ from app.schemas.benchmarks import (
     StrengthReport,
 )
 from app.services import benchmark_service
+from app.services.e1rm_estimation import estimate_set_e1rm
 
 SQUAT_E1RM_CODE = "pl_e1rm_squat"
 BENCH_E1RM_CODE = "pl_e1rm_bench"
@@ -117,10 +118,15 @@ def derived_value(report: StrengthReport) -> float:
     """The kilograms a report stands for: a reported set's e1RM (the one shared estimate),
     otherwise the reported weight. The evidence and the state seed both use this."""
     if report.method == "rep_set":
-        assert report.load_kg is not None and report.reps is not None  # the schema guarantees it
-        return sc.e1rm_from_set(report.load_kg, report.reps)
+        return _set_estimate(report).value
     assert report.value_kg is not None  # the schema guarantees it for tested_max and estimate
     return report.value_kg
+
+
+def _set_estimate(report: StrengthReport) -> sc.E1rmEstimate:
+    """The estimate a reported set stands for: the same function workout extraction calls."""
+    assert report.load_kg is not None and report.reps is not None  # the schema guarantees it
+    return estimate_set_e1rm(report.load_kg, report.reps, report.rpe, report.rir)
 
 
 def seed_values(reports: Sequence[StrengthReport]) -> dict[str, float]:
@@ -192,20 +198,26 @@ def _observation_for(report: StrengthReport, collection_mode: str) -> BenchmarkO
     """The observation a report becomes. Every semantic field is derived here, never taken
     from the client."""
     if report.method == "rep_set":
+        estimate = _set_estimate(report)
         return BenchmarkObservationCreate(
             benchmark_code=report.benchmark_code,
             source=se.SOURCE_MANUAL,
             collection_mode=collection_mode,
             observation_model=STRENGTH_REPORT_MODEL,
-            raw_value=derived_value(report),
-            evidence_type=se.EV_ESTIMATED_FROM_TRAINING_SET,
+            raw_value=estimate.value,
+            # A model's point estimate carries no capacity authority; the legacy Epley row keeps
+            # its label (P4-2b).
+            evidence_type=(
+                se.EV_MODELED_ESTIMATE if estimate.modeled else se.EV_ESTIMATED_FROM_TRAINING_SET
+            ),
             value_semantics=se.VS_ESTIMATED,
             affects_prescription=True,
             reps=report.reps,
             load_kg=report.load_kg,
             rpe=report.rpe,
             rir=report.rir,
-            formula="epley",
+            formula=estimate.formula,
+            model_version=estimate.model_version,
             # A reported set's effort is a statement about that one set.
             effort_fidelity=se.FIDELITY_SET_LEVEL,
         )
@@ -238,25 +250,37 @@ async def _already_recorded(
     observation: BenchmarkObservationCreate,
     performed_at: datetime | None,
 ) -> bool:
-    """Whether this writer already recorded exactly this report for the athlete: the same lift,
-    collection mode, method (as its evidence type), performance date, and reported numbers."""
+    """Whether this writer already recorded exactly this report for the athlete.
+
+    The identity of a report is what the athlete SUBMITTED: the lift, collection mode, performance
+    date and reported numbers, and the method. Never what was derived from them. A reported set
+    (``reps`` present) is matched on its load, reps, RPE and RIR and not on the e1RM computed from
+    them or on the model that computed it, so a retry of a submission recorded under another
+    formula (Epley before the chart, the chart after) is recognised and adds nothing: no second
+    observation, no projection change, no re-seed. The other methods' reported weight is the
+    submission, so it is matched as before, with its evidence type as the method.
+    """
     row = BenchmarkObservation
+    conditions = [
+        row.user_id == user_id,
+        BenchmarkDefinition.code == observation.benchmark_code,
+        row.provenance_operation == oa.OP_STRENGTH_REPORT,
+        row.collection_mode == observation.collection_mode,
+        row.performed_at.is_not_distinct_from(performed_at),
+        row.load_kg.is_not_distinct_from(observation.load_kg),
+        row.reps.is_not_distinct_from(observation.reps),
+        row.rpe.is_not_distinct_from(observation.rpe),
+        row.rir.is_not_distinct_from(observation.rir),
+    ]
+    if observation.reps is None:
+        conditions += [
+            row.evidence_type == observation.evidence_type,
+            row.raw_value == observation.raw_value,
+        ]
     found = await db.execute(
         select(row.id)
         .join(BenchmarkDefinition, row.benchmark_definition_id == BenchmarkDefinition.id)
-        .where(
-            row.user_id == user_id,
-            BenchmarkDefinition.code == observation.benchmark_code,
-            row.provenance_operation == oa.OP_STRENGTH_REPORT,
-            row.collection_mode == observation.collection_mode,
-            row.evidence_type == observation.evidence_type,
-            row.raw_value == observation.raw_value,
-            row.performed_at.is_not_distinct_from(performed_at),
-            row.load_kg.is_not_distinct_from(observation.load_kg),
-            row.reps.is_not_distinct_from(observation.reps),
-            row.rpe.is_not_distinct_from(observation.rpe),
-            row.rir.is_not_distinct_from(observation.rir),
-        )
+        .where(*conditions)
         .limit(1)
     )
     return found.first() is not None

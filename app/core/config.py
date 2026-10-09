@@ -148,6 +148,14 @@ class Settings(BaseSettings):
     # stay (they are the more accurate state, and their receipts say how they were made).
     APPLY_LATE_EVENTS: bool = False
 
+    # P4-2b: estimate a set's e1RM from the RPE/RIR chart (ADR-0056) instead of Epley, for the sets
+    # that have a known, consistent effort. Off by default: the estimate is the legacy Epley as
+    # before. Turning it on raises prescribed loads (the chart estimate is 0-12% above Epley for the
+    # same set), as a step per athlete on their next qualifying set; run
+    # `python -m app.scripts.e1rm_activation_report` first. Turning it off stops NEW chart rows;
+    # chart rows already written stay eligible for prescription until they age out (28 days).
+    E1RM_CHART_ESTIMATES: bool = False
+
     # CORS — comma-separated list of allowed origins.
     # Defaults to local dev origins only. In production you MUST pin an explicit prod
     # origin here via ALLOWED_ORIGINS (e.g. https://perflab.44-198-76-44.nip.io) —

@@ -42,6 +42,13 @@ EV_LEGACY_UNKNOWN = "legacy_unknown"
 # Retained as reported information; never a prescription basis, and — being estimated —
 # capped by observation_authority at an upward floor like any other non-measurement.
 EV_REPORTED_ESTIMATE = "reported_estimate"
+# An e1RM a model made from a set (the RPE/RIR chart, ADR-0056 / P4-2b). Unlike the legacy
+# Epley rows it is not a lower bound and not training-derived evidence of a floor: it is a
+# modeled point estimate, which can overshoot what the athlete can lift. It may inform a
+# prescription basis (the qualifying-set gate still applies) and nothing else: it carries no
+# capacity authority (observation_authority.evidence_cap), so it can never establish a
+# demonstrated capacity floor (ADR-0055).
+EV_MODELED_ESTIMATE = "modeled_estimate"
 
 CAPACITY_AUTHORITATIVE_EVIDENCE: frozenset[str] = frozenset(
     {EV_DIRECT_MEASUREMENT, EV_PROTOCOL_GRADE_ESTIMATE}

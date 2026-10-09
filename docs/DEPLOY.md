@@ -274,3 +274,37 @@ first, one correction each.
 - **Only folded events leave the waiting set.** Refused, not-capturable and ambiguous events show
   up again on every run (a refusal code is rewritten each time `--apply` retries). A run that
   reports nothing folded is not proof that nothing is waiting.
+
+## Chart e1RM estimates (P4-2b): turning them on, and stopping them
+
+No migration. `E1RM_CHART_ESTIMATES` (off by default) makes the e1RM stored for a **new** set with
+a known, consistent effort `load / chart(reps, effort)` instead of Epley (ADR-0056 amendment).
+Old rows are never recomputed. Deploying with the flag off changes nothing.
+
+**It raises prescribed loads.** The chart estimate is above Epley for the same set (about 5% at RPE 9
+and 9% at RPE 8, for the 1–5 rep sets that can size a load), the prescription takes the highest eligible value in its 28-day window, and the same
+number is the dose ladder's denominator. An athlete's basis moves by the whole step on their next
+qualifying set. Look first (read-only):
+
+```bash
+sudo docker compose exec -T perf-lab-api python -m app.scripts.e1rm_activation_report
+sudo docker compose exec -T perf-lab-api python -m app.scripts.e1rm_activation_report --user-id 7
+```
+
+Per athlete and lift it prints today's basis, the basis with the chart, the step in percent, the
+factor `load / e1rm_pre` is multiplied by, and how many eligible Epley rows it restated. It does
+not compare final prescribed loads (those also depend on the plan, readiness and gates), so read
+it as the size of the input change, not of the load change.
+
+**Turning it on:** add `E1RM_CHART_ESTIMATES=true` to `/opt/stack/infra/env/perf-lab-api.env`, then
+`sudo docker compose up -d perf-lab-api`.
+
+**Stopping it:** set it to `false` and recreate the container. New sets are Epley again. **Chart
+rows already written stay**, and stay eligible for prescription until they age out (28 days), so
+loads fall back gradually, not at once. There is no revert. Chart rows are labelled
+`evidence_type = 'modeled_estimate'`, `formula = 'rpe_rir_chart'`:
+
+```sql
+SELECT user_id, count(*), min(observed_at), max(observed_at)
+  FROM benchmark_observations WHERE formula = 'rpe_rir_chart' GROUP BY user_id;
+```
