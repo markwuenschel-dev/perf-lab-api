@@ -41,9 +41,10 @@ The decline watermark was `max(raw_value)` over every valid row of the lift, wor
 estimates included. An estimate is a model's extrapolation, not a lift: Epley could already
 overshoot what an athlete can do, and the chart estimate of ADR-0056 will too. Judged against such
 a prior, an honest test looks like a decline. **Demonstrated strength is now provenance, not a
-label**, and one definition serves both the decline machine's prior and
-`best_currently_validated_e1rm` (`observation_authority.is_demonstrated_strength`, SQL form in
-`benchmark_observation_repository`):
+label**. Two named rules share one definition of current provenance
+(`observation_authority.is_demonstrated_strength`, SQL form in `benchmark_observation_repository`): the
+public `best_currently_validated_e1rm` reports demonstrated strength only, and the decline machine's
+prior adds the legacy migration's tests (below). Demonstrated strength is:
 
 * a **measured max test**: `value_semantics = measured`, evidence `direct_measurement` or
   `protocol_grade_estimate`, source type `athlete_entry`, and not protocol-invalid;
@@ -65,15 +66,20 @@ measurement". The decline prior is therefore `decline_prior_watermark` (demonstr
 those rows); the public figure is `demonstrated_watermark` (current provenance only). No live write
 can produce the migration fields.
 
-**A candidate is only as good as the evidence it was opened on.** It is *supported* while it was
-opened under the current decline policy, its trigger is still a valid, unquarantined, protocol-valid
-measured test with the recorded value, and its recorded prior equals the prior derivable for that
-moment (decline-protection evidence dated at or before the trigger, excluding the trigger). A prior
-that was a training estimate under the old watermark, one changed by a backdated higher test or by a
-quarantine, or a trigger corrected since, makes it unsupported; a higher maximum today never
-rehabilitates it. An unsupported `active` candidate is retired (`dismissed`, reason
-`prior_not_demonstrated`) when the next observation arrives, and until then it is ignored by the
-prescription ceiling (which stays read-only).
+**A candidate is only as good as the evidence it was opened on.** It is *supported* only while all of
+these hold, each recomputed from the rows as they are now: it was opened under the current decline
+policy; its trigger is a valid, unquarantined measured test whose **effective authority** (the stored
+effect met with the effect derived from the row's current provenance, as ingestion computes it) is
+still bidirectional; the trigger still has the value and the time the candidate recorded (the retest
+interval runs from `created_at`); its recorded prior equals the prior derivable for that moment
+(decline-protection evidence dated at or before the trigger, excluding it); and nothing demonstrated
+since the trigger has re-demonstrated at or above that prior (a test the machine never saw, because it
+arrived record-only, must not leave the candidate's ceiling standing; the observation being processed
+is left out, since the machine handles its own re-demonstration). A prior that was a training estimate
+under the old watermark, a backdated higher test, a quarantine, a trigger corrected since: each makes
+it unsupported, and a higher maximum today never rehabilitates it. An unsupported `active` candidate
+is retired (`dismissed`, with the reason) when the next observation arrives, and until then it is
+ignored by the prescription ceiling, which stays read-only.
 
 Training estimates keep their own bar for "is this a PR" (`estimated_pr_baseline`), per formula:
 estimates from different formulas are not comparable and a formula change is not progress.

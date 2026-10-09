@@ -11,7 +11,9 @@ Pinned here:
 
 * the Python predicate and the SQL clause are the same rule, and both match an independently
   written table of what qualifies (a grid over every provenance combination, against the database);
-* the decline machine's prior and the public ``best_currently_validated_e1rm`` are one function;
+* two named rules share one definition of current provenance: the public ``best_currently_validated_e1rm``
+  (demonstrated strength only) and the decline machine's prior (that, plus the legacy migration's
+  record); migrated history never reads as validated strength;
 * both directions, through the real writers: a high training estimate does NOT make an honest test
   look like a decline (prior 150, passthrough, strength unchanged), and genuinely declining
   measured tests still open a candidate against 150 and hold strength;
@@ -278,7 +280,7 @@ async def test_quarantined_and_invalid_rows_are_never_demonstrated(async_db):
     assert await demonstrated_watermark(async_db, user.id, CODE) == 150.0
 
 
-# ----- one function behind both watermarks -------------------------------------------------------- #
+# ----- two watermarks over one definition of current provenance -------------------------------------------------------- #
 
 async def test_the_decline_prior_and_the_public_figure_agree_on_current_provenance_and_differ_only_by_legacy(async_db):
     user = await _user(async_db, "dem-same@test.com")
@@ -630,7 +632,11 @@ async def test_a_candidate_on_current_evidence_is_supported(async_db):
     assert await sds._candidate_is_supported(async_db, candidate) is True
 
 
-@pytest.mark.parametrize("change", ["trigger_corrected_up", "trigger_quarantined", "trigger_lost_authority", "other_policy"])
+@pytest.mark.parametrize(
+    "change",
+    ["trigger_corrected_up", "trigger_quarantined", "trigger_lost_authority",
+     "trigger_semantics_now_estimated", "trigger_moved_in_time", "other_policy"],
+)
 async def test_a_candidate_whose_original_evidence_or_policy_changed_is_not_supported(async_db, change):
     user, d, candidate, trigger = await _real_candidate(async_db, change)
     if change == "trigger_corrected_up":
@@ -640,6 +646,11 @@ async def test_a_candidate_whose_original_evidence_or_policy_changed_is_not_supp
         trigger.quarantined_at = datetime.now(UTC).replace(tzinfo=None)
     elif change == "trigger_lost_authority":
         trigger.capacity_effect = "none"  # no longer a measurement the decline machine may act on
+    elif change == "trigger_semantics_now_estimated":
+        # The stored effect still says bidirectional; the provenance now says estimate.
+        trigger.value_semantics = "estimated"
+    elif change == "trigger_moved_in_time":
+        trigger.observed_at = trigger.observed_at + timedelta(days=9)
     else:
         candidate.decline_policy_version = "strength_decline_policy_v0"
     await async_db.commit()
@@ -652,10 +663,11 @@ async def test_a_candidate_whose_original_evidence_or_policy_changed_is_not_supp
     assert (decision.candidate_id, decision.ceiling) == (None, None)  # no ceiling from unsupported evidence
 
 
-async def test_strength_tested_after_the_trigger_leaves_a_candidate_supported_and_is_a_re_demonstration(async_db):
+async def test_strength_tested_after_the_trigger_retires_a_candidate_unless_it_is_the_observation_in_flight(async_db):
     """The as-of date matters in both directions: a higher test dated BEFORE the trigger voids the
-    candidate (above); one dated AFTER it does not. It is a re-demonstration, which dismisses the
-    candidate for the right reason."""
+    candidate (above); one dated AFTER it is a re-demonstration. If the machine has not seen it (it
+    arrived record-only) the candidate must not stand on its ceiling; if it is the observation being
+    processed, the machine handles it itself, with its own reason."""
     user, _, candidate, trigger = await _real_candidate(async_db, "after")
     later = trigger.observed_at + timedelta(days=10)
     async_db.add(BenchmarkObservation(
@@ -665,10 +677,89 @@ async def test_strength_tested_after_the_trigger_leaves_a_candidate_supported_an
         protocol_validity="valid",
     ))
     await async_db.commit()
-    assert await sds._candidate_is_supported(async_db, candidate) is True  # opened on evidence that still holds
+    unseen = (await async_db.execute(
+        select(BenchmarkObservation).where(BenchmarkObservation.raw_value == 160.0)
+    )).scalar_one()
+    assert await sds._unsupported_reason(async_db, candidate) == "re_demonstrated_by_a_later_test"
+    assert await sds._candidate_is_supported(async_db, candidate, current_observation_id=unseen.id) is True
 
     await _bench(async_db, user.id, 165.0, later + timedelta(days=1))  # arrives: at or above the watermark
 
     await async_db.refresh(candidate)
-    assert (candidate.status, candidate.resolution_reason) == ("dismissed", "re_demonstrated_at_or_above_watermark")
-    assert candidate.confirmation_observation_id is not None
+    assert candidate.status == "dismissed"
+    assert candidate.resolution_reason == "re_demonstrated_by_a_later_test"  # the 160 was already there
+    assert candidate.confirmation_observation_id is None
+
+
+# ----- the sequences the review found ------------------------------------------------------------------- #
+
+async def test_corrected_provenance_cannot_let_the_next_low_test_confirm_a_regression(async_db):
+    """Review repro: the trigger's semantics are corrected to `estimated` (its stored effect still
+    says bidirectional). The next genuine low test must not confirm a downward update; it is the first
+    qualifying low test."""
+    user, _, candidate, trigger = await _real_candidate(async_db, "prov")
+    trigger.value_semantics = "estimated"
+    await async_db.commit()
+    before = await _max_strength(async_db, user.id)
+
+    await _bench(async_db, user.id, 135.0, trigger.observed_at + timedelta(days=10))
+
+    await async_db.refresh(candidate)
+    assert (candidate.status, candidate.resolution_reason) == ("dismissed", "trigger_not_a_current_measurement")
+    assert [c for c in await _candidates(async_db, user.id) if c.status == "confirmed"] == []
+    last = await _last_observation(async_db, user.id)
+    assert (last.decline_transition_status, last.applied_capacity_effect) == ("decline_candidate", "none")
+    assert await _max_strength(async_db, user.id) == pytest.approx(before)  # held, not regressed
+    (fresh,) = [c for c in await _candidates(async_db, user.id) if c.id != candidate.id]
+    assert fresh.prior_mean == 150.0 and fresh.observed_value == 135.0  # the first qualifying low test
+
+
+async def test_a_late_re_demonstration_does_not_leave_an_obsolete_ceiling(async_db):
+    """Review repro: measured 150, candidate at 132, a workout advances the head, a measured 160
+    performed after the trigger arrives record-only (the machine never sees it), then an on-time 150.
+    The 160 is a re-demonstration: the 137.54 ceiling must go, and the fresh assessment is 150 against 160."""
+    from app.schemas.workouts import WorkoutLog
+
+    user = await _user(async_db, "dem-late@test.com")
+    d = await _seed(async_db)
+    await initialize_athlete_state(async_db, user.id)
+    t0 = datetime.now(UTC) + timedelta(minutes=1)
+    await _bench(async_db, user.id, 150.0, t0)
+    await _bench(async_db, user.id, 132.0, t0 + timedelta(days=10))
+    (old,) = await _candidates(async_db, user.id)
+    assert old.prior_mean == 150.0
+    await state_service.process_new_workout(
+        async_db, user.id,
+        WorkoutLog(timestamp=t0 + timedelta(days=12), modality="Strength", duration_minutes=45.0, session_rpe=6.0),
+        received_at=datetime.now(UTC),
+    )
+    await _bench(async_db, user.id, 160.0, t0 + timedelta(days=11))  # after the trigger, before the head
+    assert (await _last_observation(async_db, user.id)).state_disposition == "record_only"
+
+    await _bench(async_db, user.id, 150.0, t0 + timedelta(days=20))  # on time
+
+    await async_db.refresh(old)
+    assert (old.status, old.resolution_reason) == ("dismissed", "re_demonstrated_by_a_later_test")
+    (fresh,) = [c for c in await _candidates(async_db, user.id) if c.id != old.id]
+    assert fresh.prior_mean == 160.0 and fresh.observed_value == 150.0
+    decision = await sds.resolve_prescription_basis(
+        async_db, user.id, code=CODE, latest_raw=150.0, current_axis=60.0,
+        rules=d.standardization_rules, mode=sds.BASIS_MODE_ON,
+    )
+    assert decision.candidate_id == fresh.id
+    assert decision.ceiling == pytest.approx(156.3, abs=0.01)  # 150 + 4.2%, not the obsolete 137.54
+
+
+async def test_a_trigger_moved_in_time_cannot_shorten_the_retest_interval(async_db):
+    """Review repro: the trigger's date is corrected later, so the recorded clock (created_at) and the
+    row disagree. A test one day after the corrected date must not count as a confirmation separated by
+    the interval measured from the old date."""
+    user, _, candidate, trigger = await _real_candidate(async_db, "clock")
+    trigger.observed_at = trigger.observed_at + timedelta(days=9)  # corrected from day 10 to day 19
+    await async_db.commit()
+
+    await _bench(async_db, user.id, 128.0, trigger.observed_at + timedelta(days=1))  # day 20
+
+    await async_db.refresh(candidate)
+    assert candidate.status == "dismissed" and candidate.confirmation_observation_id is None
+    assert [c for c in await _candidates(async_db, user.id) if c.status == "confirmed"] == []

@@ -268,22 +268,35 @@ async def _active_candidate(
 # A candidate is only as good as the evidence it was opened on. It is SUPPORTED while all of these
 # still hold, each recomputed from the rows as they are now:
 #   * it was opened under the current decline policy;
-#   * its trigger is still a valid, unquarantined, protocol-valid measured test with the value the
-#     candidate recorded (a trigger corrected, quarantined or rejected since no longer supports it);
-#   * its prior is exactly the prior that is derivable for that moment: the decline-protection
-#     evidence dated at or before the trigger, excluding the trigger. A prior that was a training
-#     estimate under the old watermark no longer matches; neither does one that a backdated higher
-#     test (dated before the trigger) or a quarantine has since changed. Strength tested AFTER the
-#     trigger is not part of it (that is a re-demonstration, handled when it arrives), and a higher
-#     maximum today never rehabilitates a candidate opened on the wrong evidence.
+#   * its trigger is still a valid, unquarantined measured test that ingestion would still let act
+#     on strength: the EFFECTIVE authority (stored effect met with the effect derived from the
+#     row's current provenance, exactly as ingestion computes it) is bidirectional. A stored
+#     effect alone is not enough: provenance corrected since (semantics now `estimated`) changes
+#     what the row is entitled to, and the database constraint does not enforce the whole rule;
+#   * its trigger still has the value AND the time the candidate recorded (the retest interval is
+#     measured from `created_at`, so a trigger moved in time would leave a stale clock running);
+#   * its prior is exactly the prior derivable for that moment: decline-protection evidence dated
+#     at or before the trigger, excluding it. A prior that was a training estimate under the old
+#     watermark no longer matches; neither does one a backdated higher test (dated before the
+#     trigger) or a quarantine has changed; and a higher maximum today never rehabilitates a
+#     candidate opened on the wrong evidence;
+#   * nothing demonstrated AFTER the trigger has re-demonstrated at or above its prior. A test the
+#     machine never saw (it arrived record-only) must not leave the candidate's ceiling standing.
+#     The observation being processed is left out of this: the machine handles its own
+#     re-demonstration, with its own reason.
 # An unsupported candidate must not confirm a regression or cap a prescription.
 _PRIOR_EPSILON = 1e-6
 RESOLUTION_PRIOR_NOT_DEMONSTRATED = "prior_not_demonstrated"
+RESOLUTION_TRIGGER_NOT_CURRENT = "trigger_not_a_current_measurement"
+RESOLUTION_REDEMONSTRATED_LATER = "re_demonstrated_by_a_later_test"
 
 
-async def _candidate_is_supported(db: AsyncSession, candidate: StrengthDeclineCandidate) -> bool:
+async def _unsupported_reason(
+    db: AsyncSession, candidate: StrengthDeclineCandidate, *, current_observation_id: int | None = None
+) -> str | None:
+    """Why this candidate can no longer stand, or None while it is supported."""
     if candidate.decline_policy_version != policy.POLICY_VERSION:
-        return False
+        return RESOLUTION_PRIOR_NOT_DEMONSTRATED
     trigger = (await db.execute(
         select(BenchmarkObservation)
         .where(BenchmarkObservation.id == candidate.trigger_observation_id)
@@ -293,27 +306,47 @@ async def _candidate_is_supported(db: AsyncSession, candidate: StrengthDeclineCa
         trigger is None
         or trigger.validity_status != "valid"
         or trigger.quarantined_at is not None
-        or trigger.capacity_effect != oa.CE_BIDIRECTIONAL_UPDATE
+        or oa.meet(trigger.capacity_effect or oa.CE_NONE, oa.capacity_effect_of(trigger))
+        != oa.CE_BIDIRECTIONAL_UPDATE
         or trigger.raw_value != candidate.observed_value
+        or trigger.observed_at != candidate.created_at
     ):
-        return False
+        return RESOLUTION_TRIGGER_NOT_CURRENT
     prior = await decline_prior_watermark(
         db, candidate.user_id, candidate.benchmark_code,
         exclude_observation_id=trigger.id, as_of=trigger.observed_at,
     )
-    return prior is not None and abs(candidate.prior_mean - prior) <= _PRIOR_EPSILON
+    if prior is None or abs(candidate.prior_mean - prior) > _PRIOR_EPSILON:
+        return RESOLUTION_PRIOR_NOT_DEMONSTRATED
+    since = await decline_prior_watermark(
+        db, candidate.user_id, candidate.benchmark_code,
+        exclude_observation_id=current_observation_id, after=trigger.observed_at,
+    )
+    if since is not None and since >= candidate.prior_mean - _PRIOR_EPSILON:
+        return RESOLUTION_REDEMONSTRATED_LATER
+    return None
+
+
+async def _candidate_is_supported(
+    db: AsyncSession, candidate: StrengthDeclineCandidate, *, current_observation_id: int | None = None
+) -> bool:
+    return await _unsupported_reason(db, candidate, current_observation_id=current_observation_id) is None
 
 
 async def _current_active_candidate(
-    db: AsyncSession, user_id: int, axis: str = DECLINE_AXIS
+    db: AsyncSession, user_id: int, axis: str = DECLINE_AXIS, *,
+    current_observation_id: int | None = None,
 ) -> StrengthDeclineCandidate | None:
-    """The active candidate, after retiring one whose prior is no longer demonstrated."""
+    """The active candidate, after retiring one that its own evidence no longer supports."""
     active = await _active_candidate(db, user_id, axis)
-    if active is None or await _candidate_is_supported(db, active):
+    if active is None:
+        return None
+    reason = await _unsupported_reason(db, active, current_observation_id=current_observation_id)
+    if reason is None:
         return active
     active.status = STATUS_DISMISSED
     active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
-    active.resolution_reason = RESOLUTION_PRIOR_NOT_DEMONSTRATED
+    active.resolution_reason = reason
     return None
 
 
@@ -363,7 +396,7 @@ async def resolve_bidirectional_observation(
         return _PASSTHROUGH
     # Retire a candidate opened against a prior that is no longer demonstrated BEFORE anything
     # reads it, including when there is no demonstrated prior left at all.
-    await _current_active_candidate(db, user_id)
+    await _current_active_candidate(db, user_id, current_observation_id=observation.id)
     prior = await _prior_watermark(db, user_id, definition.code, observation.id)
     if prior is None:
         return _PASSTHROUGH  # first measurement — nothing to decline from
@@ -371,7 +404,7 @@ async def resolve_bidirectional_observation(
     if observed_raw >= prior:
         # Re-demonstration at/above the watermark: dismiss an active candidate and
         # apply the (upward) observation normally.
-        active = await _current_active_candidate(db, user_id)
+        active = await _current_active_candidate(db, user_id, current_observation_id=observation.id)
         if active is not None:
             active.status = STATUS_DISMISSED
             active.resolved_at = datetime.now(UTC).replace(tzinfo=None)
@@ -387,7 +420,7 @@ async def resolve_bidirectional_observation(
     # Downward vs the watermark.
     error = _measurement_error_from_definition(definition)
     mean_fatigue = _mean_fatigue(current)
-    active = await _current_active_candidate(db, user_id)
+    active = await _current_active_candidate(db, user_id, current_observation_id=observation.id)
 
     if active is not None:
         # Expire a stale candidate, then treat this observation as a fresh first one.

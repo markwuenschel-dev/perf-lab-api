@@ -84,13 +84,15 @@ def decline_protection_clause() -> ColumnElement[bool]:
 
 async def _max_raw(
     db: AsyncSession, user_id: int, code: str, clause: ColumnElement[bool],
-    *, exclude_observation_id: int | None, as_of: datetime | None,
+    *, exclude_observation_id: int | None, as_of: datetime | None, after: datetime | None = None,
 ) -> float | None:
     conditions = [BenchmarkObservation.user_id == user_id, BenchmarkDefinition.code == code, clause]
     if exclude_observation_id is not None:
         conditions.append(BenchmarkObservation.id != exclude_observation_id)
     if as_of is not None:
         conditions.append(BenchmarkObservation.observed_at <= as_of)
+    if after is not None:
+        conditions.append(BenchmarkObservation.observed_at > after)
     res = await db.execute(
         select(func.max(BenchmarkObservation.raw_value))
         .join(BenchmarkDefinition, BenchmarkObservation.benchmark_definition_id == BenchmarkDefinition.id)
@@ -119,14 +121,16 @@ async def demonstrated_watermark(
 async def decline_prior_watermark(
     db: AsyncSession, user_id: int, code: str, *,
     exclude_observation_id: int | None = None, as_of: datetime | None = None,
+    after: datetime | None = None,
 ) -> float | None:
     """The prior a strength decline is judged against (ADR-0066): demonstrated strength plus the
     legacy migration's tests, so an older athlete's next low test is still a candidate. A training
     estimate is never in it, however high. ``as_of`` limits it to tests dated at or before that
-    moment: the prior a candidate was opened against."""
+    moment (the prior a candidate was opened against); ``after`` to tests dated strictly after it
+    (what has been demonstrated since)."""
     return await _max_raw(
         db, user_id, code, decline_protection_clause(),
-        exclude_observation_id=exclude_observation_id, as_of=as_of,
+        exclude_observation_id=exclude_observation_id, as_of=as_of, after=after,
     )
 
 
