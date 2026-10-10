@@ -201,11 +201,12 @@ async def select_prescription_basis(
     )
     rows_by_code: dict[str, list[EvidenceRow]] = defaultdict(list)
     for code, obs in res.all():
-        rows_by_code[code].append(_evidence_row(obs))
+        rows_by_code[code].append(evidence_row(obs))
     return {code: select_basis(rows_by_code.get(code, []), as_of=as_of) for code in codes}
 
 
-def _evidence_row(obs: BenchmarkObservation) -> EvidenceRow:
+def evidence_row(obs: BenchmarkObservation) -> EvidenceRow:
+    """The fields of one observation that decide whether it may size a load."""
     return EvidenceRow(
         observation_id=obs.id,
         raw_value=obs.raw_value,

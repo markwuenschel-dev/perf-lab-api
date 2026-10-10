@@ -75,3 +75,56 @@ sites are deleted, not wrapped-and-left.
 (value + source + confidence + model_version). The three ad-hoc sites are **deleted**:
 `app/logic/e1rm.py` is removed, `dose_engine._external_intensity_from_reps` is gone, and
 prescription/extraction/dose all call the service. Golden cases live in `tests/test_dose_split.py`.
+
+## Amendment (2026-10-09, P4-2b): chart estimates for new set-derived evidence
+
+Until now the e1RM stored for a set was Epley (`e1rm_from_set`) whatever effort the athlete
+gave; effort only gated admission and scaled confidence. With `E1RM_CHART_ESTIMATES=true`
+(default **off**) a set with a known, self-consistent effort (`resolve_effort`) that also clears
+the extraction gate (`is_e1rm_informative`: at most 5 reps, effort 8 or more with per-set
+provenance, 9 or more otherwise) is stored as `load / chart(reps, effort)`, rounded to
+0.1 kg, `formula = rpe_rir_chart`, `model_version = rpe_rir_chart_v1`. Anything else (flag off,
+unknown or contradicting effort, a set the gate rejects) is the legacy Epley estimate, exactly
+as before. A set the gate rejects cannot size a load, and the chart is 16-27% above Epley for
+the easy or high-rep sets, so re-estimating those would only move the profile projection and the
+onboarding seed by the largest steps.
+
+- **One entry point.** `estimate_set_e1rm` (`app/services/e1rm_estimation.py`) is called by
+  workout extraction, a set reported in Assess and the onboarding seed. The route cannot change
+  the number a set produces.
+- **Not the dose ladder inverted.** The estimate takes no pre-log e1RM. Inverting
+  `external_intensity_for_set` when it selects `load / e1rm_pre` would return the estimate it
+  started from.
+- **History is not rewritten.** Existing rows keep their value, formula and labels. There is no
+  recompute and no superseding row.
+- **Semantics.** A chart row is `modeled_estimate` / `estimated`, personal record or not. It is
+  a model's point estimate, not a lower bound, and may overshoot. Legacy Epley rows keep their
+  labels (a PR is still `lower_bound`).
+- **Retry identity** is the submitted facts and method (lift, mode, time, load, reps, RPE, RIR),
+  not the derived value, so a submission recorded under one formula is recognised under the other.
+
+**Coexistence (mixed formulas in the same window):**
+
+| reader | policy |
+|---|---|
+| prescription basis | formula-blind: the highest eligible value in the 28-day window wins. History stays Epley, so a new chart estimate competes with existing rows by value: it raises the basis only if it is the highest, and the basis then moves to it at once |
+| dose denominator (`e1rm_pre`) | the same selection, so a higher basis lowers `load / e1rm_pre` by the same factor. Freezing the v0 dose operator does not freeze this denominator |
+| estimated-PR tracking | compared only with estimates of the same formula |
+| decline watermark, public best-validated | demonstrated strength only (ADR-0066); a chart estimate is never one |
+| capacity authority | none (ADR-0055 amendment) |
+| profile projection | latest report, as before |
+| objective progress (`current`, `pct`) | demonstrated attainment, by a positive rule (`demonstrated_strength_clause`): valid, not quarantined, `athlete_entry`, direct measurement or protocol-grade, measured, protocol not rejected. Estimates of every kind (chart, Epley, athlete-reported), unlabeled rows and migrated legacy history are not read, so a formula switch cannot move a goal and history is not re-presented as attainment. The response carries `current_evidence_type` / `current_value_semantics` |
+| validated anchors (dashboard) | the same positive demonstrated rule; the response carries `evidence_type` / `value_semantics` |
+| KPIs (Projected Total, Relative Total) | labeled projections: they read the latest valid row of each lift, chart estimates included. The response carries `value_basis`, derived from the lineage of the same snapshot whose value is shown (selected once): `includes_estimate` if an input is positively an estimate or lower bound, `measured` if every input is positively measured, otherwise `unknown` (no lineage, a missing row, a NULL or unrecognized label). A KPI built on a KPI inherits its inputs. Both are `can_affect_prescriber_rules`: Relative Total gates the two SBD template variants at 3.0, so a chart estimate can change which variant is eligible. The activation report prints, per athlete, the saved Relative Total the gate reads next to a fresh reconstruction and its chart restatement, whether the restatement crosses 3.0, and whether the saved value is stale against the reconstruction (a profile edit does not recompute it) |
+
+Rollback: turning the flag off stops new chart rows. Chart rows already written stay eligible
+for prescription until they age out of the window, and the basis can fall in one step when the
+winning chart row expires (to the next highest eligible row). The step is not training progress
+and must not be presented as such. `python -m app.scripts.e1rm_activation_report` is a read-only
+counterfactual: it re-estimates, with the chart, the Epley-derived in-window sets that could size
+a load today and prints the basis difference and the factor `load / e1rm_pre` would be multiplied
+by. It is not a forecast of the activation, because history stays Epley.
+
+Size of the step for a set that clears the gate (1–5 reps, this repository's chart): about
+0–2% at RPE 10, 5% at RPE 9, 8.5–9% at RPE 8. Always upward. Objective attainment and validated anchors
+read demonstrated measurements only; KPIs are labeled projections (table above). No web surface renders KPIs or anchors today (the web reads objective progress and `/dashboard/overview`); any surface that does must render `value_basis`.

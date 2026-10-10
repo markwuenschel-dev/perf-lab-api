@@ -60,6 +60,7 @@ from app.schemas.workouts import (
     WorkoutLog,
     WorkoutSetEntry,
 )
+from app.services.e1rm_estimation import estimate_set_e1rm
 from app.services.late_event_service import fold_late_events
 from app.services.planned_session_protocol import (
     LINKABLE_BY_EXPLICIT_LOG,
@@ -873,10 +874,15 @@ async def _apply_sets_to_log(
             and top_set.reps is not None
             and se.is_e1rm_informative(top_set.reps, top_set.rpe, top_set.rir, fidelity)
         ):
+            estimate = estimate_set_e1rm(
+                top_set.load_kg, top_set.reps, top_set.rpe, top_set.rir, fidelity
+            )
             e1rm_specs.append(
                 {
                     "code": ex_row.e1rm_benchmark_code,
-                    "raw_value": sc.e1rm_from_set(top_set.load_kg, top_set.reps),
+                    "raw_value": estimate.value,
+                    "formula": estimate.formula,
+                    "model_version": estimate.model_version,
                     "exercise_id": ex_row.id,
                     "reps": top_set.reps,
                     "rpe": top_set.rpe,
@@ -1047,7 +1053,9 @@ async def _extract_e1rm_observations(
         try:
             # The PR bar for an ESTIMATE: the best demonstrated strength or an earlier estimate
             # by the same formula. Kept apart from the demonstrated watermark on purpose.
-            watermark = await estimated_pr_baseline(db, user_id, spec["code"], formula="epley")
+            formula = spec.get("formula", sc.FORMULA_EPLEY)
+            modeled = formula == sc.FORMULA_CHART
+            watermark = await estimated_pr_baseline(db, user_id, spec["code"], formula=formula)
             is_pr = watermark is None or spec["raw_value"] > watermark * 1.005
             fidelity = spec.get("effort_fidelity", "set_level")
             await benchmark_service.create_observation(
@@ -1060,10 +1068,17 @@ async def _extract_e1rm_observations(
                     source=se.SOURCE_WORKOUT_EXTRACTION,
                     # `is_pr` governs the CAPACITY labels only: a set below the watermark is
                     # estimated history, never lower-bound floor evidence (ADR-0055).
+                    # A chart estimate is a model's point estimate, PR or not: it is never a lower
+                    # bound and carries no capacity authority (P4-2b). Only the legacy Epley row
+                    # keeps the lower-bound label for a PR.
                     evidence_type=(
-                        se.EV_LOWER_BOUND if is_pr else se.EV_ESTIMATED_FROM_TRAINING_SET
+                        se.EV_MODELED_ESTIMATE if modeled
+                        else se.EV_LOWER_BOUND if is_pr else se.EV_ESTIMATED_FROM_TRAINING_SET
                     ),
-                    value_semantics=(se.VS_LOWER_BOUND if is_pr else se.VS_ESTIMATED),
+                    value_semantics=(
+                        se.VS_ESTIMATED if modeled
+                        else se.VS_LOWER_BOUND if is_pr else se.VS_ESTIMATED
+                    ),
                     # Prescription permission is NOT tied to beating the watermark (S2): the
                     # set cleared the extraction gate, so it may size a load. Whether it does
                     # is decided at selection time by freshness and the in-window maximum
@@ -1077,7 +1092,8 @@ async def _extract_e1rm_observations(
                     load_kg=spec.get("load_kg"),
                     rpe=spec.get("rpe"),
                     rir=spec.get("rir"),
-                    formula="epley",
+                    formula=formula,
+                    model_version=spec.get("model_version"),
                     effort_fidelity=fidelity,
                 ),
                 # The workout's own time is the performance time (S2).

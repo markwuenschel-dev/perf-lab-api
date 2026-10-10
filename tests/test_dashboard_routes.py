@@ -200,6 +200,9 @@ async def _seed_dashboard_fixture(async_db, user_id: int) -> None:
                 observed_at=datetime(2026, 1, 5, 0, 0, 0),
                 raw_value=180.0,
                 validity_status="valid",
+                source_type="athlete_entry",
+                evidence_type="direct_measurement",
+                value_semantics="measured",
             ),
             # Older observation for the same anchor: the latest one must win.
             BenchmarkObservation(
@@ -208,6 +211,9 @@ async def _seed_dashboard_fixture(async_db, user_id: int) -> None:
                 observed_at=datetime(2025, 12, 1, 0, 0, 0),
                 raw_value=150.0,
                 validity_status="valid",
+                source_type="athlete_entry",
+                evidence_type="direct_measurement",
+                value_semantics="measured",
             ),
             BenchmarkObservation(
                 user_id=user_id,
@@ -215,6 +221,9 @@ async def _seed_dashboard_fixture(async_db, user_id: int) -> None:
                 observed_at=datetime(2026, 1, 4, 0, 0, 0),
                 raw_value=420.5,
                 validity_status="valid",
+                source_type="athlete_entry",
+                evidence_type="direct_measurement",
+                value_semantics="measured",
             ),
             BenchmarkObservation(
                 user_id=user_id,
@@ -239,6 +248,7 @@ _EXPECTED_KPI_POWER = {
     "computed_at": "2026-01-02T03:04:05",
     "is_dashboard_kpi": True,
     "can_affect_prescriber_rules": True,
+    "value_basis": "unknown",  # a snapshot written without lineage
 }
 _EXPECTED_KPI_ENGINE = {
     "code": "aa_test_engine",
@@ -251,6 +261,7 @@ _EXPECTED_KPI_ENGINE = {
     "computed_at": "2026-01-03T04:05:06",
     "is_dashboard_kpi": False,
     "can_affect_prescriber_rules": False,
+    "value_basis": "unknown",
 }
 _EXPECTED_ANCHOR_ROW = {
     "benchmark_code": "aa_anchor_row",
@@ -261,6 +272,8 @@ _EXPECTED_ANCHOR_ROW = {
     "unit": "s",
     "raw_value": 420.5,
     "observed_at": "2026-01-04T00:00:00",
+    "evidence_type": "direct_measurement",
+    "value_semantics": "measured",
 }
 _EXPECTED_ANCHOR_SQUAT = {
     "benchmark_code": "zz_anchor_squat",
@@ -271,6 +284,8 @@ _EXPECTED_ANCHOR_SQUAT = {
     "unit": "kg",
     "raw_value": 180.0,
     "observed_at": "2026-01-05T00:00:00",
+    "evidence_type": "direct_measurement",
+    "value_semantics": "measured",
 }
 
 

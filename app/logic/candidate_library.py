@@ -801,7 +801,7 @@ OLYMPIC_TEMPLATES: list[CandidateTemplate] = [
 ]
 
 # Two SBD variants: volume-bias rationale when relative total is low.
-def _pl_total_below_3x(kpi: dict[str, float]) -> bool:
+def pl_total_below_3x(kpi: dict[str, float]) -> bool:
     """Relative total under 3× bodyweight: the athlete still gains from volume at quality."""
     return kpi.get("pl_relative_total") is not None and kpi["pl_relative_total"] < 3.0
 
@@ -832,12 +832,12 @@ SBD_STRENGTH_FAMILY = WorkoutFamily(
         FamilyVariant(
             branch_id="pl_sbd_main_volume",
             rationale="Quality reps before intensity ramp.",
-            kpi_eligible=_pl_total_below_3x,
+            kpi_eligible=pl_total_below_3x,
         ),
         FamilyVariant(
             branch_id="pl_sbd_main",
             rationale="Competition lift specificity with managed autoregulation.",
-            kpi_eligible=lambda kpi: not _pl_total_below_3x(kpi),
+            kpi_eligible=lambda kpi: not pl_total_below_3x(kpi),
         ),
     ),
 )

@@ -93,3 +93,23 @@ because that ADR's intensity denominator (`load / e1RM_pre`) must read an uncorr
   `prelog_e1rm_for_dose(exercise_id)` (snapshot before extraction runs).
 - Rejected: a parallel evidence table (split-brain); keeping bidirectional capacity updates
   from training (the corruption); all-time PR as eternal prescription truth (staleness).
+
+## Amendment (2026-10-09, P4-2b): modeled estimates carry no capacity authority
+
+`evidence_type = modeled_estimate` (an e1RM a model made from a set, ADR-0056 amendment) has
+`capacity_effect = none` whatever the source or collection mode (`observation_authority.evidence_cap`).
+Relabelling a chart estimate `estimated` would not have been enough: `estimated` evidence gets an
+upward-floor authority today, which would let a model's overshoot establish a demonstrated floor.
+A chart row therefore records no floor candidate and writes no state row. "No capacity authority" is
+the whole of this restriction. A chart row may inform a prescription basis (through the qualifying-set
+gate) and the KPI projections, which ADR-0056 labels as projections (`value_basis`). It is never read as
+demonstrated, and no estimate is read by any strength-decline or attainment rule. Two different
+questions use two different rules (`benchmark_observation_repository.py`):
+
+| reader | rule | migrated legacy tests |
+|---|---|---|
+| public: objective attainment, validated anchors, best-validated figure (`demonstrated_watermark`) | demonstrated strength: measured, athlete-entered, current provenance | excluded: the migration cannot prove a max |
+| private: the decline prior (`decline_prior_watermark`) | demonstrated strength plus the legacy migration's whole record (`decline_protection_clause`) | retained, so an older athlete's next low test is still a decline candidate |
+
+The private prior is never shown as an achievement. Legacy Epley rows keep their existing authority;
+they are history and are not relabelled, and they are not demonstrated.

@@ -54,7 +54,10 @@ async def test_free_text_objective_create_list_patch_delete(http_client):
     assert create_resp.status_code == 200, create_resp.text
     created = create_resp.json()
     assert created["benchmark_code"] is None
-    assert created["progress"] == {"current": None, "target": None, "pct": None, "direction": None}
+    assert created["progress"] == {
+        "current": None, "target": None, "pct": None, "direction": None,
+        "current_evidence_type": None, "current_value_semantics": None,
+    }
     assert created["days_to_go"] == 30
 
     list_resp = await http_client.get("/v1/objectives", headers=hdr)
@@ -108,6 +111,8 @@ async def test_benchmark_linked_objective_has_direction_aware_progress(http_clie
         "target": 1440.0,
         "pct": None,
         "direction": "lower",
+        "current_evidence_type": None,
+        "current_value_semantics": None,
     }
 
     # Post an observation faster than target (lower is better) for this user.
@@ -118,6 +123,11 @@ async def test_benchmark_linked_objective_has_direction_aware_progress(http_clie
             user_id=user_id,
             benchmark_definition_id=definition.id,
             raw_value=1380.0,  # faster than the 1440s target
+            # What an athlete's own entry is stamped with; an unlabeled row is not attainment.
+            validity_status="valid",
+            source_type="athlete_entry",
+            evidence_type="direct_measurement",
+            value_semantics="measured",
         )
     )
     await async_db.commit()
@@ -128,6 +138,9 @@ async def test_benchmark_linked_objective_has_direction_aware_progress(http_clie
     assert progress["current"] == 1380.0
     assert progress["direction"] == "lower"
     assert progress["pct"] == 100.0  # already beat the target
+    assert (progress["current_evidence_type"], progress["current_value_semantics"]) == (
+        "direct_measurement", "measured"
+    )
 
 
 async def test_objectives_unauthenticated(http_client):

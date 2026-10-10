@@ -229,6 +229,68 @@ def e1rm_from_set(load_kg: float, reps: float) -> float:
     return round(epley_e1rm(load_kg, reps), 1)
 
 
+# ---------------------------------------------------------------------------------
+# The e1RM a set stands for (ADR-0056, P4-2b). ONE function for every route that records set-derived
+# evidence (workout extraction, a set reported in Assess, the onboarding seed), so the entry route
+# can never change the number a set produces.
+# ---------------------------------------------------------------------------------
+
+FORMULA_EPLEY = "epley"
+FORMULA_CHART = "rpe_rir_chart"
+
+# The chart's domain. Outside it the lookup clamps, which would put a number on a set the chart
+# says nothing about; such a set falls back to the legacy estimate.
+CHART_MAX_REPS = _CHART_MAX_REPS
+CHART_MIN_EFFORT = _CHART_RPE_STEPS[0]
+CHART_MAX_EFFORT = _CHART_RPE_STEPS[-1]
+
+
+@dataclass(frozen=True)
+class E1rmEstimate:
+    """A set's e1RM and where it came from. ``model_version`` is None for the legacy estimate,
+    which carried none; a chart estimate always carries the chart's."""
+
+    value: float
+    formula: str
+    model_version: str | None
+
+    @property
+    def modeled(self) -> bool:
+        return self.formula == FORMULA_CHART
+
+
+def chart_e1rm_unrounded(load_kg: float, reps: float, eff_rpe: float) -> float:
+    """``load / %1RM`` straight from the chart: the exact inverse of the prescription lookup."""
+    return float(load_kg) / _chart_percent(reps, eff_rpe)
+
+
+def estimate_e1rm(
+    *, load_kg: float, reps: float, rpe: float | None, rir: float | None, use_chart: bool
+) -> E1rmEstimate:
+    """The e1RM of one set.
+
+    With ``use_chart``: when the effort is known, self-consistent (``resolve_effort``) and inside
+    the chart's domain, ``load / chart(reps, effort)`` rounded to 0.1 kg, formula ``rpe_rir_chart``.
+    Anything else (flag off, unknown or contradicting effort, a set outside the chart) is the legacy
+    Epley estimate, exactly as before. It never reads a pre-log e1RM: inverting the dose ladder's
+    ``load / e1rm_pre`` rung would hand back the estimate it started from.
+    """
+    if use_chart:
+        effort = resolve_effort(rpe, rir)
+        if (
+            effort.admissible
+            and effort.eff_rpe is not None
+            and 1 <= reps <= CHART_MAX_REPS
+            and CHART_MIN_EFFORT <= effort.eff_rpe <= CHART_MAX_EFFORT
+        ):
+            return E1rmEstimate(
+                value=round(chart_e1rm_unrounded(load_kg, reps, effort.eff_rpe), 1),
+                formula=FORMULA_CHART,
+                model_version=MODEL_VERSION,
+            )
+    return E1rmEstimate(value=e1rm_from_set(load_kg, reps), formula=FORMULA_EPLEY, model_version=None)
+
+
 def _epley_percent(reps: float, rir: float) -> float:
     """Reps-beyond-first Epley %1RM: ``1 / (1 + (reps + rir - 1) / 30)``.
 

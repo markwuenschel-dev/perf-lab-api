@@ -111,10 +111,14 @@ async def test_list_objectives_query_count_is_bounded_and_picks_latest_observati
         BenchmarkObservation(
             user_id=user.id, benchmark_definition_id=definition.id,
             raw_value=1500.0, observed_at=datetime(2026, 1, 1, 12, 0, 0),
+            validity_status="valid", source_type="athlete_entry",
+            evidence_type="direct_measurement", value_semantics="measured",
         ),
         BenchmarkObservation(
             user_id=user.id, benchmark_definition_id=definition.id,
             raw_value=1380.0, observed_at=datetime(2026, 6, 1, 12, 0, 0),
+            validity_status="valid", source_type="athlete_entry",
+            evidence_type="direct_measurement", value_semantics="measured",
         ),
     ])
     await async_db.commit()

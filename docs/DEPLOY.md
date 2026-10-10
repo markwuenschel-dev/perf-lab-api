@@ -274,3 +274,67 @@ first, one correction each.
 - **Only folded events leave the waiting set.** Refused, not-capturable and ambiguous events show
   up again on every run (a refusal code is rewritten each time `--apply` retries). A run that
   reports nothing folded is not proof that nothing is waiting.
+
+## Chart e1RM estimates (P4-2b): turning them on, and stopping them
+
+No migration. `E1RM_CHART_ESTIMATES` (off by default) makes the e1RM stored for a **new** set with
+a known, consistent effort that qualifies to size a load `load / chart(reps, effort)` instead of
+Epley (ADR-0056 amendment). Old rows are never recomputed. Deploying with the flag off changes
+nothing.
+
+**It can raise prescribed loads.** For the same set the chart estimate is about 5% above Epley at
+RPE 9 and 9% at RPE 8 (1-5 rep sets). The prescription takes the highest eligible value in its
+28-day window, and the same number is the dose ladder's denominator. History stays Epley, so a
+new chart row competes with the existing rows by value: it raises an athlete's basis only if it
+is the highest eligible one, and then the basis moves to it at once.
+
+**What changes on the dashboards when it is on:**
+- Objective progress and validated anchors read demonstrated measurements only (valid, an athlete's
+  own measured entry). Estimates of every kind (chart, Epley, athlete-reported), unlabeled rows and
+  migrated legacy history are not read, with the flag on or off: a goal cannot move because of the
+  formula, and history is not re-presented as attainment. (This is stricter than before this change,
+  which read the latest row of any kind: an athlete whose only rows are estimates or migrated
+  legacy history now has no attainment or anchor until they record a measurement.)
+- Projected Total and Relative Total read chart estimates (they are projections:
+  `value_basis = includes_estimate`; each KPI's value, time and basis come from one snapshot).
+  Relative Total gates the two SBD template variants at 3.0, so a chart estimate can change which
+  variant an athlete is offered. The report below prints it. No web screen renders KPIs or anchors
+  today; one that does must render `value_basis`.
+
+Look first (read-only, a counterfactual, not a forecast):
+
+```bash
+sudo docker compose exec -T perf-lab-api python -m app.scripts.e1rm_activation_report
+sudo docker compose exec -T perf-lab-api python -m app.scripts.e1rm_activation_report --user-id 7
+```
+
+Per athlete and lift it prints today's basis, the basis *if the Epley-derived in-window sets
+that qualify today had been estimated with the chart*, the difference, the factor
+`load / e1rm_pre` would be multiplied by, and how many rows were restated. A row is restated only
+if its recorded formula is Epley with a training-set label, it could size a load today, and the
+chart would speak for it; rows with no recorded formula are not restated. It does not compare
+final prescribed loads (those also depend on the plan, readiness and gates).
+
+A second table prints, per athlete with all three lifts and a bodyweight, three Relative Totals:
+**saved** (the newest saved snapshot, which is what the prescriber's 3.0 gate reads; a profile
+bodyweight edit does not recompute it), **fresh** (today's latest valid row of each lift over
+today's bodyweight) and **chart** (the same with each row re-estimated by the chart). **CROSSES
+3.0** means the chart restatement moves a fresh reconstruction across the gate. **STALE** means the
+saved snapshot is on the other side of 3.0 from a fresh reconstruction (or there is no snapshot),
+so the athlete's live template variant is not the one the reconstruction implies, and the
+restatement says nothing about it. Read both flags before turning the flag on.
+
+**Turning it on:** add `E1RM_CHART_ESTIMATES=true` to `/opt/stack/infra/env/perf-lab-api.env`, then
+`sudo docker compose up -d perf-lab-api`.
+
+**Stopping it:** set it to `false` and recreate the container. New sets are Epley again. **Chart
+rows already written stay**, and stay eligible for prescription until they age out (28 days).
+Loads do not fall gradually: the selected basis falls to the next highest eligible row in one
+step when the winning chart row expires, so an athlete's basis can drop by the whole difference
+between that row and the next. There is no revert. Chart rows are labelled
+`evidence_type = 'modeled_estimate'`, `formula = 'rpe_rir_chart'`:
+
+```sql
+SELECT user_id, count(*), min(observed_at), max(observed_at)
+  FROM benchmark_observations WHERE formula = 'rpe_rir_chart' GROUP BY user_id;
+```

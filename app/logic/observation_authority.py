@@ -285,6 +285,10 @@ def evidence_cap(evidence_type: str | None, value_semantics: str | None) -> str:
     vs = value_semantics or se.VS_UNKNOWN
     if vs == se.VS_UNKNOWN:
         return CE_NONE  # hard denial: unknown value means nothing
+    if evidence_type == se.EV_MODELED_ESTIMATE:
+        # A model's point estimate is not a floor the athlete demonstrated, and it may overshoot:
+        # no capacity authority at all, whatever the source or mode (ADR-0055, P4-2b).
+        return CE_NONE
     if vs == se.VS_MEASURED and (evidence_type or se.EV_LEGACY_UNKNOWN) in (
         se.EV_DIRECT_MEASUREMENT,
         se.EV_PROTOCOL_GRADE_ESTIMATE,
