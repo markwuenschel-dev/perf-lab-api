@@ -21,7 +21,9 @@ freeze that denominator, so the report prints that factor too.
 A second, separate counterfactual covers Relative Total (:func:`relative_total_report`). Projected
 Total reads the LATEST valid row of each lift, whatever its age or eligibility, and Relative Total
 gates the two SBD template variants at 3.0. So it re-estimates those latest rows and says whether
-that would put an athlete on the other side of 3.0.
+that would put a freshly reconstructed ratio on the other side of 3.0. The prescriber reads the
+SAVED snapshot, not a reconstruction, so the report prints that value separately and flags an
+athlete whose saved value selects a different variant than the reconstruction does.
 """
 from __future__ import annotations
 
@@ -41,6 +43,7 @@ from app.models.benchmark_observation import BenchmarkObservation
 from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
 from app.repositories.benchmark_observation_repository import evidence_row
+from app.services.dashboard_service import latest_kpi_values
 from app.services.e1rm_estimation import estimate_set_e1rm
 from app.services.strength_evidence_service import canonical_e1rm_codes
 
@@ -152,9 +155,14 @@ class RelativeTotalLine:
     total_chart_kg: float
     bodyweight_kg: float
     restated_lifts: int  # lifts whose latest valid row the chart would re-estimate
+    # What the prescriber actually reads today: the newest saved ``pl_relative_total`` snapshot
+    # (``latest_kpi_values``), or None if the athlete has none. It is NOT recomputed when the
+    # profile's bodyweight changes, so it can differ from the fresh reconstruction below.
+    saved_relative: float | None = None
 
     @property
     def relative_now(self) -> float:
+        """Fresh reconstruction: today's latest rows over today's bodyweight."""
         return self.total_now_kg / self.bodyweight_kg
 
     @property
@@ -163,19 +171,30 @@ class RelativeTotalLine:
 
     @property
     def crosses_template_gate(self) -> bool:
-        """Whether the restatement puts the athlete on the other side of the 3.0 gate, i.e. which
-        of the two SBD template variants is eligible."""
+        """Whether the restatement puts a FRESH reconstruction on the other side of the 3.0 gate.
+        It compares two reconstructed ratios; it says nothing about the saved value the live gate
+        reads (see :attr:`live_gate_is_stale`)."""
         return pl_total_below_3x({"pl_relative_total": self.relative_now}) != pl_total_below_3x(
             {"pl_relative_total": self.relative_chart}
         )
 
+    @property
+    def live_gate_is_stale(self) -> bool:
+        """Whether the saved snapshot the prescriber reads selects a different template variant
+        than a fresh reconstruction would (a profile edit, or no snapshot at all)."""
+        saved = {"pl_relative_total": self.saved_relative} if self.saved_relative is not None else {}
+        return pl_total_below_3x(saved) != pl_total_below_3x({"pl_relative_total": self.relative_now})
+
 
 async def relative_total_report(db: AsyncSession, *, user_id: int | None = None) -> list[RelativeTotalLine]:
-    """Counterfactual: Relative Total today vs with each lift's latest valid row re-estimated.
+    """Counterfactual: a fresh Relative Total vs with each lift's latest valid row re-estimated,
+    next to the saved snapshot the prescriber's gate actually reads.
 
-    Mirrors the KPI's own reads: the latest valid row per lift (no age, eligibility or gate), the
-    Projected Total's own benchmark codes, the profile's bodyweight. Athletes missing a lift or a
-    bodyweight have no Relative Total and are not listed. Read-only.
+    The two reconstructed ratios mirror the KPI's own reads: the latest valid row per lift (no age,
+    eligibility or gate), the Projected Total's own benchmark codes, the profile's bodyweight. The
+    saved ratio is the newest ``pl_relative_total`` snapshot, which a profile edit does not
+    recompute, so it is reported separately and never assumed equal to the reconstruction.
+    Athletes missing a lift or a bodyweight have no Relative Total and are not listed. Read-only.
     """
     definition = (await db.execute(
         select(DerivedMetricDefinition).where(DerivedMetricDefinition.code == "pl_projected_total")
@@ -212,8 +231,9 @@ async def relative_total_report(db: AsyncSession, *, user_id: int | None = None)
             if alt is not None:
                 restated += 1
             chart_total += alt.raw_value if alt is not None and alt.raw_value is not None else obs.raw_value
+        saved = (await latest_kpi_values(db, uid)).get("pl_relative_total")
         lines.append(RelativeTotalLine(
             user_id=uid, total_now_kg=now_total, total_chart_kg=chart_total,
-            bodyweight_kg=bodyweight, restated_lifts=restated,
+            bodyweight_kg=bodyweight, restated_lifts=restated, saved_relative=saved,
         ))
     return lines

@@ -63,18 +63,30 @@ def _format_relative_total(lines: list[RelativeTotalLine]) -> list[str]:
     if not lines:
         return [f"{tag} No athlete has all three lifts and a bodyweight, so none has a Relative Total."]
     out = [
-        f"{tag} Relative Total gates the two SBD template variants at 3.0. Counterfactual: the latest "
-        "valid row of each lift re-estimated by the chart.",
-        f"{tag} {'user':>6} {'total kg':>9} {'restated':>9} {'rel now':>8} {'rel chart':>9} {'lifts':>5}  gate",
+        f"{tag} Relative Total gates the two SBD template variants at 3.0. The prescriber reads the SAVED "
+        "snapshot ('saved'); 'fresh' and 'chart' are reconstructed from today's latest valid row of "
+        "each lift and today's bodyweight, 'chart' with each row re-estimated by the chart. "
+        "A profile edit does not recompute the saved value.",
+        f"{tag} {'user':>6} {'saved':>7} {'fresh':>7} {'chart':>7} {'lifts':>5}  gate",
     ]
     for line in lines:
+        notes = []
+        if line.live_gate_is_stale:
+            notes.append("STALE: saved snapshot is on the other side of 3.0 than a fresh reconstruction")
+        if line.crosses_template_gate:
+            notes.append("CROSSES 3.0 (fresh -> chart)")
+        saved = f"{line.saved_relative:.2f}" if line.saved_relative is not None else "none"
         out.append(
-            f"{tag} {line.user_id:>6} {line.total_now_kg:>9.1f} {line.total_chart_kg:>9.1f} "
-            f"{line.relative_now:>8.2f} {line.relative_chart:>9.2f} {line.restated_lifts:>5}  "
-            + ("CROSSES 3.0 (other template variant)" if line.crosses_template_gate else "same side")
+            f"{tag} {line.user_id:>6} {saved:>7} {line.relative_now:>7.2f} {line.relative_chart:>7.2f} "
+            f"{line.restated_lifts:>5}  " + ("; ".join(notes) if notes else "same side")
         )
     crossing = sum(line.crosses_template_gate for line in lines)
-    out.append(f"{tag} {crossing} of {len(lines)} athlete(s) would change template variant.")
+    stale = sum(line.live_gate_is_stale for line in lines)
+    out.append(
+        f"{tag} {crossing} of {len(lines)} athlete(s): the chart restatement moves a fresh reconstruction "
+        f"across 3.0. {stale}: the saved snapshot already disagrees with a fresh reconstruction "
+        "(the restatement says nothing about their live variant)."
+    )
     return out
 
 

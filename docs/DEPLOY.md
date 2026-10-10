@@ -315,9 +315,14 @@ if its recorded formula is Epley with a training-set label, it could size a load
 chart would speak for it; rows with no recorded formula are not restated. It does not compare
 final prescribed loads (those also depend on the plan, readiness and gates).
 
-A second table prints, per athlete with all three lifts and a bodyweight, Relative Total today and
-with each lift's latest valid row re-estimated, and **CROSSES 3.0** where that moves the athlete to
-the other template variant. Check it before turning the flag on.
+A second table prints, per athlete with all three lifts and a bodyweight, three Relative Totals:
+**saved** (the newest saved snapshot, which is what the prescriber's 3.0 gate reads; a profile
+bodyweight edit does not recompute it), **fresh** (today's latest valid row of each lift over
+today's bodyweight) and **chart** (the same with each row re-estimated by the chart). **CROSSES
+3.0** means the chart restatement moves a fresh reconstruction across the gate. **STALE** means the
+saved snapshot is on the other side of 3.0 from a fresh reconstruction (or there is no snapshot),
+so the athlete's live template variant is not the one the reconstruction implies, and the
+restatement says nothing about it. Read both flags before turning the flag on.
 
 **Turning it on:** add `E1RM_CHART_ESTIMATES=true` to `/opt/stack/infra/env/perf-lab-api.env`, then
 `sudo docker compose up -d perf-lab-api`.

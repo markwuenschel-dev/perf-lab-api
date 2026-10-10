@@ -103,6 +103,13 @@ upward-floor authority today, which would let a model's overshoot establish a de
 A chart row therefore records no floor candidate and writes no state row. "No capacity authority" is
 the whole of this restriction. A chart row may inform a prescription basis (through the qualifying-set
 gate) and the KPI projections, which ADR-0056 labels as projections (`value_basis`). It is never read as
-demonstrated: objective attainment, validated anchors, the decline watermark and the public
-best-validated figure take measured, athlete-entered observations only. Legacy Epley rows keep their
-existing authority; they are history and are not relabelled, but they are not demonstrated either.
+demonstrated, and no estimate is read by any strength-decline or attainment rule. Two different
+questions use two different rules (`benchmark_observation_repository.py`):
+
+| reader | rule | migrated legacy tests |
+|---|---|---|
+| public: objective attainment, validated anchors, best-validated figure (`demonstrated_watermark`) | demonstrated strength: measured, athlete-entered, current provenance | excluded: the migration cannot prove a max |
+| private: the decline prior (`decline_prior_watermark`) | demonstrated strength plus the legacy migration's whole record (`decline_protection_clause`) | retained, so an older athlete's next low test is still a decline candidate |
+
+The private prior is never shown as an achievement. Legacy Epley rows keep their existing authority;
+they are history and are not relabelled, and they are not demonstrated.

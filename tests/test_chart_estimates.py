@@ -872,6 +872,63 @@ async def test_the_relative_total_check_lists_only_athletes_who_have_a_relative_
     assert await relative_total_report(async_db) == []  # no bodyweight: no Relative Total
 
 
+async def _add_relative_total_definition(db) -> None:
+    db.add(DerivedMetricDefinition(
+        code="pl_relative_total", name="Relative Total", domain="powerlifting", metric_type="ratio",
+        unit="x_bodyweight", formula_type="custom_python_key",
+        formula_config={"function": "relative_total", "inputs": ["pl_projected_total", "bodyweight_kg"]},
+        display_priority=20, is_dashboard_kpi=True, can_affect_prescriber_rules=True,
+    ))
+    await db.commit()
+
+
+async def test_the_relative_total_check_shows_the_saved_gate_input_apart_from_the_reconstruction(async_db):
+    """A normal profile PATCH changes bodyweight but does not recompute the saved Relative Total, and
+    the prescriber reads the saved value. The report must not present a fresh reconstruction as the
+    live gate input: here the saved value (2.95) selects the below-3x variant while the fresh ratio
+    and its chart restatement are both above 3.0, so the restatement does not cross, yet the live
+    gate is stale."""
+    from app.api.v1.profile import update_profile
+    from app.schemas.profile import ProfileUpdate
+    from app.scripts.e1rm_activation_report import _format_relative_total
+    from app.services.dashboard_service import latest_kpi_values, recompute_derived_metrics
+    from app.services.e1rm_activation import relative_total_report
+
+    epley = sc.e1rm_from_set(100.0, 5)
+    user = await _three_lift_athlete(async_db, "rt-stale@test.com", bodyweight_kg=round(3 * epley / 2.95, 2))
+    await _add_relative_total_definition(async_db)
+    await recompute_derived_metrics(async_db, user.id)
+    saved = (await latest_kpi_values(async_db, user.id))["pl_relative_total"]
+    assert saved == pytest.approx(2.95, abs=0.01)
+
+    (fresh_line,) = [ln for ln in await relative_total_report(async_db) if ln.user_id == user.id]
+    assert fresh_line.saved_relative == pytest.approx(saved) and not fresh_line.live_gate_is_stale
+
+    # the athlete edits their bodyweight through the real handler; nothing recomputes the snapshot
+    await update_profile(ProfileUpdate(bodyweight_kg=round(3 * epley / 3.2, 2)), async_db, user)
+    assert (await latest_kpi_values(async_db, user.id))["pl_relative_total"] == pytest.approx(saved)
+
+    (line,) = [ln for ln in await relative_total_report(async_db) if ln.user_id == user.id]
+    assert line.saved_relative == pytest.approx(saved)  # what the prescriber reads: unchanged
+    assert line.relative_now == pytest.approx(3.2, abs=0.01) and line.relative_chart > 3.0
+    assert not line.crosses_template_gate  # both reconstructed ratios are above 3.0 ...
+    assert line.live_gate_is_stale  # ... but the live gate input is still below it
+
+    printed = "\n".join(_format_relative_total([line]))
+    assert "2.95" in printed and "3.20" in printed and "STALE" in printed
+    assert "same side" not in printed and "CROSSES" not in printed
+
+
+async def test_an_athlete_without_a_saved_relative_total_is_not_reported_as_on_the_fresh_side(async_db):
+    from app.services.e1rm_activation import relative_total_report
+
+    epley = sc.e1rm_from_set(100.0, 5)
+    user = await _three_lift_athlete(async_db, "rt-nosnap@test.com", bodyweight_kg=round(3 * epley / 2.95, 2))
+    (line,) = [ln for ln in await relative_total_report(async_db) if ln.user_id == user.id]
+    assert line.saved_relative is None  # no snapshot: the gate sees no Relative Total at all
+    assert line.live_gate_is_stale  # the variant it picks (not below 3x) differs from the fresh 2.95
+
+
 async def test_the_relative_total_check_needs_all_three_lifts(async_db):
     from app.services.e1rm_activation import relative_total_report
 
