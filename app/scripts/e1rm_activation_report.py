@@ -21,7 +21,12 @@ import sys
 from datetime import UTC, datetime
 
 from app.core.db import AsyncSessionLocal
-from app.services.e1rm_activation import ActivationLine, activation_report
+from app.services.e1rm_activation import (
+    ActivationLine,
+    RelativeTotalLine,
+    activation_report,
+    relative_total_report,
+)
 
 
 def _format(lines: list[ActivationLine]) -> list[str]:
@@ -53,16 +58,38 @@ def _format(lines: list[ActivationLine]) -> list[str]:
     return out
 
 
-async def _run(user_id: int | None) -> list[ActivationLine]:
+def _format_relative_total(lines: list[RelativeTotalLine]) -> list[str]:
+    tag = "[e1rm-activation:relative-total]"
+    if not lines:
+        return [f"{tag} No athlete has all three lifts and a bodyweight, so none has a Relative Total."]
+    out = [
+        f"{tag} Relative Total gates the two SBD template variants at 3.0. Counterfactual: the latest "
+        "valid row of each lift re-estimated by the chart.",
+        f"{tag} {'user':>6} {'total kg':>9} {'restated':>9} {'rel now':>8} {'rel chart':>9} {'lifts':>5}  gate",
+    ]
+    for line in lines:
+        out.append(
+            f"{tag} {line.user_id:>6} {line.total_now_kg:>9.1f} {line.total_chart_kg:>9.1f} "
+            f"{line.relative_now:>8.2f} {line.relative_chart:>9.2f} {line.restated_lifts:>5}  "
+            + ("CROSSES 3.0 (other template variant)" if line.crosses_template_gate else "same side")
+        )
+    crossing = sum(line.crosses_template_gate for line in lines)
+    out.append(f"{tag} {crossing} of {len(lines)} athlete(s) would change template variant.")
+    return out
+
+
+async def _run(user_id: int | None) -> tuple[list[ActivationLine], list[RelativeTotalLine]]:
     async with AsyncSessionLocal() as db:
-        return await activation_report(db, as_of=datetime.now(UTC).replace(tzinfo=None), user_id=user_id)
+        basis = await activation_report(db, as_of=datetime.now(UTC).replace(tzinfo=None), user_id=user_id)
+        return basis, await relative_total_report(db, user_id=user_id)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--user-id", type=int, default=None, help="only this athlete")
     args = parser.parse_args(argv)
-    print("\n".join(_format(asyncio.run(_run(args.user_id)))))
+    basis, relative = asyncio.run(_run(args.user_id))
+    print("\n".join([*_format(basis), *_format_relative_total(relative)]))
     return 0
 
 

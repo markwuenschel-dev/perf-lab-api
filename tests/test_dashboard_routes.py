@@ -200,6 +200,9 @@ async def _seed_dashboard_fixture(async_db, user_id: int) -> None:
                 observed_at=datetime(2026, 1, 5, 0, 0, 0),
                 raw_value=180.0,
                 validity_status="valid",
+                source_type="athlete_entry",
+                evidence_type="direct_measurement",
+                value_semantics="measured",
             ),
             # Older observation for the same anchor: the latest one must win.
             BenchmarkObservation(
@@ -208,6 +211,9 @@ async def _seed_dashboard_fixture(async_db, user_id: int) -> None:
                 observed_at=datetime(2025, 12, 1, 0, 0, 0),
                 raw_value=150.0,
                 validity_status="valid",
+                source_type="athlete_entry",
+                evidence_type="direct_measurement",
+                value_semantics="measured",
             ),
             BenchmarkObservation(
                 user_id=user_id,
@@ -215,6 +221,9 @@ async def _seed_dashboard_fixture(async_db, user_id: int) -> None:
                 observed_at=datetime(2026, 1, 4, 0, 0, 0),
                 raw_value=420.5,
                 validity_status="valid",
+                source_type="athlete_entry",
+                evidence_type="direct_measurement",
+                value_semantics="measured",
             ),
             BenchmarkObservation(
                 user_id=user_id,
@@ -263,8 +272,8 @@ _EXPECTED_ANCHOR_ROW = {
     "unit": "s",
     "raw_value": 420.5,
     "observed_at": "2026-01-04T00:00:00",
-    "evidence_type": None,
-    "value_semantics": None,
+    "evidence_type": "direct_measurement",
+    "value_semantics": "measured",
 }
 _EXPECTED_ANCHOR_SQUAT = {
     "benchmark_code": "zz_anchor_squat",
@@ -275,8 +284,8 @@ _EXPECTED_ANCHOR_SQUAT = {
     "unit": "kg",
     "raw_value": 180.0,
     "observed_at": "2026-01-05T00:00:00",
-    "evidence_type": None,
-    "value_semantics": None,
+    "evidence_type": "direct_measurement",
+    "value_semantics": "measured",
 }
 
 

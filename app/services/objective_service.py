@@ -18,7 +18,7 @@ from app.logic.domain_vocab import normalize_domain_at_boundary
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.objective import Objective, ObjectiveStatus
-from app.repositories.benchmark_observation_repository import not_modeled_estimate_clause
+from app.repositories.benchmark_observation_repository import demonstrated_strength_clause
 from app.schemas.objective import (
     DrivingObjectiveSource,
     ObjectiveCreate,
@@ -131,8 +131,10 @@ async def _compute_progress_batch(
                 .where(
                     BenchmarkObservation.user_id.in_(user_ids),
                     BenchmarkObservation.benchmark_definition_id.in_(definition_ids),
-                    # Attainment is demonstrated: a modeled estimate is never the "latest".
-                    not_modeled_estimate_clause(),
+                    # Attainment is demonstrated: valid, not quarantined, and positively an
+                    # athlete's own measurement. An estimate (chart, Epley, reported), an
+                    # unlabeled row or migrated legacy history is never the "latest".
+                    demonstrated_strength_clause(),
                 )
                 .order_by(BenchmarkObservation.observed_at.desc())
             )

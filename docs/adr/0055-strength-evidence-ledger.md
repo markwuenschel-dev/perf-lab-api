@@ -100,6 +100,9 @@ because that ADR's intensity denominator (`load / e1RM_pre`) must read an uncorr
 `capacity_effect = none` whatever the source or collection mode (`observation_authority.evidence_cap`).
 Relabelling a chart estimate `estimated` would not have been enough: `estimated` evidence gets an
 upward-floor authority today, which would let a model's overshoot establish a demonstrated floor.
-A chart row therefore records no floor candidate and writes no state row; it may still inform a
-prescription basis (through the qualifying-set gate) and nothing else. Legacy Epley rows keep
-their existing authority; they are history and are not relabelled.
+A chart row therefore records no floor candidate and writes no state row. "No capacity authority" is
+the whole of this restriction. A chart row may inform a prescription basis (through the qualifying-set
+gate) and the KPI projections, which ADR-0056 labels as projections (`value_basis`). It is never read as
+demonstrated: objective attainment, validated anchors, the decline watermark and the public
+best-validated figure take measured, athlete-entered observations only. Legacy Epley rows keep their
+existing authority; they are history and are not relabelled, but they are not demonstrated either.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
@@ -15,7 +15,7 @@ from app.models.derived_metric_snapshot import DerivedMetricSnapshot
 from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
-from app.repositories.benchmark_observation_repository import not_modeled_estimate_clause
+from app.repositories.benchmark_observation_repository import demonstrated_strength_clause
 from app.schemas.dashboard import (
     AdherenceMetrics,
     AnchorObservationOut,
@@ -228,10 +228,32 @@ async def recompute_derived_metrics(db: AsyncSession, user_id: int) -> tuple[int
     return len(written), written
 
 
+ValueBasis = Literal["measured", "includes_estimate", "unknown"]
+
+_ESTIMATE_SEMANTICS = frozenset({"estimated", "lower_bound"})
+
+
+def classify_value_basis(semantics: Sequence[str | None]) -> ValueBasis:
+    """What a KPI rests on, from the value semantics of its contributing observations.
+
+    Positive classification only. ``includes_estimate``: at least one input is a known estimate
+    or lower bound. ``measured``: there are inputs and every one is positively measured. Anything
+    else (no lineage, a missing row, a NULL or ``unknown`` or unrecognized label) is ``unknown``:
+    an uncharacterized input is not evidence of an estimate, and not of a measurement either.
+    """
+    if not semantics:
+        return "unknown"
+    if any(s in _ESTIMATE_SEMANTICS for s in semantics):
+        return "includes_estimate"
+    if all(s == "measured" for s in semantics):
+        return "measured"
+    return "unknown"
+
+
 async def _value_bases(
     db: AsyncSession, user_id: int, snapshots: Mapping[int, DerivedMetricSnapshot]
-) -> dict[int, Literal["measured", "includes_estimate", "unknown"]]:
-    """Whether each KPI rests only on measurements, from its snapshot's lineage.
+) -> dict[int, ValueBasis]:
+    """Each KPI's basis, from the lineage of the very snapshot whose value is shown.
 
     KPIs deliberately read estimates (a projected total is built from e1RMs); this says so
     instead of leaving the response to look like a measurement.
@@ -245,16 +267,28 @@ async def _value_bases(
             )
         )
         semantics = {row[0]: row[1] for row in rows.all()}  # noqa: C416
-    out: dict[int, Literal["measured", "includes_estimate", "unknown"]] = {}
+    out: dict[int, ValueBasis] = {}
     for def_id, snap in snapshots.items():
         lineage = snap.contributing_observation_ids or []
-        if not lineage or any(i not in semantics for i in lineage):
-            out[def_id] = "unknown"
-        elif all(semantics[i] == "measured" for i in lineage):
-            out[def_id] = "measured"
-        else:
-            out[def_id] = "includes_estimate"
+        # A lineage id with no row is unknown, never silently dropped.
+        out[def_id] = classify_value_basis(
+            [semantics[i] if i in semantics else None for i in lineage]
+        )
     return out
+
+
+async def _latest_snapshots(db: AsyncSession, user_id: int) -> dict[int, DerivedMetricSnapshot]:
+    """The newest snapshot per derived metric, each selected once: its value, time, confidence
+    and lineage are all read from this one row, so they can never describe different snapshots."""
+    result = await db.execute(
+        select(DerivedMetricSnapshot)
+        .where(DerivedMetricSnapshot.user_id == user_id)
+        .order_by(DerivedMetricSnapshot.computed_at.desc(), DerivedMetricSnapshot.id.desc())
+    )
+    latest: dict[int, DerivedMetricSnapshot] = {}
+    for snap in result.scalars().all():
+        latest.setdefault(snap.derived_metric_definition_id, snap)
+    return latest
 
 
 async def dashboard_kpis_bundle(
@@ -275,41 +309,29 @@ async def dashboard_kpis_bundle(
         )
     )
     defs = list(defs_res.scalars().all())
-    kpi_vals = await latest_kpi_values(db, user_id)
+    snapshots = await _latest_snapshots(db, user_id)
+    bases = await _value_bases(db, user_id, snapshots)
 
-    emitted: list[tuple[int, KPIValueOut, DerivedMetricSnapshot | None]] = []
+    kpis_out: list[KPIValueOut] = []
     for d in defs:
-        if d.code not in kpi_vals:
+        snap = snapshots.get(d.id)
+        if snap is None:
             continue
-        snap_res = await db.execute(
-            select(DerivedMetricSnapshot)
-            .where(
-                DerivedMetricSnapshot.user_id == user_id,
-                DerivedMetricSnapshot.derived_metric_definition_id == d.id,
-            )
-            .order_by(DerivedMetricSnapshot.computed_at.desc())
-            .limit(1)
-        )
-        snap = snap_res.scalars().first()
-        kpi = (
+        kpis_out.append(
             KPIValueOut(
                 code=d.code,
                 name=d.name,
                 domain=d.domain,
                 metric_type=d.metric_type,
                 unit=d.unit,
-                value=kpi_vals[d.code],
-                confidence=float(snap.confidence) if snap and snap.confidence is not None else None,
-                computed_at=snap.computed_at if snap else datetime.now(UTC).replace(tzinfo=None),
+                value=snap.value,
+                confidence=float(snap.confidence) if snap.confidence is not None else None,
+                computed_at=snap.computed_at,
                 is_dashboard_kpi=d.is_dashboard_kpi,
                 can_affect_prescriber_rules=d.can_affect_prescriber_rules,
+                value_basis=bases[d.id],
             )
         )
-        emitted.append((d.id, kpi, snap))
-    bases = await _value_bases(db, user_id, {did: snap for did, _, snap in emitted if snap is not None})
-    kpis_out: list[KPIValueOut] = []
-    for did, kpi, _ in emitted:
-        kpis_out.append(kpi.model_copy(update={"value_basis": bases.get(did, "unknown")}))
 
     anchor_res = await db.execute(
         select(BenchmarkObservation, BenchmarkDefinition)
@@ -318,8 +340,9 @@ async def dashboard_kpis_bundle(
             BenchmarkObservation.user_id == user_id,
             BenchmarkObservation.validity_status == "valid",
             BenchmarkDefinition.is_primary_anchor == True,  # noqa: E712
-            # An anchor is a demonstrated value: a modeled estimate is never the row shown.
-            not_modeled_estimate_clause(),
+            # An anchor is a demonstrated value (valid, not quarantined, an athlete's own
+            # measurement): no estimate, unlabeled row or migrated legacy history is shown.
+            demonstrated_strength_clause(),
         )
         .order_by(BenchmarkObservation.observed_at.desc())
     )

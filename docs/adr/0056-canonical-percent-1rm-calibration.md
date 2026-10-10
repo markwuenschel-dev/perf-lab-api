@@ -113,9 +113,9 @@ onboarding seed by the largest steps.
 | decline watermark, public best-validated | demonstrated strength only (ADR-0066); a chart estimate is never one |
 | capacity authority | none (ADR-0055 amendment) |
 | profile projection | latest report, as before |
-| objective progress (`current`, `pct`) | demonstrated attainment: a modeled estimate is never the row read, so a formula switch cannot move a goal toward 100%. Every other row is read as before (legacy estimates included; invalidated rows are not filtered, which predates this change). The response carries `current_evidence_type` / `current_value_semantics` |
-| validated anchors (dashboard) | demonstrated only: modeled estimates are excluded; the response carries `evidence_type` / `value_semantics` |
-| KPIs (Projected Total, Relative Total) | labeled projections: they read the latest valid row of each lift, chart estimates included. The response carries `value_basis` (`measured`, `includes_estimate`, `unknown`) derived from the snapshot's lineage, which now includes the inputs of the KPI a KPI is built on. Both are `can_affect_prescriber_rules`: Relative Total gates two templates at 3.0, so a chart estimate can change which template is eligible. The activation report does not cover this |
+| objective progress (`current`, `pct`) | demonstrated attainment, by a positive rule (`demonstrated_strength_clause`): valid, not quarantined, `athlete_entry`, direct measurement or protocol-grade, measured, protocol not rejected. Estimates of every kind (chart, Epley, athlete-reported), unlabeled rows and migrated legacy history are not read, so a formula switch cannot move a goal and history is not re-presented as attainment. The response carries `current_evidence_type` / `current_value_semantics` |
+| validated anchors (dashboard) | the same positive demonstrated rule; the response carries `evidence_type` / `value_semantics` |
+| KPIs (Projected Total, Relative Total) | labeled projections: they read the latest valid row of each lift, chart estimates included. The response carries `value_basis`, derived from the lineage of the same snapshot whose value is shown (selected once): `includes_estimate` if an input is positively an estimate or lower bound, `measured` if every input is positively measured, otherwise `unknown` (no lineage, a missing row, a NULL or unrecognized label). A KPI built on a KPI inherits its inputs. Both are `can_affect_prescriber_rules`: Relative Total gates the two SBD template variants at 3.0, so a chart estimate can change which variant is eligible. The activation report prints, per athlete, whether a restatement crosses 3.0 |
 
 Rollback: turning the flag off stops new chart rows. Chart rows already written stay eligible
 for prescription until they age out of the window, and the basis can fall in one step when the
@@ -127,4 +127,4 @@ by. It is not a forecast of the activation, because history stays Epley.
 
 Size of the step for a set that clears the gate (1–5 reps, this repository's chart): about
 0–2% at RPE 10, 5% at RPE 9, 8.5–9% at RPE 8. Always upward. Objective attainment and validated anchors
-exclude modeled estimates; KPIs are labeled projections (table above).
+read demonstrated measurements only; KPIs are labeled projections (table above). No web surface renders KPIs or anchors today (the web reads objective progress and `/dashboard/overview`); any surface that does must render `value_basis`.

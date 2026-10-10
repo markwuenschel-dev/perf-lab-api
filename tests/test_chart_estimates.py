@@ -540,53 +540,81 @@ async def _flag_row_pair(db, monkeypatch, user_id: int) -> tuple[float, float]:
     return epley, chart_value
 
 
-async def test_objective_attainment_ignores_a_chart_estimate_and_says_what_it_read(async_db, monkeypatch):
-    """The same set, 100 kg x 5 @ RPE 8, must not move a goal toward 100% because the formula
-    changed: attainment reads demonstrated rows, and the response says which row it read."""
+async def _estimate_rows_of_every_kind(db, monkeypatch, user_id: int) -> None:
+    """A legacy Epley row, a chart row, an athlete-reported estimate, a row with no labels, and a
+    measured row from migrated legacy history: every kind that is NOT a demonstrated reading."""
+    await _flag_row_pair(db, monkeypatch, user_id)  # Epley (lower_bound) then chart (modeled_estimate)
+    await ses.record_strength_report(
+        db, user_id,
+        StrengthReport(benchmark_code=CODE, method="estimate", value_kg=500.0, performed_at=T1),
+        collection_mode="retest",
+    )  # athlete-reported estimate
+    reported = (await _rows(db, user_id))[-1]
+    assert reported.evidence_type == "reported_estimate"
+
+    unlabeled = BenchmarkObservation(
+        user_id=user_id, benchmark_definition_id=reported.benchmark_definition_id,
+        observed_at=T1.replace(tzinfo=None) + timedelta(days=1), raw_value=400.0, validity_status="valid",
+    )
+    legacy = BenchmarkObservation(
+        user_id=user_id, benchmark_definition_id=reported.benchmark_definition_id,
+        observed_at=T1.replace(tzinfo=None) + timedelta(days=1), raw_value=410.0, validity_status="valid",
+        source_type="legacy_unknown", evidence_type="direct_measurement", value_semantics="measured",
+    )
+    db.add_all([unlabeled, legacy])
+    await db.commit()
+
+
+async def test_objective_attainment_reads_only_demonstrated_measurements(async_db, monkeypatch):
+    """No estimate of any kind, no unlabeled row and no migrated legacy history is attainment:
+    the same set, 100 kg x 5 @ RPE 8, cannot move a goal by changing formula, and neither can
+    an athlete's own estimate. The response says which row it read."""
     from app.models.objective import Objective
     from app.services.objective_service import compute_progress
 
     user = await _athlete(async_db, "obj@test.com")
-    epley, chart_value = await _flag_row_pair(async_db, monkeypatch, user.id)
-    target = round(chart_value, 1)
-    objective = Objective(user_id=user.id, benchmark_code=CODE, label="Squat", target_value=target)
+    await _estimate_rows_of_every_kind(async_db, monkeypatch, user.id)
+    objective = Objective(user_id=user.id, benchmark_code=CODE, label="Squat", target_value=130.0)
     async_db.add(objective)
     await async_db.commit()
 
     progress = await compute_progress(async_db, objective)
-    assert progress.current == pytest.approx(epley)
-    assert progress.pct == pytest.approx(epley / target * 100.0) and progress.pct < 100.0
-    assert progress.current_evidence_type == "lower_bound" and progress.current_value_semantics == "lower_bound"
+    assert (progress.current, progress.pct) == (None, None)
+    assert (progress.current_evidence_type, progress.current_value_semantics) == (None, None)
 
-    # A later tested max IS demonstrated attainment and wins over the (older) modeled estimate.
     await ses.record_strength_report(
         async_db, user.id,
-        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=target, performed_at=T1 + timedelta(days=2)),
+        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=120.0, performed_at=T1 + timedelta(days=2)),
         collection_mode="retest",
     )
     progress = await compute_progress(async_db, objective)
-    assert progress.pct == pytest.approx(100.0)
-    assert progress.current_evidence_type == "direct_measurement"
+    assert progress.current == 120.0 and progress.pct == pytest.approx(120.0 / 130.0 * 100.0)
+    assert (progress.current_evidence_type, progress.current_value_semantics) == ("direct_measurement", "measured")
+
+    # an invalidated measurement is not attainment either
+    (tested,) = [r for r in await _rows(async_db, user.id) if r.evidence_type == "direct_measurement" and r.source_type == "athlete_entry"]
+    tested.validity_status = "invalid"
+    await async_db.commit()
+    assert (await compute_progress(async_db, objective)).current is None
 
 
-async def test_a_validated_anchor_is_never_a_chart_estimate(async_db, monkeypatch):
+async def test_a_validated_anchor_is_a_demonstrated_measurement_only(async_db, monkeypatch):
     from app.services.dashboard_service import dashboard_kpis_bundle
 
     user = await _athlete(async_db, "anchor@test.com")
-    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", True)
-    await process_new_workout(async_db, user.id, _session(T1, load=100.0, reps=5, rpe=8.0))
+    await _estimate_rows_of_every_kind(async_db, monkeypatch, user.id)
     _, anchors = await dashboard_kpis_bundle(async_db, user.id)
-    assert anchors == []  # the only row is a modeled estimate: there is no demonstrated anchor
+    assert anchors == []  # estimates, unlabeled and migrated legacy rows are not anchors
 
     await ses.record_strength_report(
         async_db, user.id,
         StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=110.0, performed_at=T1 - timedelta(days=5)),
         collection_mode="retest",
     )
-    await _backdate_observations(async_db, user.id, source="manual", to=T1 - timedelta(days=5))
+    await _backdate_observations(async_db, user.id, source="manual", to=T1 - timedelta(days=9))
     _, anchors = await dashboard_kpis_bundle(async_db, user.id)
     (anchor,) = anchors
-    assert anchor.raw_value == 110.0  # older, but demonstrated, over the newer modeled estimate
+    assert anchor.raw_value == 110.0  # older, but the only demonstrated reading
     assert (anchor.evidence_type, anchor.value_semantics) == ("direct_measurement", "measured")
 
 
@@ -698,3 +726,154 @@ async def test_the_activation_report_needs_a_training_set_label_as_well_as_the_f
     await async_db.commit()
     (line,) = await activation_report(async_db, as_of=_AS_OF)
     assert line.restated_rows == 0
+
+
+# ----- KPI provenance: classified positively, read from one snapshot ------------------------------------- #
+
+@pytest.mark.parametrize(
+    ("semantics", "expected"),
+    [
+        ([], "unknown"),
+        ([None], "unknown"),
+        (["unknown"], "unknown"),
+        (["something_new"], "unknown"),
+        (["measured", None], "unknown"),
+        (["measured", "unknown"], "unknown"),
+        (["measured"], "measured"),
+        (["measured", "measured"], "measured"),
+        (["estimated"], "includes_estimate"),
+        (["lower_bound"], "includes_estimate"),
+        (["measured", "estimated"], "includes_estimate"),
+        (["measured", None, "estimated"], "includes_estimate"),
+    ],
+)
+def test_value_basis_is_classified_positively(semantics, expected):
+    from app.services.dashboard_service import classify_value_basis
+
+    assert classify_value_basis(semantics) == expected
+
+
+async def test_a_kpi_value_and_its_basis_come_from_the_same_snapshot(async_db, monkeypatch):
+    """A recompute landing between two reads must not pair an older estimate-based value with a
+    newer 'measured' label. The value, time and basis are all taken from one selected snapshot,
+    so even a stale value from the other reader is ignored."""
+    from app.models.derived_metric_snapshot import DerivedMetricSnapshot
+    from app.services import dashboard_service
+    from app.services.dashboard_service import dashboard_kpis_bundle
+
+    user = await _athlete(async_db, "kpi-atomic@test.com")
+    await _kpis(async_db, user)
+    estimate_obs = BenchmarkObservation(
+        user_id=user.id, benchmark_definition_id=(await _rows_def_id(async_db)), raw_value=123.3,
+        validity_status="valid", observed_at=T1.replace(tzinfo=None), value_semantics="estimated",
+    )
+    measured_obs = BenchmarkObservation(
+        user_id=user.id, benchmark_definition_id=(await _rows_def_id(async_db)), raw_value=110.0,
+        validity_status="valid", observed_at=T1.replace(tzinfo=None), value_semantics="measured",
+    )
+    async_db.add_all([estimate_obs, measured_obs])
+    await async_db.flush()
+    definition_id = (await async_db.execute(
+        select(DerivedMetricDefinition.id).where(DerivedMetricDefinition.code == "pl_projected_total")
+    )).scalar_one()
+    older = T1.replace(tzinfo=None)
+    async_db.add_all([
+        DerivedMetricSnapshot(
+            user_id=user.id, derived_metric_definition_id=definition_id, computed_at=older,
+            value=123.3, confidence=1.0, contributing_observation_ids=[estimate_obs.id],
+        ),
+        DerivedMetricSnapshot(
+            user_id=user.id, derived_metric_definition_id=definition_id, computed_at=older + timedelta(hours=1),
+            value=110.0, confidence=1.0, contributing_observation_ids=[measured_obs.id],
+        ),
+    ])
+    await async_db.commit()
+
+    async def stale_values(db, user_id):  # what a read taken before the recompute would have returned
+        return {"pl_projected_total": 123.3}
+
+    monkeypatch.setattr(dashboard_service, "latest_kpi_values", stale_values, raising=True)
+    kpis, _ = await dashboard_kpis_bundle(async_db, user.id)
+    (projected,) = [k for k in kpis if k.code == "pl_projected_total"]
+    assert (projected.value, projected.value_basis) == (110.0, "measured")
+
+
+async def _rows_def_id(db) -> int:
+    return (await db.execute(select(BenchmarkDefinition.id).where(BenchmarkDefinition.code == CODE))).scalar_one()
+
+
+# ----- the Relative Total gate check --------------------------------------------------------------------- #
+
+async def _three_lift_athlete(db, email: str, *, bodyweight_kg: float | None, lifts=("pl_e1rm_squat", "pl_e1rm_bench", "pl_e1rm_deadlift")):
+    from app.services.e1rm_activation import RelativeTotalLine  # noqa: F401  (import check)
+
+    user = await _athlete(db, email)
+    for code, name, pattern in (
+        ("pl_e1rm_bench", "Bench Press", "horizontal_push"), ("pl_e1rm_deadlift", "Deadlift", "hinge"),
+    ):
+        db.add(Exercise(name=name, modality="Strength", movement_pattern=pattern,
+                        load_type="barbell", is_benchmark=True, e1rm_benchmark_code=code))
+        db.add(BenchmarkDefinition(
+            code=code, name=code, domain="powerlifting", metric_type="load", unit="kg",
+            better_direction="higher", observation_weight=1.0,
+            standardization_rules={"floor": 40.0, "cap": 400.0},
+        ))
+    db.add(DerivedMetricDefinition(
+        code="pl_projected_total", name="Projected Total", domain="powerlifting", metric_type="score",
+        unit="kg", formula_type="sum",
+        formula_config={"benchmark_codes": ["pl_e1rm_squat", "pl_e1rm_bench", "pl_e1rm_deadlift"]},
+        display_priority=10, is_dashboard_kpi=True, can_affect_prescriber_rules=True,
+    ))
+    if bodyweight_kg is not None:
+        db.add(AthleteProfile(user_id=user.id, bodyweight_kg=bodyweight_kg))
+    await db.commit()
+    for code in lifts:
+        await ses.record_strength_report(
+            db, user.id, _report(benchmark_code=code, load_kg=100.0, reps=5, rpe=8.0), collection_mode="retest"
+        )
+    return user
+
+
+async def test_the_relative_total_check_flags_an_athlete_the_chart_would_move_across_3x(async_db):
+    from app.services.e1rm_activation import relative_total_report
+
+    epley = sc.e1rm_from_set(100.0, 5)
+    chart_value = sc.estimate_e1rm(load_kg=100.0, reps=5, rpe=8.0, rir=None, use_chart=True).value
+    near = await _three_lift_athlete(async_db, "rt-near@test.com", bodyweight_kg=round(3 * epley / 2.95, 2))
+    far = await _three_lift_athlete_again(async_db, "rt-far@test.com", bodyweight_kg=round(3 * epley / 2.0, 2))
+
+    lines = {line.user_id: line for line in await relative_total_report(async_db)}
+    near_line, far_line = lines[near.id], lines[far.id]
+    assert near_line.total_now_kg == pytest.approx(3 * epley) and near_line.total_chart_kg == pytest.approx(3 * chart_value)
+    assert near_line.restated_lifts == 3
+    assert near_line.relative_now < 3.0 <= near_line.relative_chart and near_line.crosses_template_gate
+    assert far_line.relative_chart < 3.0 and not far_line.crosses_template_gate
+
+
+async def _three_lift_athlete_again(db, email: str, *, bodyweight_kg: float):
+    """A second athlete on the catalog `_three_lift_athlete` already created."""
+    user = User(email=email, hashed_password="x", is_active=True)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    db.add(AthleteProfile(user_id=user.id, bodyweight_kg=bodyweight_kg))
+    await db.commit()
+    for code in ("pl_e1rm_squat", "pl_e1rm_bench", "pl_e1rm_deadlift"):
+        await ses.record_strength_report(
+            db, user.id, _report(benchmark_code=code, load_kg=100.0, reps=5, rpe=8.0), collection_mode="retest"
+        )
+    return user
+
+
+async def test_the_relative_total_check_lists_only_athletes_who_have_a_relative_total(async_db):
+    from app.services.e1rm_activation import relative_total_report
+
+    await _three_lift_athlete(async_db, "rt-nobw@test.com", bodyweight_kg=None)
+    assert await relative_total_report(async_db) == []  # no bodyweight: no Relative Total
+
+
+async def test_the_relative_total_check_needs_all_three_lifts(async_db):
+    from app.services.e1rm_activation import relative_total_report
+
+    await _three_lift_athlete(async_db, "rt-missing@test.com", bodyweight_kg=90.0, lifts=("pl_e1rm_squat", "pl_e1rm_bench"))
+    assert await relative_total_report(async_db) == []

@@ -123,6 +123,11 @@ async def test_benchmark_linked_objective_has_direction_aware_progress(http_clie
             user_id=user_id,
             benchmark_definition_id=definition.id,
             raw_value=1380.0,  # faster than the 1440s target
+            # What an athlete's own entry is stamped with; an unlabeled row is not attainment.
+            validity_status="valid",
+            source_type="athlete_entry",
+            evidence_type="direct_measurement",
+            value_semantics="measured",
         )
     )
     await async_db.commit()
@@ -133,6 +138,9 @@ async def test_benchmark_linked_objective_has_direction_aware_progress(http_clie
     assert progress["current"] == 1380.0
     assert progress["direction"] == "lower"
     assert progress["pct"] == 100.0  # already beat the target
+    assert (progress["current_evidence_type"], progress["current_value_semantics"]) == (
+        "direct_measurement", "measured"
+    )
 
 
 async def test_objectives_unauthenticated(http_client):

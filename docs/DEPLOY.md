@@ -289,11 +289,17 @@ new chart row competes with the existing rows by value: it raises an athlete's b
 is the highest eligible one, and then the basis moves to it at once.
 
 **What changes on the dashboards when it is on:**
-- Objective progress and validated anchors read demonstrated values only: chart estimates never
-  appear there, so a goal cannot move toward 100% because of the formula.
-- Projected Total and Relative Total read chart estimates (they are labeled projections:
-  `value_basis = includes_estimate`). Relative Total gates two templates at 3.0, so a chart
-  estimate can change which template is eligible. **The activation report does not show this.**
+- Objective progress and validated anchors read demonstrated measurements only (valid, an athlete's
+  own measured entry). Estimates of every kind (chart, Epley, athlete-reported), unlabeled rows and
+  migrated legacy history are not read, with the flag on or off: a goal cannot move because of the
+  formula, and history is not re-presented as attainment. (This is stricter than before this change,
+  which read the latest row of any kind: an athlete whose only rows are estimates or migrated
+  legacy history now has no attainment or anchor until they record a measurement.)
+- Projected Total and Relative Total read chart estimates (they are projections:
+  `value_basis = includes_estimate`; each KPI's value, time and basis come from one snapshot).
+  Relative Total gates the two SBD template variants at 3.0, so a chart estimate can change which
+  variant an athlete is offered. The report below prints it. No web screen renders KPIs or anchors
+  today; one that does must render `value_basis`.
 
 Look first (read-only, a counterfactual, not a forecast):
 
@@ -308,6 +314,10 @@ that qualify today had been estimated with the chart*, the difference, the facto
 if its recorded formula is Epley with a training-set label, it could size a load today, and the
 chart would speak for it; rows with no recorded formula are not restated. It does not compare
 final prescribed loads (those also depend on the plan, readiness and gates).
+
+A second table prints, per athlete with all three lifts and a bodyweight, Relative Total today and
+with each lift's latest valid row re-estimated, and **CROSSES 3.0** where that moves the athlete to
+the other template variant. Check it before turning the flag on.
 
 **Turning it on:** add `E1RM_CHART_ESTIMATES=true` to `/opt/stack/infra/env/perf-lab-api.env`, then
 `sudo docker compose up -d perf-lab-api`.
