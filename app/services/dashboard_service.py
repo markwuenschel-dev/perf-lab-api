@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.models.derived_metric_snapshot import DerivedMetricSnapshot
 from app.models.mesocycle import PlannedSession, SessionStatus
 from app.models.workout_log import WorkoutLog
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
+from app.repositories.benchmark_observation_repository import not_modeled_estimate_clause
 from app.schemas.dashboard import (
     AdherenceMetrics,
     AnchorObservationOut,
@@ -117,6 +118,7 @@ def _compute_derived_value(
     obs_by_code: dict[str, tuple[float, int, datetime]],
     kpi_ctx: dict[str, float],
     bodyweight_kg: float | None,
+    kpi_lineage: Mapping[str, list[int]] | None = None,
 ) -> tuple[float | None, list[int], str | None]:
     fc: dict[str, Any] = dict(d.formula_config or {})
     obs_ids: list[int] = []
@@ -176,6 +178,9 @@ def _compute_derived_value(
                 continue
             if key in kpi_ctx:
                 ctx[key] = kpi_ctx[key]
+                # A KPI built on another KPI inherits that KPI's inputs, so what it rests on
+                # (measurements or estimates) stays traceable.
+                obs_ids.extend((kpi_lineage or {}).get(key, []))
                 continue
             if key in obs_by_code:
                 ctx[key] = obs_by_code[key][0]
@@ -200,9 +205,10 @@ async def recompute_derived_metrics(db: AsyncSession, user_id: int) -> tuple[int
     defs = sorted(defs_result.scalars().all(), key=lambda x: _order_key(x.code))
 
     kpi_ctx: dict[str, float] = {}
+    kpi_lineage: dict[str, list[int]] = {}
     written: list[str] = []
     for d in defs:
-        val, oids, err = _compute_derived_value(d, obs_by_code, kpi_ctx, bw)
+        val, oids, err = _compute_derived_value(d, obs_by_code, kpi_ctx, bw, kpi_lineage)
         if val is None:
             continue
         snap = DerivedMetricSnapshot(
@@ -216,9 +222,39 @@ async def recompute_derived_metrics(db: AsyncSession, user_id: int) -> tuple[int
         )
         db.add(snap)
         kpi_ctx[d.code] = val
+        kpi_lineage[d.code] = oids
         written.append(d.code)
     await db.commit()
     return len(written), written
+
+
+async def _value_bases(
+    db: AsyncSession, user_id: int, snapshots: Mapping[int, DerivedMetricSnapshot]
+) -> dict[int, Literal["measured", "includes_estimate", "unknown"]]:
+    """Whether each KPI rests only on measurements, from its snapshot's lineage.
+
+    KPIs deliberately read estimates (a projected total is built from e1RMs); this says so
+    instead of leaving the response to look like a measurement.
+    """
+    ids = {i for s in snapshots.values() for i in (s.contributing_observation_ids or [])}
+    semantics: dict[int, str | None] = {}
+    if ids:
+        rows = await db.execute(
+            select(BenchmarkObservation.id, BenchmarkObservation.value_semantics).where(
+                BenchmarkObservation.user_id == user_id, BenchmarkObservation.id.in_(ids)
+            )
+        )
+        semantics = {row[0]: row[1] for row in rows.all()}  # noqa: C416
+    out: dict[int, Literal["measured", "includes_estimate", "unknown"]] = {}
+    for def_id, snap in snapshots.items():
+        lineage = snap.contributing_observation_ids or []
+        if not lineage or any(i not in semantics for i in lineage):
+            out[def_id] = "unknown"
+        elif all(semantics[i] == "measured" for i in lineage):
+            out[def_id] = "measured"
+        else:
+            out[def_id] = "includes_estimate"
+    return out
 
 
 async def dashboard_kpis_bundle(
@@ -241,7 +277,7 @@ async def dashboard_kpis_bundle(
     defs = list(defs_res.scalars().all())
     kpi_vals = await latest_kpi_values(db, user_id)
 
-    kpis_out: list[KPIValueOut] = []
+    emitted: list[tuple[int, KPIValueOut, DerivedMetricSnapshot | None]] = []
     for d in defs:
         if d.code not in kpi_vals:
             continue
@@ -255,7 +291,7 @@ async def dashboard_kpis_bundle(
             .limit(1)
         )
         snap = snap_res.scalars().first()
-        kpis_out.append(
+        kpi = (
             KPIValueOut(
                 code=d.code,
                 name=d.name,
@@ -269,6 +305,11 @@ async def dashboard_kpis_bundle(
                 can_affect_prescriber_rules=d.can_affect_prescriber_rules,
             )
         )
+        emitted.append((d.id, kpi, snap))
+    bases = await _value_bases(db, user_id, {did: snap for did, _, snap in emitted if snap is not None})
+    kpis_out: list[KPIValueOut] = []
+    for did, kpi, _ in emitted:
+        kpis_out.append(kpi.model_copy(update={"value_basis": bases.get(did, "unknown")}))
 
     anchor_res = await db.execute(
         select(BenchmarkObservation, BenchmarkDefinition)
@@ -277,6 +318,8 @@ async def dashboard_kpis_bundle(
             BenchmarkObservation.user_id == user_id,
             BenchmarkObservation.validity_status == "valid",
             BenchmarkDefinition.is_primary_anchor == True,  # noqa: E712
+            # An anchor is a demonstrated value: a modeled estimate is never the row shown.
+            not_modeled_estimate_clause(),
         )
         .order_by(BenchmarkObservation.observed_at.desc())
     )
@@ -297,6 +340,8 @@ async def dashboard_kpis_bundle(
                 unit=bd.unit,
                 raw_value=obs.raw_value,
                 observed_at=obs.observed_at,
+                evidence_type=obs.evidence_type,
+                value_semantics=obs.value_semantics,
             )
         )
     anchors_out.sort(key=lambda a: (a.domain, a.benchmark_code))

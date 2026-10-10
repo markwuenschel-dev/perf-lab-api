@@ -34,7 +34,9 @@ from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.models.capacity_floor_shadow import CapacityFloorShadowLog
+from app.models.derived_metric_definition import DerivedMetricDefinition
 from app.models.exercise import Exercise
+from app.models.observation_mapping import ObservationMapping
 from app.models.user import AthleteProfile, User
 from app.repositories.benchmark_observation_repository import estimated_pr_baseline
 from app.schemas.benchmarks import StrengthReport
@@ -43,7 +45,7 @@ from app.schemas.workouts import WorkoutLog, WorkoutSetEntry
 from app.services import strength_evidence_service as ses
 from app.services.e1rm_activation import activation_report
 from app.services.prescription_service import _enrich_exercises_with_load
-from app.services.state_service import process_new_workout
+from app.services.state_service import initialize_athlete_state, process_new_workout
 
 ROOT = Path(__file__).resolve().parents[1]
 CODE = "pl_e1rm_squat"
@@ -55,19 +57,43 @@ def chart(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", True)
 
 
-async def _athlete(db, email: str) -> User:
-    user = User(email=email, hashed_password="x", is_active=True)
-    db.add(user)
+async def _catalog(db) -> None:
+    """The squat lift, its e1RM benchmark and the benchmark's capacity mapping. With the mapping
+    a measured observation CAN move the state, so "chart rows move nothing" is a real assertion."""
     db.add(Exercise(name="Back Squat", modality="Strength", movement_pattern="squat",
                     load_type="barbell", is_benchmark=True, e1rm_benchmark_code=CODE))
-    db.add(BenchmarkDefinition(
+    definition = BenchmarkDefinition(
         code=CODE, name="Squat e1RM", domain="powerlifting", metric_type="load", unit="kg",
-        better_direction="higher", observation_weight=1.0,
+        better_direction="higher", observation_weight=1.0, is_primary_anchor=True,
         standardization_rules={"floor": 40.0, "cap": 250.0},
+    )
+    db.add(definition)
+    await db.flush()
+    db.add(ObservationMapping(
+        benchmark_definition_id=definition.id, target_vector="capacity",
+        target_key="max_strength", mapping_type="residual", coefficient=1.0, intercept=0.0,
     ))
     await db.commit()
+
+
+async def _athlete(db, email: str) -> User:
+    """An athlete with an existing head, on a catalog whose benchmark is mapped to capacity."""
+    user = User(email=email, hashed_password="x", is_active=True)
+    db.add(user)
+    await db.commit()
     await db.refresh(user)
+    await _catalog(db)
+    await initialize_athlete_state(db, user.id)
     return user
+
+
+async def _chain(db, user_id: int) -> list[tuple[int, int | None, int | None]]:
+    """(state id, source workout, source observation) for the athlete, oldest first."""
+    rows = await db.execute(
+        select(AthleteState.id, AthleteState.source_workout_log_id, AthleteState.source_observation_id)
+        .where(AthleteState.user_id == user_id).order_by(AthleteState.id)
+    )
+    return [tuple(r) for r in rows.all()]
 
 
 def _session(at: datetime, *, load: float = 100.0, reps: int = 5, rpe: float | None = 8.5, rir: float | None = None):
@@ -209,8 +235,9 @@ def test_a_modeled_estimate_has_no_capacity_authority_whatever_its_source():
     assert legacy.capacity_effect == oa.CE_UPWARD_LOWER_BOUND
 
 
-async def test_chart_extraction_is_modeled_pr_or_not_and_records_no_floor_and_no_state(async_db, chart):
+async def test_chart_extraction_is_modeled_pr_or_not_and_moves_nothing(async_db, chart):
     user = await _athlete(async_db, "sem@test.com")
+    head_before = (await _chain(async_db, user.id))[-1]
     await process_new_workout(async_db, user.id, _session(T1, load=120.0, reps=3, rpe=9.0))  # a PR
     await process_new_workout(async_db, user.id, _session(T1 + timedelta(days=1), load=100.0, reps=3, rpe=9.0))  # not
     pr, below = [r for r in await _rows(async_db, user.id) if r.source == "workout_extraction"]
@@ -220,7 +247,29 @@ async def test_chart_extraction_is_modeled_pr_or_not_and_records_no_floor_and_no
         assert r.capacity_effect == "none" and r.affects_prescription is True
         assert (r.formula, r.model_version) == ("rpe_rir_chart", sc.MODEL_VERSION)
     assert (pr.observation_weight, below.observation_weight) == (0.10, 0.0)  # PR tracking is kept as metadata
+    # The benchmark is mapped to capacity and the athlete has a head, so a state write WOULD show:
+    chain = await _chain(async_db, user.id)
+    assert chain[0] == head_before and len(chain) == 3  # the existing head + one row per WORKOUT only
+    assert all(obs_id is None for _, _, obs_id in chain)  # no observation-linked state row
+    assert all(wk_id is not None for _, wk_id, _ in chain[1:])
     assert await _count(async_db, CapacityFloorShadowLog) == 0
+
+
+async def test_control_the_same_fixture_does_record_a_floor_and_a_state_row_when_authority_exists(async_db):
+    """Anti-vacuity: on this exact fixture, a legacy PR records a floor candidate and a measured
+    test moves the state. So the zero counts above are the chart rows' doing, not the fixture's."""
+    user = await _athlete(async_db, "control@test.com")
+    await process_new_workout(async_db, user.id, _session(T1, load=120.0, reps=3, rpe=9.0))  # Epley PR
+    assert await _count(async_db, CapacityFloorShadowLog) == 1
+
+    before = await _chain(async_db, user.id)
+    await ses.record_strength_report(
+        async_db, user.id,
+        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=150.0, performed_at=T1 + timedelta(days=1)),
+        collection_mode="retest",
+    )
+    after = await _chain(async_db, user.id)
+    assert len(after) == len(before) + 1 and after[-1][2] is not None  # an observation-linked state row
 
 
 async def test_the_legacy_estimate_keeps_its_labels_when_the_flag_is_off(async_db):
@@ -232,11 +281,13 @@ async def test_the_legacy_estimate_keeps_its_labels_when_the_flag_is_off(async_d
     )
 
 
-async def test_a_chart_estimate_reported_in_assess_is_modeled_and_authorityless(async_db, chart):
+async def test_a_chart_estimate_reported_in_assess_is_modeled_and_moves_nothing(async_db, chart):
     user = await _athlete(async_db, "assess-sem@test.com")
+    before = await _chain(async_db, user.id)
     await ses.record_strength_report(async_db, user.id, _report(), collection_mode="retest")
     (row,) = await _rows(async_db, user.id)
     assert (row.evidence_type, row.value_semantics, row.capacity_effect) == ("modeled_estimate", "estimated", "none")
+    assert await _chain(async_db, user.id) == before  # the head is untouched, no linked row
     assert await _count(async_db, CapacityFloorShadowLog) == 0
 
 
@@ -412,3 +463,238 @@ async def test_the_activation_report_restates_only_sets_the_chart_would_speak_fo
     await process_new_workout(async_db, user.id, _session(T1, load=100.0, reps=5, rpe=8.5))
     (line,) = await activation_report(async_db, as_of=as_of)
     assert line.restated_rows == 1
+
+
+# ----- the real onboarding operation across the flag switch ---------------------------------------------- #
+
+async def _signed_in(client, email: str) -> dict[str, str]:
+    assert (await client.post("/auth/register", json={"email": email, "password": "securepass1"})).status_code == 201
+    tok = await client.post(
+        "/auth/token", data={"username": email, "password": "securepass1"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    return {"Authorization": f"Bearer {tok.json()['access_token']}"}
+
+
+def _onboard_body() -> dict:
+    return {
+        "goal": "Strength", "date_of_birth": "1990-04-17", "equipment": ["barbell"],
+        "available_days_per_week": 4, "session_duration_minutes": 60,
+        "strength": [{
+            "benchmark_code": CODE, "method": "rep_set", "load_kg": 100.0, "reps": 5, "rpe": 8.5,
+            "performed_at": (T1 - timedelta(days=1)).isoformat(),
+        }],
+    }
+
+
+@pytest.mark.parametrize(("first", "second"), [(False, True), (True, False)])
+async def test_onboarding_retried_after_the_flag_switch_records_and_changes_nothing(
+    async_db, http_client, monkeypatch, first, second
+):
+    """POST /v1/onboard, the real operation (its seed, its staging, its commit): the same
+    submission sent again after the switch adds no observation, moves no profile value and adds
+    no state row, in both directions."""
+    await _catalog(async_db)
+    email = f"onb-{first}@test.com".lower()
+    headers = await _signed_in(http_client, email)
+    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", first)
+    assert (await http_client.post("/v1/onboard", json=_onboard_body(), headers=headers)).status_code == 200
+
+    user_id = (await async_db.execute(select(User.id).where(User.email == email))).scalar_one()
+    obs_before = [(r.id, r.raw_value, r.formula) for r in await _rows(async_db, user_id)]
+    chain_before = await _chain(async_db, user_id)
+    profile = (await async_db.execute(select(AthleteProfile).where(AthleteProfile.user_id == user_id))).scalar_one()
+    squat_before = profile.squat_1rm
+    assert len(obs_before) == 1 and squat_before == obs_before[0][1] and chain_before
+
+    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", second)
+    assert (await http_client.post("/v1/onboard", json=_onboard_body(), headers=headers)).status_code == 200
+
+    async_db.expire_all()
+    assert [(r.id, r.raw_value, r.formula) for r in await _rows(async_db, user_id)] == obs_before
+    assert await _chain(async_db, user_id) == chain_before
+    profile = (await async_db.execute(select(AthleteProfile).where(AthleteProfile.user_id == user_id))).scalar_one()
+    assert profile.squat_1rm == squat_before
+
+
+# ----- readers: demonstrated attainment vs labeled projections ----------------------------------------- #
+
+async def _backdate_observations(db, user_id: int, *, source: str, to: datetime) -> None:
+    """Make the athlete's ``source`` rows older than a chart row, by their observed time. (A report
+    is observed when it is recorded; "latest" readers order by observed_at.)"""
+    for row in await _rows(db, user_id):
+        if row.source == source:
+            row.observed_at = to.replace(tzinfo=None)
+    await db.commit()
+
+
+async def _flag_row_pair(db, monkeypatch, user_id: int) -> tuple[float, float]:
+    """An Epley row, then a later chart row for the identical set. Returns (epley, chart)."""
+    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", False)
+    await process_new_workout(db, user_id, _session(T1, load=100.0, reps=5, rpe=8.0))
+    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", True)
+    await process_new_workout(db, user_id, _session(T1 + timedelta(days=1), load=100.0, reps=5, rpe=8.0))
+    epley = sc.e1rm_from_set(100.0, 5)
+    chart_value = sc.estimate_e1rm(load_kg=100.0, reps=5, rpe=8.0, rir=None, use_chart=True).value
+    assert chart_value > epley
+    return epley, chart_value
+
+
+async def test_objective_attainment_ignores_a_chart_estimate_and_says_what_it_read(async_db, monkeypatch):
+    """The same set, 100 kg x 5 @ RPE 8, must not move a goal toward 100% because the formula
+    changed: attainment reads demonstrated rows, and the response says which row it read."""
+    from app.models.objective import Objective
+    from app.services.objective_service import compute_progress
+
+    user = await _athlete(async_db, "obj@test.com")
+    epley, chart_value = await _flag_row_pair(async_db, monkeypatch, user.id)
+    target = round(chart_value, 1)
+    objective = Objective(user_id=user.id, benchmark_code=CODE, label="Squat", target_value=target)
+    async_db.add(objective)
+    await async_db.commit()
+
+    progress = await compute_progress(async_db, objective)
+    assert progress.current == pytest.approx(epley)
+    assert progress.pct == pytest.approx(epley / target * 100.0) and progress.pct < 100.0
+    assert progress.current_evidence_type == "lower_bound" and progress.current_value_semantics == "lower_bound"
+
+    # A later tested max IS demonstrated attainment and wins over the (older) modeled estimate.
+    await ses.record_strength_report(
+        async_db, user.id,
+        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=target, performed_at=T1 + timedelta(days=2)),
+        collection_mode="retest",
+    )
+    progress = await compute_progress(async_db, objective)
+    assert progress.pct == pytest.approx(100.0)
+    assert progress.current_evidence_type == "direct_measurement"
+
+
+async def test_a_validated_anchor_is_never_a_chart_estimate(async_db, monkeypatch):
+    from app.services.dashboard_service import dashboard_kpis_bundle
+
+    user = await _athlete(async_db, "anchor@test.com")
+    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", True)
+    await process_new_workout(async_db, user.id, _session(T1, load=100.0, reps=5, rpe=8.0))
+    _, anchors = await dashboard_kpis_bundle(async_db, user.id)
+    assert anchors == []  # the only row is a modeled estimate: there is no demonstrated anchor
+
+    await ses.record_strength_report(
+        async_db, user.id,
+        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=110.0, performed_at=T1 - timedelta(days=5)),
+        collection_mode="retest",
+    )
+    await _backdate_observations(async_db, user.id, source="manual", to=T1 - timedelta(days=5))
+    _, anchors = await dashboard_kpis_bundle(async_db, user.id)
+    (anchor,) = anchors
+    assert anchor.raw_value == 110.0  # older, but demonstrated, over the newer modeled estimate
+    assert (anchor.evidence_type, anchor.value_semantics) == ("direct_measurement", "measured")
+
+
+async def _kpis(db, user: User) -> None:
+    db.add(DerivedMetricDefinition(
+        code="pl_projected_total", name="Projected Total", domain="powerlifting", metric_type="score",
+        unit="kg", formula_type="sum", formula_config={"benchmark_codes": [CODE]},
+        display_priority=10, is_dashboard_kpi=True, can_affect_prescriber_rules=True,
+    ))
+    db.add(DerivedMetricDefinition(
+        code="pl_relative_total", name="Relative Total", domain="powerlifting", metric_type="ratio",
+        unit="x_bodyweight", formula_type="custom_python_key",
+        formula_config={"function": "relative_total", "inputs": ["pl_projected_total", "bodyweight_kg"]},
+        display_priority=20, is_dashboard_kpi=True, can_affect_prescriber_rules=True,
+    ))
+    db.add(AthleteProfile(user_id=user.id, bodyweight_kg=100.0))
+    await db.commit()
+
+
+async def test_projected_kpis_read_chart_estimates_and_are_labeled_as_resting_on_an_estimate(async_db, monkeypatch):
+    from app.services.dashboard_service import dashboard_kpis_bundle, recompute_derived_metrics
+
+    user = await _athlete(async_db, "kpi@test.com")
+    await _kpis(async_db, user)
+    # measured inputs only
+    await ses.record_strength_report(
+        async_db, user.id,
+        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=110.0, performed_at=T1 - timedelta(days=5)),
+        collection_mode="retest",
+    )
+    await _backdate_observations(async_db, user.id, source="manual", to=T1 - timedelta(days=5))
+    await recompute_derived_metrics(async_db, user.id)
+    kpis, _ = await dashboard_kpis_bundle(async_db, user.id)
+    assert {k.code: (k.value, k.value_basis) for k in kpis} == {
+        "pl_projected_total": (110.0, "measured"), "pl_relative_total": (1.1, "measured"),
+    }
+
+    # a newer chart estimate: the projection reads it (policy) and says it rests on an estimate,
+    # including Relative Total, which is built on Projected Total.
+    monkeypatch.setattr(settings, "E1RM_CHART_ESTIMATES", True)
+    await process_new_workout(async_db, user.id, _session(T1, load=100.0, reps=5, rpe=8.0))
+    chart_value = sc.estimate_e1rm(load_kg=100.0, reps=5, rpe=8.0, rir=None, use_chart=True).value
+    await recompute_derived_metrics(async_db, user.id)
+    kpis, _ = await dashboard_kpis_bundle(async_db, user.id)
+    by = {k.code: k for k in kpis}
+    assert by["pl_projected_total"].value == pytest.approx(chart_value)
+    assert by["pl_projected_total"].value_basis == "includes_estimate"
+    assert by["pl_relative_total"].value_basis == "includes_estimate"
+
+
+# ----- the activation report restates only what it can prove was Epley, and only what is eligible --------- #
+
+_AS_OF = T1.replace(tzinfo=None) + timedelta(days=1)
+
+
+async def test_the_activation_report_never_restates_a_measurement_that_carries_set_fields(async_db):
+    """A tested max stored with single-set metadata and no formula is still a measurement."""
+    user = await _athlete(async_db, "act-measured@test.com")
+    await ses.record_strength_report(
+        async_db, user.id,
+        StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=150.0, performed_at=T1),
+        collection_mode="retest",
+    )
+    (row,) = await _rows(async_db, user.id)
+    row.reps, row.load_kg, row.rpe, row.formula, row.effort_fidelity = 1, 150.0, 10.0, None, "set_level"
+    await async_db.commit()
+
+    (line,) = await activation_report(async_db, as_of=_AS_OF)
+    assert (line.basis_now_kg, line.basis_chart_kg, line.restated_rows) == (150.0, 150.0, 0)
+
+
+async def test_the_activation_report_does_not_restate_a_row_with_no_recorded_formula(async_db):
+    user = await _athlete(async_db, "act-noformula@test.com")
+    await process_new_workout(async_db, user.id, _session(T1, load=100.0, reps=5, rpe=8.5))
+    for row in await _rows(async_db, user.id):
+        row.formula = None
+    await async_db.commit()
+    (line,) = await activation_report(async_db, as_of=_AS_OF)
+    assert line.restated_rows == 0 and line.basis_now_kg == line.basis_chart_kg
+
+
+async def test_the_activation_report_counts_only_rows_that_could_size_a_load_today(async_db):
+    """Four Epley rows, one eligible: stale, invalid and not-permitted rows are not restated."""
+    user = await _athlete(async_db, "act-eligible@test.com")
+    for i, at in enumerate((T1, T1 - timedelta(days=40), T1 - timedelta(hours=1), T1 - timedelta(hours=2))):
+        await process_new_workout(async_db, user.id, _session(at, load=100.0 + i, reps=5, rpe=8.5))
+    rows = [r for r in await _rows(async_db, user.id) if r.source == "workout_extraction"]
+    assert len(rows) == 4
+    by_load = {r.load_kg: r for r in rows}
+    by_load[102.0].validity_status = "invalid"
+    by_load[103.0].affects_prescription = False
+    await async_db.commit()
+
+    (line,) = await activation_report(async_db, as_of=_AS_OF)
+    # 100.0 (in window) is the only eligible row; 101.0 is 40 days old; 102.0 invalid; 103.0 not permitted
+    assert line.restated_rows == 1
+    assert line.basis_now_kg == pytest.approx(sc.e1rm_from_set(100.0, 5))
+    assert line.basis_chart_kg == pytest.approx(
+        sc.estimate_e1rm(load_kg=100.0, reps=5, rpe=8.5, rir=None, use_chart=True).value
+    )
+
+
+async def test_the_activation_report_needs_a_training_set_label_as_well_as_the_formula(async_db):
+    """An athlete-reported estimate is not a set the chart can re-estimate, whatever else it carries."""
+    user = await _athlete(async_db, "act-label@test.com")
+    await process_new_workout(async_db, user.id, _session(T1, load=100.0, reps=5, rpe=8.5))
+    for row in await _rows(async_db, user.id):
+        row.evidence_type = "reported_estimate"
+    await async_db.commit()
+    (line,) = await activation_report(async_db, as_of=_AS_OF)
+    assert line.restated_rows == 0

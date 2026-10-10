@@ -47,6 +47,11 @@ class ProgressBlock(BaseModel):
     target: float | None = None
     pct: float | None = None
     direction: str | None = None
+    # What ``current`` is, so a client can tell a tested max from a training-set estimate.
+    # ``current`` is demonstrated attainment: a modeled (chart) estimate is never the row it
+    # reads (ADR-0056 amendment), so a formula switch cannot move a goal toward 100%.
+    current_evidence_type: str | None = None
+    current_value_semantics: str | None = None
 
 
 class ObjectiveRead(BaseModel):

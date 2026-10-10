@@ -107,19 +107,24 @@ onboarding seed by the largest steps.
 
 | reader | policy |
 |---|---|
-| prescription basis | formula-blind: the highest eligible value in the 28-day window wins. The first new qualifying chart estimate moves an athlete's basis by the whole step, at once |
+| prescription basis | formula-blind: the highest eligible value in the 28-day window wins. History stays Epley, so a new chart estimate competes with existing rows by value: it raises the basis only if it is the highest, and the basis then moves to it at once |
 | dose denominator (`e1rm_pre`) | the same selection, so a higher basis lowers `load / e1rm_pre` by the same factor. Freezing the v0 dose operator does not freeze this denominator |
 | estimated-PR tracking | compared only with estimates of the same formula |
 | decline watermark, public best-validated | demonstrated strength only (ADR-0066); a chart estimate is never one |
 | capacity authority | none (ADR-0055 amendment) |
 | profile projection | latest report, as before |
+| objective progress (`current`, `pct`) | demonstrated attainment: a modeled estimate is never the row read, so a formula switch cannot move a goal toward 100%. Every other row is read as before (legacy estimates included; invalidated rows are not filtered, which predates this change). The response carries `current_evidence_type` / `current_value_semantics` |
+| validated anchors (dashboard) | demonstrated only: modeled estimates are excluded; the response carries `evidence_type` / `value_semantics` |
+| KPIs (Projected Total, Relative Total) | labeled projections: they read the latest valid row of each lift, chart estimates included. The response carries `value_basis` (`measured`, `includes_estimate`, `unknown`) derived from the snapshot's lineage, which now includes the inputs of the KPI a KPI is built on. Both are `can_affect_prescriber_rules`: Relative Total gates two templates at 3.0, so a chart estimate can change which template is eligible. The activation report does not cover this |
 
 Rollback: turning the flag off stops new chart rows. Chart rows already written stay eligible
-for prescription until they age out of the window. The step is not training progress and must
-not be presented as such. `python -m app.scripts.e1rm_activation_report` shows each athlete's
-step (today's basis against the chart's, and the factor `load / e1rm_pre` is multiplied by)
-before the flag is turned on; it is read-only.
+for prescription until they age out of the window, and the basis can fall in one step when the
+winning chart row expires (to the next highest eligible row). The step is not training progress
+and must not be presented as such. `python -m app.scripts.e1rm_activation_report` is a read-only
+counterfactual: it re-estimates, with the chart, the Epley-derived in-window sets that could size
+a load today and prints the basis difference and the factor `load / e1rm_pre` would be multiplied
+by. It is not a forecast of the activation, because history stays Epley.
 
 Size of the step for a set that clears the gate (1–5 reps, this repository's chart): about
-0–2% at RPE 10, 5% at RPE 9, 8.5–9% at RPE 8. Always upward. The KPI, anchor and objective readers were not
-changed by this slice; whether they should exclude modeled estimates is open.
+0–2% at RPE 10, 5% at RPE 9, 8.5–9% at RPE 8. Always upward. Objective attainment and validated anchors
+exclude modeled estimates; KPIs are labeled projections (table above).

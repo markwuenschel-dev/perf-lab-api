@@ -17,6 +17,10 @@ class KPIValueOut(BaseModel):
     computed_at: datetime
     is_dashboard_kpi: bool
     can_affect_prescriber_rules: bool
+    # What the inputs were: "measured" (every contributing observation is a measurement),
+    # "includes_estimate" (at least one is an estimate or lower bound, so this is a projection),
+    # "unknown" (a snapshot written without lineage).
+    value_basis: Literal["measured", "includes_estimate", "unknown"] = "unknown"
 
 
 class AnchorObservationOut(BaseModel):
@@ -28,6 +32,9 @@ class AnchorObservationOut(BaseModel):
     unit: str
     raw_value: float
     observed_at: datetime
+    # A validated anchor is a demonstrated value: a modeled estimate is never the row shown.
+    evidence_type: str | None = None
+    value_semantics: str | None = None
 
 
 class DashboardBundleOut(BaseModel):

@@ -118,6 +118,17 @@
             "title": "Domain",
             "type": "string"
           },
+          "evidence_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Type"
+          },
           "is_primary_anchor": {
             "title": "Is Primary Anchor",
             "type": "boolean"
@@ -142,6 +153,17 @@
           "unit": {
             "title": "Unit",
             "type": "string"
+          },
+          "value_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Semantics"
           }
         },
         "required": [
@@ -3539,6 +3561,16 @@
           "value": {
             "title": "Value",
             "type": "number"
+          },
+          "value_basis": {
+            "default": "unknown",
+            "enum": [
+              "measured",
+              "includes_estimate",
+              "unknown"
+            ],
+            "title": "Value Basis",
+            "type": "string"
           }
         },
         "required": [
@@ -6068,6 +6100,28 @@
               }
             ],
             "title": "Current"
+          },
+          "current_evidence_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Evidence Type"
+          },
+          "current_value_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value Semantics"
           },
           "direction": {
             "anyOf": [

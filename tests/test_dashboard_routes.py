@@ -239,6 +239,7 @@ _EXPECTED_KPI_POWER = {
     "computed_at": "2026-01-02T03:04:05",
     "is_dashboard_kpi": True,
     "can_affect_prescriber_rules": True,
+    "value_basis": "unknown",  # a snapshot written without lineage
 }
 _EXPECTED_KPI_ENGINE = {
     "code": "aa_test_engine",
@@ -251,6 +252,7 @@ _EXPECTED_KPI_ENGINE = {
     "computed_at": "2026-01-03T04:05:06",
     "is_dashboard_kpi": False,
     "can_affect_prescriber_rules": False,
+    "value_basis": "unknown",
 }
 _EXPECTED_ANCHOR_ROW = {
     "benchmark_code": "aa_anchor_row",
@@ -261,6 +263,8 @@ _EXPECTED_ANCHOR_ROW = {
     "unit": "s",
     "raw_value": 420.5,
     "observed_at": "2026-01-04T00:00:00",
+    "evidence_type": None,
+    "value_semantics": None,
 }
 _EXPECTED_ANCHOR_SQUAT = {
     "benchmark_code": "zz_anchor_squat",
@@ -271,6 +275,8 @@ _EXPECTED_ANCHOR_SQUAT = {
     "unit": "kg",
     "raw_value": 180.0,
     "observed_at": "2026-01-05T00:00:00",
+    "evidence_type": None,
+    "value_semantics": None,
 }
 
 

@@ -1,15 +1,17 @@
-"""Before turning on chart e1RM estimates: what it would do to each athlete's loads (P4-2b).
+"""Before turning on chart e1RM estimates: a counterfactual restatement of in-window history (P4-2b).
 
 Read-only. Run it first, read it, then decide::
 
     python -m app.scripts.e1rm_activation_report               # every athlete with a selected basis
     python -m app.scripts.e1rm_activation_report --user-id 7
 
-For each athlete and lift it prints the e1RM that sizes a load today, the one that would with
-``E1RM_CHART_ESTIMATES=true``, the step in percent, and the factor the dose ladder's relative load
-(``load / e1rm_pre``) is multiplied by, because the same number is the dose denominator. The step
-arrives for an athlete on their next qualifying set, in one move (the selector takes the highest
-eligible value). Rows already estimated by the chart are not restated. Nothing is written.
+For each athlete and lift it prints the e1RM that sizes a load today, the one it would be if the
+Epley-derived sets that qualify today had been estimated with the chart, the difference in percent,
+and the factor ``load / e1rm_pre`` (the dose ladder's relative load) would be multiplied by.
+
+This is NOT a forecast of what happens at activation. History stays Epley, so a future set competes
+with the existing rows by value and only raises the basis if it is the highest eligible one. Only
+rows with a recorded Epley formula that could size a load today are restated. Nothing is written.
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ def _format(lines: list[ActivationLine]) -> list[str]:
     tag = "[e1rm-activation]"
     if not lines:
         return [f"{tag} No athlete has an e1RM basis to compare."]
-    out = [f"{tag} {'user':>6} {'lift':<22} {'today kg':>9} {'chart kg':>9} {'step':>8} {'rel.load x':>11} {'rows':>5}"]
+    out = [f"{tag} {'user':>6} {'lift':<22} {'today kg':>9} {'restated':>9} {'diff':>8} {'rel.load x':>11} {'rows':>5}"]
     steps: list[float] = []
     for line in lines:
         step = line.step_pct
@@ -42,11 +44,12 @@ def _format(lines: list[ActivationLine]) -> list[str]:
     moved = [s for s in steps if abs(s) > 0.05]
     if moved:
         out.append(
-            f"{tag} {len(moved)} of {len(lines)} basis(es) move; "
-            f"range {min(moved):+.1f}% to {max(moved):+.1f}%. Read-only: nothing was changed."
+            f"{tag} {len(moved)} of {len(lines)} basis(es) differ in the restatement; "
+            f"range {min(moved):+.1f}% to {max(moved):+.1f}%. Counterfactual, not a forecast. "
+            f"Read-only: nothing was changed."
         )
     else:
-        out.append(f"{tag} No basis would move. Read-only: nothing was changed.")
+        out.append(f"{tag} No basis differs in the restatement. Read-only: nothing was changed.")
     return out
 
 

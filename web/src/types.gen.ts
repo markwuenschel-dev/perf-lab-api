@@ -1196,6 +1196,8 @@ export interface components {
             benchmark_code: string;
             /** Domain */
             domain: string;
+            /** Evidence Type */
+            evidence_type?: string | null;
             /** Is Primary Anchor */
             is_primary_anchor: boolean;
             /** Metric Type */
@@ -1211,6 +1213,8 @@ export interface components {
             raw_value: number;
             /** Unit */
             unit: string;
+            /** Value Semantics */
+            value_semantics?: string | null;
         };
         /**
          * AppliedConstraint
@@ -2532,6 +2536,12 @@ export interface components {
             unit: string;
             /** Value */
             value: number;
+            /**
+             * Value Basis
+             * @default unknown
+             * @enum {string}
+             */
+            value_basis: "measured" | "includes_estimate" | "unknown";
         };
         /**
          * LoadExplanation
@@ -3510,6 +3520,10 @@ export interface components {
         ProgressBlock: {
             /** Current */
             current?: number | null;
+            /** Current Evidence Type */
+            current_evidence_type?: string | null;
+            /** Current Value Semantics */
+            current_value_semantics?: string | null;
             /** Direction */
             direction?: string | null;
             /** Pct */

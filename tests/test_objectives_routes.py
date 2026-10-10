@@ -54,7 +54,10 @@ async def test_free_text_objective_create_list_patch_delete(http_client):
     assert create_resp.status_code == 200, create_resp.text
     created = create_resp.json()
     assert created["benchmark_code"] is None
-    assert created["progress"] == {"current": None, "target": None, "pct": None, "direction": None}
+    assert created["progress"] == {
+        "current": None, "target": None, "pct": None, "direction": None,
+        "current_evidence_type": None, "current_value_semantics": None,
+    }
     assert created["days_to_go"] == 30
 
     list_resp = await http_client.get("/v1/objectives", headers=hdr)
@@ -108,6 +111,8 @@ async def test_benchmark_linked_objective_has_direction_aware_progress(http_clie
         "target": 1440.0,
         "pct": None,
         "direction": "lower",
+        "current_evidence_type": None,
+        "current_value_semantics": None,
     }
 
     # Post an observation faster than target (lower is better) for this user.

@@ -149,11 +149,13 @@ class Settings(BaseSettings):
     APPLY_LATE_EVENTS: bool = False
 
     # P4-2b: estimate a set's e1RM from the RPE/RIR chart (ADR-0056) instead of Epley, for the sets
-    # that have a known, consistent effort. Off by default: the estimate is the legacy Epley as
-    # before. Turning it on raises prescribed loads (the chart estimate is 0-12% above Epley for the
-    # same set), as a step per athlete on their next qualifying set; run
-    # `python -m app.scripts.e1rm_activation_report` first. Turning it off stops NEW chart rows;
-    # chart rows already written stay eligible for prescription until they age out (28 days).
+    # that qualify to size a load and have a known, consistent effort. Off by default: the estimate
+    # is the legacy Epley as before. Turning it on can raise prescribed loads (the chart estimate is
+    # 0-9% above Epley for the same qualifying set; a new row raises an athlete's basis only if it is
+    # the highest eligible one). Run `python -m app.scripts.e1rm_activation_report` first (a
+    # counterfactual, not a forecast). Turning it off stops NEW chart rows; chart rows already
+    # written stay eligible for prescription until they age out (28 days), and the basis can fall
+    # in one step when the winning row expires.
     E1RM_CHART_ESTIMATES: bool = False
 
     # CORS — comma-separated list of allowed origins.

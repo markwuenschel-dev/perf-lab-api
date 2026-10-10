@@ -278,30 +278,45 @@ first, one correction each.
 ## Chart e1RM estimates (P4-2b): turning them on, and stopping them
 
 No migration. `E1RM_CHART_ESTIMATES` (off by default) makes the e1RM stored for a **new** set with
-a known, consistent effort `load / chart(reps, effort)` instead of Epley (ADR-0056 amendment).
-Old rows are never recomputed. Deploying with the flag off changes nothing.
+a known, consistent effort that qualifies to size a load `load / chart(reps, effort)` instead of
+Epley (ADR-0056 amendment). Old rows are never recomputed. Deploying with the flag off changes
+nothing.
 
-**It raises prescribed loads.** The chart estimate is above Epley for the same set (about 5% at RPE 9
-and 9% at RPE 8, for the 1–5 rep sets that can size a load), the prescription takes the highest eligible value in its 28-day window, and the same
-number is the dose ladder's denominator. An athlete's basis moves by the whole step on their next
-qualifying set. Look first (read-only):
+**It can raise prescribed loads.** For the same set the chart estimate is about 5% above Epley at
+RPE 9 and 9% at RPE 8 (1-5 rep sets). The prescription takes the highest eligible value in its
+28-day window, and the same number is the dose ladder's denominator. History stays Epley, so a
+new chart row competes with the existing rows by value: it raises an athlete's basis only if it
+is the highest eligible one, and then the basis moves to it at once.
+
+**What changes on the dashboards when it is on:**
+- Objective progress and validated anchors read demonstrated values only: chart estimates never
+  appear there, so a goal cannot move toward 100% because of the formula.
+- Projected Total and Relative Total read chart estimates (they are labeled projections:
+  `value_basis = includes_estimate`). Relative Total gates two templates at 3.0, so a chart
+  estimate can change which template is eligible. **The activation report does not show this.**
+
+Look first (read-only, a counterfactual, not a forecast):
 
 ```bash
 sudo docker compose exec -T perf-lab-api python -m app.scripts.e1rm_activation_report
 sudo docker compose exec -T perf-lab-api python -m app.scripts.e1rm_activation_report --user-id 7
 ```
 
-Per athlete and lift it prints today's basis, the basis with the chart, the step in percent, the
-factor `load / e1rm_pre` is multiplied by, and how many eligible Epley rows it restated. It does
-not compare final prescribed loads (those also depend on the plan, readiness and gates), so read
-it as the size of the input change, not of the load change.
+Per athlete and lift it prints today's basis, the basis *if the Epley-derived in-window sets
+that qualify today had been estimated with the chart*, the difference, the factor
+`load / e1rm_pre` would be multiplied by, and how many rows were restated. A row is restated only
+if its recorded formula is Epley with a training-set label, it could size a load today, and the
+chart would speak for it; rows with no recorded formula are not restated. It does not compare
+final prescribed loads (those also depend on the plan, readiness and gates).
 
 **Turning it on:** add `E1RM_CHART_ESTIMATES=true` to `/opt/stack/infra/env/perf-lab-api.env`, then
 `sudo docker compose up -d perf-lab-api`.
 
 **Stopping it:** set it to `false` and recreate the container. New sets are Epley again. **Chart
-rows already written stay**, and stay eligible for prescription until they age out (28 days), so
-loads fall back gradually, not at once. There is no revert. Chart rows are labelled
+rows already written stay**, and stay eligible for prescription until they age out (28 days).
+Loads do not fall gradually: the selected basis falls to the next highest eligible row in one
+step when the winning chart row expires, so an athlete's basis can drop by the whole difference
+between that row and the next. There is no revert. Chart rows are labelled
 `evidence_type = 'modeled_estimate'`, `formula = 'rpe_rir_chart'`:
 
 ```sql

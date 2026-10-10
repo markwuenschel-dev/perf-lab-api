@@ -27,6 +27,7 @@ from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic import observation_authority as oa
+from app.logic import strength_evidence as se
 from app.logic.prescription_evidence import BasisSelection, EvidenceRow, select_basis
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -72,6 +73,16 @@ def _migrated_legacy() -> ColumnElement[bool]:
         BenchmarkObservation.evidence_type == oa.se.EV_DIRECT_MEASUREMENT,
         BenchmarkObservation.value_semantics == oa.se.VS_MEASURED,
     )
+
+
+def not_modeled_estimate_clause() -> ColumnElement[bool]:
+    """Rows that are not a model's point estimate (ADR-0056 amendment, P4-2b).
+
+    For the readers that report what an athlete has *demonstrated* (objective attainment,
+    validated anchors). A NULL ``evidence_type`` (old rows) passes. Readers that present a
+    labeled projection (the KPIs) do not apply it.
+    """
+    return BenchmarkObservation.evidence_type.is_distinct_from(se.EV_MODELED_ESTIMATE)
 
 
 def demonstrated_strength_clause() -> ColumnElement[bool]:
