@@ -30,6 +30,10 @@ from app.models.recovery_shadow import RecoveryShadowLog  # noqa: F401
 from app.models.state_correction import StateCorrection, StateCorrectionEvent  # noqa: F401
 from app.models.strength_decline_candidate import StrengthDeclineCandidate  # noqa: F401
 from app.models.strength_decline_shadow import StrengthDeclineShadow  # noqa: F401
+from app.models.strength_report import (  # noqa: F401
+    StrengthSubmissionKey,
+    UnderivedStrengthReport,
+)
 from app.models.telemetry import (  # noqa: F401
     CandidateDecisionLog,
     OutcomeEvent,

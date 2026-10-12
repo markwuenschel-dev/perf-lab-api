@@ -78,6 +78,20 @@ Running these locally fails — the internal DB host isn't resolvable off the bo
 `deploy.sh <sha>` / `deploy.ps1 -Ref <sha>` checks the ref out **detached**; deploying `main`
 again restores normal operation (`git checkout main && git reset --hard origin/main`).
 
+**A rollback only works when the target SHA's migration head equals the database's.** The image
+runs `alembic upgrade head` before uvicorn (`Dockerfile`, `CMD`), and in production
+`app/main.py` (`_check_alembic_head`, the `current_rev != head_rev` branch) refuses to serve when
+the database revision differs from the image's head. So once a migration has been applied,
+redeploying a SHA from before it fails to start: a SHA is deployable only if its `alembic heads`
+equals the box's `alembic current`.
+
+Plan migration-bearing releases as **expand, then use**: ship the schema change on its own (no
+behavior), deploy it, then ship the behavior change with **no migration**. The recovery target is
+then the schema-only SHA, whose head matches the database; data written to the new tables stays
+in them, unread. Before any rollback, compare `alembic heads` at the target SHA with
+`alembic current` on the box. `alembic downgrade` is destructive when the tables hold data and
+is not a rollback procedure.
+
 ## Gotcha — the alembic race
 
 After `up -d`, boot runs `alembic upgrade head` while uvicorn starts. Checking `alembic current`
@@ -203,6 +217,17 @@ such value. So the order is fixed:
           CASE ps.status::text WHEN 'missed' THEN 'pending' ELSE ps.status::text END;
    ```
    Export them, decide, and delete them before downgrading.
+
+## Strength reports (P4-3): schema first, behavior second
+
+Migrations `a058` (`underived_strength_reports`) and `a059` (`strength_submission_keys`) ship on
+their own, with no behavior: nothing writes or reads either table until the P4-3b release, which
+carries **no migration**. Deploy the schema release first; the SHA it merged at is the rollback
+target for P4-3b, and stays one only until a later migration lands.
+
+Both tables are permanent records (triggers refuse a DELETE; a report's facts are immutable, and
+its supersession is set at most once; keys are append-only). Each downgrade refuses while its
+table holds a row.
 
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 
