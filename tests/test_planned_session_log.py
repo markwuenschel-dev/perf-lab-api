@@ -39,7 +39,8 @@ def _session(**kw) -> PlannedSession:
         "user_id": 1,
         "scheduled_date": date(2026, 9, 28),
         "week_number": 1,
-        "day_of_week": 1,
+        "block_day": 1,
+        "day_of_week": 1,  # 2026-09-28 is a Monday
         "category": "Heavy Lower",
         "modality": "Strength",
         "domain": "strength",

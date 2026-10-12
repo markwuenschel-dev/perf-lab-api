@@ -3185,7 +3185,10 @@ export interface components {
             category: string;
             /** Completed At */
             completed_at?: string | null;
-            /** Day Of Week */
+            /**
+             * Day Of Week
+             * @description ISO weekday (1=Mon, 7=Sun) of the session's plan date, COALESCE(original_scheduled_date, scheduled_date); a move does not change it. The weekday the session is on now is scheduled_date's. Sessions moved before original_scheduled_date existed (2026-06-20) carry the weekday they were moved to.
+             */
             day_of_week: number;
             /** Domain */
             domain?: string | null;
@@ -4899,7 +4902,10 @@ export interface components {
         WeeklyTemplateSlot: {
             /** Category */
             category: string;
-            /** Day Of Week */
+            /**
+             * Day Of Week
+             * @description Block-relative day 1-7: day N of each block week, counted from the block's start_date (1 = the start date's weekday). Not a weekday: a block starting on a Thursday puts day 1 on Thursdays.
+             */
             day_of_week: number;
             /** Domain */
             domain?: string | null;

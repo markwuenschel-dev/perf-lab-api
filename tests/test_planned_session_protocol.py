@@ -131,7 +131,7 @@ async def _athlete_with_session(
         await db.commit()
         session = PlannedSession(
             block_id=block.id, user_id=user.id, scheduled_date=day, week_number=1,
-            day_of_week=day.isoweekday(), category="Heavy Lower", modality="Strength",
+            block_day=1, day_of_week=day.isoweekday(), category="Heavy Lower", modality="Strength",
             domain="strength", status=status,
         )
         db.add(session)

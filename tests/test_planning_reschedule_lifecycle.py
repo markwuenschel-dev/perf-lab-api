@@ -54,8 +54,8 @@ def _override(db, user) -> None:
 async def _create_future_block(client: AsyncClient, start: date) -> None:
     """A block whose sessions all fall on/after ``start``.
 
-    Sessions are laid out at ``start_date + (week - 1) * 7 + (day_of_week - 1)``
-    (app/services/planning_service.py:220-229), so a future ``start`` guarantees no
+    Sessions are laid out at ``start_date + (week - 1) * 7 + (slot - 1)``
+    (``create_block_with_sessions``, ADR-0074), so a future ``start`` guarantees no
     session exists on today — which is what makes the later move-to-today observable.
     """
     resp = await client.post(

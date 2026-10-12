@@ -134,6 +134,7 @@ async def test_planning_today_prescribes_the_planned_session(http_client, async_
             user_id=user.id,
             scheduled_date=date.today(),
             week_number=1,
+            block_day=2,  # the block started yesterday
             day_of_week=date.today().isoweekday(),
             category="High Volume Upper",
             modality="Hypertrophy",

@@ -162,7 +162,7 @@ async def _athlete(factory, email: str, equipment: list[str] | None = None) -> t
         await db.commit()
         session = PlannedSession(
             block_id=block.id, user_id=user.id, scheduled_date=today, week_number=1,
-            day_of_week=today.isoweekday(), category="Heavy Lower", modality="Strength",
+            block_day=1, day_of_week=today.isoweekday(), category="Heavy Lower", modality="Strength",
             domain="strength",
         )
         db.add(session)

@@ -176,7 +176,7 @@ async def test_rest_is_persisted_then_reevaluated_once_the_rule_runs(async_db, m
     await async_db.refresh(block)
     session = PlannedSession(
         block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        day_of_week=date.today().isoweekday(), category="Heavy Lower", modality="Strength",
+        block_day=1, day_of_week=date.today().isoweekday(), category="Heavy Lower", modality="Strength",
     )
     async_db.add(session)
     await async_db.commit()

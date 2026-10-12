@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
+from planning_helpers import block_day_of
 
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic import prescription_finalize
@@ -79,6 +80,7 @@ async def _session(
         user_id=user_id,
         scheduled_date=on,
         week_number=week,
+        block_day=block_day_of(block.start_date, on),
         day_of_week=on.isoweekday(),
         category="Heavy Lower",
         modality="Strength",

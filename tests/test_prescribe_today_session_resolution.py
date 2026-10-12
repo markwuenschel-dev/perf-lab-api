@@ -63,6 +63,7 @@ async def _mk_pending_today(db, user_id: int, block_id: int) -> PlannedSession:
         user_id=user_id,
         scheduled_date=date.today(),
         week_number=1,
+        block_day=1,
         day_of_week=date.today().isoweekday(),
         category="Heavy Lower",
         modality="Strength",

@@ -320,7 +320,7 @@ Key fields:
 - `start_date`
 - `end_date`
 - `modality_mix`
-- `weekly_template`
+- `weekly_template` (slots are block-relative: day N of the block week, not weekdays)
 - `rationale`
 - `deload_every_n_weeks`
 - `deload_volume_factor`
@@ -349,9 +349,11 @@ Key fields:
 
 - `block_id`
 - `user_id`
-- `scheduled_date`
+- `scheduled_date` (where the session is now)
+- `original_scheduled_date` (its plan date, set on the first move)
 - `week_number`
-- `day_of_week`
+- `block_day` (internal: the block-relative template slot it was generated from)
+- `day_of_week` (ISO weekday of the plan date, `COALESCE(original_scheduled_date, scheduled_date)`; see ADR-0074)
 - `category`
 - `modality`
 - `status`

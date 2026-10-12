@@ -216,7 +216,7 @@ async def _athlete_with_planned_run(db, email: str, content: dict[str, Any]):
     await db.refresh(block)
     session = PlannedSession(
         block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        day_of_week=1, category="Threshold Work", modality="running",
+        block_day=1, day_of_week=date.today().isoweekday(), category="Threshold Work", modality="running",
         status=SessionStatus.PENDING, prescribed_content=content,
     )
     db.add(session)

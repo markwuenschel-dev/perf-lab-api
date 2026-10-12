@@ -61,6 +61,7 @@ async def test_today_path_applies_periodization_envelope(async_db):
         user_id=user.id,
         scheduled_date=date.today(),
         week_number=7,
+        block_day=1,
         day_of_week=date.today().isoweekday(),
         category="Heavy Lower",
         modality="Strength",

@@ -10,7 +10,16 @@ from app.schemas.prescription import WorkoutPrescription
 
 
 class WeeklyTemplateSlot(BaseModel):
-    day_of_week: int = Field(..., ge=1, le=7)
+    day_of_week: int = Field(
+        ...,
+        ge=1,
+        le=7,
+        description=(
+            "Block-relative day 1-7: day N of each block week, counted from the block's "
+            "start_date (1 = the start date's weekday). Not a weekday: a block starting on a "
+            "Thursday puts day 1 on Thursdays."
+        ),
+    )
     category: str
     modality: str
     # The canonical domain this slot came from. `modality` is a display label and is lossy
@@ -79,7 +88,14 @@ class PlannedSessionRead(BaseModel):
     scheduled_date: date
     original_scheduled_date: date | None = None
     week_number: int
-    day_of_week: int
+    day_of_week: int = Field(
+        description=(
+            "ISO weekday (1=Mon, 7=Sun) of the session's plan date, "
+            "COALESCE(original_scheduled_date, scheduled_date); a move does not change it. The "
+            "weekday the session is on now is scheduled_date's. Sessions moved before "
+            "original_scheduled_date existed (2026-06-20) carry the weekday they were moved to."
+        )
+    )
     category: str
     modality: str
     # The canonical domain this day was planned as (a045). `modality` is a lossy display
