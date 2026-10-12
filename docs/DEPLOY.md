@@ -225,12 +225,16 @@ their own, with no behavior: nothing writes or reads either table until the P4-3
 carries **no migration**. Deploy the schema release first; the SHA it merged at is the rollback
 target for P4-3b, and stays one only until a later migration lands.
 
+**P4-3b's rollback target: `29f5216`** (PR #295, the P4-3a merge, 2026-10-12; head
+`a059_strength_submission_keys`). Its tree is identical to `6073eab`, the commit the rollback check
+below was run against.
+
 **What P4-3b changes.** A reported set with no effort, or with RPE and RIR that disagree, is kept
 as a report and yields no 1RM estimate; it seeds nothing at onboarding. The strength-evidence
 response becomes a `StrengthOutcome`, onboarding returns one per report, reports are readable at
 `GET /v1/benchmarks/strength-reports[/{id}]`, and Assess and Settings send an `idempotency_key`.
 
-**Rolling P4-3b back** (`deploy.sh <P4-3a SHA>`; heads match, so it boots). Checked against a
+**Rolling P4-3b back** (`deploy.sh 29f5216`; heads match, so it boots). Checked against a
 database populated by 3b, with the 3a app in production mode: startup, strength reports, onboarding
 and workout logging all work, and the new tables are left as they were. What the rollback costs:
 
