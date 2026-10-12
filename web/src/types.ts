@@ -93,6 +93,7 @@ export type BlockGoal = Schemas["BlockGoal"];
 export type BlockStatus = Schemas["BlockStatus"];
 export type SessionStatus = Schemas["SessionStatus"];
 export type WeeklyTemplateSlot = Schemas["WeeklyTemplateSlot"];
+export type WeeklyTemplateSlotPreview = Schemas["WeeklyTemplateSlotPreview"];
 export type BlockCreateRequest = Schemas["BlockCreateRequest"];
 export type BlockRead = Schemas["BlockRead"];
 export type BlockUpdateRequest = Schemas["BlockUpdateRequest"];

@@ -753,6 +753,9 @@ export interface paths {
          *
          *     The create screen shows a style mix's real allocation with it, so "I asked for three
          *     styles and one got no sessions" is visible before the block exists rather than after.
+         *
+         *     Slots are block-relative (``day_of_week`` is day N of the block week); each also carries
+         *     ``resolved_weekday``, the weekday it falls on for this start date (ADR-0074).
          */
         post: operations["preview_block_template_v1_planning_blocks_preview_post"];
         delete?: never;
@@ -4913,6 +4916,30 @@ export interface components {
             modality: string;
         };
         /**
+         * WeeklyTemplateSlotPreview
+         * @description A previewed slot (response only, ``POST /planning/blocks/preview``): the slot exactly as block
+         *     creation will consume it, plus the weekday it falls on for the request's start date. The
+         *     weekday is a display label: it is never stored in a template or used to schedule (ADR-0074).
+         */
+        WeeklyTemplateSlotPreview: {
+            /** Category */
+            category: string;
+            /**
+             * Day Of Week
+             * @description Block-relative day 1-7: day N of each block week, counted from the block's start_date (1 = the start date's weekday). Not a weekday: a block starting on a Thursday puts day 1 on Thursdays.
+             */
+            day_of_week: number;
+            /** Domain */
+            domain?: string | null;
+            /** Modality */
+            modality: string;
+            /**
+             * Resolved Weekday
+             * @description ISO weekday (1=Mon, 7=Sun) this slot falls on: the weekday of start_date + (day_of_week - 1). Every week of the block repeats it. Absent from responses before P5b.
+             */
+            resolved_weekday: number;
+        };
+        /**
          * WellnessIngestIn
          * @description One day's device readings pushed from the athlete's phone (an iOS Shortcut today).
          *
@@ -6595,7 +6622,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WeeklyTemplateSlot"][];
+                    "application/json": components["schemas"]["WeeklyTemplateSlotPreview"][];
                 };
             };
             /** @description Validation Error */
