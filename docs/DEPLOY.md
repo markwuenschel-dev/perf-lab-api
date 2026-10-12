@@ -261,6 +261,10 @@ writes the new meaning (a relabel without its writer would leave rows with both 
 is P5a's merged SHA. No dates, statuses, week numbers or prescriptions change in either release
 (ADR-0074).
 
+**P5b's rollback target: `65a30e5`** (PR #297, the P5a merge, 2026-10-12; head
+`a060_session_block_day`). Its tree is identical to `9a49891`, the P5a commit the rollback probe
+and the runbook below were checked against. It stays the target only until a later migration lands.
+
 **What P5a changes.** `planned_sessions.block_day` (new, internal) keeps each session's
 block-relative template slot, copied from the old `day_of_week` before anything is relabeled.
 `day_of_week` becomes the ISO weekday of `COALESCE(original_scheduled_date, scheduled_date)`,
@@ -330,7 +334,7 @@ keeps writing weekdays into `day_of_week`, so the order matters:
 3. `./scripts/deploy.sh 06f8a70cd5923271e8a9e3c30cb4a26490f38818`, then check that
    `alembic current` is `a059_strength_submission_keys` and `/ping` is 200. The API is back.
 
-**Rolling P5b back:** `deploy.sh <P5a merge SHA>` (heads match). P5b's preview response only adds
+**Rolling P5b back:** `deploy.sh 65a30e5e07b3b050ab273c81c2d45ab997147423` (heads match). P5b's preview response only adds
 `resolved_weekday` to each slot; the P5a web ignores it. A browser tab still running P5b against
 P5a's API labels slots "Day N" (block-relative) until it reloads.
 
