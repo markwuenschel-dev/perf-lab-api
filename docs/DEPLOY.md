@@ -269,6 +269,40 @@ start on a Monday. No backend logic reads that field, and the web reads it only 
 block-create preview, which P5a leaves as it was. Sessions moved before 2026-06-20 lost their plan
 date; theirs is the weekday they were moved to.
 
+**Before deploying P5a (required).** Both steps happen on the box, and P5a is not deployed until
+both are recorded:
+
+1. **Back up the database and record it.** a060 rewrites `day_of_week` on every session; the
+   downgrade restores it from `block_day`, and the backup is the recovery path if anything else
+   goes wrong:
+   ```bash
+   ( set -euo pipefail   # a failed pg_dump fails the step instead of leaving a short file
+     cd /opt/stack/infra
+     F=/opt/stack/backups/perf_lab-pre-<P5a sha>-$(date -u +%Y%m%dT%H%M%SZ).dump
+     sudo docker compose exec -T postgres pg_dump -Fc -U app perf_lab | sudo tee "$F" >/dev/null
+     ls -la "$F"                                                                    # non-empty
+     sudo docker compose exec -T postgres pg_restore -l < "$F" | grep -c "TABLE DATA" )  # readable
+   ```
+   Write the file's path and its UTC timestamp (the name carries it) into the release record (the
+   P5a PR) before running `deploy.sh`. No recorded, readable backup, no deploy. P5b has no
+   migration and needs no new backup.
+2. **Confirm a one-off container can run Alembic alone.** The rollback below depends on it, and
+   the box's compose file is not in this repo. Read the service's effective configuration and the
+   image's:
+   ```bash
+   sudo docker compose config perf-lab-api | grep -nE '^\s+(entrypoint|command):' || echo "no overrides"
+   IMAGE=$(sudo docker compose images -q perf-lab-api)
+   sudo docker image inspect "$IMAGE" --format 'entrypoint={{json .Config.Entrypoint}} cmd={{json .Config.Cmd}}'
+   cd /opt/stack/perf-lab-api && git show <P5a sha>:Dockerfile | grep -nE '^(ENTRYPOINT|CMD)'
+   ```
+   Expected: no compose override, `entrypoint=null`, `cmd` the shell form of the `Dockerfile`
+   `CMD` (`alembic upgrade head && …; uvicorn …`), and no `ENTRYPOINT` in P5a's `Dockerfile`, so
+   the image P5a builds has none either. The rollback commands pass
+   `--entrypoint alembic` regardless, which replaces any entrypoint and the command, so the
+   container's only process is the `alembic` invocation given. If the output shows anything else
+   (a wrapper entrypoint, an env-driven migration step), resolve it before deploying: seeing
+   `a060` from `alembic current` would not show whether a wrapper ran an upgrade first.
+
 **If the upgrade refuses.** `a060` refuses, before changing anything, if any `day_of_week` is
 outside 1-7 (the error gives the count and a query to find them). The P5a container then fails to
 boot with the database still at `a059`, so `deploy.sh 06f8a70` serves again. Correct the rows,
@@ -283,10 +317,12 @@ keeps writing weekdays into `day_of_week`, so the order matters:
    cd /opt/stack/infra && sudo docker compose stop perf-lab-api
    ```
 2. Downgrade with a **one-off** container from the P5a image, the only image with `a060`'s
-   downgrade. `run` replaces the image command, so it does not run `alembic upgrade head` first:
+   downgrade. `--entrypoint alembic` makes Alembic the container's only process (no image
+   command, no wrapper), as confirmed in the precondition above:
    ```bash
-   sudo docker compose run --rm --no-deps perf-lab-api alembic current     # expect a060_session_block_day
-   sudo docker compose run --rm --no-deps perf-lab-api alembic downgrade a059_strength_submission_keys
+   sudo docker compose run --rm --no-deps --entrypoint alembic perf-lab-api current
+   # expect a060_session_block_day (head)
+   sudo docker compose run --rm --no-deps --entrypoint alembic perf-lab-api downgrade a059_strength_submission_keys
    ```
    The downgrade copies `block_day` back into `day_of_week` for every session, including ones
    created or moved under P5a, then drops the column: each session gets back the slot it was
