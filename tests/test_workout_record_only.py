@@ -23,6 +23,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from planning_helpers import block_day_of
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -187,7 +188,7 @@ async def test_record_only_keeps_evidence_and_the_planned_link_but_writes_no_sta
     await async_db.commit()
     session = PlannedSession(
         block_id=block.id, user_id=user.id, scheduled_date=day, week_number=1,
-        day_of_week=day.isoweekday(), category="Heavy Lower", modality="Strength",
+        block_day=1, day_of_week=day.isoweekday(), category="Heavy Lower", modality="Strength",
         domain="strength", status=SessionStatus.PENDING,
     )
     async_db.add(session)
@@ -386,7 +387,7 @@ async def test_same_day_matching_uses_the_payload_calendar_day_not_the_server_da
     for d in (payload_day, utc_day):
         s = PlannedSession(
             block_id=block.id, user_id=user.id, scheduled_date=d, week_number=1,
-            day_of_week=d.isoweekday(), category="Easy Run", modality="Running",
+            block_day=block_day_of(block.start_date, d), day_of_week=d.isoweekday(), category="Easy Run", modality="Running",
             domain="endurance", status=SessionStatus.PENDING,
         )
         async_db.add(s)
@@ -412,7 +413,7 @@ async def test_an_explicit_link_is_unaffected_by_server_time(async_db):
     await async_db.commit()
     s = PlannedSession(
         block_id=block.id, user_id=user.id, scheduled_date=yesterday, week_number=1,
-        day_of_week=yesterday.isoweekday(), category="Easy Run", modality="Running",
+        block_day=1, day_of_week=yesterday.isoweekday(), category="Easy Run", modality="Running",
         domain="endurance", status=SessionStatus.PENDING,
     )
     async_db.add(s)

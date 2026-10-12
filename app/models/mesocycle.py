@@ -2,7 +2,18 @@ import enum
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -56,7 +67,10 @@ class MesocycleBlock(Base):
     A training block — the macro container for a period of goal-directed training.
 
     weekly_template is a JSONB array of session slot descriptors, one per
-    planned training day. Example for a 3-day Strength block:
+    planned training day. A slot's ``day_of_week`` is block-relative: day N of each
+    block week, counted from ``start_date`` (a session lands on
+    ``start_date + (week - 1) * 7 + (day_of_week - 1)``), not a weekday. Example for a
+    3-day Strength block:
     [
         {"day_of_week": 1, "category": "Heavy Lower", "modality": "Strength"},
         {"day_of_week": 3, "category": "Heavy Upper", "modality": "Strength"},
@@ -66,9 +80,8 @@ class MesocycleBlock(Base):
     modality_mix is a JSONB dict describing the intended emphasis split, e.g.:
     {"strength": 0.5, "hypertrophy": 0.3, "conditioning": 0.2}
 
-    The prescriber reads the relevant slot from weekly_template for today's
-    PlannedSession category, then uses S(t) to constrain intensity and volume,
-    and weak points to bias exercise selection.
+    Block creation copies each slot onto its PlannedSession rows (category, modality,
+    domain, ``block_day``); the prescriber reads those session columns, not this template.
     """
     __tablename__ = "mesocycle_blocks"
 
@@ -175,6 +188,10 @@ class PlannedSession(Base):
     }
     """
     __tablename__ = "planned_sessions"
+    __table_args__ = (
+        CheckConstraint("block_day BETWEEN 1 AND 7", name="ck_planned_sessions_block_day"),
+        CheckConstraint("day_of_week BETWEEN 1 AND 7", name="ck_planned_sessions_day_of_week"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     block_id: Mapped[int] = mapped_column(
@@ -190,8 +207,23 @@ class PlannedSession(Base):
     week_number: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="1-indexed week within the block"
     )
+    # Three days, kept apart (a060, ADR-0074):
+    # * ``block_day``: the template slot the session was generated from, day N of its block
+    #   week. Set at creation and never changed, a reschedule included.
+    # * ``day_of_week``: the ISO weekday of the session's plan date,
+    #   COALESCE(original_scheduled_date, scheduled_date). A reschedule does not change it.
+    #   Sessions moved before original_scheduled_date existed (a003) lost their plan date, so
+    #   theirs is the weekday they were moved to.
+    # * the weekday the session is on now: ``scheduled_date``.
+    block_day: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        comment="Block-relative template slot 1-7 (day N of the block week); never changes",
+    )
     day_of_week: Mapped[int] = mapped_column(
-        Integer, nullable=False, comment="1=Mon, 7=Sun"
+        Integer,
+        nullable=False,
+        comment="ISO weekday (1=Mon, 7=Sun) of COALESCE(original_scheduled_date, scheduled_date)",
     )
 
     # Slot descriptor from weekly_template (denormalized for query convenience)

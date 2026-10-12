@@ -50,6 +50,7 @@ async def test_log_workout_links_to_pending_planned_session(async_db):
         user_id=user.id,
         scheduled_date=d,
         week_number=1,
+        block_day=2,  # the block started the day before
         day_of_week=d.isoweekday(),
         category="Max Strength",
         modality="Strength",

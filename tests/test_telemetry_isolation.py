@@ -347,7 +347,7 @@ async def test_linked_workout_survives_a_failed_kpi_recompute(async_db, monkeypa
     await async_db.refresh(block)
     session = PlannedSession(
         block_id=block.id, user_id=user.id, scheduled_date=now.date(), week_number=1,
-        day_of_week=now.isoweekday(), category="Heavy Lower", modality="Strength",
+        block_day=1, day_of_week=now.isoweekday(), category="Heavy Lower", modality="Strength",
         domain="strength",
         prescribed_content={"type": "Strength", "duration_min": 45, "exercises": []},
     )

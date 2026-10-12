@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime, time, timedelta
 import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
+from planning_helpers import block_day_of
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -85,6 +86,7 @@ async def _add_session(factory, uid: int, bid: int, day: date, status: SessionSt
     async with factory() as db:
         row = PlannedSession(
             block_id=bid, user_id=uid, scheduled_date=day, week_number=1,
+            block_day=block_day_of(date.today() - timedelta(days=14), day),  # _setup's block start
             day_of_week=day.isoweekday(), category="Heavy Lower", modality="Strength",
             domain="strength", status=status,
         )

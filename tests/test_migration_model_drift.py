@@ -75,7 +75,8 @@ def _diffs(sync_conn: Connection) -> list:
 # the C12 nullability surface: tracked debt with a separate owner, contained here, not
 # declared correct.
 COSMETIC_DRIFT_BASELINE = {
-    "modify_comment": 43,
+    # 43 -> 42: a060 gave planned_sessions.day_of_week the comment its model declares.
+    "modify_comment": 42,
     # 29 -> 27: ADR-0049 made workout_logs.sleep_quality / .life_stress_inverse
     # `Mapped[float | None]`, which is what a000 already declared them (nullable=True,
     # lines 184-185). The ORM's non-Optional annotation was the drift; the DB needed no

@@ -326,6 +326,7 @@ async def create_block_with_sessions(
         is_deload = week % req.deload_every_n_weeks == 0
         week_start = req.start_date + timedelta(days=(week - 1) * 7)
         for slot in weekly_template:
+            # A slot is block-relative: day N of the block week, not a weekday (ADR-0074).
             scheduled = week_start + timedelta(days=slot.day_of_week - 1)
             is_benchmark = bool(benchmark_stride and week % benchmark_stride == 0 and slot.day_of_week == weekly_template[-1].day_of_week)
             ps = PlannedSession(
@@ -333,7 +334,8 @@ async def create_block_with_sessions(
                 user_id=user_id,
                 scheduled_date=scheduled,
                 week_number=week,
-                day_of_week=slot.day_of_week,
+                block_day=slot.day_of_week,
+                day_of_week=scheduled.isoweekday(),
                 category="Benchmark Session" if is_benchmark else slot.category,
                 modality=slot.modality,
                 domain=slot.domain,

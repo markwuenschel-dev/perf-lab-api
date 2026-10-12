@@ -69,6 +69,7 @@ async def _block_with_session(db, user_id: int) -> MesocycleBlock:
             user_id=user_id,
             scheduled_date=today,
             week_number=1,
+            block_day=1,
             day_of_week=today.isoweekday(),
             category="Heavy Lower",
             modality="Strength",

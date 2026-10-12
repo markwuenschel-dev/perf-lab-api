@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from planning_helpers import block_day_of
 
 from app.engine.simulate import baseline_state
 from app.models.athlete_state import AthleteState
@@ -55,6 +56,7 @@ def _session(sid: int, day: date, **kw) -> PlannedSession:
         "user_id": 1,
         "scheduled_date": day,
         "week_number": 1,
+        "block_day": block_day_of(D0, day),  # _block()'s default start
         "day_of_week": day.isoweekday(),
         "category": "Heavy Lower",
         "modality": "Strength",
@@ -188,6 +190,7 @@ async def _db_session(db, uid: int, block: MesocycleBlock, day: date, **kw) -> P
         "user_id": uid,
         "scheduled_date": day,
         "week_number": 1,
+        "block_day": block_day_of(block.start_date, day),
         "day_of_week": day.isoweekday(),
         "category": "Heavy Lower",
         "modality": "Strength",

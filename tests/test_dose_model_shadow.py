@@ -283,7 +283,7 @@ async def _planned(db, user: User, *, intensity: str | None, branch: str | None)
     content = {"exercises": [], "why": {"prescription_branch": branch}} if branch else None
     session = PlannedSession(
         block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        day_of_week=1, category="Max Strength", modality="strength",
+        block_day=1, day_of_week=date.today().isoweekday(), category="Max Strength", modality="strength",
         status=SessionStatus.PENDING, prescribed_content=content,
     )
     db.add(session)
