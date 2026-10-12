@@ -5,7 +5,16 @@ import { cn } from "@/lib/utils";
 import { isImperial, kgToLbs } from "@/lib/units";
 import { useAuth } from "@/auth/useAuth";
 import * as api from "@/api/perfLabClient";
-import type { ApiError, ConnectionStatus, ObjectiveRead, ProfileRead, ProfileUpdate } from "@/types";
+import type {
+  ApiError,
+  ConnectionStatus,
+  ObjectiveRead,
+  ProfileRead,
+  ProfileUpdate,
+  StrengthEvidenceCreate,
+  StrengthOutcome,
+  UnderivedStrengthReportRead,
+} from "@/types";
 import { TRAINING_GOALS, usePerfLab } from "../store";
 import type { Settings } from "../store";
 import { DOMAIN_OPTIONS } from "../domains";
@@ -21,6 +30,12 @@ import { useAuthedResource } from "../useAuthedResource";
 import { CANONICAL_LIFTS } from "./canonicalLifts";
 import { goalChipsView } from "./goalChipsView";
 import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import {
+  outcomeAcknowledgement,
+  UNCONFIRMED_SAVE_MESSAGE,
+  underivedReportMessage,
+} from "./strengthOutcome";
+import { useSubmissionAttempts, type SubmissionAttempt } from "./useSubmissionKey";
 import { ouraRedirectResult, parseServerUtc } from "../wearableSync";
 import { AppleHealthCard } from "./AppleHealthCard";
 import {
@@ -281,10 +296,26 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 type LiftValues = Pick<ProfileRead, "squat_1rm_kg" | "bench_1rm_kg" | "deadlift_1rm_kg">;
 
+/** The day a report says the set was performed, in the athlete's locale; undated says so. */
+function reportedOn(report: UnderivedStrengthReportRead): string {
+  if (report.performed_at == null) return "Date unknown";
+  return parseServerUtc(report.performed_at).toLocaleDateString();
+}
+
 /** Squat, bench and deadlift, edited as characterized strength reports (S2). The values shown
  *  are the profile's projection of the athlete's reports; saving sends a new report through
  *  the one strength-evidence service rather than overwriting a number. Values are shown and
- *  typed in the selected unit; the request carries kilograms. */
+ *  typed in the selected unit; the request carries kilograms.
+ *
+ *  A report that yielded no estimate (P4-3) changes no value. The latest one still standing for
+ *  a lift is shown on its own dated line under the value, so the athlete sees it was kept — it
+ *  never replaces the value, and "—" still means only that there is no value.
+ *
+ *  A save is acknowledged from the outcome the POST returned, on the lift's own line, the moment
+ *  it returns; the reports list is read again separately, and a failed read leaves that
+ *  acknowledgement standing. A save that got no answer stays unresolved for its lift
+ *  (useSubmissionKey) — Cancel closes the editor, not the attempt — until the athlete retries it
+ *  or discards it; Save is not offered for that lift meanwhile. */
 function StrengthLiftsEditor({
   token,
   values,
@@ -301,34 +332,83 @@ function StrengthLiftsEditor({
   // The unit an open report is typed in, fixed when it opens: switching units under
   // Preferences while a report is half-typed must not reinterpret the digits already entered.
   const [formUnit, setFormUnit] = useState<WeightUnit>(unit);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Per lift: the last refusal or failure, and the acknowledgement of the last save.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [acks, setAcks] = useState<Record<string, { outcome: StrengthOutcome; method: StrengthEvidenceCreate["method"] }>>({});
+  const attempts = useSubmissionAttempts();
+  const [reports, setReports] = useState<UnderivedStrengthReportRead[]>([]);
+  const [reportsKey, setReportsKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const listed = await api.listStrengthReports(token);
+        if (!cancelled) setReports(listed);
+      } catch {
+        // Only the extra line is missing; the values above are unaffected.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, reportsKey]);
+
+  /** The most recently performed report for a lift that nothing has superseded. The list
+   *  arrives most recently performed first, and holds only unsuperseded reports. */
+  function standingReport(code: string): UnderivedStrengthReportRead | undefined {
+    return reports.find((r) => r.benchmark_code === code && r.superseded_by_observation_id == null);
+  }
+
+  function setLift<T>(set: (u: (m: Record<string, T>) => Record<string, T>) => void, code: string, v: T | null) {
+    set((m) => {
+      const next = { ...m };
+      if (v === null) delete next[code];
+      else next[code] = v;
+      return next;
+    });
+  }
 
   function open(code: string) {
     setEditing(code);
     setForm(EMPTY_STRENGTH_FORM);
     setFormUnit(unit);
-    setError(null);
+    setLift(setErrors, code, null);
+    setLift(setAcks, code, null);
   }
 
-  async function save(code: string) {
-    const built = strengthEvidenceBody(code, "retest", form, { unit: formUnit });
-    if (!built.ok) {
-      setError(built.error);
-      return;
-    }
-    setBusy(true);
-    setError(null);
+  // Each lift is its own slot: whether its save is in flight is the slot's, so saving one lift
+  // never makes another look idle (useSubmissionKey).
+  async function send(code: string, run: (submit: (body: SubmissionAttempt) => Promise<StrengthOutcome>) => Promise<StrengthOutcome>) {
+    setLift(setErrors, code, null);
     try {
-      await api.submitStrengthEvidence(built.body, token);
-      setEditing(null);
+      let method: StrengthEvidenceCreate["method"] = "rep_set";
+      const outcome = await run((body) => {
+        method = body.method;
+        return api.submitStrengthEvidence(body, token);
+      });
+      setLift(setAcks, code, { outcome, method });
+      setEditing((open) => (open === code ? null : open));
+      setReportsKey((k) => k + 1);
       onSaved();
     } catch (e) {
       const msg = (e as ApiError)?.message;
-      setError(typeof msg === "string" ? msg : "Couldn't save that result.");
-    } finally {
-      setBusy(false);
+      setLift(setErrors, code, typeof msg === "string" ? msg : "Couldn't save that result.");
     }
+  }
+
+  function save(code: string) {
+    const built = strengthEvidenceBody(code, "retest", form, { unit: formUnit });
+    if (!built.ok) {
+      setLift(setErrors, code, built.error);
+      return;
+    }
+    // Every Save is a new submission with a new key; only Retry resends one.
+    return send(code, (submit) => attempts.save(code, built.body, submit));
+  }
+
+  function retry(code: string) {
+    return send(code, (submit) => attempts.retry(code, submit));
   }
 
   return (
@@ -336,8 +416,18 @@ function StrengthLiftsEditor({
       <span className="text-[12px] font-medium leading-none text-mute">Strength</span>
       {CANONICAL_LIFTS.map((lift) => {
         const current = values?.[lift.profileKey];
+        const report = standingReport(lift.code);
+        const ack = acks[lift.code];
+        const liftError = errors[lift.code];
+        const unresolved = attempts.unresolved(lift.code) !== undefined;
+        const sending = attempts.inFlight(lift.code);
         return (
-          <div key={lift.code} className="rounded-[11px] border border-white/[0.08] px-3 py-[10px]">
+          <div
+            key={lift.code}
+            role="group"
+            aria-label={lift.label}
+            className="rounded-[11px] border border-white/[0.08] px-3 py-[10px]"
+          >
             <div className="flex items-center gap-3">
               <span className="text-[13px] font-semibold leading-none text-ink">{lift.label}</span>
               <span className="font-mono text-[13px] leading-none text-soft">
@@ -356,6 +446,44 @@ function StrengthLiftsEditor({
                 </button>
               )}
             </div>
+            {report && (
+              <div className="mt-2 text-[11.5px] font-medium leading-snug text-dim">
+                <span className="font-mono">{reportedOn(report)}</span>
+                {" · "}
+                {underivedReportMessage(report, unit)}
+              </div>
+            )}
+            {ack && (
+              <div role="status" className="mt-2 text-[11.5px] font-medium leading-snug text-soft">
+                {outcomeAcknowledgement(ack.outcome, unit, ack.method)}
+              </div>
+            )}
+            {unresolved && (
+              <div className="mt-2 flex flex-col gap-2 rounded-[9px] border border-hot/[0.3] bg-hot/[0.05] px-3 py-2">
+                <div role="alert" className="text-[11.5px] font-medium leading-snug text-soft">
+                  {UNCONFIRMED_SAVE_MESSAGE}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void retry(lift.code)}
+                    disabled={sending}
+                    className="rounded-[9px] bg-ac px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+                  >
+                    {sending ? "Retrying…" : "Retry"}
+                  </button>
+                  <button
+                    onClick={() => attempts.discard(lift.code)}
+                    disabled={sending}
+                    className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold leading-none text-soft disabled:opacity-60"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            )}
+            {liftError && editing !== lift.code && (
+              <div className="mt-2 text-[11px] font-medium leading-none text-hot">{liftError}</div>
+            )}
             {editing === lift.code && (
               <div className="mt-3 flex flex-col gap-2">
                 <StrengthEvidenceFields
@@ -364,15 +492,17 @@ function StrengthLiftsEditor({
                   liftLabel={lift.label}
                   unit={formUnit}
                 />
-                {error && <div className="text-[11px] font-medium leading-none text-hot">{error}</div>}
+                {liftError && <div className="text-[11px] font-medium leading-none text-hot">{liftError}</div>}
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => void save(lift.code)}
-                    disabled={busy}
-                    className="rounded-[9px] bg-ac px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
-                  >
-                    {busy ? "Saving…" : "Save"}
-                  </button>
+                  {!unresolved && (
+                    <button
+                      onClick={() => void save(lift.code)}
+                      disabled={sending}
+                      className="rounded-[9px] bg-ac px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+                    >
+                      {sending ? "Saving…" : "Save"}
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditing(null)}
                     className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold leading-none text-soft"

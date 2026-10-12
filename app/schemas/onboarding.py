@@ -5,7 +5,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.logic.confidence_presentation import ConfidenceStatus
 from app.logic.onboarding_state import validate_dob
-from app.schemas.benchmarks import StrengthReport, refuse_bare_canonical_lift_numbers
+from app.schemas.benchmarks import (
+    StrengthOutcome,
+    StrengthReport,
+    refuse_bare_canonical_lift_numbers,
+)
 
 
 def _validate_optional_dob(v: date | None) -> date | None:
@@ -92,6 +96,9 @@ class OnboardResponse(BaseModel):
     profile_id: int
     message: str
     next_step: str = "Call GET /v1/next-session?goal=Strength to get first prescription"
+    # One outcome per submitted strength report, in request order (P4-3). A retry of the same
+    # submission reports `already_recorded` with the record the first attempt made.
+    strength: list[StrengthOutcome] = Field(default_factory=lambda: [])
 
 
 class OnboardingTwinSummary(BaseModel):

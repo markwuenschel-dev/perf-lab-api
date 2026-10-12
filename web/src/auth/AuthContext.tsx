@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import * as api from "../api/perfLabClient";
-import type { OnboardRequest, ProfileRead, UserResponse } from "../types";
+import type { OnboardRequest, OnboardResponse, ProfileRead, UserResponse } from "../types";
 import {
   classifyAuthFailure,
   describeSessionUnavailable,
@@ -188,20 +188,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const completeOnboarding = useCallback(
-    async (req: Partial<OnboardRequest>) => {
+    async (req: Partial<OnboardRequest>): Promise<OnboardResponse | undefined> => {
       // Errors propagate to the screen. This used to swallow them, which hid that the call
       // was sent without a token and every onboarding was refused: a refused onboarding
       // means the athlete's facts were NOT saved, and they must be told.
       try {
         // Guests persist nothing — skip the profile-seeding call entirely.
-        if (isGuest || !token) return;
+        if (isGuest || !token) return undefined;
         // Identity comes from the bearer token, so OnboardRequest has no `email`.
         // The backend fills server-side defaults for any field we omit, so a
         // partial (even `{}`) is a valid payload.
-        await api.onboard(req as OnboardRequest, token);
+        const response = await api.onboard(req as OnboardRequest, token);
         // Pull the freshly-seeded profile so the sidebar shows the onboarded name
         // immediately. Best-effort: the onboarding itself already succeeded.
         await refreshProfile().catch(() => undefined);
+        // The screen reads what happened to each strength report (P4-3).
+        return response;
       } finally {
         setOnboardingPending(false);
       }

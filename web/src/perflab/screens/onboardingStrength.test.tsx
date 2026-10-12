@@ -231,3 +231,58 @@ describe("leaving the step", () => {
     screen.getByText("Step 3 of 3");
   });
 });
+
+describe("sets kept without an estimate (P4-3)", () => {
+  const keptSquat = {
+    outcome: "report_only",
+    reason: "effort_unknown",
+    value_available: false,
+    observation: null,
+    report: {
+      id: 5, benchmark_code: "pl_e1rm_squat", method: "rep_set", collection_mode: "onboarding_onramp",
+      performed_at: "2026-09-10T04:00:00", load_kg: 100, reps: 5, rpe: null, rir: null,
+      reason: "effort_unknown", created_at: "2026-09-14T09:30:00",
+      superseded_by_observation_id: null, superseded_at: null,
+    },
+  };
+  const recordedBench = { outcome: "recorded", value_available: true, report: null, observation: { id: 1 } };
+
+  function enterSquatSet() {
+    chooseSet("Squat");
+    type("Squat: Load in kg", "100");
+    type("Squat: Reps", "5");
+    type("Squat: Date performed", "2026-09-10");
+    enter();
+  }
+
+  it("lists each kept set after saving and stays until Continue", async () => {
+    completeOnboarding.mockResolvedValue({ user_id: 1, profile_id: 1, message: "ok", strength: [keptSquat, recordedBench] });
+    renderOnboarding({ goal: "Strength", units: "Metric (km)" });
+    await waitFor(() => expect(screen.getByTestId("screen").textContent).toBe("onboarding"));
+    toStep3();
+    enterSquatSet();
+
+    const list = await screen.findByRole("list", { name: "Recorded without an estimate" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    within(list).getByText("Squat");
+    within(list).getByText("100 kg × 5 recorded; 1RM estimate unavailable because effort is unknown.");
+    expect(screen.getByTestId("screen").textContent).toBe("onboarding");
+    expect(screen.queryByRole("button", { name: "Enter Perf Lab →" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByTestId("screen").textContent).toBe("overview"));
+  });
+
+  it("goes straight to Overview when every report was recorded", async () => {
+    completeOnboarding.mockResolvedValue({ user_id: 1, profile_id: 1, message: "ok", strength: [recordedBench] });
+    renderOnboarding({ goal: "Strength", units: "Metric (km)" });
+    await waitFor(() => expect(screen.getByTestId("screen").textContent).toBe("onboarding"));
+    toStep3();
+    type("Squat: Weight in kg", "140");
+    type("Squat: Date performed", "2026-09-10");
+    enter();
+
+    await waitFor(() => expect(screen.getByTestId("screen").textContent).toBe("overview"));
+    expect(screen.queryByRole("list", { name: "Recorded without an estimate" })).toBeNull();
+  });
+});

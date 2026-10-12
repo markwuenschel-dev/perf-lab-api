@@ -152,7 +152,8 @@ async def onboard_athlete(
     # no state, so a repeated submission never replaces state the athlete has since earned.
     # The lift seeds are the SAME derived values the evidence carries — one fact, one
     # derivation — and seeding comes first, so the onramp evidence staged below finds a twin
-    # and does not seed it a second time.
+    # and does not seed it a second time. A report that yields no estimate (unknown or
+    # conflicting effort) is classified out here and seeds nothing.
     if not await state_service.has_state(db, user_id):
         seed = strength_evidence_service.seed_values(request.strength)
         await state_service.stage_baseline_state(
@@ -169,26 +170,28 @@ async def onboard_athlete(
         )
 
     # Each report becomes characterized strength evidence through the one E1 path, which also
-    # derives the profile's squat/bench/deadlift columns.
-    staged: list[benchmark_service.StagedObservation] = []
-    for report in request.strength:
-        recorded = await strength_evidence_service.stage_strength_report(
+    # derives the profile's squat/bench/deadlift columns — or, when it yields no estimate, a
+    # report that changes nothing else.
+    results = [
+        await strength_evidence_service.stage_strength_report(
             db, user_id, report,
             collection_mode=oa.CM_ONBOARDING_ONRAMP,
             skip_if_recorded=True,
         )
-        if recorded is not None:
-            staged.append(recorded)
+        for report in request.strength
+    ]
 
     await db.commit()
 
-    for recorded in staged:
-        await benchmark_service.complete_observation(db, user_id, recorded)
+    for result in results:
+        if result.staged is not None:
+            await benchmark_service.complete_observation(db, user_id, result.staged)
 
     return OnboardResponse(
         user_id=user_id,
         profile_id=profile_id,
         message="Athlete profile and baseline state ready.",
+        strength=[result.outcome for result in results],
     )
 
 

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from typing import Any, Literal
 
@@ -158,6 +159,45 @@ class StrengthEvidenceCreate(StrengthReport):
     """A strength report submitted on its own — from Assess, or a Settings strength edit."""
 
     collection_mode: Literal["onboarding_onramp", "retest"] = "retest"
+    idempotency_key: uuid.UUID | None = Field(
+        None,
+        description="Names one logical submission (P4-3). A retry after an uncertain failure "
+        "resends the same key with the same payload and gets the first outcome back, with "
+        "nothing recorded again. The same key with a different payload is refused (422). An "
+        "edited payload, or another identical set recorded on purpose, needs a new key. "
+        "Optional: a submission without a key is never recognized as a retry, and neither is "
+        "any submission made before keys existed.",
+    )
+    supersedes_report_id: int | None = Field(
+        None,
+        ge=1,
+        description="The id of one of the athlete's underived strength reports that this "
+        "submission replaces (P4-3). The submission must yield an estimate for the same lift "
+        "(otherwise 400) and the report must not already be superseded (otherwise 409). "
+        "Supersession happens only when named here, never inferred.",
+    )
+
+
+UnderivedReason = Literal["effort_unknown", "effort_conflict"]
+
+
+class UnderivedStrengthReportRead(BaseModel):
+    """A reported set the server recorded but derived nothing from (P4-3): its effort is
+    unknown (``effort_unknown``) or its RPE and RIR disagree (``effort_conflict``)."""
+
+    id: int
+    benchmark_code: str
+    method: Literal["rep_set"]
+    collection_mode: str
+    performed_at: datetime | None
+    load_kg: float
+    reps: int
+    rpe: float | None
+    rir: float | None
+    reason: UnderivedReason
+    created_at: datetime
+    superseded_by_observation_id: int | None
+    superseded_at: datetime | None
 
 
 class BenchmarkObservationRead(BaseModel):
@@ -179,6 +219,42 @@ class BenchmarkObservationRead(BaseModel):
     state_disposition_reason: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StrengthOutcome(BaseModel):
+    """What happened to one strength report (P4-3), for a standalone submission and for each
+    report in onboarding.
+
+    * ``recorded``: it became strength evidence (``observation``).
+    * ``report_only``: it was recorded as a report (``report``) and no estimate was derived;
+      ``reason`` says why.
+    * ``already_recorded``: an identical report was already recorded (onboarding's retry guard);
+      the record it matched is returned as it is. A matched observation carries its stored value
+      (a set recorded before P4-3 is not reclassified); a matched report carries its ``reason``.
+
+    ``value_available`` is whether the record carries a value: true for an observation, false for
+    a report.
+    """
+
+    outcome: Literal["recorded", "report_only", "already_recorded"]
+    reason: UnderivedReason | None = None
+    value_available: bool
+    observation: BenchmarkObservationRead | None = None
+    report: UnderivedStrengthReportRead | None = None
+
+    @model_validator(mode="after")
+    def _one_record(self) -> "StrengthOutcome":
+        if (self.observation is None) == (self.report is None):
+            raise ValueError("an outcome carries exactly one of observation or report")
+        if self.outcome == "recorded" and (self.observation is None or not self.value_available):
+            raise ValueError("a recorded outcome carries an observation with a value")
+        if self.outcome == "report_only" and (self.report is None or self.reason is None):
+            raise ValueError("a report_only outcome carries a report and its reason")
+        if self.report is not None and self.value_available:
+            raise ValueError("a report carries no value")
+        if self.observation is not None and (not self.value_available or self.reason is not None):
+            raise ValueError("an observation carries its value and no underived reason")
+        return self
 
 
 class RecomputeDerivedResponse(BaseModel):

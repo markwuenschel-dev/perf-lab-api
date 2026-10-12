@@ -3631,7 +3631,9 @@
                   "estimate_not_used",
                   "set_not_qualifying",
                   "no_evidence",
-                  "not_qualifying"
+                  "not_qualifying",
+                  "effort_unknown",
+                  "effort_conflict"
                 ],
                 "type": "string"
               },
@@ -4684,6 +4686,13 @@
           "profile_id": {
             "title": "Profile Id",
             "type": "integer"
+          },
+          "strength": {
+            "items": {
+              "$ref": "#/components/schemas/StrengthOutcome"
+            },
+            "title": "Strength",
+            "type": "array"
           },
           "user_id": {
             "title": "User Id",
@@ -7309,6 +7318,19 @@
             "title": "Collection Mode",
             "type": "string"
           },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Names one logical submission (P4-3). A retry after an uncertain failure resends the same key with the same payload and gets the first outcome back, with nothing recorded again. The same key with a different payload is refused (422). An edited payload, or another identical set recorded on purpose, needs a new key. Optional: a submission without a key is never recognized as a retry, and neither is any submission made before keys existed.",
+            "title": "Idempotency Key"
+          },
           "load_kg": {
             "anyOf": [
               {
@@ -7384,6 +7406,19 @@
             ],
             "title": "Rpe"
           },
+          "supersedes_report_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of one of the athlete's underived strength reports that this submission replaces (P4-3). The submission must yield an estimate for the same lift (otherwise 400) and the report must not already be superseded (otherwise 409). Supersession happens only when named here, never inferred.",
+            "title": "Supersedes Report Id"
+          },
           "value_kg": {
             "anyOf": [
               {
@@ -7403,6 +7438,65 @@
           "method"
         ],
         "title": "StrengthEvidenceCreate",
+        "type": "object"
+      },
+      "StrengthOutcome": {
+        "description": "What happened to one strength report (P4-3), for a standalone submission and for each\nreport in onboarding.\n\n* ``recorded``: it became strength evidence (``observation``).\n* ``report_only``: it was recorded as a report (``report``) and no estimate was derived;\n  ``reason`` says why.\n* ``already_recorded``: an identical report was already recorded (onboarding's retry guard);\n  the record it matched is returned as it is. A matched observation carries its stored value\n  (a set recorded before P4-3 is not reclassified); a matched report carries its ``reason``.\n\n``value_available`` is whether the record carries a value: true for an observation, false for\na report.",
+        "properties": {
+          "observation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkObservationRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "recorded",
+              "report_only",
+              "already_recorded"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "effort_unknown",
+                  "effort_conflict"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnderivedStrengthReportRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_available": {
+            "title": "Value Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outcome",
+          "value_available"
+        ],
+        "title": "StrengthOutcome",
         "type": "object"
       },
       "StrengthSession": {
@@ -7805,6 +7899,123 @@
           "status"
         ],
         "title": "TrainingLoadMetrics",
+        "type": "object"
+      },
+      "UnderivedStrengthReportRead": {
+        "description": "A reported set the server recorded but derived nothing from (P4-3): its effort is\nunknown (``effort_unknown``) or its RPE and RIR disagree (``effort_conflict``).",
+        "properties": {
+          "benchmark_code": {
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "collection_mode": {
+            "title": "Collection Mode",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "load_kg": {
+            "title": "Load Kg",
+            "type": "number"
+          },
+          "method": {
+            "const": "rep_set",
+            "title": "Method",
+            "type": "string"
+          },
+          "performed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performed At"
+          },
+          "reason": {
+            "enum": [
+              "effort_unknown",
+              "effort_conflict"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "reps": {
+            "title": "Reps",
+            "type": "integer"
+          },
+          "rir": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rir"
+          },
+          "rpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpe"
+          },
+          "superseded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded At"
+          },
+          "superseded_by_observation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By Observation Id"
+          }
+        },
+        "required": [
+          "id",
+          "benchmark_code",
+          "method",
+          "collection_mode",
+          "performed_at",
+          "load_kg",
+          "reps",
+          "rpe",
+          "rir",
+          "reason",
+          "created_at",
+          "superseded_by_observation_id",
+          "superseded_at"
+        ],
+        "title": "UnderivedStrengthReportRead",
         "type": "object"
       },
       "UnifiedStateVector": {
@@ -10416,7 +10627,7 @@
     },
     "/v1/benchmarks/strength-evidence": {
       "post": {
-        "description": "Record an athlete-reported strength observation for a canonical lift (S2).\n\nEvidence only: no workout is created and no training dose is applied. The server\nderives the value semantics, the estimate for a reported set, and whether the\nobservation may ever size a prescribed load.",
+        "description": "Record an athlete-reported strength observation for a canonical lift (S2, P4-3).\n\nEvidence only: no workout is created and no training dose is applied. The server\nderives the value semantics, the estimate for a reported set, and whether the\nobservation may ever size a prescribed load.\n\nA reported set whose effort is unknown, or whose RPE and RIR disagree, yields no\nestimate: it is kept as a report (``outcome = report_only``) and changes nothing else.\n\n**Retries.** With ``idempotency_key``, the same key and payload return the first outcome\nand record nothing again; the same key with a different payload is 422. Without a key a\nsubmission is never treated as a retry.\n\n**Supersession.** ``supersedes_report_id`` must name one of the athlete's reports (404\notherwise) that is not yet superseded (409, with the id of the observation that superseded\nit \u2014 not proof that this submission succeeded); the submission must be the same performance\n(a reported set of the same lift, load, reps and performance time) with an effort that\nyields an estimate (400).",
         "operationId": "post_strength_evidence_v1_benchmarks_strength_evidence_post",
         "requestBody": {
           "content": {
@@ -10433,7 +10644,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BenchmarkObservationRead"
+                  "$ref": "#/components/schemas/StrengthOutcome"
                 }
               }
             },
@@ -10456,6 +10667,125 @@
           }
         ],
         "summary": "Post Strength Evidence",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
+    "/v1/benchmarks/strength-reports": {
+      "get": {
+        "description": "The athlete's active strength reports that yielded no estimate (P4-3) \u2014 superseded\nones are left out, and stay readable by id \u2014 most recently performed first, undated last.",
+        "operationId": "get_strength_reports_v1_benchmarks_strength_reports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "benchmark_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Benchmark Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UnderivedStrengthReportRead"
+                  },
+                  "title": "Response Get Strength Reports V1 Benchmarks Strength Reports Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Strength Reports",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
+    "/v1/benchmarks/strength-reports/{report_id}": {
+      "get": {
+        "description": "One of the athlete's strength reports that yielded no estimate, superseded or not;\n404 for any other.",
+        "operationId": "get_strength_report_v1_benchmarks_strength_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "title": "Report Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnderivedStrengthReportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Strength Report",
         "tags": [
           "Benchmarks"
         ]

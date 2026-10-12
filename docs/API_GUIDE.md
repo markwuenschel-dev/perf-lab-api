@@ -258,8 +258,15 @@ Fields:
 - `bench_1rm_kg`
 - `bodyweight_kg`
 - `run_5k_seconds`
+- `strength`: a list of strength reports, one per lift (the same report shape as
+  `POST /v1/benchmarks/strength-evidence`, without `idempotency_key` or `supersedes_report_id`)
 
-Output: `OnboardResponse`.
+Output: `OnboardResponse`. Its `strength` list carries one `StrengthOutcome` per submitted report
+(see `POST /v1/benchmarks/strength-evidence`). A report identical to one onboarding already
+recorded (same lift, method, time and reported numbers) is `already_recorded` with the record it
+matched, so a retried onboarding adds nothing. A matched evidence row is returned with its stored
+value, even a no-effort set recorded before P4-3; whether a report seeds the baseline is decided
+from the submitted report alone (a report that yields no estimate seeds nothing).
 
 ```json
 {
@@ -548,6 +555,56 @@ Does it mutate state?
 
 No.
 
+### POST /v1/benchmarks/strength-evidence
+
+Records one athlete-reported strength result for a canonical lift (Assess, Settings).
+
+Input: `StrengthEvidenceCreate`: `benchmark_code`, `method` (`tested_max` with `value_kg`;
+`rep_set` with `load_kg`, `reps` and optional `rpe` / `rir`; `estimate` with `value_kg`),
+`performed_at`, `collection_mode`, and optionally:
+
+- `idempotency_key` (UUID): one per logical submission. The key commits with what it recorded.
+  The same key with the same submission returns the first response and writes nothing; the same
+  key with a different submission (any fact, the collection mode, the time, or
+  `supersedes_report_id`) is a 422 and writes nothing. Keys are per athlete. Without a key, every
+  request records: identical same-day sets are legitimate. The guarantee covers keyed
+  submissions only; it cannot recognize a retry of an earlier un-keyed request.
+- `supersedes_report_id`: the athlete's own active underived report this submission corrects. It
+  must be the same performance (a `rep_set` of the same lift, load, reps and `performed_at`) with
+  an effort that yields an estimate.
+
+Output (200): `StrengthOutcome`:
+
+- `outcome`: `recorded` (strength evidence, `observation`), `report_only` (saved as a report,
+  `report`, no estimate derived) or `already_recorded` (onboarding's retry guard only).
+- `reason`: `effort_unknown` (no RPE or RIR) or `effort_conflict` (RPE and RIR disagree) for a
+  report; absent for an observation.
+- `value_available`: true when the record is an observation with a value, false for a report.
+
+Errors: 400 (non-canonical lift, future time, an underived submission naming
+`supersedes_report_id`, a different lift or a different performance than the report), 404 (the
+named report is not the athlete's or does not exist), 409 (the named report is already
+superseded; `detail.superseded_by_observation_id` names the observation that superseded it — not
+proof this submission succeeded), 422 (invalid body, out-of-range effort, reused key with a
+different submission).
+
+Does it mutate state?
+
+Yes, unless the outcome is `report_only`: evidence, the profile value for that lift and state
+consequences commit together. A `report_only` outcome writes only the report (and its key).
+
+### GET /v1/benchmarks/strength-reports
+
+Lists the athlete's active underived strength reports (P4-3): those nothing has superseded, most
+recently performed first, undated last. A superseded report is left out before `limit` applies.
+
+Query params: `benchmark_code` optional; `limit` default 100, bounded 1-500.
+
+### GET /v1/benchmarks/strength-reports/{report_id}
+
+One of the athlete's underived reports, superseded or not (its permanent record, with
+`superseded_by_observation_id` and `superseded_at`). 404 for another athlete's.
+
 ### POST /v1/benchmarks/recompute-derived
 
 Recomputes derived KPI snapshots from latest observations and profile context.
@@ -706,10 +763,15 @@ Read-oriented but can update planned-session content:
 - `GET /v1/next-session`
 - `GET /v1/planning/today`
 
+Safe to retry when keyed:
+
+- `POST /v1/benchmarks/strength-evidence` with the same `idempotency_key` and the same body (see
+  its section). Send a new key for a new or edited submission.
+
 Not safe to repeat casually:
 
 - `POST /auth/register`
-- `POST /v1/onboard`
+- `POST /v1/onboard` (its strength reports are deduplicated by submitted facts; the rest is not)
 - `POST /v1/log-workout`
 - `POST /v1/planning/blocks`
 - `POST /v1/benchmarks/observations`

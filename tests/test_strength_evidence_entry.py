@@ -120,8 +120,9 @@ async def test_the_server_estimates_a_reported_set_and_the_shared_gate_qualifies
     "set_fields",
     [
         {"load_kg": 100.0, "reps": 8, "rpe": 9.0},   # past the 1-5 rep gate
-        {"load_kg": 120.0, "reps": 3},              # no effort: nothing shows it was near failure
         {"load_kg": 120.0, "reps": 3, "rpe": 7.0},  # not near failure
+        # A set with no effort at all is not here: since P4-3 it is kept as a report and yields
+        # no estimate (tests/test_underived_strength_reports.py).
     ],
 )
 async def test_a_reported_set_that_fails_the_gate_is_recorded_but_is_not_a_basis(

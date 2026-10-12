@@ -83,9 +83,11 @@ gave; effort only gated admission and scaled confidence. With `E1RM_CHART_ESTIMA
 (default **off**) a set with a known, self-consistent effort (`resolve_effort`) that also clears
 the extraction gate (`is_e1rm_informative`: at most 5 reps, effort 8 or more with per-set
 provenance, 9 or more otherwise) is stored as `load / chart(reps, effort)`, rounded to
-0.1 kg, `formula = rpe_rir_chart`, `model_version = rpe_rir_chart_v1`. Anything else (flag off,
-unknown or contradicting effort, a set the gate rejects) is the legacy Epley estimate, exactly
-as before. A set the gate rejects cannot size a load, and the chart is 16-27% above Epley for
+0.1 kg, `formula = rpe_rir_chart`, `model_version = rpe_rir_chart_v1`. Any other set that is
+estimated (flag off, a set the gate rejects) gets the legacy Epley estimate, exactly as before.
+A set whose effort is unknown or contradicting is not estimated at all since P4-3 (amendment
+below): reported, it is saved as an underived report; in a workout log the extraction gate
+already refused it. A set the gate rejects cannot size a load, and the chart is 16-27% above Epley for
 the easy or high-rep sets, so re-estimating those would only move the profile projection and the
 onboarding seed by the largest steps.
 
@@ -128,3 +130,27 @@ by. It is not a forecast of the activation, because history stays Epley.
 Size of the step for a set that clears the gate (1–5 reps, this repository's chart): about
 0–2% at RPE 10, 5% at RPE 9, 8.5–9% at RPE 8. Always upward. Objective attainment and validated anchors
 read demonstrated measurements only; KPIs are labeled projections (table above). No web surface renders KPIs or anchors today (the web reads objective progress and `/dashboard/overview`); any surface that does must render `value_basis`.
+
+## Amendment (2026-10-12, P4-3): a set with unknown or conflicting effort derives nothing
+
+A reported set (`rep_set`, from onboarding, Assess or Settings) whose effort `resolve_effort`
+cannot characterize — no RPE and no RIR (`effort_unknown`), or both, further apart than its
+tolerance (`effort_conflict`) — gets no estimate, Epley or chart. Its facts (lift, load, reps,
+RPE, RIR, performance time, collection mode) are saved in `underived_strength_reports` with that
+reason, and nothing else is written: no observation, no profile projection, no onboarding seed, no
+state, no capacity or decline input. The response says so (`StrengthOutcome`, `report_only`).
+Tested maxes and estimates carry no effort and are unaffected. Out-of-range effort is still a 422.
+
+- **History is not rewritten.** A no-effort set recorded as evidence before P4-3 keeps its row and
+  its Epley value. The profile projection skips such a row (classified by the same resolver), so it
+  no longer decides the profile value once a characterized report is recorded; KPIs and
+  estimated-PR tracking still read it. Onboarding's retry guard returns it as the existing record,
+  with its value, and never reclassifies it.
+- **Correction.** A later submission of the same performance (same lift, load, reps and
+  performance time) with an effort that yields an estimate may name the report in
+  `supersedes_report_id`; the link commits with the new observation. Any other performance is a
+  separate recording.
+- **Explanation.** When no basis can size a lift, the newest active report inside the 28-day window
+  explains why (`effort_unknown` / `effort_conflict`) in place of `no_evidence` or `stale`, and in
+  place of `set_not_qualifying` only if it is newer and its reps are within the gate. A basis
+  always wins.

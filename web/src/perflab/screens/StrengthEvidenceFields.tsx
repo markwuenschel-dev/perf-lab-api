@@ -5,7 +5,8 @@
 // this, and all build their request through strengthEvidenceBody.ts, so there is one way to
 // state a strength fact. Weights are typed in the selected unit; the body builder converts to
 // kilograms. Deliberately no eligibility messaging here — the explanation of a missing weight
-// lives beside the prescribed exercise.
+// lives beside the prescribed exercise. The one hint below is about derivation, not
+// eligibility: a set with no effort is kept, but no 1RM is estimated from it (P4-3).
 import { InfoTip, type InfoSection } from "../InfoTip";
 import type { StrengthForm, StrengthMethod, WeightUnit } from "./strengthEvidenceBody";
 
@@ -127,6 +128,11 @@ export function StrengthEvidenceFields({
           <span>Effort (RPE) is 1 to 10, optional</span>
           <InfoTip label={`${prefix}About RPE`} sections={RPE_HELP} />
         </div>
+        {form.rpe.trim() === "" && (
+          <div className="text-[11px] font-medium leading-snug text-dim">
+            Without an effort (RPE), this set is saved but no 1RM estimate is made.
+          </div>
+        )}
         </>
       ) : (
         <input

@@ -39,10 +39,12 @@ import type {
   StateHistorySnapshotRead,
   StressDose,
   StrengthEvidenceCreate,
+  StrengthOutcome,
   SyncResult,
   TokenResponse,
   TodaySessionResponse,
   LogWorkoutResponse,
+  UnderivedStrengthReportRead,
   UserResponse,
   SessionFeedbackIn,
   SessionFeedbackOut,
@@ -681,18 +683,102 @@ export async function submitBenchmarkObservation(
 
 /** Report a strength observation for a canonical lift from Assess (S2). Build the body
  *  with `strengthEvidenceBody`: it states what happened, and the server derives the value
- *  semantics, the estimate, and whether it may size a load. Evidence only — no workout. */
+ *  semantics, the estimate, and whether it may size a load. Evidence only — no workout.
+ *  A set with unknown or conflicting effort comes back `report_only` (P4-3). Send the
+ *  body through `useSubmissionKey` so a retry carries the same `idempotency_key`. */
 export async function submitStrengthEvidence(
   body: StrengthEvidenceCreate,
   token: string,
-): Promise<BenchmarkObservationRead> {
+): Promise<StrengthOutcome> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const res = await fetch(`${API_V1_BASE}/benchmarks/strength-evidence`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<BenchmarkObservationRead>(res, { sessionOn401: true });
+  const reply = await handleResponse<unknown>(res, { sessionOn401: true });
+  if (!isStrengthOutcome(reply)) {
+    // A 2xx whose body is not a StrengthOutcome confirms nothing: the save may or may not have
+    // been recorded. No `status`, so a keyed caller keeps the attempt for Retry.
+    const error: ApiError = {
+      message: "The server's reply to this save couldn't be read, so it may or may not be recorded.",
+      details: reply,
+    };
+    throw error;
+  }
+  return reply;
+}
+
+/** Whether a reply is a StrengthOutcome the way the server builds one: every field of the
+ *  record it carries has the type `BenchmarkObservationRead` / `UnderivedStrengthReportRead`
+ *  declare (app/schemas/benchmarks.py:184-221 — integer ids and reps, a report's method is
+ *  `rep_set`, its reason one of the two), and `StrengthOutcome`'s validator holds (:245-257):
+ *  exactly one record, an observation carrying its value and no reason, a report carrying its
+ *  reason and no value. Anything else confirms nothing. */
+export function isStrengthOutcome(reply: unknown): reply is StrengthOutcome {
+  const reasons = ["effort_unknown", "effort_conflict"];
+  const obj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  const int = (v: unknown) => typeof v === "number" && Number.isInteger(v);
+  const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  const str = (v: unknown) => typeof v === "string";
+  const time = (v: unknown) => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const orNull = (check: (v: unknown) => boolean) => (v: unknown) => v === null || check(v);
+  // A field with a server-side default may be absent; when present it must have its type.
+  const optional = (check: (v: unknown) => boolean) => (v: unknown) => v === undefined || v === null || check(v);
+
+  function isObservation(o: unknown): boolean {
+    return (
+      obj(o) &&
+      int(o.id) && int(o.user_id) && int(o.benchmark_definition_id) && str(o.benchmark_code) &&
+      time(o.observed_at) && num(o.raw_value) && orNull(num)(o.secondary_value) &&
+      orNull(num)(o.normalized_value) && str(o.validity_status) && str(o.source) &&
+      optional((v) => v === "applied" || v === "record_only")(o.state_disposition) &&
+      optional(str)(o.state_disposition_reason)
+    );
+  }
+
+  function isReport(o: unknown): boolean {
+    return (
+      obj(o) &&
+      int(o.id) && str(o.benchmark_code) && o.method === "rep_set" && str(o.collection_mode) &&
+      orNull(time)(o.performed_at) && num(o.load_kg) && int(o.reps) && orNull(num)(o.rpe) &&
+      orNull(num)(o.rir) && reasons.includes(o.reason as string) && time(o.created_at) &&
+      orNull(int)(o.superseded_by_observation_id) && orNull(time)(o.superseded_at)
+    );
+  }
+
+  if (!obj(reply)) return false;
+  if (!["recorded", "report_only", "already_recorded"].includes(reply.outcome as string)) return false;
+  if (typeof reply.value_available !== "boolean") return false;
+  if (!optional((v) => reasons.includes(v as string))(reply.reason)) return false;
+  const observation = reply.observation ?? null;
+  const report = reply.report ?? null;
+  if ((observation === null) === (report === null)) return false;
+  if (observation !== null) {
+    return (
+      isObservation(observation) &&
+      reply.value_available === true && reply.reason == null && reply.outcome !== "report_only"
+    );
+  }
+  return (
+    isReport(report) &&
+    reply.value_available === false && reply.outcome !== "recorded" &&
+    (reply.outcome !== "report_only" || reply.reason != null)
+  );
+}
+
+/** The athlete's strength reports that yielded no estimate (P4-3), most recently performed
+ *  first, undated last; optionally for one lift. */
+export async function listStrengthReports(
+  token: string,
+  benchmarkCode?: string,
+): Promise<UnderivedStrengthReportRead[]> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const query = benchmarkCode ? `?benchmark_code=${encodeURIComponent(benchmarkCode)}` : "";
+  const res = await fetch(`${API_V1_BASE}/benchmarks/strength-reports${query}`, {
+    headers: { ...authHeaders(token) },
+  });
+  return handleResponse<UnderivedStrengthReportRead[]>(res, { sessionOn401: true });
 }
 
 /** Non-blocking onboarding state (P10, PDR-0010): status, the safety hard-gate,

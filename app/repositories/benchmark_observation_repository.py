@@ -27,9 +27,15 @@ from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic import observation_authority as oa
-from app.logic.prescription_evidence import BasisSelection, EvidenceRow, select_basis
+from app.logic.prescription_evidence import (
+    BasisSelection,
+    EvidenceRow,
+    UnderivedReportRow,
+    select_basis,
+)
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
+from app.models.strength_report import UnderivedStrengthReport
 
 # A point in an athlete's observation order: ``(observed_at, id)``. Time alone cannot order two
 # tests recorded for the same instant; the id (arrival order) does.
@@ -203,6 +209,36 @@ async def select_prescription_basis(
     for code, obs in res.all():
         rows_by_code[code].append(evidence_row(obs))
     return {code: select_basis(rows_by_code.get(code, []), as_of=as_of) for code in codes}
+
+
+async def underived_report_rows(
+    db: AsyncSession, user_id: int, codes: set[str]
+) -> dict[str, list[UnderivedReportRow]]:
+    """Per benchmark code: the athlete's unsuperseded underived strength reports (P4-3), which
+    may explain a missing weight but never size one. Codes with none are absent."""
+    if not codes:
+        return {}
+    res = await db.execute(
+        select(BenchmarkDefinition.code, UnderivedStrengthReport)
+        .join(
+            UnderivedStrengthReport,
+            UnderivedStrengthReport.benchmark_definition_id == BenchmarkDefinition.id,
+        )
+        .where(
+            UnderivedStrengthReport.user_id == user_id,
+            UnderivedStrengthReport.superseded_by_observation_id.is_(None),
+            BenchmarkDefinition.code.in_(codes),
+        )
+    )
+    rows: dict[str, list[UnderivedReportRow]] = defaultdict(list)
+    for code, report in res.all():
+        rows[code].append(UnderivedReportRow(
+            report_id=report.id,
+            performed_at=report.performed_at,
+            reps=report.reps,
+            reason=report.reason,
+        ))
+    return dict(rows)
 
 
 def evidence_row(obs: BenchmarkObservation) -> EvidenceRow:

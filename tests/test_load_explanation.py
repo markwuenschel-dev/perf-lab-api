@@ -126,6 +126,7 @@ def test_the_published_reasons_are_exactly_the_selector_categories() -> None:
     assert set(get_args(LoadExplanationReason)) == {
         pe.EXPLAIN_STALE, pe.EXPLAIN_MISSING_DATE, pe.EXPLAIN_ESTIMATE_NOT_USED,
         pe.EXPLAIN_SET_NOT_QUALIFYING, pe.EXPLAIN_NO_EVIDENCE, pe.EXPLAIN_NOT_QUALIFYING,
+        pe.EXPLAIN_EFFORT_UNKNOWN, pe.EXPLAIN_EFFORT_CONFLICT,
     }
 
 

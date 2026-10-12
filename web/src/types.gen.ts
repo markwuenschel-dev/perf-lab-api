@@ -217,13 +217,68 @@ export interface paths {
         put?: never;
         /**
          * Post Strength Evidence
-         * @description Record an athlete-reported strength observation for a canonical lift (S2).
+         * @description Record an athlete-reported strength observation for a canonical lift (S2, P4-3).
          *
          *     Evidence only: no workout is created and no training dose is applied. The server
          *     derives the value semantics, the estimate for a reported set, and whether the
          *     observation may ever size a prescribed load.
+         *
+         *     A reported set whose effort is unknown, or whose RPE and RIR disagree, yields no
+         *     estimate: it is kept as a report (``outcome = report_only``) and changes nothing else.
+         *
+         *     **Retries.** With ``idempotency_key``, the same key and payload return the first outcome
+         *     and record nothing again; the same key with a different payload is 422. Without a key a
+         *     submission is never treated as a retry.
+         *
+         *     **Supersession.** ``supersedes_report_id`` must name one of the athlete's reports (404
+         *     otherwise) that is not yet superseded (409, with the id of the observation that superseded
+         *     it — not proof that this submission succeeded); the submission must be the same performance
+         *     (a reported set of the same lift, load, reps and performance time) with an effort that
+         *     yields an estimate (400).
          */
         post: operations["post_strength_evidence_v1_benchmarks_strength_evidence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/benchmarks/strength-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Strength Reports
+         * @description The athlete's active strength reports that yielded no estimate (P4-3) — superseded
+         *     ones are left out, and stay readable by id — most recently performed first, undated last.
+         */
+        get: operations["get_strength_reports_v1_benchmarks_strength_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/benchmarks/strength-reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Strength Report
+         * @description One of the athlete's strength reports that yielded no estimate, superseded or not;
+         *     404 for any other.
+         */
+        get: operations["get_strength_report_v1_benchmarks_strength_reports__report_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2577,7 +2632,7 @@ export interface components {
              * Reason
              * @description Set only when status is no_qualifying_evidence.
              */
-            reason?: ("stale" | "missing_performance_date" | "estimate_not_used" | "set_not_qualifying" | "no_evidence" | "not_qualifying") | null;
+            reason?: ("stale" | "missing_performance_date" | "estimate_not_used" | "set_not_qualifying" | "no_evidence" | "not_qualifying" | "effort_unknown" | "effort_conflict") | null;
             /**
              * Status
              * @enum {string}
@@ -2982,6 +3037,8 @@ export interface components {
             next_step: string;
             /** Profile Id */
             profile_id: number;
+            /** Strength */
+            strength?: components["schemas"]["StrengthOutcome"][];
             /** User Id */
             user_id: number;
         };
@@ -4087,6 +4144,11 @@ export interface components {
              */
             collection_mode: "onboarding_onramp" | "retest";
             /**
+             * Idempotency Key
+             * @description Names one logical submission (P4-3). A retry after an uncertain failure resends the same key with the same payload and gets the first outcome back, with nothing recorded again. The same key with a different payload is refused (422). An edited payload, or another identical set recorded on purpose, needs a new key. Optional: a submission without a key is never recognized as a retry, and neither is any submission made before keys existed.
+             */
+            idempotency_key?: string | null;
+            /**
              * Load Kg
              * @description rep_set: the set's load in kg.
              */
@@ -4112,10 +4174,43 @@ export interface components {
             /** Rpe */
             rpe?: number | null;
             /**
+             * Supersedes Report Id
+             * @description The id of one of the athlete's underived strength reports that this submission replaces (P4-3). The submission must yield an estimate for the same lift (otherwise 400) and the report must not already be superseded (otherwise 409). Supersession happens only when named here, never inferred.
+             */
+            supersedes_report_id?: number | null;
+            /**
              * Value Kg
              * @description tested_max / estimate: the weight in kg.
              */
             value_kg?: number | null;
+        };
+        /**
+         * StrengthOutcome
+         * @description What happened to one strength report (P4-3), for a standalone submission and for each
+         *     report in onboarding.
+         *
+         *     * ``recorded``: it became strength evidence (``observation``).
+         *     * ``report_only``: it was recorded as a report (``report``) and no estimate was derived;
+         *       ``reason`` says why.
+         *     * ``already_recorded``: an identical report was already recorded (onboarding's retry guard);
+         *       the record it matched is returned as it is. A matched observation carries its stored value
+         *       (a set recorded before P4-3 is not reclassified); a matched report carries its ``reason``.
+         *
+         *     ``value_available`` is whether the record carries a value: true for an observation, false for
+         *     a report.
+         */
+        StrengthOutcome: {
+            observation?: components["schemas"]["BenchmarkObservationRead"] | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "recorded" | "report_only" | "already_recorded";
+            /** Reason */
+            reason?: ("effort_unknown" | "effort_conflict") | null;
+            report?: components["schemas"]["UnderivedStrengthReportRead"] | null;
+            /** Value Available */
+            value_available: boolean;
         };
         /** StrengthSession */
         StrengthSession: {
@@ -4332,6 +4427,48 @@ export interface components {
              * @default 0.8
              */
             sweet_spot_low: number;
+        };
+        /**
+         * UnderivedStrengthReportRead
+         * @description A reported set the server recorded but derived nothing from (P4-3): its effort is
+         *     unknown (``effort_unknown``) or its RPE and RIR disagree (``effort_conflict``).
+         */
+        UnderivedStrengthReportRead: {
+            /** Benchmark Code */
+            benchmark_code: string;
+            /** Collection Mode */
+            collection_mode: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Load Kg */
+            load_kg: number;
+            /**
+             * Method
+             * @constant
+             */
+            method: "rep_set";
+            /** Performed At */
+            performed_at: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "effort_unknown" | "effort_conflict";
+            /** Reps */
+            reps: number;
+            /** Rir */
+            rir: number | null;
+            /** Rpe */
+            rpe: number | null;
+            /** Superseded At */
+            superseded_at: string | null;
+            /** Superseded By Observation Id */
+            superseded_by_observation_id: number | null;
         };
         /**
          * UnifiedStateVector
@@ -5509,7 +5646,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BenchmarkObservationRead"];
+                    "application/json": components["schemas"]["StrengthOutcome"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_strength_reports_v1_benchmarks_strength_reports_get: {
+        parameters: {
+            query?: {
+                benchmark_code?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnderivedStrengthReportRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_strength_report_v1_benchmarks_strength_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnderivedStrengthReportRead"];
                 };
             };
             /** @description Validation Error */
