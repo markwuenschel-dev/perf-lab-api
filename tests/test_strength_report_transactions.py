@@ -201,7 +201,17 @@ async def test_the_same_onboarding_sent_again_adds_nothing(http_client, async_db
     assert first.status_code == 200, first.text
     second = await _onboard(http_client, headers, _SUBMISSION)
     assert second.status_code == 200, second.text
-    assert second.json() == first.json()
+    # The same answer, except that each report now says it was already recorded — the record
+    # the first attempt made, not a second one.
+    first_body, second_body = first.json(), second.json()
+    assert {k: v for k, v in second_body.items() if k != "strength"} == {
+        k: v for k, v in first_body.items() if k != "strength"
+    }
+    assert [o["outcome"] for o in first_body["strength"]] == ["recorded"] * 3
+    assert [o["outcome"] for o in second_body["strength"]] == ["already_recorded"] * 3
+    assert [o["observation"]["id"] for o in second_body["strength"]] == [
+        o["observation"]["id"] for o in first_body["strength"]
+    ]
 
     assert await _committed(async_db, _count(AthleteState, user_id)) == 1
     for code in (SQUAT, BENCH, DEADLIFT):
@@ -290,7 +300,16 @@ async def test_concurrent_duplicate_onboardings_write_once(engine, monkeypatch, 
             return await onboard_athlete(request, db=db, current_user=current_user)
 
     first, second = await asyncio.gather(submit(), submit())
-    assert first == second
+    # Serialized: one recorded the reports, the other found them (whichever ran second).
+    assert first.model_dump(exclude={"strength"}) == second.model_dump(exclude={"strength"})
+    kinds = {
+        tuple(o.outcome for o in first.strength), tuple(o.outcome for o in second.strength)
+    }
+    n = len(first.strength)
+    assert n > 0 and kinds == {("recorded",) * n, ("already_recorded",) * n}
+    assert [o.observation and o.observation.id for o in first.strength] == [
+        o.observation and o.observation.id for o in second.strength
+    ]
 
     async with factory() as db:
         assert await db.scalar(_count(AthleteState, user_id)) == 1

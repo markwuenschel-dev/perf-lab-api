@@ -18,6 +18,8 @@ LoadExplanationReason = Literal[
     "set_not_qualifying",
     "no_evidence",
     "not_qualifying",
+    "effort_unknown",
+    "effort_conflict",
 ]
 
 

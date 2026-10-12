@@ -1,6 +1,6 @@
 import { createContext } from "react";
 
-import type { OnboardRequest, ProfileRead, UserResponse } from "../types";
+import type { OnboardRequest, OnboardResponse, ProfileRead, UserResponse } from "../types";
 import type { SessionUnavailableReason } from "./authFailure";
 
 /**
@@ -40,7 +40,9 @@ export type AuthContextValue = {
   onboardingPending: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
-  completeOnboarding: (req: Partial<OnboardRequest>) => Promise<void>;
+  /** Resolves to the server's response — including what happened to each strength report — or
+   *  to undefined for a guest, whose onboarding sends nothing. */
+  completeOnboarding: (req: Partial<OnboardRequest>) => Promise<OnboardResponse | undefined>;
   /** Re-fetch the athlete profile so consumers (e.g. the sidebar) see edits live. */
   refreshProfile: () => Promise<void>;
   /** Enter a guest session and drop into onboarding. */

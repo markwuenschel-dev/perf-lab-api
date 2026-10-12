@@ -22,7 +22,9 @@ from app.logic.prescriber import DEFAULT_LOAD_NOTE, recommend_next_session
 from app.logic.prescription_evidence import (
     EXPLAIN_NO_EVIDENCE,
     BasisSelection,
+    UnderivedReportRow,
     explain_missing_basis,
+    explaining_report,
 )
 from app.logic.workout_history import recent_workout_summaries
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -31,7 +33,10 @@ from app.models.mesocycle import BlockStatus, MesocycleBlock, PlannedSession, Se
 from app.models.prescription_revision import PrescriptionRevision
 from app.models.weak_point import WeakPoint
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
-from app.repositories.benchmark_observation_repository import select_prescription_basis
+from app.repositories.benchmark_observation_repository import (
+    select_prescription_basis,
+    underived_report_rows,
+)
 from app.schemas.prescription import (
     ConservatismSummary,
     LoadExplanation,
@@ -269,9 +274,13 @@ def _utc_aware(moment: datetime) -> datetime:
 
 
 def _explanation_for(
-    code: str, selection: BasisSelection | None, evaluated_at: datetime
+    code: str,
+    selection: BasisSelection | None,
+    evaluated_at: datetime,
+    reports: list[UnderivedReportRow] | None = None,
 ) -> LoadExplanation:
-    """The explanation for a lift that has an e1RM benchmark."""
+    """The explanation for a lift that has an e1RM benchmark. A recent underived report (P4-3)
+    may explain a missing weight instead of the evidence (``explaining_report``)."""
     if selection is not None and selection.selected is not None:
         performed = selection.selected.performed_at
         return LoadExplanation(
@@ -279,6 +288,20 @@ def _explanation_for(
             benchmark_code=code,
             evaluated_at=evaluated_at,
             evidence_performed_at=_utc_aware(performed) if performed is not None else None,
+        )
+    report = (
+        explaining_report(selection, reports, as_of=evaluated_at)
+        if selection is not None and reports
+        else None
+    )
+    if report is not None:
+        assert report.performed_at is not None  # only a dated report explains
+        return LoadExplanation(
+            status="no_qualifying_evidence",
+            reason=cast(LoadExplanationReason, report.reason),
+            benchmark_code=code,
+            evaluated_at=evaluated_at,
+            evidence_performed_at=_utc_aware(report.performed_at),
         )
     explanatory = selection.explanatory if selection is not None else None
     reason = explain_missing_basis(selection) if selection is not None else EXPLAIN_NO_EVIDENCE
@@ -302,6 +325,7 @@ async def _explain_loads(
     selections: dict[str, BasisSelection],
     *,
     evaluated_at: datetime,
+    reports: dict[str, list[UnderivedReportRow]] | None = None,
 ) -> None:
     """N1: say, beside every prescribed exercise, whether it carries a suggested weight.
 
@@ -320,7 +344,9 @@ async def _explain_loads(
     for ex in rx.exercises:
         code = code_by_name.get(ex.name)
         if code is not None:
-            ex.load_explanation = _explanation_for(code, selections.get(code), at)
+            ex.load_explanation = _explanation_for(
+                code, selections.get(code), at, (reports or {}).get(code)
+            )
         elif sc.is_loaded(load_types.get(ex.name)):
             ex.load_explanation = LoadExplanation(status="not_supported", evaluated_at=at)
         else:
@@ -380,7 +406,10 @@ async def _enrich_exercises_with_load(
     e1rm_by_code, selections = await _current_e1rm_values(
         db, user_id, set(code_by_name.values()), as_of=reference
     )
-    await _explain_loads(db, rx, code_by_name, selections, evaluated_at=reference)
+    reports = await underived_report_rows(db, user_id, set(code_by_name.values()))
+    await _explain_loads(
+        db, rx, code_by_name, selections, evaluated_at=reference, reports=reports
+    )
     if not e1rm_by_code:
         return shadow_payloads
 

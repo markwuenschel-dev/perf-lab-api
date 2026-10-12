@@ -115,6 +115,10 @@ EXPLAIN_ESTIMATE_NOT_USED = "estimate_not_used"
 EXPLAIN_SET_NOT_QUALIFYING = "set_not_qualifying"
 EXPLAIN_NO_EVIDENCE = "no_evidence"
 EXPLAIN_NOT_QUALIFYING = "not_qualifying"
+# P4-3: the athlete reported a set, but its effort is unknown or its RPE and RIR disagree, so it
+# was kept as a report and yields no estimate. The same strings as the report's stored reason.
+EXPLAIN_EFFORT_UNKNOWN = "effort_unknown"
+EXPLAIN_EFFORT_CONFLICT = "effort_conflict"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -136,6 +140,17 @@ class EvidenceRow:
     rpe: float | None = None
     rir: float | None = None
     effort_fidelity: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnderivedReportRow:
+    """The fields of one unsuperseded underived strength report (P4-3) that decide whether it
+    explains a missing weight. It never sizes a load."""
+
+    report_id: int
+    performed_at: datetime | None
+    reps: int
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -247,6 +262,51 @@ def explain_missing_basis(selection: BasisSelection) -> str | None:
     ):
         return EXPLAIN_SET_NOT_QUALIFYING
     return EXPLAIN_NOT_QUALIFYING
+
+
+def explaining_report(
+    selection: BasisSelection, reports: Iterable[UnderivedReportRow], *, as_of: datetime
+) -> UnderivedReportRow | None:
+    """The underived report that explains a missing weight instead of the evidence, or None.
+
+    A basis always wins: a report never explains a lift that has a weight. Only a report
+    performed inside the window a basis would need counts (dated, not in the future, no older
+    than the freshness horizon), and of those the most recently performed. It replaces "no
+    evidence" and "stale" — the athlete did report something recent. It replaces "this set does
+    not qualify" only when it is newer than that set and its reps are within the qualifying gate,
+    so effort is the one thing keeping it out. Every other category stands.
+    """
+    base = explain_missing_basis(selection)
+    if base is None:
+        return None
+    reference = utc_naive(as_of)
+    in_window = [
+        report for report in reports
+        if report.performed_at is not None
+        and timedelta(0) <= reference - utc_naive(report.performed_at) <= _MAX_AGE
+    ]
+    if not in_window:
+        return None
+    latest = max(in_window, key=lambda r: (utc_naive(r.performed_at or datetime.min), r.report_id))
+    if base in (EXPLAIN_NO_EVIDENCE, EXPLAIN_STALE):
+        return latest
+    if base == EXPLAIN_SET_NOT_QUALIFYING:
+        row = selection.explanatory
+        newer = (
+            row is None
+            or row.performed_at is None
+            or utc_naive(latest.performed_at or datetime.min) > utc_naive(row.performed_at)
+        )
+        if newer and _reps_within_gate(latest.reps):
+            return latest
+    return None
+
+
+def _reps_within_gate(reps: int) -> bool:
+    """Whether a set's reps are inside the qualifying-set gate — the part of the gate an unknown
+    effort leaves to judge. Asked of the gate itself with the strongest effort it accepts, so
+    the rep range is not restated here."""
+    return se.is_e1rm_informative(reps, 10.0, None, se.FIDELITY_SET_LEVEL)
 
 
 def _rank(row: EvidenceRow) -> tuple[float, datetime, int]:

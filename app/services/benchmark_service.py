@@ -714,11 +714,17 @@ async def complete_observation(
             user_id, exc_info=True,
         )
     await db.refresh(obs)
+    return observation_read(obs, staged.benchmark_code)
+
+
+def observation_read(obs: BenchmarkObservation, benchmark_code: str) -> BenchmarkObservationRead:
+    """The read model of an observation whose attributes are loaded (refresh it first if a
+    statement may have changed the row)."""
     return BenchmarkObservationRead(
         id=obs.id,
         user_id=obs.user_id,
         benchmark_definition_id=obs.benchmark_definition_id,
-        benchmark_code=staged.benchmark_code,
+        benchmark_code=benchmark_code,
         observed_at=obs.observed_at,
         raw_value=obs.raw_value,
         secondary_value=obs.secondary_value,

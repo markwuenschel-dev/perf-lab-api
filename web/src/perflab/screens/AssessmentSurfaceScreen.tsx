@@ -14,7 +14,12 @@ import {
 } from "@/api/perfLabClient";
 import { useAuth } from "@/auth/useAuth";
 import { isImperial, unitLabel } from "@/lib/units";
-import type { AssessmentBenchmarkCard, ApiError, OnboardingStateResponse } from "@/types";
+import type {
+  AssessmentBenchmarkCard,
+  ApiError,
+  OnboardingStateResponse,
+  StrengthOutcome,
+} from "@/types";
 import { Card, Pill, ScreenHeader, SectionLabel } from "../ui";
 import { InfoTip, type InfoSection } from "../InfoTip";
 import { axisLabel, BAND } from "../prescription/axes";
@@ -24,6 +29,8 @@ import { assertNever, resourceData } from "../resource";
 import { usePerfLab } from "../store";
 import { useAuthedResource } from "../useAuthedResource";
 import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import { outcomeNotice, UNCONFIRMED_SAVE_MESSAGE } from "./strengthOutcome";
+import { useSubmissionAttempts, type SubmissionAttempt } from "./useSubmissionKey";
 import {
   EMPTY_STRENGTH_FORM,
   strengthEvidenceBody,
@@ -273,22 +280,26 @@ function BenchmarkCard({
   const [strength, setStrength] = useState<StrengthForm>(EMPTY_STRENGTH_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What happened to the last strength report, when it yielded no estimate (P4-3).
+  const [notice, setNotice] = useState<string | null>(null);
+  // This card is one slot: a save that got no answer stays unresolved here until the athlete
+  // retries or discards it (useSubmissionKey); "Do this later" closes the form, not the attempt.
+  const attempts = useSubmissionAttempts();
   const conf = card.confidence_status ? CONF[card.confidence_status] : null;
   // Canonical-lift e1RM cards report characterized evidence (S2), never a bare number.
   const isStrength = card.strength_evidence_entry === true;
   const shownUnit = isStrength ? unit : card.unit;
+  const unresolved = isStrength && attempts.unresolved(card.code) !== undefined;
 
-  async function submitStrength() {
+  async function sendStrength(
+    run: (submit: (body: SubmissionAttempt) => Promise<StrengthOutcome>) => Promise<StrengthOutcome>,
+  ) {
     if (!token) return;
-    const built = strengthEvidenceBody(card.code, mode, strength, { unit });
-    if (!built.ok) {
-      setError(built.error);
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
-      await submitStrengthEvidence(built.body, token);
+      const outcome = await run((body) => submitStrengthEvidence(body, token));
+      setNotice(outcomeNotice(outcome, unit));
       setOpen(false);
       setStrength(EMPTY_STRENGTH_FORM);
       onSubmitted();
@@ -297,6 +308,20 @@ function BenchmarkCard({
     } finally {
       setBusy(false);
     }
+  }
+
+  function submitStrength() {
+    const built = strengthEvidenceBody(card.code, mode, strength, { unit });
+    if (!built.ok) {
+      setError(built.error);
+      return;
+    }
+    // Every Save is a new submission with a new key; only Retry resends one.
+    return sendStrength((submit) => attempts.save(card.code, built.body, submit));
+  }
+
+  function retryStrength() {
+    return sendStrength((submit) => attempts.retry(card.code, submit));
   }
 
   async function submit() {
@@ -329,6 +354,30 @@ function BenchmarkCard({
       setBusy(false);
     }
   }
+
+  const unresolvedPanel = unresolved && (
+    <div className="mt-3 flex flex-col gap-2 rounded-[10px] border border-hot/[0.3] bg-hot/[0.05] px-3 py-2">
+      <div role="alert" className="text-[11.5px] font-medium leading-snug text-soft">
+        {UNCONFIRMED_SAVE_MESSAGE}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => void retryStrength()}
+          disabled={busy}
+          className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+        >
+          {busy ? "Retrying…" : "Retry"}
+        </button>
+        <button
+          onClick={() => { attempts.discard(card.code); setError(null); }}
+          disabled={busy}
+          className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold leading-none text-soft disabled:opacity-60"
+        >
+          Discard
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <Card className="p-[18px]">
@@ -375,14 +424,17 @@ function BenchmarkCard({
             />
           )}
           {error && <div className="text-[11px] font-medium leading-none text-hot">{error}</div>}
+          {unresolvedPanel}
           <div className="flex gap-2">
-            <button
-              onClick={submit}
-              disabled={busy}
-              className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
-            >
-              {busy ? "Saving…" : "Save result"}
-            </button>
+            {!unresolved && (
+              <button
+                onClick={submit}
+                disabled={busy}
+                className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-4 py-2 text-[12px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60"
+              >
+                {busy ? "Saving…" : "Save result"}
+              </button>
+            )}
             <button
               onClick={() => { setOpen(false); setError(null); }}
               className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold leading-none text-soft"
@@ -392,12 +444,23 @@ function BenchmarkCard({
           </div>
         </div>
       ) : (
+        <>
+        {notice && (
+          <div role="status" className="mt-3 text-[11.5px] font-medium leading-snug text-soft">
+            {notice}
+          </div>
+        )}
+        {error && (
+          <div className="mt-3 text-[11px] font-medium leading-none text-hot">{error}</div>
+        )}
+        {unresolvedPanel}
         <button
-          onClick={() => setOpen(true)}
+          onClick={() => { setOpen(true); setNotice(null); setError(null); }}
           className="mt-3 rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold leading-none text-soft"
         >
           Log result
         </button>
+        </>
       )}
     </Card>
   );

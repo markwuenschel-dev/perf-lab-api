@@ -225,6 +225,26 @@ their own, with no behavior: nothing writes or reads either table until the P4-3
 carries **no migration**. Deploy the schema release first; the SHA it merged at is the rollback
 target for P4-3b, and stays one only until a later migration lands.
 
+**What P4-3b changes.** A reported set with no effort, or with RPE and RIR that disagree, is kept
+as a report and yields no 1RM estimate; it seeds nothing at onboarding. The strength-evidence
+response becomes a `StrengthOutcome`, onboarding returns one per report, reports are readable at
+`GET /v1/benchmarks/strength-reports[/{id}]`, and Assess and Settings send an `idempotency_key`.
+
+**Rolling P4-3b back** (`deploy.sh <P4-3a SHA>`; heads match, so it boots). Checked against a
+database populated by 3b, with the 3a app in production mode: startup, strength reports, onboarding
+and workout logging all work, and the new tables are left as they were. What the rollback costs:
+
+- The old derivation is back: a set with unknown or conflicting effort is recorded as evidence
+  again, with an Epley value. When 3b returns, such a row is treated like any set recorded before
+  P4-3: the profile value skips it, KPIs and estimated-PR tracking still read it.
+- The new contract is gone: responses are the old observation shape, `/strength-reports` is 404,
+  and stored reports and keys are kept but unreachable until 3b is redeployed. Returning to 3b
+  makes them readable again, and stored keys still replay their first outcomes.
+- **Browser tabs still running the 3b app fail every strength save from Assess and Settings with
+  422** (the 3a schema refuses the unknown `idempotency_key`) until the page is reloaded, which
+  loads the 3a app from the same image. Onboarding from such a tab still works; it shows no
+  results screen because the response carries no outcomes.
+
 Both tables are permanent records (triggers refuse a DELETE; a report's facts are immutable, and
 its supersession is set at most once; keys are append-only). Each downgrade refuses while its
 table holds a row.

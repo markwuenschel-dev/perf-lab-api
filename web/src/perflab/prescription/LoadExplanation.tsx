@@ -46,6 +46,15 @@ const NO_EVIDENCE_COPY: Record<Reason, { text: (lift: string) => string; link: s
       "Your saved strength history doesn't qualify for a weight recommendation yet. Use the prescribed effort guidance.",
     link: REVIEW,
   },
+  // P4-3: the latest report was kept without an estimate (strength_evidence_service).
+  effort_unknown: {
+    text: () => "Your latest reported set has no effort, so no weight is estimated from it.",
+    link: REVIEW,
+  },
+  effort_conflict: {
+    text: () => "Your latest reported set's RPE and RIR disagree, so no weight is estimated from it.",
+    link: REVIEW,
+  },
 };
 
 const NOT_SUPPORTED_TEXT =

@@ -74,6 +74,11 @@ export type AssessmentDomainGroup = Schemas["AssessmentDomainGroup"];
 export type AssessmentBenchmarkCard = Schemas["AssessmentBenchmarkCard"];
 export type BenchmarkObservationCreate = Schemas["BenchmarkObservationCreate"];
 export type StrengthEvidenceCreate = Schemas["StrengthEvidenceCreate"];
+/** What happened to one strength report (P4-3): recorded as evidence, kept as a report that
+ *  yields no estimate (`report_only`), or already recorded (onboarding's retry guard). */
+export type StrengthOutcome = Schemas["StrengthOutcome"];
+/** A reported set the server kept but derived nothing from (P4-3). */
+export type UnderivedStrengthReportRead = Schemas["UnderivedStrengthReportRead"];
 
 /* ---------- History (GET /v1/state-history, /v1/workouts) ---------- */
 export type WorkoutLogSummary = Schemas["WorkoutLogSummary"];

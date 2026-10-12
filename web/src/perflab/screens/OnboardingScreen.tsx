@@ -3,13 +3,14 @@ import { useState } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { isImperial, kgToLbs, lbsToKg, parseMMSS, weightLabel } from "@/lib/units";
 import { computeMetrics, createObjective } from "@/api/perfLabClient";
-import type { ApiError, OnboardStrengthReport } from "@/types";
+import type { ApiError, OnboardResponse, OnboardStrengthReport } from "@/types";
 import { isRunningGoal, isStrengthGoal, TRAINING_GOALS, usePerfLab } from "../store";
 import { getGoalLoadDefinition } from "../goalLoadDefinitions";
 import { DOMAIN_OPTIONS, domainLabel } from "../domains";
 import { EQUIPMENT_TAGS, MODE_OPTIONS, type EquipmentMode } from "../equipment";
 import { CANONICAL_LIFTS } from "./canonicalLifts";
 import { StrengthEvidenceFields } from "./StrengthEvidenceFields";
+import { underivedReportMessage } from "./strengthOutcome";
 import {
   EMPTY_STRENGTH_FORM,
   isBlankStrengthForm,
@@ -161,6 +162,9 @@ export function OnboardingScreen() {
     Object.fromEntries(CANONICAL_LIFTS.map((lift) => [lift.code, EMPTY_STRENGTH_FORM])),
   );
   const [finishError, setFinishError] = useState<string | null>(null);
+  // Strength reports onboarding kept without an estimate (P4-3). When there are any, the athlete
+  // reads them here, after saving, and continues when ready; otherwise this stays null.
+  const [keptReports, setKeptReports] = useState<{ label: string; message: string }[] | null>(null);
   const [run5k, setRun5k] = useState("");
 
   const wUnit = weightLabel(units);
@@ -192,6 +196,17 @@ export function OnboardingScreen() {
     if (overhead) setOverhead(convert(overhead));
   }
 
+  /** Each report the server kept without an estimate — including one an earlier, interrupted
+   *  attempt already kept — named by its lift. */
+  function keptReportsOf(response: OnboardResponse | undefined) {
+    return (response?.strength ?? []).flatMap((outcome) => {
+      const report = outcome.report;
+      if (report == null) return [];
+      const lift = CANONICAL_LIFTS.find((l) => l.code === report.benchmark_code);
+      return [{ label: lift?.label ?? report.benchmark_code, message: underivedReportMessage(report, unit) }];
+    });
+  }
+
   async function finish() {
     if (seeding) return;
     // Build the strength reports before sending anything: an incomplete or impossible report
@@ -212,6 +227,7 @@ export function OnboardingScreen() {
     setFinishError(null);
     setSeeding(true);
     let saved = false;
+    let kept: { label: string; message: string }[] = [];
     try {
       const req: Record<string, unknown> = { goal };
 
@@ -259,8 +275,9 @@ export function OnboardingScreen() {
       const pull = parseInt(pullups, 10);
       if (!isNaN(pull) && pull >= 0) req.pullup_max_reps = pull;
 
-      await completeOnboarding(req);
+      const response = await completeOnboarding(req);
       saved = true;
+      kept = keptReportsOf(response);
 
       // Each picked domain becomes an Objective (drives plan emphasis + the Assess
       // filter). Best-effort + only for a signed-in user; a failure never blocks entry.
@@ -278,7 +295,10 @@ export function OnboardingScreen() {
       setFinishError(typeof msg === "string" ? msg : "Couldn't save your baseline — try again.");
     } finally {
       setSeeding(false);
-      if (saved) goOverview();
+      if (saved) {
+        if (kept.length > 0) setKeptReports(kept);
+        else goOverview();
+      }
     }
   }
 
@@ -321,7 +341,29 @@ export function OnboardingScreen() {
         </div>
 
         {/* ── Step 1: profile ── */}
-        {ob === 1 && (
+        {keptReports !== null && (
+          <div>
+            <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Your baseline is saved</h1>
+            <p className="m-0 mb-6 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
+              Some of the sets you reported were recorded without a 1RM estimate.
+            </p>
+            <ul aria-label="Recorded without an estimate" className="m-0 flex list-none flex-col gap-3 p-0">
+              {keptReports.map((kept) => (
+                <li key={kept.label} className="rounded-[11px] border border-white/[0.08] px-4 py-3">
+                  <div className="text-[13px] font-semibold leading-none text-ink">{kept.label}</div>
+                  <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-soft">{kept.message}</div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-[30px] flex justify-end">
+              <button onClick={goOverview} className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-[26px] py-[13px] text-[13.5px] font-semibold leading-none text-[#0a0c10]">
+                Continue
+              </button>
+            </div>
+          </div>
+        )}
+
+        {keptReports === null && ob === 1 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Let's set up your profile</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">Just the basics. You can change any of this later.</p>
@@ -344,7 +386,7 @@ export function OnboardingScreen() {
         )}
 
         {/* ── Step 2: training context ── */}
-        {ob === 2 && (
+        {keptReports === null && ob === 2 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Training context</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">So the plan speaks your language.</p>
@@ -429,7 +471,7 @@ export function OnboardingScreen() {
         )}
 
         {/* ── Step 3: seed your twin ── */}
-        {ob === 3 && (
+        {keptReports === null && ob === 3 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Seed your twin</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">

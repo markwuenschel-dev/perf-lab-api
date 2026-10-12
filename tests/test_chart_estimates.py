@@ -316,7 +316,7 @@ async def test_a_submission_retried_under_the_other_formula_adds_nothing(async_d
     )
     await async_db.commit()
 
-    assert again is None  # recognised, not staged
+    assert again.outcome.outcome == "already_recorded" and again.staged is None  # recognised, not staged
     assert [r.id for r in await _rows(async_db, user.id)] == [r.id for r in rows_before]
     assert await _count(async_db, AthleteState) == states_before
     await async_db.refresh(profile)
@@ -330,17 +330,23 @@ async def test_a_different_report_is_still_a_new_report(async_db, chart):
     other = await ses.stage_strength_report(
         async_db, user.id, _report(rpe=9.0), collection_mode="retest", skip_if_recorded=True
     )
-    assert other is not None
+    assert other.outcome.outcome == "recorded"
 
 
 async def test_tested_max_and_estimate_retries_are_matched_as_before(async_db):
     user = await _athlete(async_db, "retry-max@test.com")
     tested = StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=150.0, performed_at=T1)
-    assert await ses.stage_strength_report(async_db, user.id, tested, collection_mode="retest", skip_if_recorded=True)
+    async def outcome(report: StrengthReport) -> str:
+        staged = await ses.stage_strength_report(
+            async_db, user.id, report, collection_mode="retest", skip_if_recorded=True
+        )
+        return staged.outcome.outcome
+
+    assert await outcome(tested) == "recorded"
     await async_db.commit()
-    assert await ses.stage_strength_report(async_db, user.id, tested, collection_mode="retest", skip_if_recorded=True) is None
+    assert await outcome(tested) == "already_recorded"
     heavier = StrengthReport(benchmark_code=CODE, method="tested_max", value_kg=155.0, performed_at=T1)
-    assert await ses.stage_strength_report(async_db, user.id, heavier, collection_mode="retest", skip_if_recorded=True)
+    assert await outcome(heavier) == "recorded"
 
 
 # ----- coexistence: each reader's policy with mixed formulas ----------------------------------------------- #

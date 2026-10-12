@@ -113,6 +113,12 @@ describe("the wording for each reason", () => {
       "Your saved strength history doesn't qualify for a weight recommendation yet. Use the prescribed effort guidance.",
       "Review strength history",
     ],
+    ["effort_unknown", "Your latest reported set has no effort, so no weight is estimated from it.", "Review strength history"],
+    [
+      "effort_conflict",
+      "Your latest reported set's RPE and RIR disagree, so no weight is estimated from it.",
+      "Review strength history",
+    ],
   ] as const)("%s", (reason, text, link) => {
     const onOpenAssess = vi.fn();
     render(<LoadExplanation explanation={explanation({ reason })} exerciseName="Back Squat" onOpenAssess={onOpenAssess} />);

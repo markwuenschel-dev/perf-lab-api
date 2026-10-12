@@ -20,6 +20,7 @@ let authProfile: ProfileRead | null = null;
 vi.mock("@/api/perfLabClient", () => ({
   getProfile: () => new Promise(() => undefined),
   submitStrengthEvidence: vi.fn(),
+  listStrengthReports: () => Promise.resolve([]),
   listObjectives: () => Promise.resolve([]),
   getWearableConnection: () => Promise.resolve({ connected: false, connection: null }),
   listIngestTokens: () => Promise.resolve([]),
