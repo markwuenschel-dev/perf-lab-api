@@ -83,6 +83,52 @@ describe("the block-create preview", () => {
     );
   });
 
+  it("never shows the previous start date's weekdays while the new preview is loading", async () => {
+    const pending: Array<(slots: ReturnType<typeof resolvedFor>) => void> = [];
+    previewPlanningBlock.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    render(<BlockCreateModal />);
+
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-15" } });
+    await waitFor(() => expect(previewPlanningBlock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ start_date: "2026-10-15" }), TOKEN,
+    ));
+    pending[pending.length - 1](resolvedFor({ start_date: "2026-10-15" } as BlockCreateRequest));
+    await waitFor(() => expect(dayLabels()).toEqual(["Thursday", "Saturday", "Monday"]));
+
+    // A new start date: its response is held back. The Thursday week must not stay on screen.
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-12" } });
+    await waitFor(() => expect(previewPlanningBlock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ start_date: "2026-10-12" }), TOKEN,
+    ));
+    expect(dayLabels()).toEqual([]);
+    screen.getByText("Loading…");
+
+    pending[pending.length - 1](resolvedFor({ start_date: "2026-10-12" } as BlockCreateRequest));
+    await waitFor(() => expect(dayLabels()).toEqual(["Monday", "Wednesday", "Friday"]));
+  });
+
+  it("ignores a response that arrives after the inputs changed again", async () => {
+    const pending = new Map<string, (slots: ReturnType<typeof resolvedFor>) => void>();
+    previewPlanningBlock.mockImplementation(
+      (body: BlockCreateRequest) => new Promise((resolve) => pending.set(body.start_date, resolve)),
+    );
+    render(<BlockCreateModal />);
+
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-15" } });
+    await waitFor(() => expect(pending.has("2026-10-15")).toBe(true));
+    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-10-12" } });
+    await waitFor(() => expect(pending.has("2026-10-12")).toBe(true));
+
+    // The newer request answers first; the older, Thursday answer lands afterwards.
+    pending.get("2026-10-12")!(resolvedFor({ start_date: "2026-10-12" } as BlockCreateRequest));
+    await waitFor(() => expect(dayLabels()).toEqual(["Monday", "Wednesday", "Friday"]));
+    pending.get("2026-10-15")!(resolvedFor({ start_date: "2026-10-15" } as BlockCreateRequest));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(dayLabels()).toEqual(["Monday", "Wednesday", "Friday"]);
+  });
+
   it("reads Day N against a server that sends no weekday", async () => {
     previewPlanningBlock.mockResolvedValue(WEEK);
     render(<BlockCreateModal />);

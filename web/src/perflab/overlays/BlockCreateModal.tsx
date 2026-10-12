@@ -51,8 +51,8 @@ export function BlockCreateModal() {
   // The week the SERVER would generate. Fetched rather than computed here: a style that ends
   // up with zero sessions is a fact the athlete should see before creating the block, and a
   // second largest-remainder implementation in TypeScript would eventually disagree.
-  const [preview, setPreview] = useState<PreviewSlot[] | null>(null);
-  const [previewError, setPreviewError] = useState(false);
+  // Each result is kept with the key of the inputs it was fetched for.
+  const [loaded, setLoaded] = useState<{ key: string; slots: PreviewSlot[] | null } | null>(null);
 
   const open = state.blockCreateOpen;
   const token = auth.token;
@@ -66,6 +66,11 @@ export function BlockCreateModal() {
         d: form.startDate,
       })
     : null;
+  // Only a result for the CURRENT inputs is shown: after a change, the previous week (with its
+  // weekday labels) is replaced by "Loading…" until the new one arrives, never left on screen.
+  const current = loaded !== null && loaded.key === previewKey ? loaded : null;
+  const preview = current?.slots ?? null;
+  const previewError = current !== null && current.slots === null;
 
   // The profile can arrive after first render. Preselect from it only while the form is
   // untouched, so it never overrides a choice the athlete made.
@@ -79,16 +84,13 @@ export function BlockCreateModal() {
   useEffect(() => {
     if (!open || !token || previewKey === null) return;
     let cancelled = false;
-    setPreviewError(false);
+    const key = previewKey;
     previewPlanningBlock(buildBlockCreateRequest(form), token)
       .then((slots) => {
-        if (!cancelled) setPreview(slots);
+        if (!cancelled) setLoaded({ key, slots });
       })
       .catch(() => {
-        if (!cancelled) {
-          setPreview(null);
-          setPreviewError(true);
-        }
+        if (!cancelled) setLoaded({ key, slots: null });
       });
     return () => {
       cancelled = true;
