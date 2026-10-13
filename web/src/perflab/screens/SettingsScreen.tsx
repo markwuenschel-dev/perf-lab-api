@@ -36,7 +36,12 @@ import {
   underivedReportMessage,
 } from "./strengthOutcome";
 import { useSubmissionAttempts, type SubmissionAttempt } from "./useSubmissionKey";
-import { ouraRedirectResult, parseServerUtc } from "../wearableSync";
+import {
+  OURA_INTERRUPTED_MESSAGE,
+  OURA_PKCE_STORAGE_KEY,
+  parseServerUtc,
+  takeOuraReturn,
+} from "../wearableSync";
 import { AppleHealthCard } from "./AppleHealthCard";
 import {
   EMPTY_STRENGTH_FORM,
@@ -744,12 +749,28 @@ function WearableConnectCard() {
     void load();
   }, [load]);
 
-  // Oura's OAuth consent returns the browser to /settings?oura=connected|error.
+  // What the browser came back from Oura with, delivered once per page load and kept in its
+  // own slot: `load()` clears `error`, and under StrictMode it runs again after this effect.
+  const [returned, setReturned] = useState<{ tone: "notice" | "error"; text: string } | null>(null);
   useEffect(() => {
-    const result = ouraRedirectResult(window.location.search);
+    const result = takeOuraReturn();
     if (result === null) return;
-    if (result === "connected") setNotice("Oura connected. Your data syncs each time you open Perf Lab.");
-    else setError("Oura sign-in didn't complete. Try Connect Oura again.");
+    if (result === "interrupted") {
+      // An attempt a newer release started came back here (e.g. across a rollback). Nothing in
+      // this release can finish it: say so, drop the callback parameters and the abandoned
+      // verifier, and call nothing.
+      setReturned({ tone: "error", text: OURA_INTERRUPTED_MESSAGE });
+      try {
+        window.sessionStorage.removeItem(OURA_PKCE_STORAGE_KEY);
+      } catch {
+        // storage unavailable: nothing to clear
+      }
+      window.history.replaceState(null, "", "/settings");
+      return;
+    }
+    if (result === "connected")
+      setReturned({ tone: "notice", text: "Oura connected. Your data syncs each time you open Perf Lab." });
+    else setReturned({ tone: "error", text: "Oura sign-in didn't complete. Try Connect Oura again." });
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
@@ -855,6 +876,15 @@ function WearableConnectCard() {
         </div>
       )}
 
+      {returned?.tone === "notice" && (
+        <div className="mt-4 text-[12px] font-medium text-ac">{returned.text}</div>
+      )}
+      {returned?.tone === "error" && (
+        <div className="mt-4 flex items-start gap-[9px] rounded-[11px] border border-hot/[0.3] bg-hot/[0.05] px-3 py-[10px]">
+          <span className="text-[13px] leading-none text-hot">!</span>
+          <span className="text-[11.5px] font-medium leading-[1.45] text-[#cf9a93]">{returned.text}</span>
+        </div>
+      )}
       {notice && <div className="mt-4 text-[12px] font-medium text-ac">{notice}</div>}
       {error && (
         <div className="mt-4 flex items-start gap-[9px] rounded-[11px] border border-hot/[0.3] bg-hot/[0.05] px-3 py-[10px]">

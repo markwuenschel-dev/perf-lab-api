@@ -86,10 +86,54 @@ export function sourceLabel(source: string): string {
   return source === "oura" ? "Oura" : source.replace(/_/g, " ");
 }
 
+/** Where Oura's consent screen returns the browser from the PKCE release onwards (P6b,
+ *  ADR-0075). This release only recognises it, to tell the athlete an attempt started by a
+ *  newer release was interrupted (crossing 3); it never completes or cancels anything. */
+export const OURA_CALLBACK_PATH = "/settings/oura-callback";
+/** sessionStorage key holding a PKCE attempt (its verifier). Fixed now so this release can
+ *  clear exactly what the newer one writes. */
+export const OURA_PKCE_STORAGE_KEY = "perflab.oura.pkce";
+export const OURA_INTERRUPTED_MESSAGE = "Oura sign-in was interrupted. Connect Oura again.";
+
+export function isOuraCallbackPath(pathname: string): boolean {
+  return pathname.replace(/\/+$/, "") === OURA_CALLBACK_PATH;
+}
+
 /** The outcome Oura's OAuth callback put in the URL (`/settings?oura=connected|error`). */
 export function ouraRedirectResult(search: string): "connected" | "error" | null {
   const v = new URLSearchParams(search).get("oura");
   return v === "connected" || v === "error" ? v : null;
+}
+
+export type OuraReturn = "connected" | "error" | "interrupted";
+
+let capturedReturn: OuraReturn | null | undefined;
+let returnDelivered = false;
+
+/** What this page load came back from Oura with, read from the URL the first time it is asked
+ *  and never again: the URL is cleaned right after, and StrictMode replays effects, so a
+ *  second read of the URL would find nothing. */
+export function readOuraReturn(): OuraReturn | null {
+  if (capturedReturn === undefined) {
+    capturedReturn = isOuraCallbackPath(window.location.pathname)
+      ? "interrupted"
+      : ouraRedirectResult(window.location.search);
+  }
+  return capturedReturn;
+}
+
+/** `readOuraReturn`, handed out once: the first caller gets it, every later one gets null. */
+export function takeOuraReturn(): OuraReturn | null {
+  const result = readOuraReturn();
+  if (returnDelivered) return null;
+  returnDelivered = true;
+  return result;
+}
+
+/** Tests only: forget the captured return, as a fresh page load would. */
+export function resetOuraReturnForTests(): void {
+  capturedReturn = undefined;
+  returnDelivered = false;
 }
 
 /** A phone automation can fail silently (phone locked, offline, automation off). After this

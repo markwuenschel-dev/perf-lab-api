@@ -12,12 +12,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,7 +35,11 @@ class WearableConnection(Base):
     __tablename__ = "wearable_connections"
     __table_args__ = (
         UniqueConstraint("user_id", "provider", name="uq_wearable_user_provider"),
+        CheckConstraint("generation >= 1", name="ck_wearable_connections_generation"),
     )
+    # ``generation`` comes from the database default; read it back on insert (RETURNING)
+    # rather than leaving it expired, which an async session cannot lazy-load.
+    __mapper_args__ = {"eager_defaults": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(
@@ -52,6 +58,16 @@ class WearableConnection(Base):
     # Access-token expiry (UTC). Null for PATs, which do not expire on a schedule.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     scope: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Successful links of this row, from 1 (a061). The writers that predate P6b leave it to
+    # the database default; a token refresh never changes it. A connection deleted and
+    # recreated starts again at 1 as a new row.
+    generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+        comment="Successful links of this row, from 1; refresh does not change it",
+    )
 
     # Watermark of the most recent successful pull, so sync only fetches new days.
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
