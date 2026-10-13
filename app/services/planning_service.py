@@ -22,6 +22,7 @@ from app.schemas.planning import (
     BlockUpdateRequest,
     PlannedSessionUpdateRequest,
     WeeklyTemplateSlot,
+    WeeklyTemplateSlotPreview,
 )
 from app.services import macrocycle_service
 from app.services.planned_session_protocol import (
@@ -272,6 +273,19 @@ def preview_weekly_template(req: BlockCreateRequest) -> list[WeeklyTemplateSlot]
         or _template_from_modality_mix(req.modality_mix, req.sessions_per_week)
         or _default_template_for_goal(req.goal, req.sessions_per_week)
     )
+
+
+
+def preview_slots(req: BlockCreateRequest) -> list[WeeklyTemplateSlotPreview]:
+    """The preview response: ``preview_weekly_template``'s slots, unchanged and in the same order,
+    each labelled with the weekday it falls on (ADR-0074). Creation never sees the label."""
+    return [
+        WeeklyTemplateSlotPreview(
+            **slot.model_dump(),
+            resolved_weekday=(req.start_date + timedelta(days=slot.day_of_week - 1)).isoweekday(),
+        )
+        for slot in preview_weekly_template(req)
+    ]
 
 
 async def create_block_with_sessions(

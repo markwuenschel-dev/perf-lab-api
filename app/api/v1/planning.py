@@ -19,7 +19,7 @@ from app.schemas.planning import (
     PlannedWeekProjection,
     PrescriptionRevisionRead,
     TodaySessionResponse,
-    WeeklyTemplateSlot,
+    WeeklyTemplateSlotPreview,
     WeekReview,
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
@@ -40,17 +40,20 @@ async def create_block(
     return await create_block_with_sessions(db, current_user.id, body)
 
 
-@router.post("/blocks/preview", response_model=list[WeeklyTemplateSlot])
+@router.post("/blocks/preview", response_model=list[WeeklyTemplateSlotPreview])
 async def preview_block_template(
     body: BlockCreateRequest,
     current_user: User = Depends(get_current_user),
-) -> list[WeeklyTemplateSlot]:
+) -> list[WeeklyTemplateSlotPreview]:
     """The week this request WOULD generate. Persists nothing.
 
     The create screen shows a style mix's real allocation with it, so "I asked for three
     styles and one got no sessions" is visible before the block exists rather than after.
+
+    Slots are block-relative (``day_of_week`` is day N of the block week); each also carries
+    ``resolved_weekday``, the weekday it falls on for this start date (ADR-0074).
     """
-    return planning_service.preview_weekly_template(body)
+    return planning_service.preview_slots(body)
 
 
 @router.get("/blocks", response_model=list[BlockRead])

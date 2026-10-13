@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { createPlanningBlock, previewPlanningBlock } from "@/api/perfLabClient";
-import type { ApiError, BlockGoal, WeeklyTemplateSlot } from "@/types";
+import type { ApiError, BlockGoal } from "@/types";
 import { usePerfLab } from "../store";
 import { CloseBtn } from "./LogWorkoutModal";
 
@@ -26,16 +26,7 @@ import {
   SECONDARY_STYLES,
   type BlockForm,
 } from "./blockCreateBody";
-
-const DAY_LABELS: Record<number, string> = {
-  1: "Monday",
-  2: "Tuesday",
-  3: "Wednesday",
-  4: "Thursday",
-  5: "Friday",
-  6: "Saturday",
-  7: "Sunday",
-};
+import { previewDayLabel, type PreviewSlot } from "./blockPreviewLabel";
 
 
 const inputCls = "mt-2 w-full rounded-[11px] border border-white/10 bg-panel px-[13px] py-[11px] text-[14px] text-ink";
@@ -60,14 +51,26 @@ export function BlockCreateModal() {
   // The week the SERVER would generate. Fetched rather than computed here: a style that ends
   // up with zero sessions is a fact the athlete should see before creating the block, and a
   // second largest-remainder implementation in TypeScript would eventually disagree.
-  const [preview, setPreview] = useState<WeeklyTemplateSlot[] | null>(null);
-  const [previewError, setPreviewError] = useState(false);
+  // Each result is kept with the key of the inputs it was fetched for.
+  const [loaded, setLoaded] = useState<{ key: string; slots: PreviewSlot[] | null } | null>(null);
 
   const open = state.blockCreateOpen;
   const token = auth.token;
   const previewKey = open
-    ? JSON.stringify({ g: form.goal, f: form.runningFocus, s: form.secondary, n: form.sessionsPerWeek })
+    ? JSON.stringify({
+        g: form.goal,
+        f: form.runningFocus,
+        s: form.secondary,
+        n: form.sessionsPerWeek,
+        // The slots' weekday labels depend on the start date.
+        d: form.startDate,
+      })
     : null;
+  // Only a result for the CURRENT inputs is shown: after a change, the previous week (with its
+  // weekday labels) is replaced by "Loading…" until the new one arrives, never left on screen.
+  const current = loaded !== null && loaded.key === previewKey ? loaded : null;
+  const preview = current?.slots ?? null;
+  const previewError = current !== null && current.slots === null;
 
   // The profile can arrive after first render. Preselect from it only while the form is
   // untouched, so it never overrides a choice the athlete made.
@@ -81,21 +84,19 @@ export function BlockCreateModal() {
   useEffect(() => {
     if (!open || !token || previewKey === null) return;
     let cancelled = false;
-    setPreviewError(false);
+    const key = previewKey;
     previewPlanningBlock(buildBlockCreateRequest(form), token)
       .then((slots) => {
-        if (!cancelled) setPreview(slots);
+        if (!cancelled) setLoaded({ key, slots });
       })
       .catch(() => {
-        if (!cancelled) {
-          setPreview(null);
-          setPreviewError(true);
-        }
+        if (!cancelled) setLoaded({ key, slots: null });
       });
     return () => {
       cancelled = true;
     };
-    // `previewKey` names every input the generated week depends on; `form` is read inside.
+    // `previewKey` names every input the generated week and its labels depend on; `form` is
+    // read inside.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, token, previewKey]);
 
@@ -209,7 +210,7 @@ export function BlockCreateModal() {
                     {preview.map((slot, i) => (
                       <div key={`${slot.day_of_week}-${i}`} className="flex items-center justify-between">
                         <span className="text-[12px] font-medium leading-none text-soft">
-                          {DAY_LABELS[slot.day_of_week] ?? `Day ${slot.day_of_week}`}
+                          {previewDayLabel(slot)}
                         </span>
                         <span className="font-mono text-[11px] leading-none text-mute">{slot.category}</span>
                       </div>

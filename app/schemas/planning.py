@@ -28,6 +28,24 @@ class WeeklyTemplateSlot(BaseModel):
     domain: str | None = None
 
 
+
+class WeeklyTemplateSlotPreview(WeeklyTemplateSlot):
+    """A previewed slot (response only, ``POST /planning/blocks/preview``): the slot exactly as block
+    creation will consume it, plus the weekday it falls on for the request's start date. The
+    weekday is a display label: it is never stored in a template or used to schedule (ADR-0074)."""
+
+    resolved_weekday: int = Field(
+        ...,
+        ge=1,
+        le=7,
+        description=(
+            "ISO weekday (1=Mon, 7=Sun) this slot falls on: the weekday of "
+            "start_date + (day_of_week - 1). Every week of the block repeats it. Absent from "
+            "responses before P5b."
+        ),
+    )
+
+
 class BlockCreateRequest(BaseModel):
     goal: BlockGoal
     start_date: date

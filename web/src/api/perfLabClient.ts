@@ -48,7 +48,7 @@ import type {
   UserResponse,
   SessionFeedbackIn,
   SessionFeedbackOut,
-  WeeklyTemplateSlot,
+  WeeklyTemplateSlotPreview,
   WeekReview,
   WellnessSampleIn,
   WellnessSampleOut,
@@ -418,14 +418,14 @@ export async function createPlanningBlock(
 export async function previewPlanningBlock(
   body: BlockCreateRequest,
   token: string,
-): Promise<WeeklyTemplateSlot[]> {
+): Promise<WeeklyTemplateSlotPreview[]> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const res = await fetch(`${API_V1_BASE}/planning/blocks/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<WeeklyTemplateSlot[]>(res, { sessionOn401: true });
+  return handleResponse<WeeklyTemplateSlotPreview[]>(res, { sessionOn401: true });
 }
 
 export async function listPlanningBlocks(token: string): Promise<BlockRead[]> {

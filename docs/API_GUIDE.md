@@ -413,12 +413,14 @@ Fields:
 - `deload_volume_factor`
 - `benchmark_every_n_weeks`
 
-If `weekly_template` is omitted, the service uses a default goal-based template for supported goals. Current defaults are explicit for Strength and Running, with fallback to Strength.
+If `weekly_template` is omitted, the service builds the week from `modality_mix` when one is given, otherwise from the goal's authored default week (every goal has one; 4-7 sessions spread its categories over evenly spaced days).
+
+**A slot's `day_of_week` is block-relative, not a weekday** (ADR-0074): day N of each block week, counted from `start_date`. A session lands on `start_date + (week - 1) * 7 + (day_of_week - 1)`, so on a block that starts on a Thursday, day 1 is every Thursday. An explicit `weekly_template` keeps this meaning. In a benchmark week, the benchmark is the last slot in the list (and any slot sharing its day).
 
 Generated sessions include:
 
 - `week_number`
-- `day_of_week`
+- `day_of_week`: the ISO weekday (1 = Monday) of the session's plan date, `COALESCE(original_scheduled_date, scheduled_date)`; a move does not change it. The weekday a session is on now is `scheduled_date`'s. Sessions moved before 2026-06-20 carry the weekday they were moved to.
 - `category`
 - `modality`
 - `status = pending`
@@ -428,6 +430,14 @@ Generated sessions include:
 Does it mutate state?
 
 Yes. It creates a block and scheduled session rows.
+
+### POST /v1/planning/blocks/preview
+
+The week a `BlockCreateRequest` would generate, without creating anything: the template slots in the order creation consumes them. Each slot also carries `resolved_weekday`, the ISO weekday it falls on for the request's `start_date` (the weekday of `start_date + (day_of_week - 1)`, repeated every week). The label is display-only: it is not part of a slot, and a template sent back with it is scheduled and stored without it. Responses from before P5b have no `resolved_weekday`; read `day_of_week` as "day N of the block week" then.
+
+Does it mutate state?
+
+No.
 
 ### GET /v1/planning/blocks
 

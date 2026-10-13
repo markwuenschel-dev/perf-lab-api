@@ -9087,6 +9087,52 @@
         "title": "WeeklyTemplateSlot",
         "type": "object"
       },
+      "WeeklyTemplateSlotPreview": {
+        "description": "A previewed slot (response only, ``POST /planning/blocks/preview``): the slot exactly as block\ncreation will consume it, plus the weekday it falls on for the request's start date. The\nweekday is a display label: it is never stored in a template or used to schedule (ADR-0074).",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "day_of_week": {
+            "description": "Block-relative day 1-7: day N of each block week, counted from the block's start_date (1 = the start date's weekday). Not a weekday: a block starting on a Thursday puts day 1 on Thursdays.",
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Day Of Week",
+            "type": "integer"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "resolved_weekday": {
+            "description": "ISO weekday (1=Mon, 7=Sun) this slot falls on: the weekday of start_date + (day_of_week - 1). Every week of the block repeats it. Absent from responses before P5b.",
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Resolved Weekday",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day_of_week",
+          "category",
+          "modality",
+          "resolved_weekday"
+        ],
+        "title": "WeeklyTemplateSlotPreview",
+        "type": "object"
+      },
       "WellnessIngestIn": {
         "additionalProperties": false,
         "description": "One day's device readings pushed from the athlete's phone (an iOS Shortcut today).\n\nDevice-measured signals only: a phone automation has no business reporting how sore the\nathlete feels. Idempotent on (athlete, date, source), so a retrying automation replaces\nthe day's row instead of adding one.",
@@ -12103,7 +12149,7 @@
     },
     "/v1/planning/blocks/preview": {
       "post": {
-        "description": "The week this request WOULD generate. Persists nothing.\n\nThe create screen shows a style mix's real allocation with it, so \"I asked for three\nstyles and one got no sessions\" is visible before the block exists rather than after.",
+        "description": "The week this request WOULD generate. Persists nothing.\n\nThe create screen shows a style mix's real allocation with it, so \"I asked for three\nstyles and one got no sessions\" is visible before the block exists rather than after.\n\nSlots are block-relative (``day_of_week`` is day N of the block week); each also carries\n``resolved_weekday``, the weekday it falls on for this start date (ADR-0074).",
         "operationId": "preview_block_template_v1_planning_blocks_preview_post",
         "requestBody": {
           "content": {
@@ -12121,7 +12167,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WeeklyTemplateSlot"
+                    "$ref": "#/components/schemas/WeeklyTemplateSlotPreview"
                   },
                   "title": "Response Preview Block Template V1 Planning Blocks Preview Post",
                   "type": "array"
