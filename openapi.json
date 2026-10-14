@@ -4154,6 +4154,128 @@
         "title": "MetricsResponse",
         "type": "object"
       },
+      "OAuthAttemptResult": {
+        "description": "Where one authorization attempt stands. ``succeeded`` carries ``linked``; ``failed``\ncarries a ``reason`` code (``cancelled``, ``expired``, ``claim_stale``,\n``exchange_rejected``, ``exchange_failed``).",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "linked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OAuthLinked"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "succeeded",
+              "failed",
+              "in_progress"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "OAuthAttemptResult",
+        "type": "object"
+      },
+      "OAuthCancelRequest": {
+        "description": "The athlete declined at the provider. The verifier proves possession of the attempt.",
+        "properties": {
+          "code_verifier": {
+            "pattern": "^[A-Za-z0-9\\-._~]{43,128}$",
+            "title": "Code Verifier",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "code_verifier"
+        ],
+        "title": "OAuthCancelRequest",
+        "type": "object"
+      },
+      "OAuthCompleteRequest": {
+        "description": "What the browser brings back from the provider, plus the verifier it kept.",
+        "properties": {
+          "code": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "code_verifier": {
+            "pattern": "^[A-Za-z0-9\\-._~]{43,128}$",
+            "title": "Code Verifier",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "code",
+          "code_verifier"
+        ],
+        "title": "OAuthCompleteRequest",
+        "type": "object"
+      },
+      "OAuthLinked": {
+        "description": "The connection a successful attempt linked, as it was then. History, not current state:\nwhether the athlete is connected now comes only from ``GET /connection``.",
+        "properties": {
+          "connection_id": {
+            "title": "Connection Id",
+            "type": "integer"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "connection_id",
+          "generation"
+        ],
+        "title": "OAuthLinked",
+        "type": "object"
+      },
       "ObjectiveCreate": {
         "properties": {
           "benchmark_code": {
@@ -11173,8 +11295,46 @@
     },
     "/v1/integrations/oura/authorize": {
       "get": {
-        "description": "Return the Oura OAuth authorize URL for the web app to open.",
+        "description": "Start an authorization attempt bound to the browser's PKCE challenge; return its URL.",
         "operationId": "authorize_v1_integrations_oura_authorize_get",
+        "parameters": [
+          {
+            "description": "S256 PKCE challenge (base64url, 43 chars)",
+            "in": "query",
+            "name": "code_challenge",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "S256 PKCE challenge (base64url, 43 chars)",
+              "title": "Code Challenge"
+            }
+          },
+          {
+            "description": "Must be S256",
+            "in": "query",
+            "name": "code_challenge_method",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Must be S256",
+              "title": "Code Challenge Method"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11185,6 +11345,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -11193,6 +11363,100 @@
           }
         ],
         "summary": "Authorize",
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/v1/integrations/oura/cancel": {
+      "post": {
+        "description": "The athlete declined at Oura. Reports where the attempt stands afterwards, which is not\nnecessarily ``cancelled``: an attempt already claimed or finished is left as it is.",
+        "operationId": "cancel_v1_integrations_oura_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAttemptResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel",
+        "tags": [
+          "Integrations"
+        ]
+      }
+    },
+    "/v1/integrations/oura/complete": {
+      "post": {
+        "description": "Finish the attempt the browser came back with. A finished attempt answers with its own\noutcome on every retry; ``in_progress`` and ``failed`` are 409, an unknown outcome 503.",
+        "operationId": "complete_v1_integrations_oura_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAttemptResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Complete",
         "tags": [
           "Integrations"
         ]

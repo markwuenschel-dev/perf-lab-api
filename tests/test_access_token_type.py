@@ -1,9 +1,10 @@
 """W1-a — only access tokens authenticate requests (requires a live DB).
 
-The wearable OAuth `state` (`wearable_service.sign_state`) is signed with the same key and
-algorithm as login tokens. Before this change `get_current_user` checked only signature,
-expiry and `sub`, so a `state` value — which travels through Oura's redirect URL — worked
-as a 10-minute bearer token. Every case here goes through a real authenticated route so the
+The wearable OAuth `state` used to be a JWT signed with the same key and algorithm as login
+tokens. Before this change `get_current_user` checked only signature, expiry and `sub`, so a
+`state` value — which travels through Oura's redirect URL — worked as a 10-minute bearer
+token. Since P6b (ADR-0075) a state is 32 random bytes whose hash is stored; it must still never
+authenticate, and purpose-bearing tokens of any kind stay refused. Every case here goes through a real authenticated route so the
 seam, not just the helper, is what's proven.
 """
 
@@ -13,9 +14,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from jose import jwt
+from oauth_helpers import FakeOuraOAuth, start
 
 from app.core.config import settings
-from app.services.wearable_service import sign_state
+from app.services import wearable_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -103,7 +105,10 @@ async def test_purpose_bearing_token_is_rejected_even_if_typed(http_client, cuto
     assert await _status(http_client, _sign(claims)) == 401
 
 
-async def test_oauth_state_token_cannot_authenticate(http_client, cutoff):
-    """The original hole: a real `sign_state` value presented as a bearer token."""
-    _, sub = await _register(http_client, "typ_state@test.com")
-    assert await _status(http_client, sign_state(int(sub))) == 401
+async def test_oauth_state_cannot_authenticate(http_client, cutoff, monkeypatch):
+    """The original hole: a real OAuth `state`, as the consent URL carries it, presented as a
+    bearer token."""
+    monkeypatch.setattr(wearable_service, "_adapter", lambda provider="oura": FakeOuraOAuth())
+    token, _ = await _register(http_client, "typ_state@test.com")
+    state = await start(http_client, {"Authorization": f"Bearer {token}"})
+    assert await _status(http_client, state) == 401

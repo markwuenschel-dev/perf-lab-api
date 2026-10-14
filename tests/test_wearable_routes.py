@@ -7,6 +7,7 @@ from datetime import date
 
 import pytest
 from cryptography.fernet import Fernet
+from oauth_helpers import CHALLENGE
 
 from app.core import crypto
 from app.core.config import settings
@@ -22,10 +23,10 @@ class _FakeOura:
     def __init__(self, readings: list[NormalizedWellness]):
         self._readings = readings
 
-    def build_authorize_url(self, state: str) -> str:
-        return f"https://fake.oura/authorize?state={state}"
+    def build_authorize_url(self, state: str, *, code_challenge: str, redirect_uri: str) -> str:
+        return f"https://fake.oura/authorize?state={state}&code_challenge={code_challenge}"
 
-    async def exchange_code(self, code: str) -> TokenBundle:
+    async def exchange_code(self, code: str, *, code_verifier: str, redirect_uri: str) -> TokenBundle:
         return TokenBundle(access_token="acc", refresh_token="ref")
 
     async def refresh_tokens(self, refresh_token: str) -> TokenBundle:
@@ -145,6 +146,10 @@ async def test_connection_status_and_disconnect(http_client):
 async def test_authorize_returns_url(http_client):
     token = await _register_and_get_token(http_client, "oura_auth@test.com", "securepass1")
     hdr = {"Authorization": f"Bearer {token}"}
-    r = await http_client.get("/v1/integrations/oura/authorize", headers=hdr)
+    r = await http_client.get(
+        "/v1/integrations/oura/authorize", headers=hdr,
+        params={"code_challenge": CHALLENGE, "code_challenge_method": "S256"},
+    )
     assert r.status_code == 200, r.text
     assert r.json()["authorize_url"].startswith("https://fake.oura/authorize?state=")
+    assert r.json()["authorize_url"].endswith(f"&code_challenge={CHALLENGE}")

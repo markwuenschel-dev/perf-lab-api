@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from cryptography.fernet import Fernet
+from oauth_helpers import connect
 from sqlalchemy import select
 
 from app.core import crypto
@@ -164,10 +165,10 @@ class _ExpiringOura:
 
     provider = "oura"
 
-    def build_authorize_url(self, state: str) -> str:
-        return f"https://fake.oura/authorize?state={state}"
+    def build_authorize_url(self, state: str, *, code_challenge: str, redirect_uri: str) -> str:
+        return f"https://fake.oura/authorize?state={state}&code_challenge={code_challenge}"
 
-    async def exchange_code(self, code: str) -> TokenBundle:
+    async def exchange_code(self, code: str, *, code_verifier: str, redirect_uri: str) -> TokenBundle:
         return TokenBundle(access_token="acc", refresh_token="ref",
                            expires_at=datetime.now(UTC) + timedelta(days=1))
 
@@ -196,24 +197,17 @@ async def _connection(db, user_id: int) -> WearableConnection:
 
 
 async def test_the_oauth_callback_stores_a_token_expiry(http_client, async_db, _oura):
-    _, user_id = await _athlete(http_client, async_db, "tz-oauth@test.com")
+    headers, user_id = await _athlete(http_client, async_db, "tz-oauth@test.com")
 
-    resp = await http_client.get(
-        "/v1/integrations/oura/callback",
-        params={"code": "c", "state": wearable_service.sign_state(user_id)},
-    )
-    assert resp.status_code == 302
-    assert resp.headers["location"].endswith("?oura=connected")
+    receipt = await connect(http_client, headers)
+    assert receipt["status"] == "succeeded"
     conn = await _connection(async_db, user_id)
     assert conn.expires_at is not None and conn.expires_at.tzinfo is None
 
 
 async def test_a_token_refresh_during_sync_stores_its_expiry(http_client, async_db, _oura):
     headers, user_id = await _athlete(http_client, async_db, "tz-refresh@test.com")
-    await http_client.get(
-        "/v1/integrations/oura/callback",
-        params={"code": "c", "state": wearable_service.sign_state(user_id)},
-    )
+    await connect(http_client, headers)
     conn = await _connection(async_db, user_id)
     conn.expires_at = datetime(2020, 1, 1)  # expired, so the sync must refresh first
     await async_db.commit()

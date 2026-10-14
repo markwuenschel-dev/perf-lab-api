@@ -1,9 +1,13 @@
 // src/api/perfLabClient.ts
 import { notifyUnauthorized } from "../auth/sessionBridge";
+import { readAttemptResult } from "./ouraReply";
 import type {
   ApiError,
   AssessmentSurfaceRead,
   AuthorizeUrlResponse,
+  OAuthAttemptResult,
+  OAuthCancelRequest,
+  OAuthCompleteRequest,
   BenchmarkObservationCreate,
   BenchmarkObservationRead,
   CompleteOnboardingRequest,
@@ -872,13 +876,61 @@ export async function deleteObjective(id: number, token: string): Promise<void> 
 
 /* ---------- Wearable sync / Oura (Phase 2) ---------- */
 
-/** Oura: the OAuth authorize URL to open in the browser (identity is in a signed state). */
-export async function getOuraAuthorizeUrl(token: string): Promise<AuthorizeUrlResponse> {
+/** Oura: start an authorization attempt bound to this browser's PKCE challenge (S256) and get
+ *  the consent URL to open. The caller must check the URL carries its own challenge. */
+export async function getOuraAuthorizeUrl(
+  token: string,
+  codeChallenge: string,
+): Promise<AuthorizeUrlResponse> {
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
-  const res = await fetch(`${API_V1_BASE}/integrations/oura/authorize`, {
+  const query = new URLSearchParams({ code_challenge: codeChallenge, code_challenge_method: "S256" });
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/authorize?${query.toString()}`, {
     headers: { ...authHeaders(token) },
   });
   return handleResponse<AuthorizeUrlResponse>(res, { sessionOn401: true });
+}
+
+/** A /complete or /cancel 200 that isn't a shape the server sends is not an outcome: it is
+ *  thrown, so the caller keeps the attempt's inputs instead of treating it as terminal. */
+async function attemptResult(res: Response): Promise<OAuthAttemptResult> {
+  const body = await handleResponse<unknown>(res, { sessionOn401: true });
+  const result = readAttemptResult(body);
+  if (result === null) {
+    const error: ApiError = { message: "Unexpected reply from Perf Lab", status: res.status, details: body };
+    throw error;
+  }
+  return result;
+}
+
+/** Oura: finish the attempt the browser came back with (code + the PKCE verifier it kept).
+ *  200 is a success receipt (history, not current state); 409/503 arrive as ApiError whose
+ *  `details.detail` is `{status, reason}`. */
+export async function completeOuraAuthorization(
+  body: OAuthCompleteRequest,
+  token: string,
+): Promise<OAuthAttemptResult> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return attemptResult(res);
+}
+
+/** Oura: the athlete declined at Oura. Returns where the attempt stands afterwards, which is
+ *  not necessarily "cancelled". */
+export async function cancelOuraAuthorization(
+  body: OAuthCancelRequest,
+  token: string,
+): Promise<OAuthAttemptResult> {
+  if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  const res = await fetch(`${API_V1_BASE}/integrations/oura/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
+  });
+  return attemptResult(res);
 }
 
 /* ---------- Phone-pushed wellness (Apple Watch via an iOS Shortcut) ---------- */

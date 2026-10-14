@@ -412,11 +412,53 @@ export interface paths {
         };
         /**
          * Authorize
-         * @description Return the Oura OAuth authorize URL for the web app to open.
+         * @description Start an authorization attempt bound to the browser's PKCE challenge; return its URL.
          */
         get: operations["authorize_v1_integrations_oura_authorize_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/oura/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel
+         * @description The athlete declined at Oura. Reports where the attempt stands afterwards, which is not
+         *     necessarily ``cancelled``: an attempt already claimed or finished is left as it is.
+         */
+        post: operations["cancel_v1_integrations_oura_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/oura/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete
+         * @description Finish the attempt the browser came back with. A finished attempt answers with its own
+         *     outcome on every retry; ``in_progress`` and ``failed`` are 409, an unknown outcome 503.
+         */
+        post: operations["complete_v1_integrations_oura_complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2897,6 +2939,57 @@ export interface components {
             vo2_max: number;
             /** Zones */
             zones: components["schemas"]["Zone"][];
+        };
+        /**
+         * OAuthAttemptResult
+         * @description Where one authorization attempt stands. ``succeeded`` carries ``linked``; ``failed``
+         *     carries a ``reason`` code (``cancelled``, ``expired``, ``claim_stale``,
+         *     ``exchange_rejected``, ``exchange_failed``).
+         */
+        OAuthAttemptResult: {
+            /** Completed At */
+            completed_at?: string | null;
+            linked?: components["schemas"]["OAuthLinked"] | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "failed" | "in_progress";
+        };
+        /**
+         * OAuthCancelRequest
+         * @description The athlete declined at the provider. The verifier proves possession of the attempt.
+         */
+        OAuthCancelRequest: {
+            /** Code Verifier */
+            code_verifier: string;
+            /** State */
+            state: string;
+        };
+        /**
+         * OAuthCompleteRequest
+         * @description What the browser brings back from the provider, plus the verifier it kept.
+         */
+        OAuthCompleteRequest: {
+            /** Code */
+            code: string;
+            /** Code Verifier */
+            code_verifier: string;
+            /** State */
+            state: string;
+        };
+        /**
+         * OAuthLinked
+         * @description The connection a successful attempt linked, as it was then. History, not current state:
+         *     whether the athlete is connected now comes only from ``GET /connection``.
+         */
+        OAuthLinked: {
+            /** Connection Id */
+            connection_id: number;
+            /** Generation */
+            generation: number;
         };
         /** ObjectiveCreate */
         ObjectiveCreate: {
@@ -5950,7 +6043,12 @@ export interface operations {
     };
     authorize_v1_integrations_oura_authorize_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description S256 PKCE challenge (base64url, 43 chars) */
+                code_challenge?: string | null;
+                /** @description Must be S256 */
+                code_challenge_method?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5964,6 +6062,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthorizeUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_v1_integrations_oura_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthAttemptResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_v1_integrations_oura_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthAttemptResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -42,6 +42,24 @@ Oura documents PKCE with `S256` and still requires the client secret at the toke
    downgrade, no deletion and no env change. `OURA_REDIRECT_URI` remains on the box as P6a's
    configuration.
 
+6. **Time comes from the database, sampled once per statement after the row is locked**, and is
+   used both for that statement's guard and for the time it records. Each transition locks its
+   row in a separate statement first: an UPDATE samples its clock before waiting for a locked
+   row and rechecks its guard with that old sample, so a claim queued behind another
+   transaction would otherwise judge expiry as of before the wait. Creation records `expires_at = created_at +
+   10 minutes` from the same sample. `claimed_at` and `outcome_at` are ordering timestamps, not
+   exact wall-clock observations: the claim records `GREATEST(clock, created_at)` and every
+   outcome (success, exchange failure, cancellation, expiry, stale claim) records
+   `GREATEST(clock, created_at, claimed_at)`. A database clock that steps backward therefore
+   cannot break the time-order CHECK, which stays. Each clamp logs a warning with the attempt id
+   and its size, so clock trouble stays visible. Measured on 2026-10-14: the local Docker VM's
+   clock stepped backward 0.5–6.4 s about every 27 s.
+7. **The finalizing transaction is the uncertainty boundary.** The lock, the connection write,
+   the receipt and the commit sit inside one guard. Any failure in it rolls back and answers
+   503 `outcome_unknown`, so the client keeps its inputs and retries. Saving a failed exchange
+   is guarded the same way: the code is spent either way, so a retry reads whatever landed and
+   never exchanges again.
+
 ### The four crossings between releases
 
 | | who arrives | at | outcome |
@@ -58,6 +76,16 @@ Oura documents PKCE with `S256` and still requires the client secret at the toke
   and generations already recorded survive it.
 - The a061 downgrade refuses while any attempt exists or any connection is past generation 1.
   It is never part of a routine rollback.
+- Expiry and staleness compare against the raw database clock, not the clamped times. Their
+  elapsed-time guarantees depend on that clock: a backward step lengthens an attempt's lifetime
+  and the wait before a claim counts as stale, and repeated steps can lengthen them by more
+  than any single step's size.
+- The transaction tells a provider's refusal (`exchange_rejected`) from any other failure
+  (`exchange_failed`) only through `app.integrations.base.ProviderRejected`, which each adapter
+  raises for its own refusals (Oura: a non-200 token reply). It never imports a provider
+  (ADR-0044); `tests/test_wearable_provider_seam.py` enforces that for every module in
+  `app/services/`. A local adapter failure, such as missing client credentials, is not a
+  refusal.
 - Two refreshes of the same generation running at once are an acknowledged limitation. Oura's
   single-use refresh tokens make the second fail at the provider; they do not serialize sync.
 - The Oura console must register the new redirect URI before P6b ships, and keep the old one

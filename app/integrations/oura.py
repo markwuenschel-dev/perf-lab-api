@@ -24,7 +24,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.core.config import settings
-from app.integrations.base import NormalizedWellness, TokenBundle
+from app.integrations.base import NormalizedWellness, ProviderRejected, TokenBundle
 
 logger = logging.getLogger("perflab.integrations.oura")
 
@@ -39,6 +39,10 @@ _HTTP_TIMEOUT = httpx.Timeout(20.0)
 
 class OuraAuthError(RuntimeError):
     """Raised on an Oura auth/token failure (bad code, expired refresh, bad PAT)."""
+
+
+class OuraTokenRejected(OuraAuthError, ProviderRejected):
+    """Oura's token endpoint answered and refused (non-200): the adapter-neutral rejection."""
 
 
 class OuraApiError(RuntimeError):
@@ -66,24 +70,31 @@ class OuraAdapter:
 
     # --- OAuth2 -----------------------------------------------------------------
 
-    def build_authorize_url(self, state: str) -> str:
+    def build_authorize_url(self, state: str, *, code_challenge: str, redirect_uri: str) -> str:
+        """The consent URL for one attempt. ``redirect_uri`` is the attempt's own (stored with
+        it, ADR-0075), not ``self.redirect_uri``, which only the pre-P6b flow used."""
         if not self.client_id:
             raise OuraAuthError("OURA_CLIENT_ID is not configured.")
         params = {
             "response_type": "code",
             "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
+            "redirect_uri": redirect_uri,
             "scope": DEFAULT_SCOPE,
             "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
         return f"{AUTHORIZE_URL}?{urlencode(params)}"
 
-    async def exchange_code(self, code: str) -> TokenBundle:
+    async def exchange_code(self, code: str, *, code_verifier: str, redirect_uri: str) -> TokenBundle:
+        # Oura requires the exact redirect_uri the authorize request carried, and the verifier
+        # whenever a challenge was sent. The client secret is still required with PKCE.
         return await self._token_request(
             {
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": self.redirect_uri,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
             }
         )
 
@@ -103,7 +114,7 @@ class OuraAdapter:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.post(TOKEN_URL, data=payload)
         if resp.status_code != 200:
-            raise OuraAuthError(
+            raise OuraTokenRejected(
                 f"Oura token request failed ({resp.status_code}): {resp.text[:200]}"
             )
         body = resp.json()
