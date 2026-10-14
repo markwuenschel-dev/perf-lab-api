@@ -151,6 +151,9 @@ export type SessionFeedbackOut = Schemas["SessionFeedbackOut"];
 export type WearableConnectionOut = Schemas["WearableConnectionOut"];
 export type ConnectionStatus = Schemas["ConnectionStatus"];
 export type AuthorizeUrlResponse = Schemas["AuthorizeUrlResponse"];
+export type OAuthAttemptResult = Schemas["OAuthAttemptResult"];
+export type OAuthCompleteRequest = Schemas["OAuthCompleteRequest"];
+export type OAuthCancelRequest = Schemas["OAuthCancelRequest"];
 export type PatConnectRequest = Schemas["PatConnectRequest"];
 export type SyncResult = Schemas["SyncResult"];
 

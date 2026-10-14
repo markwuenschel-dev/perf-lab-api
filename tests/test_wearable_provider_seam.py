@@ -26,6 +26,9 @@ from app.integrations.registry import (
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SERVICE = _REPO_ROOT / "app" / "services" / "wearable_service.py"
+#: Every shared service module. The guard once read only wearable_service.py, so the OAuth
+#: transaction (wearable_oauth.py) imported OuraAuthError past it (review, 2026-10-14).
+_SHARED = sorted((_REPO_ROOT / "app" / "services").glob("*.py"))
 
 #: The package holding concrete adapters. `base` and `registry` are the seam itself.
 _CONCRETE_ADAPTER_MODULES = {"oura"}
@@ -46,13 +49,15 @@ def _imported_modules(source: str) -> set[str]:
 # ── the guard ─────────────────────────────────────────────────────────────────
 
 
-def test_the_sync_service_imports_no_concrete_provider() -> None:
-    """base.py's own promise, made checkable.
+@pytest.mark.parametrize("module", _SHARED, ids=lambda p: p.name)
+def test_no_shared_service_imports_a_concrete_provider(module: Path) -> None:
+    """base.py's own promise, made checkable, for every module in app/services.
 
     If this fails, a provider name has leaked back into shared code and the next integration
-    has to edit it — which is the coupling the adapter Protocol exists to prevent.
+    has to edit it — which is the coupling the adapter Protocol exists to prevent. A provider's
+    refusal reaches shared code as ``base.ProviderRejected``, never as the provider's own error.
     """
-    imported = _imported_modules(_SERVICE.read_text(encoding="utf-8"))
+    imported = _imported_modules(module.read_text(encoding="utf-8"))
     leaked = {
         mod
         for mod in imported
@@ -61,20 +66,22 @@ def test_the_sync_service_imports_no_concrete_provider() -> None:
     }
 
     assert not leaked, (
-        f"{_SERVICE.name} imports concrete provider module(s) {sorted(leaked)}. "
-        "Resolve providers through app.integrations.registry.adapter_for instead — "
-        "integrations/base.py promises the sync service never imports a concrete provider."
+        f"{module.name} imports concrete provider module(s) {sorted(leaked)}. "
+        "Resolve providers through app.integrations.registry.adapter_for, and catch "
+        "app.integrations.base.ProviderRejected rather than a provider's own exception."
     )
 
 
-def test_the_service_file_still_exists_so_the_guard_is_not_vacuous() -> None:
-    assert _SERVICE.is_file()
+def test_the_guard_is_not_vacuous() -> None:
+    names = {p.name for p in _SHARED}
+    assert {"wearable_service.py", "wearable_oauth.py"} <= names
     assert "adapter_for" in _SERVICE.read_text(encoding="utf-8")
 
 
-def test_no_provider_branching_remains_in_the_service() -> None:
+@pytest.mark.parametrize("module", _SHARED, ids=lambda p: p.name)
+def test_no_provider_branching_in_shared_services(module: Path) -> None:
     """The `if provider == "oura"` ladder must not come back in another shape."""
-    tree = ast.parse(_SERVICE.read_text(encoding="utf-8"))
+    tree = ast.parse(module.read_text(encoding="utf-8"))
     known_providers = {"oura", "garmin", "whoop", "fitbit"}
 
     offenders = [
@@ -86,9 +93,41 @@ def test_no_provider_branching_remains_in_the_service() -> None:
     ]
 
     assert not offenders, (
-        f"{_SERVICE.name} branches on a provider name at line(s) "
+        f"{module.name} branches on a provider name at line(s) "
         f"{', '.join(str(n) for n in offenders)}; register an adapter instead"
     )
+
+
+# ── the neutral rejection ─────────────────────────────────────────────────────
+
+
+async def test_oura_translates_a_token_refusal_into_the_neutral_rejection(monkeypatch) -> None:
+    import httpx
+
+    from app.integrations import oura
+    from app.integrations.base import ProviderRejected
+
+    refused = httpx.MockTransport(lambda request: httpx.Response(400, text="invalid_grant"))
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(oura.httpx, "AsyncClient",
+                        lambda **kw: real_client(transport=refused, **kw))
+    adapter = OuraAdapter()
+    monkeypatch.setattr(adapter, "client_id", "cid")
+    monkeypatch.setattr(adapter, "client_secret", "secret")
+    with pytest.raises(ProviderRejected):
+        await adapter.exchange_code("c", code_verifier="v" * 43, redirect_uri="https://x.test/cb")
+
+
+async def test_a_local_oura_failure_is_not_a_provider_refusal(monkeypatch) -> None:
+    """Missing credentials never reached Oura: shared code must not record it as Oura's 'no'."""
+    from app.integrations import oura
+    from app.integrations.base import ProviderRejected
+
+    adapter = OuraAdapter()
+    monkeypatch.setattr(adapter, "client_secret", "")
+    with pytest.raises(oura.OuraAuthError) as excinfo:
+        await adapter.exchange_code("c", code_verifier="v" * 43, redirect_uri="https://x.test/cb")
+    assert not isinstance(excinfo.value, ProviderRejected)
 
 
 # ── registry behaviour ────────────────────────────────────────────────────────
@@ -171,10 +210,10 @@ class _FakeAdapter:
     def __init__(self, provider: str = "fake_provider") -> None:
         self.provider = provider
 
-    def build_authorize_url(self, state: str) -> str:  # pragma: no cover - unused here
+    def build_authorize_url(self, state: str, *, code_challenge: str, redirect_uri: str) -> str:  # pragma: no cover - unused here
         return f"https://example.invalid/auth?state={state}"
 
-    async def exchange_code(self, code: str):  # pragma: no cover - unused here
+    async def exchange_code(self, code: str, *, code_verifier: str, redirect_uri: str):  # pragma: no cover - unused here
         raise NotImplementedError
 
     async def refresh_tokens(self, refresh_token: str):  # pragma: no cover - unused here

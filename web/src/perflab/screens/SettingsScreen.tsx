@@ -36,12 +36,8 @@ import {
   underivedReportMessage,
 } from "./strengthOutcome";
 import { useSubmissionAttempts, type SubmissionAttempt } from "./useSubmissionKey";
-import {
-  OURA_INTERRUPTED_MESSAGE,
-  OURA_PKCE_STORAGE_KEY,
-  parseServerUtc,
-  takeOuraReturn,
-} from "../wearableSync";
+import { parseServerUtc } from "../wearableSync";
+import { useOuraAttempt } from "./useOuraAttempt";
 import { AppleHealthCard } from "./AppleHealthCard";
 import {
   EMPTY_STRENGTH_FORM,
@@ -724,6 +720,10 @@ function PerformanceProfileCard() {
 // the backend — the client only ever sees connection status, never a token.
 type WearableBusy = "idle" | "connecting" | "syncing" | "disconnecting";
 
+// The card is keyed to the signed-in account (see SettingsScreen), so nothing begun for one
+// account can write another's card. Within it, every write that follows an await is fenced: a
+// connection read writes only if it is still the latest read, and nothing writes once the card
+// has unmounted (review, 2026-10-14).
 function WearableConnectCard() {
   const auth = useAuth();
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
@@ -732,47 +732,67 @@ function WearableConnectCard() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const mounted = useRef(true);
+  const reads = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  /** Start a connection read; the returned check says whether it may still write the card. */
+  const startRead = useCallback(() => {
+    const n = ++reads.current;
+    return () => mounted.current && reads.current === n;
+  }, []);
+
   const load = useCallback(async () => {
     if (!auth.token) return;
+    const mine = startRead();
     setLoading(true);
     setError(null);
     try {
-      setStatus(await api.getWearableConnection(auth.token));
+      const s = await api.getWearableConnection(auth.token);
+      if (mine()) setStatus(s);
     } catch (e) {
-      setError((e as ApiError).message ?? "Failed to load connection");
+      if (mine()) setError((e as ApiError).message ?? "Failed to load connection");
     } finally {
-      setLoading(false);
+      if (mine()) setLoading(false);
     }
-  }, [auth.token]);
+  }, [auth.token, startRead]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // What the browser came back from Oura with, delivered once per page load and kept in its
-  // own slot: `load()` clears `error`, and under StrictMode it runs again after this effect.
-  const [returned, setReturned] = useState<{ tone: "notice" | "error"; text: string } | null>(null);
-  useEffect(() => {
-    const result = takeOuraReturn();
-    if (result === null) return;
-    if (result === "interrupted") {
-      // An attempt a newer release started came back here (e.g. across a rollback). Nothing in
-      // this release can finish it: say so, drop the callback parameters and the abandoned
-      // verifier, and call nothing.
-      setReturned({ tone: "error", text: OURA_INTERRUPTED_MESSAGE });
-      try {
-        window.sessionStorage.removeItem(OURA_PKCE_STORAGE_KEY);
-      } catch {
-        // storage unavailable: nothing to clear
-      }
-      window.history.replaceState(null, "", "/settings");
-      return;
+  // The OAuth attempt: started here, finished when Oura sends the browser back. Its message
+  // lives in its own slot: `load()` clears `error`, and under StrictMode it runs again.
+  // The hook reads the connection, and shows it only if the operation that asked still owns
+  // the screen (a newer attempt or another account may have taken over meanwhile).
+  // The hook's read is a card read like any other: only the latest one may paint the card.
+  // Being the latest, it also ends the card's loading however it ends (failed, or answered for an
+  // operation that no longer owns the screen): the reads it superseded can no longer do so.
+  const hookRead = useRef<(() => boolean) | null>(null);
+  const readConnection = useCallback(async (token: string) => {
+    const mine = startRead();
+    hookRead.current = mine;
+    try {
+      return await api.getWearableConnection(token);
+    } finally {
+      if (mine()) setLoading(false);
     }
-    if (result === "connected")
-      setReturned({ tone: "notice", text: "Oura connected. Your data syncs each time you open Perf Lab." });
-    else setReturned({ tone: "error", text: "Oura sign-in didn't complete. Try Connect Oura again." });
-    window.history.replaceState(null, "", window.location.pathname);
+  }, [startRead]);
+  const showConnection = useCallback((s: ConnectionStatus) => {
+    if (!hookRead.current?.()) return false;
+    setStatus(s);
+    return true;
   }, []);
+  const attempt = useOuraAttempt({
+    token: auth.token,
+    userKey: auth.email ?? "",
+    readConnection,
+    showConnection,
+  });
 
   const connected = status?.connected ?? false;
   const conn = status?.connection ?? null;
@@ -783,12 +803,13 @@ function WearableConnectCard() {
     setError(null);
     try {
       const res = await api.syncOura(auth.token);
+      if (!mounted.current) return;
       setNotice(`Synced ${res.rows_written} day${res.rows_written === 1 ? "" : "s"} of Oura data.`);
       await load();
     } catch (e) {
-      setError((e as ApiError).message ?? "Sync failed");
+      if (mounted.current) setError((e as ApiError).message ?? "Sync failed");
     } finally {
-      setBusy("idle");
+      if (mounted.current) setBusy("idle");
     }
   }
 
@@ -797,11 +818,9 @@ function WearableConnectCard() {
     setBusy("connecting");
     setError(null);
     try {
-      const { authorize_url } = await api.getOuraAuthorizeUrl(auth.token);
-      window.location.href = authorize_url;
-    } catch (e) {
-      setError((e as ApiError).message ?? "Could not start Oura sign-in");
-      setBusy("idle");
+      await attempt.connect();
+    } finally {
+      if (mounted.current) setBusy("idle");
     }
   }
 
@@ -812,11 +831,11 @@ function WearableConnectCard() {
     setNotice(null);
     try {
       await api.disconnectOura(auth.token);
-      await load();
+      if (mounted.current) await load();
     } catch (e) {
-      setError((e as ApiError).message ?? "Disconnect failed");
+      if (mounted.current) setError((e as ApiError).message ?? "Disconnect failed");
     } finally {
-      setBusy("idle");
+      if (mounted.current) setBusy("idle");
     }
   }
 
@@ -876,13 +895,35 @@ function WearableConnectCard() {
         </div>
       )}
 
-      {returned?.tone === "notice" && (
-        <div className="mt-4 text-[12px] font-medium text-ac">{returned.text}</div>
+      {attempt.view?.tone === "notice" && (
+        <div className="mt-4 text-[12px] font-medium text-ac">{attempt.view.text}</div>
       )}
-      {returned?.tone === "error" && (
+      {attempt.view?.tone === "error" && (
         <div className="mt-4 flex items-start gap-[9px] rounded-[11px] border border-hot/[0.3] bg-hot/[0.05] px-3 py-[10px]">
           <span className="text-[13px] leading-none text-hot">!</span>
-          <span className="text-[11.5px] font-medium leading-[1.45] text-[#cf9a93]">{returned.text}</span>
+          <span className="text-[11.5px] font-medium leading-[1.45] text-[#cf9a93]">{attempt.view.text}</span>
+        </div>
+      )}
+      {(attempt.view?.retry || attempt.view?.startOver) && (
+        <div className="mt-3 flex items-center gap-3">
+          {attempt.view.retry && (
+            <button
+              type="button"
+              onClick={attempt.retry}
+              className="rounded-[9px] border border-white/10 bg-panel px-4 py-[10px] text-[12.5px] font-semibold leading-none text-ink"
+            >
+              Retry
+            </button>
+          )}
+          {attempt.view.startOver && (
+            <button
+              type="button"
+              onClick={attempt.startOver}
+              className="rounded-[9px] border border-white/10 bg-panel px-4 py-[10px] text-[12.5px] font-semibold leading-none text-mute"
+            >
+              Start over
+            </button>
+          )}
         </div>
       )}
       {notice && <div className="mt-4 text-[12px] font-medium text-ac">{notice}</div>}
@@ -1165,7 +1206,8 @@ export function SettingsScreen() {
         </div>
       </Card>
 
-      <WearableConnectCard />
+      {/* One card per signed-in account: nothing begun for one account writes another's. */}
+      <WearableConnectCard key={auth.email ?? ""} />
       <AppleHealthCard />
 
       <Card className="flex items-center justify-between p-[22px]">

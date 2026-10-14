@@ -16,12 +16,19 @@ never plaintext. A DB dump must not leak live wearable credentials. The key live
 `APP_ENCRYPTION_KEY` (an env variable — e.g. `/opt/stack/infra/env/perf-lab-api.env` on
 the EC2 stack, see `docs/DEPLOY.md`; previously a Railway variable before hosting moved
 to EC2 2026-07-10); `app.core.crypto` is the only module that
-encrypts/decrypts, and `app.services.wearable_service` the only caller. Encryption is
+encrypts/decrypts. Its callers are `app.services.wearable_service` (PAT links, refresh, sync)
+and, since P6b, `app.services.wearable_oauth._seal`, which encrypts the tokens of an OAuth
+exchange before the finalizing transaction stores them (ADR-0075). Encryption is
 lazy/opt-in — the key is required only when a connection is stored or synced, so the rest
 of the app boots without it. `cryptography` is already present transitively via
 `python-jose[cryptography]`, so no new dependency.
 
 ## 2. OAuth identity rides a signed `state` token
+
+> **Superseded by [ADR-0075](0075-wearable-oauth-is-a-durable-attempt.md) (P6b).** The state
+> is now random and its hash is stored with a durable attempt bound by PKCE; the provider returns
+> to the SPA, which completes the attempt with an authenticated call. The text below describes
+> the release before it.
 
 The OAuth callback (`GET /v1/integrations/oura/callback`) is a browser redirect and
 carries **no `Authorization` header**, so `get_current_user` can't run there. Instead

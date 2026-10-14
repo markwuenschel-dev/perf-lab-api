@@ -21,6 +21,13 @@ from typing import Any, Protocol, runtime_checkable
 from app.schemas.wellness import HrvMetric
 
 
+class ProviderRejected(RuntimeError):
+    """The provider answered and refused the request (e.g. a non-2xx token reply).
+
+    Adapters raise it (or a subclass of their own) so shared code can tell a refusal from a
+    transport or local failure without importing a concrete provider."""
+
+
 @dataclass(frozen=True)
 class TokenBundle:
     """OAuth token-exchange / refresh result, provider-agnostic."""
@@ -81,12 +88,14 @@ class WearableAdapter(Protocol):
     #: Provider slug, also used as WellnessSample.source (e.g. "oura").
     provider: str
 
-    def build_authorize_url(self, state: str) -> str:
-        """Return the provider's OAuth2 authorize URL carrying ``state``."""
+    def build_authorize_url(self, state: str, *, code_challenge: str, redirect_uri: str) -> str:
+        """Return the provider's OAuth2 authorize URL for one attempt: its ``state``, its PKCE
+        ``code_challenge`` (S256) and the ``redirect_uri`` stored with it."""
         ...
 
-    async def exchange_code(self, code: str) -> TokenBundle:
-        """Exchange an authorization ``code`` for tokens."""
+    async def exchange_code(self, code: str, *, code_verifier: str, redirect_uri: str) -> TokenBundle:
+        """Exchange an authorization ``code`` for tokens, proving the attempt's PKCE verifier and
+        repeating the exact ``redirect_uri`` the authorize request carried."""
         ...
 
     async def refresh_tokens(self, refresh_token: str) -> TokenBundle:

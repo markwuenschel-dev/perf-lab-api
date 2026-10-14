@@ -86,40 +86,63 @@ export function sourceLabel(source: string): string {
   return source === "oura" ? "Oura" : source.replace(/_/g, " ");
 }
 
-/** Where Oura's consent screen returns the browser from the PKCE release onwards (P6b,
- *  ADR-0075). This release only recognises it, to tell the athlete an attempt started by a
- *  newer release was interrupted (crossing 3); it never completes or cancels anything. */
+/** Where Oura's consent screen returns the browser (P6b, ADR-0075): an SPA route, so the
+ *  completion call carries the athlete's session. The query holds Oura's `code` (or `error`)
+ *  and the attempt's `state`. */
 export const OURA_CALLBACK_PATH = "/settings/oura-callback";
-/** sessionStorage key holding a PKCE attempt (its verifier). Fixed now so this release can
- *  clear exactly what the newer one writes. */
+/** sessionStorage key holding this tab's PKCE attempt (its verifier). The previous release
+ *  clears exactly this key when it meets a callback it cannot finish. */
 export const OURA_PKCE_STORAGE_KEY = "perflab.oura.pkce";
-export const OURA_INTERRUPTED_MESSAGE = "Oura sign-in was interrupted. Connect Oura again.";
+/** The retired API callback sends a consent started before the cutover here
+ *  (`?oura=error&reason=interrupted`, crossing 1). */
+export const OURA_UPDATE_INTERRUPTED_MESSAGE =
+  "Oura sign-in was interrupted by an update. Connect Oura again.";
 
 export function isOuraCallbackPath(pathname: string): boolean {
   return pathname.replace(/\/+$/, "") === OURA_CALLBACK_PATH;
 }
 
-/** The outcome Oura's OAuth callback put in the URL (`/settings?oura=connected|error`). */
+/** The outcome the legacy redirect put in the URL (`/settings?oura=connected|error`). */
 export function ouraRedirectResult(search: string): "connected" | "error" | null {
   const v = new URLSearchParams(search).get("oura");
   return v === "connected" || v === "error" ? v : null;
 }
 
-export type OuraReturn = "connected" | "error" | "interrupted";
+export type OuraReturn =
+  | { kind: "connected" }
+  | { kind: "error"; reason: string | null }
+  | { kind: "callback"; state: string | null; code: string | null; error: string | null };
 
 let capturedReturn: OuraReturn | null | undefined;
 let returnDelivered = false;
+
+function captureFromUrl(): OuraReturn | null {
+  const params = new URLSearchParams(window.location.search);
+  if (isOuraCallbackPath(window.location.pathname)) {
+    return {
+      kind: "callback",
+      state: params.get("state"),
+      code: params.get("code"),
+      error: params.get("error"),
+    };
+  }
+  const legacy = ouraRedirectResult(window.location.search);
+  if (legacy === "connected") return { kind: "connected" };
+  if (legacy === "error") return { kind: "error", reason: params.get("reason") };
+  return null;
+}
 
 /** What this page load came back from Oura with, read from the URL the first time it is asked
  *  and never again: the URL is cleaned right after, and StrictMode replays effects, so a
  *  second read of the URL would find nothing. */
 export function readOuraReturn(): OuraReturn | null {
-  if (capturedReturn === undefined) {
-    capturedReturn = isOuraCallbackPath(window.location.pathname)
-      ? "interrupted"
-      : ouraRedirectResult(window.location.search);
-  }
+  if (capturedReturn === undefined) capturedReturn = captureFromUrl();
   return capturedReturn;
+}
+
+/** `readOuraReturn` if nobody has taken it yet, without taking it (render-safe). */
+export function peekOuraReturn(): OuraReturn | null {
+  return returnDelivered ? null : readOuraReturn();
 }
 
 /** `readOuraReturn`, handed out once: the first caller gets it, every later one gets null. */

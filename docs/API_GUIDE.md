@@ -657,6 +657,48 @@ Does it mutate state?
 
 No.
 
+## Wearable OAuth Endpoints (Oura)
+
+Connecting Oura is one durable attempt per click, bound to the browser by PKCE (S256). The
+state that travels through Oura is random; only its hash is stored (ADR-0075).
+
+### `GET /v1/integrations/oura/authorize?code_challenge=…&code_challenge_method=S256`
+
+Starts an attempt (valid 10 minutes) and returns `{authorize_url}`. Oura returns the browser to
+`WEB_APP_URL` + `/settings/oura-callback?code=…&state=…` (or `error=access_denied`).
+
+- No `code_challenge`: **400** "Perf Lab was updated. Reload the page, then Connect Oura again."
+  An attempt is never started without the binding.
+- A malformed challenge, or a method other than `S256`: **400**.
+
+### `POST /v1/integrations/oura/complete` `{state, code, code_verifier}`
+
+Checks ownership and the verifier first; a failed check changes nothing (**400**
+`invalid_state` / `verifier_mismatch`, **403** `not_your_attempt`). Then:
+
+- **200** `{status: "succeeded", completed_at, linked: {connection_id, generation}}`, the same
+  on every retry. `linked` is that attempt's history. Whether Oura is connected **now** is only
+  `GET /connection`.
+- **409** `{status: "in_progress"}`: another request holds the claim; retry later.
+- **409** `{status: "failed", reason}`: `expired`, `cancelled`, `claim_stale`,
+  `exchange_rejected` or `exchange_failed`. Final; start a new attempt.
+- **503** `{status: "unknown", reason: "outcome_unknown"}`: the finalizing transaction failed,
+  before or during its commit. Retry with the same inputs; the attempt answers with what landed.
+
+`completed_at` is an ordering timestamp from database time, never earlier than the attempt's
+creation or claim, rather than an exact wall-clock reading (see ADR-0075, "Time").
+
+### `POST /v1/integrations/oura/cancel` `{state, code_verifier}`
+
+The athlete declined at Oura. A pending attempt becomes `failed`/`cancelled`. The reply is the
+attempt's status afterwards: an attempt already claimed or finished is reported as it is
+(a succeeded attempt is never reported as cancelled).
+
+### `/v1/integrations/oura/callback` (retired)
+
+The previous redirect target. GET answers **303** to `/settings?oura=error&reason=interrupted`;
+every other method **410**. It never exchanges a code.
+
 ## DTO Summary
 
 ### WorkoutLog

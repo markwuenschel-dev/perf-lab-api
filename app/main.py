@@ -39,6 +39,7 @@ from app.api.v1 import (
 from app.api.v1.history import router as history_router
 from app.api.v1.onboard import router as onboard_router
 from app.api.v1.profile import router as profile_router
+from app.core import log_redaction
 from app.core.config import (
     CORS_NON_ORIGINS,
     CORS_REGEX_UNSUPPORTED_IN_PRODUCTION,
@@ -53,6 +54,10 @@ from app.core.errors import CanonicalStateInvalid
 from app.engine.engine_state_codec import EngineStateDecodeError
 
 logger = logging.getLogger("perflab")
+
+# OAuth returns carry the code and state in their query string, which uvicorn's access log
+# writes verbatim. Installed at import: uvicorn configures its loggers before loading the app.
+log_redaction.install()
 
 # A 256-bit floor for the HS256 signing key (32 chars). Below this — or the default /
 # empty value — a key is too weak to sign auth tokens.

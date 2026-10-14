@@ -373,7 +373,118 @@ the refusal means P6b ran. In that case don't downgrade: deploy the P6a SHA inst
 P6b's rollback. Discarding the history is a deliberate, separate act (`DELETE FROM
 oauth_authorizations`, reset `generation`), never part of a rollback.
 
-**P6b's rollback target: `<P6a merge SHA>`** (pinned once P6a merges).
+**P6b's rollback target: `9e1ba29e7046f176ef09f93bb0e17c035422003d`** (P6a's merge, PR #299).
+
+**What P6b changes.** Connect Oura becomes a durable attempt bound by PKCE (ADR-0075). Oura now
+returns the browser to `WEB_APP_URL` + `/settings/oura-callback`, derived in code. The box's
+`OURA_REDIRECT_URI` is **not edited**: P6b ignores it, and it stays as P6a's configuration for a
+rollback. The old API callback answers a browser GET with a 303 to Settings ("interrupted") and
+never exchanges a code. The existing connection is untouched: a token refresh sends no redirect
+URI, and generation tracking starts with P6b's first link.
+
+**Before deploying P6b (required, each recorded in the P6b PR):**
+
+1. **Register the new redirect URI in the Oura console, keeping the old one.** Add exactly
+   `https://perflab.44-198-76-44.nip.io/settings/oura-callback` (`WEB_APP_URL` with no trailing
+   slash, plus the path) to the app's redirect URIs. Oura matches them exactly. Keep
+   `…/v1/integrations/oura/callback` registered: P6a needs it after a rollback. **Only the
+   account owner can confirm this registration**; a probe of the authorize URL without signing
+   in is diagnostic, not a confirmation.
+2. **P6a is deployed and verified** (`alembic current` = `a061_oauth_authorizations (head)`).
+   P6b carries no migration and needs no new backup.
+3. **Check `WEB_APP_URL` on the box** is `https://perflab.44-198-76-44.nip.io`, with no path,
+   query or trailing slash. An unusable value makes `/authorize` answer 503 and starts nothing.
+4. **Prove Caddy does not log OAuth query values, with synthetic sentinels, before any real
+   consent.** A real callback carries a live authorization code and state through Caddy first; if
+   Caddy logs queries, checking afterwards is too late. The sentinels are made-up values, never
+   real codes.
+
+   **4a. List every place Caddy writes logs, from its effective configuration.** Don't read
+   the Caddyfile by eye or with a grep window: comments, `import`s and snippets can put a sink
+   anywhere. Caddy's JSON config names every logger and its writer outright. **The sink list
+   comes from the config Caddy is running**, read from its admin API. The Caddyfile adapted
+   with all imports resolved is a cross-check only: the file on disk may not be what the
+   process loaded (edited since, or never reloaded), so it can't stand in for the running
+   config. The container's `command` and mounts (`sudo docker compose config caddy`) say which
+   Caddyfile it loads (the image default is `/etc/caddy/Caddyfile`).
+
+   ```bash
+   cd /opt/stack/infra
+   sudo docker compose config caddy                       # which Caddyfile, which volumes
+   sudo docker compose exec -T caddy wget -qO- http://localhost:2019/config/ > /tmp/caddy-running.json \
+     || echo "admin API unreachable"
+   sudo docker compose exec -T caddy caddy adapt --config /etc/caddy/Caddyfile > /tmp/caddy-adapted.json
+   python3 - /tmp/caddy-running.json /tmp/caddy-adapted.json <<'PY'
+   import json, sys
+   for role, path in zip(("RUNNING", "cross-check"), sys.argv[1:]):
+       try:
+           cfg = json.load(open(path))
+       except Exception as exc:
+           cfg = exc
+       if not isinstance(cfg, dict) or not cfg:  # unreachable, unreadable, or `null` (nothing loaded)
+           print(role, path, "UNREADABLE")
+           if role == "RUNNING":
+               print("STOP: no running config, so production logging is unverified")
+           continue
+       logs = (cfg.get("logging") or {}).get("logs") or {}
+       logs.setdefault("default", {})  # Caddy's default logger exists even when unconfigured
+       for name, log in sorted(logs.items()):
+           w = log.get("writer") or {"output": "stderr"}
+           print(role, name, w.get("output"), w.get("filename") or w.get("address") or "")
+   PY
+   ```
+
+   Every line is one sink: `stdout`/`stderr` (the container's docker log), `file <path>`,
+   `discard`, or `net <address>`. The `RUNNING` lines are the list 4b checks. If the output
+   says `STOP` (the admin API is off or unreachable, or Caddy answers with no config), stop:
+   production logging stays **unverified**, and the adapted file is not a substitute. Getting a
+   readable running config (enabling the admin API on localhost, or reloading Caddy from a
+   file that was just adapted and validated) is an infra change in `/opt/stack/infra`,
+   authorized separately; after it, repeat 4a. If the two lists differ, the running list
+   still governs, and the difference is recorded in the PR.
+
+   **4b. Send the sentinels, then check every `RUNNING` sink from 4a.**
+
+   ```bash
+   S="P6-SENTINEL-$(date +%s)"
+   for path in /settings/oura-callback /v1/integrations/oura/callback; do
+     curl -s -o /dev/null -w "%{http_code} $path\n" \
+       "https://perflab.44-198-76-44.nip.io$path?code=$S-code&state=$S-state"
+   done
+   sudo docker compose logs --since 10m caddy | grep -c "$S"               # stdout/stderr sinks: 0
+   # for each `file <path>` sink:  sudo docker compose exec -T caddy grep -c "$S" <path>   → 0
+   ```
+
+   The preflight passes only when every `RUNNING` sink was checked and showed 0. A `file` sink
+   that doesn't exist yet counts as checked only if the logger's `include`/`exclude` shows it
+   never takes HTTP access entries; otherwise wait for it to appear and check it. A `net` sink,
+   or any sink whose contents can't be read from the box, means production logging stays
+   **unverified**: stop and resolve it first. Any count above 0 means Caddy records the query:
+   stop, make Caddy drop or redact the query (an infra change in `/opt/stack/infra`, outside
+   this repo and authorized separately), then repeat 4a and 4b with a new `$S`. On P6a the
+   API's own access log still prints these sentinels in full; that is expected and harmless
+   (they are synthetic), and is what P6b's redaction fixes. Record the `RUNNING` sink list from 4a and
+   every count from 4b in the P6b PR. Until this step passes, no real consent goes through.
+
+**After deploying P6b:**
+
+- **Before the first real consent, repeat step 4b with a new `$S`** against every `RUNNING`
+  sink from 4a (re-run 4a if Caddy's config changed). Now the API is clean too: `sudo docker compose logs
+  --since 10m caddy perf-lab-api | grep -c "$S"` prints 0, every `file` sink prints 0, and the
+  API's access log shows those requests as `/settings/oura-callback?code=[redacted]&state=[redacted]`.
+  Only then go on.
+- Connect Oura from Settings and finish it. `GET /v1/integrations/oura/connection` shows the
+  connection, and `oauth_authorizations` has one `succeeded` row whose `receipt_generation` is
+  the connection's `generation`.
+
+**Rolling P6b back:** `./scripts/deploy.sh 9e1ba29e7046f176ef09f93bb0e17c035422003d` (P6a's merge). Heads match, so there is no
+downgrade, no deletion and no env change. Attempt history and generations are kept. While P6a
+runs, a reconnect replaces credentials without advancing `generation` (ADR-0075). A browser
+mid-consent at the moment of rollback lands on P6a's "interrupted" message; a tab still running
+P6b gets "reload, then Connect Oura again" from P6a's `/authorize`.
+
+**Removing the old redirect URI** from the Oura console waits until P6b is no longer a rollback
+candidate, i.e. until a later release supersedes P6a as the rollback target.
 
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 
