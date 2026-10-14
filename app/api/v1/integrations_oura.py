@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,11 +37,21 @@ router = APIRouter(prefix="/integrations/oura", tags=["Integrations"])
 _PROVIDER = "oura"
 
 
+#: Shown by a web client from a newer release (P6b, PKCE) that reached this one, e.g. after a
+#: rollback. ADR-0075, crossing 4.
+RELOAD_TO_CONNECT = "Perf Lab was updated. Reload the page, then Connect Oura again."
+
+
 @router.get("/authorize", response_model=AuthorizeUrlResponse)
 async def authorize(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> AuthorizeUrlResponse:
     """Return the Oura OAuth authorize URL for the web app to open."""
+    # A client that sends a PKCE challenge expects its attempt to be bound to it. This release
+    # cannot do that, so it refuses rather than starting an unbound attempt in its place.
+    if {"code_challenge", "code_challenge_method"} & request.query_params.keys():
+        raise HTTPException(status_code=400, detail=RELOAD_TO_CONNECT)
     try:
         url = wearable_service.get_authorize_url(current_user.id, _PROVIDER)
     except OuraAuthError as exc:

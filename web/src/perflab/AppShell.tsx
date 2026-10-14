@@ -24,7 +24,7 @@ import { ExplainDrawer } from "./overlays/ExplainDrawer";
 import { BlockCreateModal } from "./overlays/BlockCreateModal";
 import { ObjectiveCreateModal } from "./overlays/ObjectiveCreateModal";
 import { MacrocycleCreateModal } from "./overlays/MacrocycleCreateModal";
-import { ouraRedirectResult, syncWearableIfStale } from "./wearableSync";
+import { readOuraReturn, syncWearableIfStale } from "./wearableSync";
 
 const SCREENS: Partial<Record<Screen, ComponentType>> = {
   overview: OverviewScreen,
@@ -71,7 +71,7 @@ export function AppShell() {
 
   // Back from Oura's consent screen: land on Settings, where the card reports the result.
   useEffect(() => {
-    if (ouraRedirectResult(window.location.search) !== null) setScreen("settings");
+    if (readOuraReturn() !== null) setScreen("settings");
   }, [setScreen]);
 
   // Pull wearable data when the athlete shows up, if it is stale. No nightly job does this.

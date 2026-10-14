@@ -338,6 +338,43 @@ keeps writing weekdays into `day_of_week`, so the order matters:
 `resolved_weekday` to each slot; the P5a web ignores it. A browser tab still running P5b against
 P5a's API labels slots "Day N" (block-relative) until it reloads.
 
+## Wearable OAuth (P6): schema first, the transaction second
+
+Migration `a061_oauth_authorizations` ships in **P6a** with no OAuth behavior change: it adds the
+`oauth_authorizations` table and `wearable_connections.generation` (default 1, existing rows get
+1), and nothing writes or reads them until **P6b**, which carries **no migration** (ADR-0075).
+P6a also carries rollback compatibility for P6b: `/authorize` refuses a PKCE request it cannot
+honour ("reload, then Connect Oura again"), and the web app explains an Oura return to
+`/settings/oura-callback` that it cannot finish. Neither the Oura console nor the box's env
+changes for P6a.
+
+**Before deploying P6a (required).** The same two steps as P5a, recorded in the P6a PR before
+`deploy.sh`:
+
+1. **Back up the database and record it**: the `pg_dump` block in "Before deploying P5a" above,
+   with the P6a SHA in the file name. Write its path and UTC timestamp into the P6a PR. No
+   recorded, readable backup, no deploy.
+2. **Confirm a one-off container runs Alembic alone**: the compose-config, image-inspect and
+   `git show <P6a sha>:Dockerfile` checks in "Before deploying P5a" above, with the same expected
+   output.
+
+**Rolling P6a back** (only while P6b has never run). `b45e3f8` will not boot on an `a061`
+database. Stop the API, then downgrade with a one-off on the P6a image, then deploy:
+
+```bash
+cd /opt/stack/infra && sudo docker compose stop perf-lab-api
+sudo docker compose run --rm --no-deps --entrypoint alembic perf-lab-api downgrade a060_session_block_day
+./scripts/deploy.sh b45e3f88584f64140b2fe6f1d6c9063ac5fc35d6
+```
+
+The downgrade **refuses, changing nothing**, while any attempt row exists or any connection is
+past generation 1: dropping them would discard history. Under P6a alone neither can happen, so
+the refusal means P6b ran. In that case don't downgrade: deploy the P6a SHA instead, which is
+P6b's rollback. Discarding the history is a deliberate, separate act (`DELETE FROM
+oauth_authorizations`, reset `generation`), never part of a rollback.
+
+**P6b's rollback target: `<P6a merge SHA>`** (pinned once P6a merges).
+
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 
 Migrations `a053`–`a057` add the state-correction chain: dispositions on workouts and benchmark
