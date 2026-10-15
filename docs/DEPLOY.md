@@ -486,6 +486,50 @@ P6b gets "reload, then Connect Oura again" from P6a's `/authorize`.
 **Removing the old redirect URI** from the Oura console waits until P6b is no longer a rollback
 candidate, i.e. until a later release supersedes P6a as the rollback target.
 
+## Wearable shadows (P7): provenance schema first, the hooks second
+
+Migration `a062_shadow_log_provenance` ships in **P7a** with no behavior change. It adds
+`source_wellness_sample_id`, `content_hash` and `supersedes_id` to `recovery_shadow_log` and
+`personalization_shadow_log`, plus the keys that make each sample's rows a correction chain
+(one root, each row superseded at most once, links that stay inside their chain and point only
+to older rows, and a sample link that must name the row's own athlete's sample, which adds
+`UNIQUE (id, user_id)` on `wellness_samples`). Today's
+writers keep inserting rows with all three NULL, which sit outside every key, and nothing writes
+the new columns until **P7b**, which carries **no migration**. P7b runs the shadows after Oura
+and phone ingest as well as after a manual check-in, writes one row per changed sample, and
+appends a superseding row when a sample is corrected.
+
+P7a also ships the reader P7b's rows need (`app/services/shadow_evidence.py`, used by the shadow
+summary). A row counts as current output only if it is a computed row, its sample's latest row
+across model versions, and computed from the sample's current values. An unlinked row counts
+only while no linked row of the athlete is newer: rows from before P7b stop counting once P7
+evidence follows them, while the unlinked rows P7a writes after a rollback from P7b are newer
+than every linked row and count. All of it is judged in one statement, against one database
+snapshot, with no cap on how many rows it examines. So after a rollback from P7b, P7a never
+shows a skip or a retired row as current, and still shows what its own writers produce.
+
+**Before deploying P7a (required).** The same two steps as P5a, recorded in the P7a PR before
+`deploy.sh`: a recorded, readable `pg_dump` backup with the P7a SHA in its file name, and the
+check that a one-off container runs Alembic alone.
+
+**Rolling P7a back** (only while P7b has never run). `040e48f` will not boot on an `a062`
+database. Stop the API, downgrade with a one-off on the P7a image, then deploy:
+
+```bash
+cd /opt/stack/infra && sudo docker compose stop perf-lab-api
+sudo docker compose run --rm --no-deps --entrypoint alembic perf-lab-api downgrade a061_oauth_authorizations
+./scripts/deploy.sh 040e48f9cca2dab41086472dc83671a43269eb57
+```
+
+The downgrade **refuses, changing nothing**, while any linked shadow row exists: dropping the
+columns would discard which sample each row came from and which rows were corrected. Under P7a
+alone no linked row can be written, so the refusal means P7b ran. In that case don't downgrade:
+deploy the P7a SHA instead, which is P7b's rollback. Discarding the links is a deliberate,
+separate act (`DELETE FROM recovery_shadow_log WHERE source_wellness_sample_id IS NOT NULL`, the
+same on `personalization_shadow_log`), never part of a rollback.
+
+**P7b's rollback target: `<P7a merge SHA>`.**
+
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 
 Migrations `a053`–`a057` add the state-correction chain: dispositions on workouts and benchmark

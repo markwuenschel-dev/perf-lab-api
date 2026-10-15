@@ -37,6 +37,8 @@ class WellnessSample(Base):
     __table_args__ = (
         # One sample per athlete per day per source (idempotent ingestion).
         UniqueConstraint("user_id", "date", "source", name="uq_wellness_user_date_source"),
+        # Mirrors alembic a062: the target of the shadow logs' owner-bound sample link.
+        UniqueConstraint("id", "user_id", name="uq_wellness_samples_id_user"),
         # Mirrors alembic a039. Declared here too so a metadata-built schema (the test
         # fixture) enforces the same bound the migration does, rather than the constraint
         # existing only in production.

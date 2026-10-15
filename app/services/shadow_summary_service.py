@@ -20,6 +20,7 @@ from app.models.dose_model_shadow import DoseModelShadowLog
 from app.models.mpc_shadow import MpcShadowLog
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.recovery_shadow import RecoveryShadowLog
+from app.services.shadow_evidence import latest_current_evidence
 
 _MPC_WINDOW = 30
 _DOSE_WINDOW = 30
@@ -116,11 +117,8 @@ async def _dose_model_section(db: AsyncSession, user_id: int) -> dict[str, Any] 
 
 
 async def _personalization_section(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
-    row = (await db.execute(
-        select(PersonalizationShadowLog).where(PersonalizationShadowLog.user_id == user_id)
-        .order_by(PersonalizationShadowLog.id.desc()).limit(1)
-    )).scalars().first()
-    if row is None:
+    row = await latest_current_evidence(db, PersonalizationShadowLog, user_id)
+    if not isinstance(row, PersonalizationShadowLog):
         return None
     delta = {
         axis: round(float(row.personalized_multiplier.get(axis, 0.0)) - float(row.population_multiplier.get(axis, 0.0)), 4)
@@ -137,11 +135,8 @@ async def _personalization_section(db: AsyncSession, user_id: int) -> dict[str, 
 
 
 async def _recovery_section(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
-    row = (await db.execute(
-        select(RecoveryShadowLog).where(RecoveryShadowLog.user_id == user_id)
-        .order_by(RecoveryShadowLog.id.desc()).limit(1)
-    )).scalars().first()
-    if row is None:
+    row = await latest_current_evidence(db, RecoveryShadowLog, user_id)
+    if not isinstance(row, RecoveryShadowLog):
         return None
     return {
         "model_version": row.model_version,

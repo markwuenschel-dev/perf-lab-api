@@ -18,6 +18,8 @@ GUARDED = [
     APP / "services" / "recovery_shadow_service.py",
     APP / "services" / "personalization_shadow_service.py",
     APP / "logic" / "recovery_telemetry.py",  # the shared calculation module
+    APP / "services" / "shadow_evidence.py",  # P7: the evidence reader
+    APP / "services" / "shadow_summary_service.py",
 ]
 
 

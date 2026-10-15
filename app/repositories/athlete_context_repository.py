@@ -13,20 +13,24 @@ Exception (AUD-C24): ``list_wellness_history`` returns immutable
 shadow feature-builder never holds a live entity an earlier shadow's rollback
 could expire. This is a flat scalar projection, not a ``state_bridge`` domain-vector
 mapping, so it does not pull domain logic into the repository — the rule this
-boundary exists to keep.
+boundary exists to keep. ``first_with_wellness_inputs`` (P7) hands its caller
+``WellnessInputs`` projections on the same terms.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any, TypeVar
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.athlete_state import AthleteState
 from app.models.wellness import WellnessSample
 from app.models.workout_log import WorkoutLog
+
+_Row = TypeVar("_Row")
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +46,21 @@ class WellnessHistoryPoint:
     sleep_hours: float | None
     hrv_ms: float | None
     resting_hr: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class WellnessInputs:
+    """Immutable projection of one sample's owner and the five values the recovery and
+    personalization shadows consume (the ``WellnessTelemetrySnapshot`` fields). ``None``
+    (missing) is preserved distinctly from a real ``0.0``.
+    """
+
+    user_id: int
+    sleep_hours: float | None
+    hrv_ms: float | None
+    resting_hr: float | None
+    soreness: float | None
+    mood: float | None
 
 
 class AthleteContextRepository:
@@ -205,6 +224,44 @@ class AthleteContextRepository:
             )
             for row in rows
         ]
+
+    async def first_with_wellness_inputs(
+        self,
+        statement: Select[tuple[_Row]],
+        source_sample_id: Any,
+        accept: Callable[[_Row, WellnessInputs | None], bool],
+    ) -> _Row | None:
+        """The first row ``statement`` yields that ``accept`` takes, given the current inputs
+        of the sample ``source_sample_id`` names (``None`` when it names none, or one that no
+        longer exists).
+
+        One statement, streamed until a row is accepted or the rows run out: each row and its
+        sample's values come from the same database snapshot, and no page size limits what is
+        examined. The caller's statement must select one entity and may order it."""
+        joined = statement.add_columns(
+            WellnessSample.user_id,
+            WellnessSample.sleep_hours,
+            WellnessSample.hrv_ms,
+            WellnessSample.resting_hr,
+            WellnessSample.soreness,
+            WellnessSample.mood,
+        ).outerjoin(WellnessSample, WellnessSample.id == source_sample_id)
+        result = await self.session.stream(joined.execution_options(yield_per=100))
+        try:
+            async for row in result:
+                inputs = None if row.user_id is None else WellnessInputs(
+                    user_id=row.user_id,
+                    sleep_hours=row.sleep_hours,
+                    hrv_ms=row.hrv_ms,
+                    resting_hr=row.resting_hr,
+                    soreness=row.soreness,
+                    mood=row.mood,
+                )
+                if accept(row[0], inputs):
+                    return row[0]
+            return None
+        finally:
+            await result.close()
 
     # ----- Workouts -----
     async def list_recent_workouts(self, user_id: int, limit: int) -> Sequence[WorkoutLog]:
