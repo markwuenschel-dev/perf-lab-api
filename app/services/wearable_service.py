@@ -33,6 +33,7 @@ from app.logic.prescription_evidence import utc_naive
 from app.models.wearable_connection import WearableConnection
 from app.schemas.wellness import WellnessSampleIn
 from app.services import readiness_service
+from app.services.wellness_shadow_hooks import run_wellness_shadows
 
 logger = logging.getLogger("perflab.wearable")
 
@@ -228,8 +229,11 @@ async def sync_connection(
             quality=r.quality,
             raw=r.raw or None,
         )
-        await readiness_service.upsert_wellness_sample(db, conn.user_id, payload)
+        sample = await readiness_service.upsert_wellness_sample(db, conn.user_id, payload)
         written += 1
+        # That day is committed: run its shadows now, before the next day's write (P7). Oura
+        # supplies no soreness, so the EKF records an explicit skip.
+        await run_wellness_shadows(db, sample, assimilate_soreness=False)
 
     conn.last_sync_at = datetime.now(UTC).replace(tzinfo=None)
     await db.commit()

@@ -20,6 +20,7 @@ GUARDED = [
     APP / "logic" / "recovery_telemetry.py",  # the shared calculation module
     APP / "services" / "shadow_evidence.py",  # P7: the evidence reader
     APP / "services" / "shadow_summary_service.py",
+    APP / "services" / "wellness_shadow_chain.py",  # P7b: the chain writer
 ]
 
 

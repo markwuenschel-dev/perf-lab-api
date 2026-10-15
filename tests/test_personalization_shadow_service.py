@@ -22,6 +22,7 @@ from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.user import AthleteProfile, User
 from app.models.wellness import WellnessSample
 from app.services.personalization_shadow_service import record_personalization_shadow
+from app.services.wellness_shadow_hooks import sample_ref
 
 pytestmark = pytest.mark.asyncio
 
@@ -74,7 +75,9 @@ async def _rows(db, user_id: int) -> list[PersonalizationShadowLog]:
 async def test_personalization_activates_with_enough_history(async_db):
     user = await _mk_user(async_db)
     last = await _seed_history(async_db, user.id, n_days=16)
-    await record_personalization_shadow(async_db, user.id, WellnessTelemetrySnapshot.from_sample(last))
+    await record_personalization_shadow(
+        async_db, sample_ref(last), WellnessTelemetrySnapshot.from_sample(last)
+    )
 
     rows = await _rows(async_db, user.id)
     assert len(rows) == 1
@@ -91,7 +94,9 @@ async def test_sparse_athlete_falls_back_to_population(async_db):
     user = await _mk_user(async_db, email="sparse@test.com")
     # only 3 days → fewer than _MIN_OBS pairs
     last = await _seed_history(async_db, user.id, n_days=3)
-    await record_personalization_shadow(async_db, user.id, WellnessTelemetrySnapshot.from_sample(last))
+    await record_personalization_shadow(
+        async_db, sample_ref(last), WellnessTelemetrySnapshot.from_sample(last)
+    )
 
     rows = await _rows(async_db, user.id)
     assert len(rows) == 1
@@ -109,7 +114,9 @@ async def test_estimator_failure_never_breaks_ingest(async_db, monkeypatch):
         raise RuntimeError("simulated estimator failure")
 
     monkeypatch.setattr("app.services.personalization_shadow_service.fit_athlete", _boom)
-    await record_personalization_shadow(async_db, uid, WellnessTelemetrySnapshot.from_sample(last))  # must not raise
+    await record_personalization_shadow(  # must not raise
+        async_db, sample_ref(last), WellnessTelemetrySnapshot.from_sample(last)
+    )
 
     count = (await async_db.execute(
         select(func.count()).where(PersonalizationShadowLog.user_id == uid)

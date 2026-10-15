@@ -14,7 +14,8 @@ shadow feature-builder never holds a live entity an earlier shadow's rollback
 could expire. This is a flat scalar projection, not a ``state_bridge`` domain-vector
 mapping, so it does not pull domain logic into the repository — the rule this
 boundary exists to keep. ``first_with_wellness_inputs`` (P7) hands its caller
-``WellnessInputs`` projections on the same terms.
+``WellnessInputs`` projections, and ``wellness_inputs`` / ``lock_wellness_inputs`` return them,
+on the same terms.
 """
 from __future__ import annotations
 
@@ -224,6 +225,59 @@ class AthleteContextRepository:
             )
             for row in rows
         ]
+
+    async def wellness_inputs(self, sample_ids: Sequence[int]) -> dict[int, WellnessInputs]:
+        """The current committed shadow inputs of each sample, keyed by sample id, as
+        immutable projections. A sample that no longer exists is absent from the result."""
+        if not sample_ids:
+            return {}
+        rows = await self.session.execute(
+            select(
+                WellnessSample.id,
+                WellnessSample.user_id,
+                WellnessSample.sleep_hours,
+                WellnessSample.hrv_ms,
+                WellnessSample.resting_hr,
+                WellnessSample.soreness,
+                WellnessSample.mood,
+            ).where(WellnessSample.id.in_(list(sample_ids)))
+        )
+        return {
+            row.id: WellnessInputs(
+                user_id=row.user_id,
+                sleep_hours=row.sleep_hours,
+                hrv_ms=row.hrv_ms,
+                resting_hr=row.resting_hr,
+                soreness=row.soreness,
+                mood=row.mood,
+            )
+            for row in rows
+        }
+
+    async def lock_wellness_inputs(self, sample_id: int) -> WellnessInputs | None:
+        """One sample's current shadow inputs, read ``FOR SHARE``: the row lock is held until
+        the caller's transaction ends, so no update to the sample can commit meanwhile (P7b
+        publishes a shadow row only against inputs it holds this way)."""
+        row = (await self.session.execute(
+            select(
+                WellnessSample.user_id,
+                WellnessSample.sleep_hours,
+                WellnessSample.hrv_ms,
+                WellnessSample.resting_hr,
+                WellnessSample.soreness,
+                WellnessSample.mood,
+            ).where(WellnessSample.id == sample_id).with_for_update(read=True)
+        )).one_or_none()
+        if row is None:
+            return None
+        return WellnessInputs(
+            user_id=row.user_id,
+            sleep_hours=row.sleep_hours,
+            hrv_ms=row.hrv_ms,
+            resting_hr=row.resting_hr,
+            soreness=row.soreness,
+            mood=row.mood,
+        )
 
     async def first_with_wellness_inputs(
         self,

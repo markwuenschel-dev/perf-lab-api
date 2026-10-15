@@ -41,9 +41,16 @@ existing `jose` infra; the distinct `purpose` claim prevents confusion with acce
 
 The adapter normalizes provider data into `NormalizedWellness`, and sync writes it through
 the **existing** `readiness_service.upsert_wellness_sample` (idempotent on
-`(user_id, date, source)`, `source="oura"`). No parallel ingestion path — readiness,
-baselines, and the shadow loops pick the data up unchanged
-([ADR-0026](0026-readiness-combine-rule.md)).
+`(user_id, date, source)`, `source="oura"`). No parallel ingestion path: readiness and
+baselines read that sink unchanged ([ADR-0026](0026-readiness-combine-rule.md)).
+
+**Correction (P7, 2026-10-15).** This section used to say the shadow loops also "pick the data
+up unchanged". They did not: the shadows ran only from the manual `POST /v1/wellness` route,
+not from the sink, so neither the Oura sync nor the phone ingest reached them (2026-10-03 wiring
+audit). Since P7 every path runs them after its sample commits, through
+`wellness_shadow_hooks.run_wellness_shadows`: the recovery shadow records only for a sample of
+the as-of UTC day (an explicit skip row otherwise), personalization records every day, and the
+EKF skips wearable sources, which supply no soreness.
 
 **Guardrails:**
 - Never serialize token columns in an API response (`WearableConnectionOut` omits them).
