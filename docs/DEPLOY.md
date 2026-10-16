@@ -528,7 +528,7 @@ deploy the P7a SHA instead, which is P7b's rollback. Discarding the links is a d
 separate act (`DELETE FROM recovery_shadow_log WHERE source_wellness_sample_id IS NOT NULL`, the
 same on `personalization_shadow_log`), never part of a rollback.
 
-**P7b's rollback target: `<P7a merge SHA>`.**
+**P7b's rollback target: `0a012e7`.**
 
 **What P7b changes.** Every wellness write runs the shadows after it commits: a manual
 check-in, each day of an Oura sync, and a phone push. The recovery shadow records only for a
@@ -540,7 +540,7 @@ that day). The EKF still assimilates only manual soreness. An unchanged re-sync 
 a correction appends one superseding row per chain. A sync of N new days runs the
 personalization fit N times.
 
-**Rolling P7b back** (`deploy.sh <P7a merge SHA>`; heads match, so it boots). The P7a app
+**Rolling P7b back** (`deploy.sh 0a012e7`; heads match, so it boots). The P7a app
 goes back to writing unlinked rows from the manual route only, and the wearable paths stop
 reaching the shadows. Rows P7b wrote stay as they were. P7a's shadow summary already uses the
 evidence reader, so it never shows a P7b skip, a retired row or a row whose sample has changed
