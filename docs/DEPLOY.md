@@ -528,7 +528,26 @@ deploy the P7a SHA instead, which is P7b's rollback. Discarding the links is a d
 separate act (`DELETE FROM recovery_shadow_log WHERE source_wellness_sample_id IS NOT NULL`, the
 same on `personalization_shadow_log`), never part of a rollback.
 
-**P7b's rollback target: `<P7a merge SHA>`.**
+**P7b's rollback target: `0a012e7`.**
+
+**What P7b changes.** Every wellness write runs the shadows after it commits: a manual
+check-in, each day of an Oura sync, and a phone push. The recovery shadow records only for a
+sample of the current UTC day, because it pairs the day with the athlete's current fatigue
+state; any other day gets a row marked `decision_impact = 'skipped_not_as_of_day'` instead,
+and a skipped correction retires that sample's earlier computed row from the shadow summary.
+Personalization records every day (a computation made at sync time, not a prediction made on
+that day). The EKF still assimilates only manual soreness. An unchanged re-sync adds no rows;
+a correction appends one superseding row per chain. A sync of N new days runs the
+personalization fit N times.
+
+**Rolling P7b back** (`deploy.sh 0a012e7`; heads match, so it boots). The P7a app
+goes back to writing unlinked rows from the manual route only, and the wearable paths stop
+reaching the shadows. Rows P7b wrote stay as they were. P7a's shadow summary already uses the
+evidence reader, so it never shows a P7b skip, a retired row or a row whose sample has changed
+since as current, and the unlinked rows P7a writes from then on are newer than every P7b row, so
+they count. What the rollback costs: only the manual route feeds the shadows until P7b is
+redeployed, and on redeploy P7b's next linked row for an athlete retires the unlinked rows
+written before it.
 
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 

@@ -19,6 +19,7 @@ from app.logic.prescription_evidence import utc_naive
 from app.models.wellness_ingest_token import WellnessIngestToken
 from app.schemas.wellness import WellnessIngestIn, WellnessSampleIn, WellnessSampleOut
 from app.services import readiness_service
+from app.services.wellness_shadow_hooks import run_wellness_shadows
 
 #: Distinguishes an ingest token from a login JWT at a glance (and in a leaked-secret scan).
 TOKEN_PREFIX = "plw_"
@@ -117,6 +118,9 @@ async def ingest(
     )
     # Materialize before the next commit expires the row (async lazy-loads would fail).
     out = WellnessSampleOut.model_validate(sample)
+    # The sample is committed; snapshot the shadows' inputs while it is still loaded (P7). The
+    # push carries no soreness, so the EKF records an explicit skip.
+    await run_wellness_shadows(db, sample, assimilate_soreness=False)
     token.last_used_at = _now()
     await db.commit()
     return out

@@ -19,7 +19,7 @@ import dataclasses
 import enum
 import typing
 from collections.abc import Callable, Mapping, Sequence
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import NoneType, UnionType
 from typing import Any
@@ -34,6 +34,7 @@ from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.athlete_state import AthleteState
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.models.user import User
+from app.models.wellness import WellnessSample
 from app.services import (
     capacity_floor_shadow_service,
     decision_telemetry,
@@ -45,6 +46,7 @@ from app.services import (
     recovery_shadow_service,
 )
 from app.services.telemetry_common import best_effort_write
+from app.services.wellness_shadow_hooks import sample_ref
 
 WRITERS: list[Callable[..., Any]] = [
     recovery_shadow_service.record_recovery_shadow,
@@ -250,11 +252,18 @@ async def test_a_real_writer_runs_beside_an_open_request_transaction(async_db):
     user = User(email="f1-recovery@test.com", hashed_password="h", is_active=True)
     async_db.add(user)
     await async_db.commit()
+    as_of = datetime(2026, 10, 15, 9, tzinfo=UTC)
+    sample = WellnessSample(user_id=user.id, date=as_of.date(), source="manual",
+                            sleep_hours=7.5, hrv_ms=60.0, resting_hr=50.0)
+    async_db.add(sample)
+    await async_db.commit()
     staged = await _staged_user(async_db, "f1-staged-recovery@test.com")
     snapshot = WellnessTelemetrySnapshot(
         sleep_hours=7.5, hrv_ms=60.0, resting_hr=50.0, soreness=None, mood=None
     )
-    await recovery_shadow_service.record_recovery_shadow(async_db, user.id, snapshot)
+    await recovery_shadow_service.record_recovery_shadow(
+        async_db, sample_ref(sample), snapshot, as_of=as_of
+    )
     assert await _count(async_db.bind, RecoveryShadowLog, user_id=user.id) == 1
     assert await _count(async_db.bind, User, email="f1-staged-recovery@test.com") == 0
     assert inspect(staged).expired is False

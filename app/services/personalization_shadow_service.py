@@ -9,6 +9,11 @@ ones — with the shrinkage ``w_i``, observation count ``n_i``, and parameter un
 A new/sparse athlete has ``n_i`` below the activation floor, so ``w_i=0`` and personalized ≡
 population — exactly what partial pooling prescribes. Personalization sharpens as their own
 data accumulates.
+
+P7: each row joins its sample's correction chain (``wellness_shadow_chain``) and is written for
+every sample day. A row is a computation made when it was written, on the history as it stood
+then; for a backdated or synced earlier day it is NOT a prediction made on that day, and nothing
+may present it as one. An unchanged re-sync adds nothing, even if the history has grown since.
 """
 from __future__ import annotations
 
@@ -34,7 +39,14 @@ from app.models.athlete_state import AthleteState
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.repositories.athlete_context_repository import AthleteContextRepository
 from app.repositories.athlete_profile_repository import AthleteProfileRepository
+from app.services.shadow_evidence import RECORDED
 from app.services.telemetry_common import best_effort_write
+from app.services.wellness_shadow_chain import (
+    WellnessSampleRef,
+    append_to_chain,
+    head_holds,
+    lock_current_inputs,
+)
 
 _NAMESPACE = "q2_recovery"
 _PERSONALIZED_SIGNALS = ("hrv", "rhr")  # signals we personalize (sleep/stress kept as prior)
@@ -47,6 +59,7 @@ _POP_WITHIN = 0.09
 _MIN_OBS = 8              # below this, personalization stays at the population prior
 _WINDOW_DAYS = 180
 _SCALE_CLAMP = (0.5, 2.0)
+_PARAMETER = "recovery_beta"
 
 
 def _zscore(field: str, value: float, clip: float) -> float:
@@ -101,62 +114,82 @@ async def _build_recovery_frame(
 
 
 async def record_personalization_shadow(
-    db: AsyncSession, user_id: int, snapshot: WellnessTelemetrySnapshot
-) -> None:
-    """Write one per-athlete personalization shadow row. Never raises to the caller.
+    db: AsyncSession, ref: WellnessSampleRef, snapshot: WellnessTelemetrySnapshot
+) -> str:
+    """Append this sample's personalization shadow row to its chain when its inputs changed.
+    Never raises to the caller.
 
     Takes an immutable current-wellness snapshot, never a live WellnessSample ORM instance
-    (AUD-C24)."""
-    async with best_effort_write(db, f"personalization shadow log for user {user_id}") as tx:
-        tdb = tx.db  # F1: the telemetry transaction's own session
-        params = default_parameters()
-        artifact = load_namespace_override(_NAMESPACE)
-        if artifact is None:
-            return  # no population recovery prior → nothing to personalize against
-        population = apply_parameter_overrides(params, artifact, allow_shadow=True)
-        model_version = str(artifact["version"])
-        mu0_resp = dict(artifact.get("training", {}).get("learned_response", {}))
+    (AUD-C24). Returns ``recorded`` | ``no_artifact`` | ``unchanged`` | ``stale`` | ``failed``.
+    """
+    outcome = "failed"
+    async with best_effort_write(db, f"personalization shadow log for user {ref.user_id}") as tx:
+        outcome = await _append(tx.db, ref, snapshot)  # F1: the telemetry session
+    return "failed" if tx.failed else outcome
 
-        profile = await AthleteProfileRepository(tdb).get_for_user(user_id)
-        scale = experience_prior_scale(profile.experience_level if profile else None)
 
-        clip = params.recovery_zscore_scale
-        Z, y = await _build_recovery_frame(tdb, user_id, clip)
-        n = int(y.shape[0])
+async def _append(
+    tdb: AsyncSession, ref: WellnessSampleRef, snapshot: WellnessTelemetrySnapshot
+) -> str:
+    user_id = ref.user_id
+    params = default_parameters()
+    artifact = load_namespace_override(_NAMESPACE)
+    if artifact is None:
+        return "no_artifact"  # no population recovery prior → nothing to personalize against
+    population = apply_parameter_overrides(params, artifact, allow_shadow=True)
+    model_version = str(artifact["version"])
+    digest = await lock_current_inputs(tdb, ref, snapshot)
+    if digest is None:
+        return "stale"
+    if await head_holds(tdb, PersonalizationShadowLog, ref, model_version, digest, RECORDED,
+                        _PARAMETER):
+        return "unchanged"
+    mu0_resp = dict(artifact.get("training", {}).get("learned_response", {}))
 
-        personalized = copy.deepcopy(population)
-        w_values: list[float] = []
-        theta_trace = 0.0
-        if n >= _MIN_OBS:
-            beta_hat, _within, _n_fit, gram_inv_diag = fit_athlete(Z, y)
-            idx_of = {sig: i for i, sig in enumerate(_FIT_SIGNALS)}
-            for sig in _PERSONALIZED_SIGNALS:
-                i = idx_of[sig]
-                mu = scale * float(mu0_resp.get(f"z_{sig}", 0.0))
-                # Gram-based sampling variance σ²·(ZᵀZ)⁻¹_jj (calibrated P^θ, ADR-0043 follow-up).
-                sampling_var = _POP_WITHIN * float(gram_inv_diag[i])
-                ps = partial_pool_with_sampling_var(mu, float(beta_hat[i]), sampling_var, _POP_TAU2, n=n)
-                w_values.append(ps.weight)
-                theta_trace += ps.p_theta * len(FatigueState.KEYS)
-                if abs(mu) > 1e-6:
-                    ratio = max(_SCALE_CLAMP[0], min(_SCALE_CLAMP[1], ps.value / mu))
-                    for axis in FatigueState.KEYS:
-                        axis_beta = personalized.recovery_clearance_beta.get(axis)
-                        if axis_beta and sig in axis_beta:
-                            axis_beta[sig] = axis_beta[sig] * ratio
+    profile = await AthleteProfileRepository(tdb).get_for_user(user_id)
+    scale = experience_prior_scale(profile.experience_level if profile else None)
 
-        w_mean = float(np.mean(w_values)) if w_values else 0.0
-        tdb.add(
-            PersonalizationShadowLog(
-                user_id=user_id,
-                parameter="recovery_beta",
-                model_version=model_version,
-                n_obs=n,
-                shrinkage_weight=round(w_mean, 4),
-                theta_trace=round(theta_trace, 6),
-                wellness=wellness_snapshot(snapshot),
-                population_multiplier=multipliers_by_axis(population, snapshot),
-                personalized_multiplier=multipliers_by_axis(personalized, snapshot),
-                decision_impact="none_shadow_only",
-            )
-        )
+    clip = params.recovery_zscore_scale
+    Z, y = await _build_recovery_frame(tdb, user_id, clip)
+    n = int(y.shape[0])
+
+    personalized = copy.deepcopy(population)
+    w_values: list[float] = []
+    theta_trace = 0.0
+    if n >= _MIN_OBS:
+        beta_hat, _within, _n_fit, gram_inv_diag = fit_athlete(Z, y)
+        idx_of = {sig: i for i, sig in enumerate(_FIT_SIGNALS)}
+        for sig in _PERSONALIZED_SIGNALS:
+            i = idx_of[sig]
+            mu = scale * float(mu0_resp.get(f"z_{sig}", 0.0))
+            # Gram-based sampling variance σ²·(ZᵀZ)⁻¹_jj (calibrated P^θ, ADR-0043 follow-up).
+            sampling_var = _POP_WITHIN * float(gram_inv_diag[i])
+            ps = partial_pool_with_sampling_var(mu, float(beta_hat[i]), sampling_var, _POP_TAU2, n=n)
+            w_values.append(ps.weight)
+            theta_trace += ps.p_theta * len(FatigueState.KEYS)
+            if abs(mu) > 1e-6:
+                ratio = max(_SCALE_CLAMP[0], min(_SCALE_CLAMP[1], ps.value / mu))
+                for axis in FatigueState.KEYS:
+                    axis_beta = personalized.recovery_clearance_beta.get(axis)
+                    if axis_beta and sig in axis_beta:
+                        axis_beta[sig] = axis_beta[sig] * ratio
+
+    w_mean = float(np.mean(w_values)) if w_values else 0.0
+    appended = await append_to_chain(
+        tdb, ref, snapshot,
+        lambda: PersonalizationShadowLog(
+            user_id=user_id,
+            parameter=_PARAMETER,
+            model_version=model_version,
+            n_obs=n,
+            shrinkage_weight=round(w_mean, 4),
+            theta_trace=round(theta_trace, 6),
+            wellness=wellness_snapshot(snapshot),
+            population_multiplier=multipliers_by_axis(population, snapshot),
+            personalized_multiplier=multipliers_by_axis(personalized, snapshot),
+            decision_impact=RECORDED,
+        ),
+        model=PersonalizationShadowLog, model_version=model_version, kind=RECORDED,
+        parameter=_PARAMETER,
+    )
+    return "recorded" if appended == "appended" else appended

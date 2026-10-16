@@ -32,7 +32,8 @@ calibration is **gated**: using the Gram-based coefficient sampling variance `σ
 (not the `σ²/n` approximation, which understated it and made `P^θ` ~2-4× overconfident), mean
 `tr(P^θ)/MSE` lands ~1.0-1.2 across seeds, so the parameter uncertainty is trustworthy.
 
-**Shadow wiring:** on wellness ingest, `personalization_shadow_service` builds the athlete's
+**Shadow wiring:** on every wellness ingest (manual, Oura or phone since P7),
+`personalization_shadow_service` builds the athlete's
 bounded-window recovery frame, partial-pools their β toward the Q2 population prior, and logs
 population-vs-personalized clearance multipliers + `n_i`, `w_i`, `tr(P^θ)` to
 `personalization_shadow_log`. It computes multipliers via `recovery_telemetry` — never calling

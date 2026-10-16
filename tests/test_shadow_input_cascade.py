@@ -30,6 +30,7 @@ from app.models.user import User
 from app.models.wellness import WellnessSample
 from app.services.personalization_shadow_service import record_personalization_shadow
 from app.services.telemetry_common import best_effort_write
+from app.services.wellness_shadow_hooks import sample_ref
 
 pytestmark = pytest.mark.asyncio
 
@@ -70,12 +71,13 @@ async def test_early_shadow_rollback_does_not_starve_a_later_shadow(factory):
 
         # Snapshot the later shadow's input from the valid sample, before the chain runs.
         snapshot = WellnessTelemetrySnapshot.from_sample(sample)
+        ref = sample_ref(sample)
 
         # Early shadow fails and rolls back -> the shared `sample` (and `user`) are now expired.
         await _fail_early_shadow(db)
 
-        # The later shadow (personalization) uses the immutable snapshot + the captured id.
-        await record_personalization_shadow(db, uid, snapshot)
+        # The later shadow (personalization) uses the immutable snapshot + the captured ref.
+        await record_personalization_shadow(db, ref, snapshot)
 
     # Fresh session (never made the writes): the later shadow's row is durable with the
     # ORIGINAL values, and the live wellness write survived.

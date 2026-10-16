@@ -5,23 +5,15 @@
 ``GET  /v1/readiness``  the one backend-owned readiness number (combine rule: ADR-0026)
 """
 
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.logic.ekf.wellness_input import build_wellness_shadow_input
-from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.user import User
 from app.schemas.wellness import ReadinessScore, WellnessSampleIn, WellnessSampleOut
-from app.services import (
-    ekf_shadow_service,
-    personalization_shadow_service,
-    readiness_service,
-    recovery_shadow_service,
-)
+from app.services import readiness_service
+from app.services.wellness_shadow_hooks import run_wellness_shadows
 
 router = APIRouter()
 
@@ -33,30 +25,12 @@ async def ingest_wellness(
     current_user: User = Depends(get_current_user),
 ) -> WellnessSampleOut:
     sample = await readiness_service.upsert_wellness_sample(db, current_user.id, payload)
-    # Materialize the response BEFORE the shadow writes: each is best-effort and rolls the
-    # shared session back on failure, which expires the just-committed `sample` — reading it
-    # afterwards would trigger an async lazy-load outside a greenlet and 500 a durable write.
-    # (Same guard as the workout path, state_service.py:1056-1058.)
+    # Materialize the response before the shadows run. They use their own sessions (F1) and
+    # never touch this one, so this is belt and braces rather than the old rollback guard.
     result = WellnessSampleOut.model_validate(sample)
-    # Snapshot ALL immutable shadow inputs from the VALID sample now, before any shadow runs
-    # (AUD-C8/C24): no shadow writer may receive a live ORM instance an earlier shadow's
-    # rollback could expire. (sample.user_id == current_user.id by construction of the upsert
-    # above — the idempotency row's tenant is consistent with the source sample.)
-    telemetry_snapshot = WellnessTelemetrySnapshot.from_sample(sample)
-    ekf_input = build_wellness_shadow_input(current_user.id, sample.id, sample.soreness)
-    # Shadow-only (Q2 recovery priors): record baseline-vs-learned clearance multipliers.
-    # Best-effort — never affects the response or a live decision.
-    await recovery_shadow_service.record_recovery_shadow(db, current_user.id, telemetry_snapshot)
-    # Shadow-only (ADR-0043): per-athlete partial-pooled recovery β vs the population prior.
-    # Best-effort — never affects the response or a live decision.
-    await personalization_shadow_service.record_personalization_shadow(
-        db, current_user.id, telemetry_snapshot
-    )
-    # Shadow EKF (ADR-0041): assimilate the soreness reading into the belief's fatigue block,
-    # exactly once per (observation, model version) — AUD-C8 DB-enforced idempotency.
-    await ekf_shadow_service.record_ekf_wellness_observation(
-        db, current_user.id, ekf_input, observed_at=datetime.now(UTC)
-    )
+    # Shadow-only and best-effort (P7): recovery (as-of UTC day only), personalization, and the
+    # EKF's soreness assimilation (exactly once per observation and model version, AUD-C8).
+    await run_wellness_shadows(db, sample, assimilate_soreness=True)
     return result
 
 

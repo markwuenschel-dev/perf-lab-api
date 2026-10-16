@@ -85,8 +85,6 @@ from datetime import UTC, timedelta
 from sqlalchemy import func, select
 
 from app.core.db import AsyncSessionLocal
-from app.logic.ekf.wellness_input import build_wellness_shadow_input
-from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.athlete_state import AthleteState
 from app.models.mesocycle import BlockGoal, PlannedSession, SessionStatus
 from app.models.user import AthleteProfile, User
@@ -95,14 +93,12 @@ from app.schemas.wellness import WellnessSampleIn
 from app.schemas.workouts import WorkoutLog, WorkoutSetEntry
 from app.scripts import load_hit_strength, load_pmdata, load_scopesense
 from app.services import (
-    ekf_shadow_service,
-    personalization_shadow_service,
     planning_service,
     prescription_service,
     readiness_service,
-    recovery_shadow_service,
 )
 from app.services.state_service import initialize_athlete_state, process_new_workout
+from app.services.wellness_shadow_hooks import run_wellness_shadows
 
 # Training days as ISO weekday numbers (Mon=1). Three a week leaves recovery days between
 # sessions, which is what `personalization_shadow_service` needs to find paired
@@ -434,10 +430,8 @@ async def _replay_athlete(
         day = start + timedelta(days=entry.offset)
 
         # --- morning check-in -------------------------------------------------------
-        # Mirrors app/api/v1/wellness.py: create the row, snapshot every shadow input from
-        # the still-valid sample, THEN run the shadow writers. Each shadow rolls the shared
-        # session back on failure, which would expire a live ORM instance handed to a later
-        # one.
+        # Mirrors app/api/v1/wellness.py: create the row, then run every shadow through the
+        # same entry point, evaluated as of that simulated day.
         #
         # Skipped entirely when the source logged no check-in. Writing a placeholder row
         # would manufacture a wellness reading nobody gave.
@@ -447,18 +441,11 @@ async def _replay_athlete(
                 user.id,
                 WellnessSampleIn(date=day.date(), source=wellness_source, **entry.wellness),  # type: ignore[arg-type]
             )
-            telemetry_snapshot = WellnessTelemetrySnapshot.from_sample(sample)
-            ekf_input = build_wellness_shadow_input(user.id, sample.id, sample.soreness)
-
-            await recovery_shadow_service.record_recovery_shadow(db, user.id, telemetry_snapshot)
-            await personalization_shadow_service.record_personalization_shadow(
-                db, user.id, telemetry_snapshot
-            )
-            outcome = await ekf_shadow_service.record_ekf_wellness_observation(
-                db, user.id, ekf_input, observed_at=day.replace(tzinfo=UTC)
+            outcomes = await run_wellness_shadows(
+                db, sample, as_of=day.replace(tzinfo=UTC), assimilate_soreness=True
             )
             counts["wellness_days"] += 1
-            if outcome == "assimilated":
+            if outcomes.ekf == "assimilated":
                 counts["ekf_updates"] += 1
 
         if not entry.sessions:
