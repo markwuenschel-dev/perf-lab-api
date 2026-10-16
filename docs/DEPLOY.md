@@ -411,9 +411,9 @@ URI, and generation tracking starts with P6b's first link.
    ```bash
    cd /opt/stack/infra
    sudo docker compose config caddy                       # which Caddyfile, which volumes
-   sudo docker compose exec -T caddy wget -qO- http://localhost:2019/config/ > /tmp/caddy-running.json \
+   sudo docker compose exec -T caddy wget -qO- http://127.0.0.1:2019/config/ </dev/null > /tmp/caddy-running.json \
      || echo "admin API unreachable"
-   sudo docker compose exec -T caddy caddy adapt --config /etc/caddy/Caddyfile > /tmp/caddy-adapted.json
+   sudo docker compose exec -T caddy caddy adapt --config /etc/caddy/Caddyfile </dev/null > /tmp/caddy-adapted.json
    python3 - /tmp/caddy-running.json /tmp/caddy-adapted.json <<'PY'
    import json, sys
    for role, path in zip(("RUNNING", "cross-check"), sys.argv[1:]):
@@ -452,8 +452,14 @@ URI, and generation tracking starts with P6b's first link.
        "https://perflab.44-198-76-44.nip.io$path?code=$S-code&state=$S-state"
    done
    sudo docker compose logs --since 10m caddy | grep -c "$S"               # stdout/stderr sinks: 0
-   # for each `file <path>` sink:  sudo docker compose exec -T caddy grep -c "$S" <path>   → 0
+   # for each `file <path>` sink:  sudo docker compose exec -T caddy grep -c "$S" <path> </dev/null   → 0
    ```
+
+   Two details in 4a and 4b. Caddy's admin API listens on `127.0.0.1:2019` only, and BusyBox
+   `wget` in the Caddy image resolves `localhost` to `::1`, where the connection is refused, so
+   the address is spelled out. Each `exec -T` reads from `</dev/null`, because otherwise it
+   takes the rest of a script piped in over `ssh` as its own stdin, and the later commands
+   never run.
 
    The preflight passes only when every `RUNNING` sink was checked and showed 0. A `file` sink
    that doesn't exist yet counts as checked only if the logger's `include`/`exclude` shows it
