@@ -3,7 +3,7 @@
 // Non-component helpers for the Objectives feature, kept out of the screen file
 // so exporting them doesn't trip react-refresh/only-export-components. Shared by
 // ObjectivesScreen (the list) and OverviewScreen (the top-objective hero card).
-import type { AssessmentSurfaceRead, ConfidenceStatus, ObjectiveRead } from "@/types";
+import type { AssessmentSurfaceRead, ConfidenceStatus, DrivingObjectiveRead, ObjectiveRead } from "@/types";
 
 // Active-first, then lowest priority number (highest priority) first, then
 // nearest days_to_go (nulls sort last within a priority tier).
@@ -66,4 +66,49 @@ export function evidenceByBenchmarkCode(surface: AssessmentSurfaceRead | null): 
     for (const card of group.cards) out.set(card.code, card.confidence_status);
   }
   return out;
+}
+
+/** Where the driving objective came from (`GET /v1/objectives/driving`). */
+export type DrivingSource = NonNullable<DrivingObjectiveRead["source"]>;
+
+/**
+ * What the Overview hero shows, from one successful (list, driving) pair.
+ *
+ * The server's selector (`resolve_driving_objective`) is the only authority on which
+ * objective drives prescription. The client never sorts or picks: it only looks the
+ * returned id up in the active list, and when it can't, it says so instead of
+ * substituting another objective.
+ *
+ * - `none`: a successful empty list AND no driving objective. Only this earns "set a goal".
+ * - `objective`: the driving id found in the list.
+ * - `missing`: the driving id is not in the active list. `/driving` returns only an id and
+ *   a source, so absence does not tell us the objective's status (achieved, abandoned, or
+ *   created/changed between the two reads).
+ * - `disagree`: no driving objective, yet the list has active objectives. The two reads
+ *   saw different moments (an objective changed between them); retry, never "set a goal".
+ */
+export type HeroModel =
+  | { kind: "none" }
+  | { kind: "objective"; objective: ObjectiveRead; source: DrivingSource | null }
+  | { kind: "missing"; source: DrivingSource | null }
+  | { kind: "disagree" };
+
+export function heroModel(active: readonly ObjectiveRead[], driving: DrivingObjectiveRead): HeroModel {
+  const id = driving.objective_id;
+  if (id == null) return active.length === 0 ? { kind: "none" } : { kind: "disagree" };
+  const objective = active.find((o) => o.id === id);
+  return objective
+    ? { kind: "objective", objective, source: driving.source ?? null }
+    : { kind: "missing", source: driving.source ?? null };
+}
+
+/** The hero's kicker for a found objective. Names the lever that chose it, never a
+ *  claim that one objective controls all training (on the priority path taper comes
+ *  from the nearest upcoming objective, not this one). */
+export function heroKicker(source: DrivingSource | null): string {
+  return source === "macrocycle_anchor"
+    ? "Program objective"
+    : source === "priority"
+      ? "Highest-priority objective"
+      : "Objective";
 }

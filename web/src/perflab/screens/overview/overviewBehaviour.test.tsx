@@ -62,6 +62,7 @@ vi.mock("@/api/perfLabClient", () => ({
   getDashboardOverview: () => (dashboardReads += 1, Promise.resolve({ training_load: { acwr: null, status: "insufficient", sweet_spot_low: 0.8, sweet_spot_high: 1.3 }, adherence: { pct: null, streak_days: 0, window_days: 28 } })),
   getTodayPlannedSession: () => Promise.resolve(todayResponse),
   listObjectives: () => Promise.resolve([]),
+  getDrivingObjective: () => Promise.resolve({ objective_id: null, source: null }),
   listMacrocycles: () => Promise.resolve([]),
 }));
 
