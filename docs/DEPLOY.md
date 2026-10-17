@@ -555,6 +555,128 @@ they count. What the rollback costs: only the manual route feeds the shadows unt
 redeployed, and on redeploy P7b's next linked row for an athlete retires the unlinked rows
 written before it.
 
+## Auth rate limits (P9): the proxy network first, the limits second
+
+P9 has no migration. It needs one thing from the box before its image runs: uvicorn must
+trust Caddy's address, and only Caddy's. **A production container without a usable
+`FORWARDED_ALLOW_IPS` does not start** (`app.main._check_production_proxy_trust`): the
+value must be exactly one specific IP address. Empty, `*`, a network such as
+`172.18.0.0/16`, a list or a malformed value stops startup with a message naming the problem.
+So the network below is built and verified while the old image still runs, and P9 deploys
+after it (ADR-0076).
+
+**What P9 changes** (`app/core/rate_limit.py`):
+
+| route | rate, per client IP, per worker | strategy |
+|---|---|---|
+| `POST /auth/token` | 10 per minute | moving window |
+| `POST /auth/register` | 5 per hour | moving window |
+
+- Each route has its own bucket. Over the rate: `429 {"detail": "Too many requests"}` with
+  `Retry-After`, and the request never reaches the credential lookup or bcrypt.
+- Counters live in each uvicorn worker's memory. The image runs two workers, so one IP gets
+  at most 20 logins in any rolling 60 seconds and 10 registrations in any rolling 60 minutes —
+  **with two stable workers, healthy counters and no resets**. Every restart or deploy
+  empties the counters.
+- A counter failure is logged at ERROR (`Rate limit counter failed for auth.token`) and the
+  request proceeds normally: logins and registrations keep working, wrong passwords still 401.
+- This slows repeated attempts from one address. It is not protection against a distributed
+  flood.
+- Login now runs one bcrypt check on every attempt, against a fixed dummy hash when the
+  email has no account, so a failed login takes the same work either way. Registration still
+  answers 409 for a registered email (by design), so whether an account exists stays
+  discoverable, at 5 attempts per hour per address per worker.
+- The global error handler now forwards exception headers: `Retry-After` on 429s and
+  `WWW-Authenticate: Bearer` on login's 401 reach clients.
+
+### P9 box network: Caddy is the API's only peer, and the API trusts only Caddy
+
+Do this **before** deploying P9, while the old image still runs. P9 refuses to start in production
+without a valid `FORWARDED_ALLOW_IPS`, so the order is: network and env first, verify, then `deploy.sh`.
+
+**Topology before (probed 2026-10-17, read-only).** The box compose file is
+`/opt/stack/infra/docker-compose.yml` (not in this repo). `perf-lab-api` sits on `stack_edge` with Caddy,
+`dominion-realm`, `leave-sprint` and `realmwalkers`, and on `stack_data` with `postgres` and
+`realmwalkers`. Only Caddy publishes ports (80, 443). The API reaches its database as `postgres:5432`.
+Any neighbour on either shared bridge can open `perf-lab-api:8000` directly, and with the shared subnet
+trusted it could also supply a forwarded client address.
+
+**Topology after.**
+
+| Network | Members | Why |
+|---|---|---|
+| `perflab_proxy` (new, `172.30.10.0/29`) | `caddy` at `172.30.10.2`, `perf-lab-api` | the only way into the API |
+| `perflab_db` (new, `172.30.11.0/29`) | `perf-lab-api`, `postgres` | the API's database path |
+| `stack_edge` | `caddy`, `dominion-realm`, `leave-sprint`, `realmwalkers` | unchanged, minus the API |
+| `stack_data` | `postgres`, `realmwalkers` | unchanged, minus the API |
+
+Both new networks are ordinary (non-internal) bridges, so the API keeps outbound internet access
+(Oura). Neither subnet overlaps the VPC (`172.31.0.0/16`), Docker's default `172.17.0.0/16`, or the
+stack's `172.18.0.0/16` and `172.19.0.0/16` (re-check `docker network inspect` before applying).
+
+**1. Back up, then edit the compose file and env** (on the box):
+```bash
+cd /opt/stack/infra
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+sudo cp docker-compose.yml docker-compose.yml.bak.$TS
+sudo cp env/perf-lab-api.env env/perf-lab-api.env.bak.$TS
+```
+In `docker-compose.yml`:
+- `caddy.networks`: `edge` plus `perflab_proxy: { ipv4_address: 172.30.10.2 }`.
+- `perf-lab-api.networks`: only `perflab_proxy` and `perflab_db` (remove `edge` and `data`).
+- `postgres.networks`: `data` plus `perflab_db`.
+- top-level `networks`:
+  ```yaml
+  perflab_proxy:
+    name: stack_perflab_proxy
+    ipam: { config: [ { subnet: 172.30.10.0/29 } ] }
+  perflab_db:
+    name: stack_perflab_db
+    ipam: { config: [ { subnet: 172.30.11.0/29 } ] }
+  ```
+In `env/perf-lab-api.env`, add one line: `FORWARDED_ALLOW_IPS=172.30.10.2`.
+
+**2. Check the effective config, then apply:**
+```bash
+sudo docker compose config --format json </dev/null | python3 -c "import json,sys; s=json.load(sys.stdin)['services']; [print(n, sorted((s[n].get('networks') or {}).keys())) for n in ('caddy','perf-lab-api','postgres','realmwalkers')]"
+sudo docker compose up -d caddy postgres perf-lab-api
+```
+`postgres` is recreated only if its network list changed; it keeps its volume.
+
+**3. Verify, all of it, before deploying P9:**
+```bash
+cd /opt/stack/infra
+# API -> DB still works
+sudo docker compose exec -T perf-lab-api alembic current </dev/null | tail -1
+# uvicorn's effective trust setting (the old image's uvicorn reads it too)
+sudo docker compose exec -T perf-lab-api printenv FORWARDED_ALLOW_IPS </dev/null    # 172.30.10.2
+sudo docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' $(sudo docker compose ps -q caddy)
+# neighbours can no longer reach the API: they share no network with it, so the name must not
+# resolve and a request must fail. Each line must print BLOCKED (a node image has no wget,
+# so the probe uses whichever of wget or node the container has).
+for n in realmwalkers dominion-realm leave-sprint; do
+  sudo docker compose exec -T $n sh -c '
+    if command -v wget >/dev/null; then wget -qO- -T 3 http://perf-lab-api:8000/ping >/dev/null 2>&1 && echo REACHABLE || echo BLOCKED
+    else node -e "fetch(\"http://perf-lab-api:8000/ping\",{signal:AbortSignal.timeout(3000)}).then(()=>console.log(\"REACHABLE\"),()=>console.log(\"BLOCKED\"))"
+    fi' </dev/null | sed "s/^/$n: /"
+done
+# the public route still works
+curl -s -o /dev/null -w "%{http_code}\n" https://perflab.44-198-76-44.nip.io/ping   # 200
+```
+Two distinct clients through Caddy: request `/ping` from a workstation and from the box itself
+(`curl https://perflab.44-198-76-44.nip.io/ping` on the box). The API access log must show the two
+different client addresses, not `172.30.10.2` for both.
+
+**4. Then deploy P9** with `./scripts/deploy.sh <P9 merge SHA>` and repeat step 3's checks.
+
+**Rollback.** Network only: restore both `.bak.$TS` files and `sudo docker compose up -d caddy postgres
+perf-lab-api`. App only: `./scripts/deploy.sh 6beae12…` keeps the hardened network; the pre-P9 app
+runs fine on it (uvicorn simply trusts Caddy's forwarded address). Rolling the network back while P9 is
+deployed would also remove `FORWARDED_ALLOW_IPS`, so P9 would refuse to start: roll the app back first.
+
+**Rollback** (`deploy.sh 6beae12`, no migration). The previous image ignores
+`FORWARDED_ALLOW_IPS` and has no limits; it runs on the hardened network unchanged.
+
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 
 Migrations `a053`–`a057` add the state-correction chain: dispositions on workouts and benchmark

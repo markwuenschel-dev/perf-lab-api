@@ -406,6 +406,21 @@ async def seeded_exercise_catalog(async_db: AsyncSession) -> None:
     await async_db.rollback()
 
 
+@pytest.fixture(autouse=True)
+def _reset_auth_rate_limits():
+    """Every test starts with empty login/registration counters (P9).
+
+    The app is a module-level singleton, so its limiter's counters would otherwise carry
+    from one test into the next; each xdist worker has its own process and so its own
+    counters already.
+    """
+    from app.core.rate_limit import auth_limiter
+
+    auth_limiter.reset()
+    yield
+    auth_limiter.reset()
+
+
 @pytest_asyncio.fixture(loop_scope="function")
 async def http_client(async_db: AsyncSession) -> httpx.AsyncClient:
     """Async HTTP client wired to the FastAPI app with the test DB session injected.

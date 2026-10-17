@@ -34,6 +34,10 @@ dependencies = [
     "cryptography>=41.0.0",
     "email-validator>=2.1.0",
     "bcrypt>=4.0.0",
+    # Per-IP rate limits on /auth/token and /auth/register (P9, app/core/rate_limit.py):
+    # an in-process moving window. `limits` directly rather than slowapi's decorator,
+    # which breaks the response path when its counter fails and reads RATELIMIT_* config.
+    "limits>=5.0.0",
     # HTTP / JSON
     "httpx>=0.27.0",
     "orjson>=3.10.0",

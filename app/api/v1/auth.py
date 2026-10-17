@@ -3,6 +3,7 @@ app/api/v1/auth.py
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
@@ -10,8 +11,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import create_access_token, get_current_user, hash_password, verify_password
+from app.core.auth import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
 from app.core.db import get_db
+from app.core.rate_limit import LOGIN_RATE, REGISTER_RATE, rate_limited
 from app.models.user import AthleteProfile, User
 from app.repositories.user_repository import UserRepository
 
@@ -47,7 +55,19 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-@router.post("/register", response_model=UserResponse, status_code=201)
+_TOO_MANY: dict[int | str, dict[str, Any]] = {
+    429: {"description": "Too many attempts from this address; see Retry-After."}
+}
+
+
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=201,
+    # Counted before the body runs (ADR-0076): over the rate, no lookup and no bcrypt.
+    dependencies=[Depends(rate_limited("auth.register", REGISTER_RATE))],
+    responses=_TOO_MANY,
+)
 async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
@@ -94,14 +114,28 @@ async def register(
         ) from exc
 
 
-@router.post("/token", response_model=TokenResponse)
+@router.post(
+    "/token",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limited("auth.token", LOGIN_RATE))],
+    responses=_TOO_MANY,
+)
 async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
     user = await UserRepository(db).get_by_email(form.username.lower())
 
-    if not user or not verify_password(form.password, user.hashed_password):
+    # One bcrypt check on every attempt, whether or not the account exists: against the
+    # account's hash, or against a fixed dummy hash when there is none (OWASP: no quick
+    # exit). The decision comes after the check, and a missing account always fails — a
+    # password that happens to match the dummy never yields a token. Registration's 409
+    # still says whether an email is registered, so this hardens login only; it does not
+    # make account existence private (ADR-0076).
+    password_ok = verify_password(
+        form.password, user.hashed_password if user is not None else DUMMY_PASSWORD_HASH
+    )
+    if user is None or not password_ok:
         raise HTTPException(
             status_code=401,
             detail="Incorrect email or password",

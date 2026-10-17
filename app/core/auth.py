@@ -20,6 +20,17 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.models.user import User
 
+# The bcrypt cost every stored password hash is made at.
+BCRYPT_ROUNDS = 12
+
+# A fixed, valid bcrypt hash at BCRYPT_ROUNDS, generated once and committed (P9, ADR-0076).
+# Login checks the submitted password against it when no account has the email, so a failed
+# login costs one bcrypt check whether or not the account exists, instead of returning before
+# any hashing. Its secret is a throwaway string, not a credential, and a match against it
+# never authenticates anyone: login refuses whenever there is no user, whatever this returns.
+# tests/test_auth_rate_limits.py fails if its cost drifts from BCRYPT_ROUNDS.
+DUMMY_PASSWORD_HASH = "$2b$12$2wR8GJ/x3OW1ZWK8hEz.H.nNf/NAYLJsZh1ygFkVtrTRpIS/t0UGO"
+
 
 def hash_password(plain: str) -> str:
     """Hash password using official bcrypt (no passlib)."""
@@ -28,7 +39,7 @@ def hash_password(plain: str) -> str:
     if len(plain.encode("utf-8")) > 72:
         raise ValueError("Password cannot exceed 72 bytes (bcrypt limit)")
 
-    salt = bcrypt.gensalt(rounds=12)
+    salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
     hashed = bcrypt.hashpw(plain.encode("utf-8"), salt)
     return hashed.decode("utf-8")
 

@@ -10414,6 +10414,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many attempts from this address; see Retry-After."
           }
         },
         "summary": "Register",
@@ -10455,6 +10458,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many attempts from this address; see Retry-After."
           }
         },
         "summary": "Login",
