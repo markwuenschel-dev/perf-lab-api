@@ -16,7 +16,6 @@ import type {
   UnderivedStrengthReportRead,
 } from "@/types";
 import { TRAINING_GOALS, usePerfLab } from "../store";
-import type { Settings } from "../store";
 import { DOMAIN_OPTIONS } from "../domains";
 import {
   BODYWEIGHT_ONLY_TAGS,
@@ -174,13 +173,6 @@ function GoalChips() {
   );
 }
 
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return (
-    <div onClick={onClick} className={cn("relative h-[22px] w-[38px] flex-none cursor-pointer rounded-full transition-colors", on ? "bg-ac" : "bg-white/[0.12]")}>
-      <div className={cn("absolute top-[3px] h-[16px] w-[16px] rounded-full transition-all", on ? "left-[19px] bg-[#0a0c10]" : "left-[3px] bg-mute")} />
-    </div>
-  );
-}
 
 // ── Performance profile (backend-synced) ──────────────────────────────────
 // The athlete profile is the *durable* store: register seeds an empty shell,
@@ -1113,12 +1105,6 @@ export function SettingsScreen() {
     }
   }
 
-  const notif: [keyof Settings, string, string][] = [
-    ["notifReadiness", "Readiness alerts", "When readiness crashes below 40."],
-    ["notifTissue", "Tissue-load warnings", "When a region exceeds 60."],
-    ["notifWeekly", "Weekly summary", "A Monday digest of the week ahead."],
-  ];
-
   return (
     <section className="flex max-w-[780px] flex-col gap-4 px-[30px] pb-9 pt-[26px]">
       <header>
@@ -1191,20 +1177,8 @@ export function SettingsScreen() {
         </div>
       </Card>
 
-      <Card className="p-[22px]">
-        <SectionLabel className="mb-4">Notifications</SectionLabel>
-        <div className="flex flex-col gap-1">
-          {notif.map(([key, title, desc], i) => (
-            <div key={key} className={cn("flex items-center justify-between py-[11px]", i < notif.length - 1 && "border-b border-white/[0.05]")}>
-              <div>
-                <div className="text-[13px] font-semibold leading-none text-ink">{title}</div>
-                <div className="mt-1 text-[11px] font-medium leading-[1.4] text-faint">{desc}</div>
-              </div>
-              <Toggle on={s[key] as boolean} onClick={() => actions.setSetting(key, !s[key])} />
-            </div>
-          ))}
-        </div>
-      </Card>
+      {/* Notification toggles are not shown: nothing sends a notification, so a switch
+          here would promise something that never happens. The stored settings stay. */}
 
       {/* One card per signed-in account: nothing begun for one account writes another's. */}
       <WearableConnectCard key={auth.email ?? ""} />

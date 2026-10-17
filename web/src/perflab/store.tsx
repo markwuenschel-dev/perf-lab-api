@@ -14,6 +14,7 @@ import type { Dispatch } from "react";
 // machine is generic and the fixture stays with the surface that renders it.
 import type { CheckinState, SimParams } from "./sim";
 import type { MetricsResponse, ReadinessScore, SessionStatus, UnifiedStateVector } from "../types";
+import { PREVIEW_TOOLS } from "./previewTools";
 
 export type Screen =
   | "overview"
@@ -193,7 +194,11 @@ function loadPersisted(): Partial<Persisted> {
   }
 }
 
-export function initialState(): PerfLabState {
+/** `previewTools` is the build's PREVIEW_TOOLS (a parameter so tests can pin it). A
+ *  stored empty-state preview is honoured only in a build that has the tool; anywhere
+ *  else it is dropped HERE, before the first render, and the persist effect then
+ *  writes `fresh: false` back. */
+export function initialState(previewTools: boolean = PREVIEW_TOOLS): PerfLabState {
   const sv = loadPersisted();
   return {
     screen: "overview",
@@ -213,7 +218,7 @@ export function initialState(): PerfLabState {
     twinDayIdx: null,
     selectedTwinSnapshotId: null,
     navCollapsed: false,
-    fresh: typeof sv.fresh === "boolean" ? sv.fresh : false,
+    fresh: previewTools && sv.fresh === true,
     sessOpen: false,
     phaseIdx: 0,
     sessRemaining: 600,
@@ -400,7 +405,7 @@ export interface PerfLabContextValue {
 }
 
 /** Build the actions object from a dispatch fn (used by the provider). */
-export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
+export function buildActions(dispatch: Dispatch<Action>, previewTools: boolean = PREVIEW_TOOLS): PerfLabActions {
   const merge = (patch: Partial<PerfLabState>) => dispatch({ type: "merge", patch });
   const mergeFn = (fn: (s: PerfLabState) => Partial<PerfLabState>) => dispatch({ type: "mergeFn", fn });
   return {
@@ -483,7 +488,10 @@ export function buildActions(dispatch: Dispatch<Action>): PerfLabActions {
     setFeel: (feel, rpe) => merge({ feel, rpe }),
     setSetting: (key, value) => dispatch({ type: "mergeSettings", patch: { [key]: value } as Partial<Settings> }),
     toggleNav: () => mergeFn((s) => ({ navCollapsed: !s.navCollapsed })),
-    toggleFresh: () => mergeFn((s) => ({ fresh: !s.fresh })),
+    // Development only: without the preview tool there is nothing to toggle.
+    toggleFresh: () => {
+      if (previewTools) mergeFn((s) => ({ fresh: !s.fresh }));
+    },
     openBlockCreate: () => merge({ blockCreateOpen: true }),
     closeBlockCreate: () => merge({ blockCreateOpen: false }),
     focusPlanningWeek: (startDateIso) =>

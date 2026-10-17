@@ -15,6 +15,7 @@
 // ternaries that substitute one metric for another.
 import * as api from "@/api/perfLabClient";
 import type {
+  DrivingObjectiveRead,
   MacrocycleRead,
   ObjectiveRead,
   OverviewMetrics,
@@ -28,10 +29,10 @@ import type {
 import { useState, type ReactNode } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { activeMacrocycle, weekProgressLabel } from "../../macrocycles";
-import { sortObjectives } from "../../objectives";
+import { heroKicker, heroModel } from "../../objectives";
 import { COLORS, readinessColor, readinessNote, readinessWord } from "../../readinessPresentation";
 import { RevisionNotice } from "../../prescription/RevisionNotice";
-import { resourceData, type AuthedResource } from "../../resource";
+import { assertNever, resourceData, type AuthedResource } from "../../resource";
 import { relativeTime } from "../../stateVector";
 import { usePerfLab } from "../../store";
 import { Card, ReadinessRing, SectionLabel, SyncChip, Track } from "../../ui";
@@ -616,39 +617,190 @@ function InsightsCard({
 
 // ---- Objective hero ------------------------------------------------------------------
 
-function GoalObjectiveCard() {
-  const { state, actions } = usePerfLab();
-  const objectivesRes = useAuthedResource<ObjectiveRead[]>((t) => api.listObjectives(t), [state.objectivesRefreshKey]);
-  const objectives = resourceData(objectivesRes);
-  const top = objectives && objectives.length ? sortObjectives(objectives)[0] : null;
-  const gradient = { background: "radial-gradient(120% 140% at 100% 0%,rgba(17,50,31,.85),var(--color-tile) 55%)" };
+/** One fetch for the pair, so the list and the driving answer always come from the same
+ *  client generation: a refresh can never pair a new list with an old `/driving`. */
+type HeroPair = { objectives: ObjectiveRead[]; driving: DrivingObjectiveRead };
 
-  if (!top) {
-    const loading = objectivesRes.status === "loading";
+const HERO_GRADIENT = { background: "radial-gradient(120% 140% at 100% 0%,rgba(17,50,31,.85),var(--color-tile) 55%)" };
+
+/** The hero's message card (kicker, headline, sub-line), with an optional Retry. */
+function HeroMessage({
+  kicker,
+  headline,
+  detail,
+  stale = false,
+  onRetry,
+  onReview,
+}: {
+  kicker: string;
+  headline: string;
+  detail: string;
+  /** The message describes the last loaded pair and a refresh since then failed. */
+  stale?: boolean;
+  onRetry?: () => void;
+  onReview: () => void;
+}) {
+  return (
+    <Card onClick={onReview} className="flex items-center justify-between gap-4" style={HERO_GRADIENT}>
+      <div>
+        <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">{kicker}</div>
+        <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">{headline}</div>
+        <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">{detail}</div>
+        {stale && <StaleNotice />}
+      </div>
+      <div className="flex flex-none flex-col items-end gap-2 text-right">
+        {onRetry && <RetryButton onRetry={onRetry} />}
+        <div className="font-mono text-[13px] font-semibold leading-none text-ac">Review objectives →</div>
+      </div>
+    </Card>
+  );
+}
+
+/** Shown when a refresh failed and the card still describes the last loaded pair. */
+function StaleNotice() {
+  return (
+    <div role="status" className="mt-[9px] text-[11px] font-medium leading-none text-hot">
+      Couldn't refresh — showing what last loaded.
+    </div>
+  );
+}
+
+function RetryButton({ onRetry }: { onRetry: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation(); // the card itself navigates to Objectives
+        onRetry();
+      }}
+      className="rounded-[7px] border border-white/10 bg-white/[0.04] px-[10px] py-[6px] font-mono text-[11px] font-semibold leading-none text-soft"
+    >
+      Retry
+    </button>
+  );
+}
+
+export function GoalObjectiveCard() {
+  const { state, actions } = usePerfLab();
+  // The resource hook exposes no refresh handle: Retry re-runs the fetch by bumping a dep.
+  const [retryKey, setRetryKey] = useState(0);
+  const pairRes = useAuthedResource<HeroPair>(
+    async (t) => {
+      const [objectives, driving] = await Promise.all([api.listObjectives(t), api.getDrivingObjective(t)]);
+      return { objectives, driving };
+    },
+    [state.objectivesRefreshKey, state.macrocyclesRefreshKey, retryKey],
+  );
+  const retry = () => setRetryKey((k) => k + 1);
+  const review = () => actions.setScreen("objectives");
+
+  if (pairRes.status === "guest" || pairRes.status === "loading") {
     return (
-      <Card onClick={() => actions.setScreen("objectives")} className="flex items-center justify-between gap-4" style={gradient}>
-        <div>
-          <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Objective</div>
-          <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">
-            {loading ? "Loading your objective…" : "Set a goal to aim at"}
-          </div>
-          <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">
-            {loading ? "Fetching what your plan is pointed at." : "A race, a meet, a Hyrox, a PR — give your plan a target."}
-          </div>
-        </div>
-        <div className="flex-none text-right">
-          <div className="font-mono text-[13px] font-semibold leading-none text-ac">Objectives →</div>
-        </div>
-      </Card>
+      <HeroMessage
+        kicker="Objective"
+        headline="Loading your objective…"
+        detail="Fetching what your plan is pointed at."
+        onReview={review}
+      />
+    );
+  }
+  if (pairRes.status === "error") {
+    return (
+      <HeroMessage
+        kicker="Objective"
+        headline="Couldn't load your objective"
+        detail="Your objectives weren't reached. Try again."
+        onRetry={retry}
+        onReview={review}
+      />
     );
   }
 
+  const stale = pairRes.refresh.status === "error";
+  const model = heroModel(pairRes.data.objectives, pairRes.data.driving);
+
+  switch (model.kind) {
+    case "none":
+      // A failed refresh over an empty result is still a failure: never invite the
+      // athlete to set a goal on the strength of data that couldn't be refreshed.
+      return stale ? (
+        <HeroMessage
+          kicker="Objective"
+          headline="Couldn't refresh your objective"
+          detail="Your objectives weren't reached. Try again."
+          onRetry={retry}
+          onReview={review}
+        />
+      ) : (
+        <Card onClick={review} className="flex items-center justify-between gap-4" style={HERO_GRADIENT}>
+          <div>
+            <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">Objective</div>
+            <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">Set a goal to aim at</div>
+            <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">
+              A race, a meet, a Hyrox, a PR — give your plan a target.
+            </div>
+          </div>
+          <div className="flex-none text-right">
+            <div className="font-mono text-[13px] font-semibold leading-none text-ac">Objectives →</div>
+          </div>
+        </Card>
+      );
+    case "missing":
+      return (
+        <HeroMessage
+          kicker={heroKicker(model.source)}
+          headline={model.source === "macrocycle_anchor" ? "Program objective details unavailable" : "Objective details unavailable"}
+          detail="It isn't among the active objectives loaded here."
+          stale={stale}
+          onRetry={retry}
+          onReview={review}
+        />
+      );
+    case "disagree":
+      return (
+        <HeroMessage
+          kicker="Objective"
+          headline="Objective details unavailable"
+          detail="Your objectives changed while loading. Try again."
+          stale={stale}
+          onRetry={retry}
+          onReview={review}
+        />
+      );
+    case "objective":
+      return (
+        <HeroObjective
+          objective={model.objective}
+          kicker={heroKicker(model.source)}
+          stale={stale}
+          onRetry={retry}
+          onReview={review}
+        />
+      );
+    default:
+      return assertNever(model);
+  }
+}
+
+function HeroObjective({
+  objective: top,
+  kicker,
+  stale,
+  onRetry,
+  onReview,
+}: {
+  objective: ObjectiveRead;
+  kicker: string;
+  stale: boolean;
+  onRetry: () => void;
+  onReview: () => void;
+}) {
   const pct = top.progress.pct;
   return (
-    <Card onClick={() => actions.setScreen("objectives")} className="flex items-center justify-between gap-4" style={gradient}>
+    <Card onClick={onReview} className="flex items-center justify-between gap-4" style={HERO_GRADIENT}>
       <div>
         <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">
-          Objective{top.target_date ? ` · ${top.target_date}` : ""}
+          {kicker}{top.target_date ? ` · ${top.target_date}` : ""}
         </div>
         <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">{top.label}</div>
         <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">
@@ -661,8 +813,14 @@ function GoalObjectiveCard() {
             "Countdown-only · link a benchmark for progress"
           )}
         </div>
+        {stale && (
+          <div role="status" className="mt-[9px] text-[11px] font-medium leading-none text-hot">
+            Couldn't refresh — showing your last loaded objective.
+          </div>
+        )}
       </div>
-      <div className="flex-none text-right">
+      <div className="flex flex-none flex-col items-end gap-2 text-right">
+        {stale && <RetryButton onRetry={onRetry} />}
         {top.days_to_go != null ? (
           <>
             <div className="font-mono text-[42px] font-semibold leading-[0.9] tracking-[-0.02em] text-ink">{top.days_to_go}</div>

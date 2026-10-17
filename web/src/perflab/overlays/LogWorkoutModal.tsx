@@ -14,7 +14,7 @@ import { usePerfLab } from "../store";
 import { MetricBar } from "../ui";
 import { COLORS, DOSE_NAMES, doseBarColor, PRESETS, projectLogDose } from "../sim";
 import { SetBuilder } from "./SetBuilder";
-import { deriveModality, groupsToSets, type SetGroup } from "./setBuilderLogic";
+import { deriveModality, type SetGroup } from "./setBuilderLogic";
 import { plannedGroup } from "./prescriptionPrefill";
 import { prefillFromToday } from "../prescription/todayRevision";
 // #199: the request body is built in its own fixture-free module so the static
@@ -23,10 +23,25 @@ import { prefillFromToday } from "../prescription/todayRevision";
 import {
   buildWorkoutLog,
   checkinToWorkoutWellness,
+  doseInputsKey,
   missingRequiredReadings,
   type RequiredReading,
 } from "./workoutLogBody";
 import { dispositionNotice } from "../workoutDisposition";
+
+/** A dose preview and the draft it was computed for (`doseInputsKey`). `six` is null when
+ *  the request failed or the response carried no dose. */
+interface DosePreview {
+  key: string;
+  six: number[] | null;
+}
+
+/** What the D(t) panel shows. Only the guest demo ever gets sample bars. */
+type PreviewState =
+  | { kind: "bars"; six: number[] }
+  | { kind: "missing" }
+  | { kind: "pending" }
+  | { kind: "error" };
 
 /** How each missing reading is named to the athlete in the footer prompt. */
 const READING_LABEL: Record<RequiredReading, string> = {
@@ -38,7 +53,9 @@ const READING_LABEL: Record<RequiredReading, string> = {
 export function LogWorkoutModal() {
   const { state, actions } = usePerfLab();
   const auth = useAuth();
-  const [doseSix, setDoseSix] = useState<number[] | null>(null);
+  // The last /v1/simulate-dose answer and the draft it describes (`doseInputsKey`). It is
+  // shown only while that draft is still the one on screen.
+  const [preview, setPreview] = useState<DosePreview | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   // P3a: set when the workout was saved but the training-state update was omitted. The
@@ -57,10 +74,9 @@ export function LogWorkoutModal() {
   const wellness = checkinToWorkoutWellness(state.checkin);
 
   const derivedModality = sets.length ? deriveModality(sets) : null;
-  // A stable key over just the fields the dose depends on, so the preview effect
-  // re-runs when a set's load/reps/rpe change without chasing object identity.
-  const setsKey = JSON.stringify(groupsToSets(sets));
-  const { sleepQuality, lifeStressInverse } = wellness;
+  // Which draft a preview must describe to be shown. Built from the inputs, not the body
+  // (whose timestamp changes on every call), so a plain re-render keeps a valid preview.
+  const previewKey = doseInputsKey(logType, rpe, durationMin, distanceKm, wellness, sets);
 
   // Which planned session the pre-fill came from. The body links it only once the athlete
   // records one of its exercises (buildWorkoutLog).
@@ -109,53 +125,71 @@ export function LogWorkoutModal() {
     };
   }, [logOpen, auth.token, goal]);
 
-  // Real D(t) preview from POST /v1/simulate-dose (debounced); falls back to the
-  // sim bars while loading or if the call fails. Unauthenticated — works signed out.
+  // Real D(t) preview from POST /v1/simulate-dose (debounced). Unauthenticated, so it
+  // works signed out too. Every answer is stored with the draft it describes.
   useEffect(() => {
     if (!logOpen) {
-      setDoseSix(null);
+      setPreview(null);
       setSets([]);
       setPlannedSessionId(null);
       setPlannedRevisionId(null);
       return;
     }
+    // Until every required reading is entered there is no honest body to send.
+    if (previewKey === null) {
+      setPreview(null);
+      return;
+    }
+    const key = previewKey;
     let cancelled = false;
     const id = window.setTimeout(() => {
-      // Until every required reading is entered there is no honest body to send, so
-      // the preview falls back to the sample bars rather than simulating a fiction.
       const body = buildWorkoutLog(logType, rpe, durationMin, distanceKm, wellness, sets);
-      if (!body) {
-        if (!cancelled) setDoseSix(null);
-        return;
-      }
+      if (!body) return; // unreachable: a non-null key means every reading is present
       simulateDose(body)
         .then((d) => {
           if (cancelled) return;
           const s = d.dose_six;
-          setDoseSix(s ? [s.volume, s.intensity, s.density, s.impact, s.skill, s.metabolic] : null);
+          setPreview({
+            key,
+            six: s ? [s.volume, s.intensity, s.density, s.impact, s.skill, s.metabolic] : null,
+          });
         })
         .catch(() => {
-          if (!cancelled) setDoseSix(null);
+          if (!cancelled) setPreview({ key, six: null });
         });
     }, 350);
     return () => {
       cancelled = true;
       window.clearTimeout(id);
     };
-    // setsKey is a stable serialization of `sets` — it captures every set field the
-    // dose depends on without re-running on unrelated object-identity changes.
+    // previewKey covers every input the body is built from; the closure's values are the
+    // ones that produced it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logOpen, logType, rpe, durationMin, distanceKm, sleepQuality, lifeStressInverse, setsKey]);
+  }, [logOpen, previewKey]);
 
   if (!state.logOpen) return null;
 
+  const signedIn = Boolean(auth.token);
   const { scaled, readyAfter, fatAfter, capDelta, cap, zone, readyColor } = projectLogDose(state);
-  const bars = doseSix ?? scaled;
+  // A preview counts only for the draft on screen. An edit changes the key in this same
+  // render, so the previous draft's bars are gone before the debounce even starts.
+  const current = preview !== null && preview.key === previewKey ? preview : null;
+  // Signed in: real bars for this draft or an honest state, never the sample bars.
+  // Signed out, the demo keeps its illustrative fallback.
+  const previewState: PreviewState = !signedIn
+    ? { kind: "bars", six: current?.six ?? scaled }
+    : previewKey === null
+      ? { kind: "missing" }
+      : current === null
+        ? { kind: "pending" }
+        : current.six === null
+          ? { kind: "error" }
+          : { kind: "bars", six: current.six };
 
   // The draft opens entirely unknown, so this is non-empty until the athlete enters
   // real readings. Signing in is still allowed while incomplete — only logging is not.
   const missing = missingRequiredReadings(logType, rpe, durationMin, distanceKm, sets);
-  const blocked = Boolean(auth.token) && missing.length > 0;
+  const blocked = signedIn && missing.length > 0;
   const missingLabel = missing.map((m) => READING_LABEL[m]).join(" and ");
 
   // Apply → POST /v1/log-workout (auth required), cache the returned state.
@@ -282,32 +316,46 @@ export function LogWorkoutModal() {
           <div className="flex flex-col gap-5 bg-white/[0.015] px-6 py-[22px]">
             <div>
               <div className="mb-[13px] font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]">Projected dose · D(t)</div>
-              <div className="flex flex-col gap-[10px]">
-                {bars.map((v, i) => (
-                  <MetricBar
-                    key={DOSE_NAMES[i]}
-                    label={DOSE_NAMES[i]}
-                    value={v.toFixed(1)}
-                    pct={Math.min(100, v * 10)}
-                    color={doseBarColor(v)}
-                    labelClassName="w-[62px]"
-                    valueClassName="w-[26px] text-soft"
-                    trackClassName="h-[6px]"
-                  />
-                ))}
-              </div>
+              {previewState.kind === "bars" ? (
+                <div className="flex flex-col gap-[10px]" data-testid="dose-bars">
+                  {previewState.six.map((v, i) => (
+                    <MetricBar
+                      key={DOSE_NAMES[i]}
+                      label={DOSE_NAMES[i]}
+                      value={v.toFixed(1)}
+                      pct={Math.min(100, v * 10)}
+                      color={doseBarColor(v)}
+                      labelClassName="w-[62px]"
+                      valueClassName="w-[26px] text-soft"
+                      trackClassName="h-[6px]"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p aria-live="polite" className="m-0 text-[12px] font-medium leading-[1.4] text-mute">
+                  {previewState.kind === "missing"
+                    ? `Enter ${missingLabel} to preview the dose.`
+                    : previewState.kind === "pending"
+                      ? "Computing dose…"
+                      : "Dose preview unavailable — you can still log."}
+                </p>
+              )}
             </div>
-            <div className="border-t border-white/[0.06] pt-[18px]">
-              <div className="mb-[13px] font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]">Resulting S(t) shift</div>
-              <div className="flex flex-col gap-3">
-                <ShiftRow label="Readiness" from="64" to={`${readyAfter}`} toColor={readyColor} />
-                <ShiftRow label="Mean fatigue" from="33" to={`${fatAfter}`} toColor={COLORS.hot} />
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-medium leading-none text-mute">{cap}</span>
-                  <div className="flex items-center gap-[7px]"><span className="text-[12px] font-medium leading-none text-dim">drive</span><span className="font-mono text-[15px] font-semibold leading-none text-teal">{capDelta}</span></div>
+            {/* The S(t) shift is projected from sample numbers (sim.ts), so only the guest
+                demo shows it. No real source exists for a signed-in athlete yet. */}
+            {!signedIn && (
+              <div className="border-t border-white/[0.06] pt-[18px]">
+                <div className="mb-[13px] font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]">Resulting S(t) shift</div>
+                <div className="flex flex-col gap-3">
+                  <ShiftRow label="Readiness" from="64" to={`${readyAfter}`} toColor={readyColor} />
+                  <ShiftRow label="Mean fatigue" from="33" to={`${fatAfter}`} toColor={COLORS.hot} />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-medium leading-none text-mute">{cap}</span>
+                    <div className="flex items-center gap-[7px]"><span className="text-[12px] font-medium leading-none text-dim">drive</span><span className="font-mono text-[15px] font-semibold leading-none text-teal">{capDelta}</span></div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
