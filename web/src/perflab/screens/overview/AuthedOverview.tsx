@@ -628,12 +628,15 @@ function HeroMessage({
   kicker,
   headline,
   detail,
+  stale = false,
   onRetry,
   onReview,
 }: {
   kicker: string;
   headline: string;
   detail: string;
+  /** The message describes the last loaded pair and a refresh since then failed. */
+  stale?: boolean;
   onRetry?: () => void;
   onReview: () => void;
 }) {
@@ -643,12 +646,22 @@ function HeroMessage({
         <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-ac">{kicker}</div>
         <div className="mt-[10px] text-[19px] font-bold leading-none tracking-[-0.01em] text-ink">{headline}</div>
         <div className="mt-[9px] text-[12px] font-medium leading-none text-mute">{detail}</div>
+        {stale && <StaleNotice />}
       </div>
       <div className="flex flex-none flex-col items-end gap-2 text-right">
         {onRetry && <RetryButton onRetry={onRetry} />}
         <div className="font-mono text-[13px] font-semibold leading-none text-ac">Review objectives →</div>
       </div>
     </Card>
+  );
+}
+
+/** Shown when a refresh failed and the card still describes the last loaded pair. */
+function StaleNotice() {
+  return (
+    <div role="status" className="mt-[9px] text-[11px] font-medium leading-none text-hot">
+      Couldn't refresh — showing what last loaded.
+    </div>
   );
 }
 
@@ -738,6 +751,7 @@ export function GoalObjectiveCard() {
           kicker={heroKicker(model.source)}
           headline={model.source === "macrocycle_anchor" ? "Program objective details unavailable" : "Objective details unavailable"}
           detail="It isn't among the active objectives loaded here."
+          stale={stale}
           onRetry={retry}
           onReview={review}
         />
@@ -748,6 +762,7 @@ export function GoalObjectiveCard() {
           kicker="Objective"
           headline="Objective details unavailable"
           detail="Your objectives changed while loading. Try again."
+          stale={stale}
           onRetry={retry}
           onReview={review}
         />

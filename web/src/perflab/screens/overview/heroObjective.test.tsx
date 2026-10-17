@@ -264,6 +264,26 @@ describe("resource states stay honest", () => {
     expect(screen.getByText("Retry")).toBeTruthy();
   });
 
+  it.each([
+    ["an anchor missing from the list", { objective_id: 999, source: "macrocycle_anchor" as const }, "Program objective details unavailable"],
+    ["no driving objective over a non-empty list", { objective_id: null, source: null }, "Objective details unavailable"],
+  ])("a refresh failure over %s says it is stale, keeps Retry, and still substitutes nothing", async (_label, driving, headline) => {
+    listQueue.push([A, B], new Error("refresh down"));
+    drivingQueue.push(driving, new Error("refresh down"));
+    const view = await renderHero();
+    expect(await screen.findByText(headline)).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    storeState.objectivesRefreshKey = 1;
+    const { GoalObjectiveCard } = await import("./AuthedOverview");
+    view.rerender(<GoalObjectiveCard />);
+    expect(await screen.findByRole("status")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toMatch(/Couldn't refresh/);
+    expect(screen.getByText(headline)).toBeTruthy();
+    expect(screen.getByText("Retry")).toBeTruthy();
+    expect(screen.queryByText("Objective A")).toBeNull();
+    expect(screen.queryByText("Objective B")).toBeNull();
+  });
+
   it.each(["objectivesRefreshKey", "macrocyclesRefreshKey"] as const)("bumping %s re-reads both endpoints", async (key) => {
     listQueue.push([A]);
     drivingQueue.push({ objective_id: A.id, source: "priority" });
