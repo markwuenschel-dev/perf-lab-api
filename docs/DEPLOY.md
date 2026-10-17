@@ -549,6 +549,45 @@ they count. What the rollback costs: only the manual route feeds the shadows unt
 redeployed, and on redeploy P7b's next linked row for an athlete retires the unlinked rows
 written before it.
 
+## Auth rate limits (P9): the proxy network first, the limits second
+
+P9 has no migration. It needs one thing from the box before its image runs: uvicorn must
+trust Caddy's address, and only Caddy's. **A production container without a usable
+`FORWARDED_ALLOW_IPS` does not start** (`app.main._check_production_proxy_trust`): the
+value must be exactly one specific IP address. Empty, `*`, a network such as
+`172.18.0.0/16`, a list or a malformed value stops startup with a message naming the problem.
+So the network below is built and verified while the old image still runs, and P9 deploys
+after it (ADR-0076).
+
+**What P9 changes** (`app/core/rate_limit.py`):
+
+| route | rate, per client IP, per worker | strategy |
+|---|---|---|
+| `POST /auth/token` | 10 per minute | moving window |
+| `POST /auth/register` | 5 per hour | moving window |
+
+- Each route has its own bucket. Over the rate: `429 {"detail": "Too many requests"}` with
+  `Retry-After`, and the request never reaches the credential lookup or bcrypt.
+- Counters live in each uvicorn worker's memory. The image runs two workers, so one IP gets
+  at most 20 logins in any rolling 60 seconds and 10 registrations in any rolling 60 minutes —
+  **with two stable workers, healthy counters and no resets**. Every restart or deploy
+  empties the counters.
+- A counter failure is logged at ERROR (`Rate limit counter failed for auth.token`) and the
+  request proceeds normally: logins and registrations keep working, wrong passwords still 401.
+- This slows repeated attempts from one address. It is not protection against a distributed
+  flood.
+- Login now runs one bcrypt check on every attempt, against a fixed dummy hash when the
+  email has no account, so a failed login takes the same work either way. Registration still
+  answers 409 for a registered email (by design), so whether an account exists stays
+  discoverable, at 5 attempts per hour per address per worker.
+- The global error handler now forwards exception headers: `Retry-After` on 429s and
+  `WWW-Authenticate: Bearer` on login's 401 reach clients.
+
+<!-- P9 box network: filled from the topology probe -->
+
+**Rollback** (`deploy.sh 6beae12`, no migration). The previous image ignores
+`FORWARDED_ALLOW_IPS` and has no limits; it runs on the hardened network unchanged.
+
 ## Late events (P3b): turning exact-replay correction on, and stopping it
 
 Migrations `a053`–`a057` add the state-correction chain: dispositions on workouts and benchmark

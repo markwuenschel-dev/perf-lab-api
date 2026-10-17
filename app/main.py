@@ -4,9 +4,10 @@ app/main.py
 Main FastAPI application entrypoint for Performance Lab API.
 """
 
+import ipaddress
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -126,6 +127,60 @@ def _check_production_debug(cfg: Settings) -> None:
     if cfg.is_production:
         raise RuntimeError(DEBUG_UNSUPPORTED_IN_PRODUCTION)
     logger.warning("%s (allowed outside production)", DEBUG_UNSUPPORTED_IN_PRODUCTION)
+
+
+def proxy_trust_problem(value: str | None) -> str | None:
+    """Why ``FORWARDED_ALLOW_IPS`` is not a usable trust setting, or None when it is.
+
+    Usable means exactly one specific IP address: Caddy's fixed address on the network it
+    shares with the API. Empty, ``*``, a network (``172.18.0.0/16``), a list, an
+    unspecified address (``0.0.0.0``/``::``) or anything that does not parse is refused.
+    A list is refused too: the trust boundary is the one proxy in front of this API, and a
+    list is how it would quietly widen again.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return "FORWARDED_ALLOW_IPS is unset or empty"
+    if raw == "*":
+        return "FORWARDED_ALLOW_IPS is '*', which trusts every peer"
+    if "," in raw:
+        return f"FORWARDED_ALLOW_IPS lists several entries ({raw!r}); it must be Caddy's one address"
+    if "/" in raw:
+        return f"FORWARDED_ALLOW_IPS is a network ({raw!r}); it must be Caddy's one address"
+    try:
+        address = ipaddress.ip_address(raw)
+    except ValueError:
+        return f"FORWARDED_ALLOW_IPS is not an IP address ({raw!r})"
+    if address.is_unspecified:
+        return f"FORWARDED_ALLOW_IPS is an unspecified address ({raw!r})"
+    return None
+
+
+def _check_production_proxy_trust(cfg: Settings, environ: Mapping[str, str] | None = None) -> None:
+    """Refuse to boot in production unless uvicorn trusts exactly one proxy address (P9).
+
+    The login and registration limits key on ``request.client.host``. Behind Caddy that is
+    the real client only when uvicorn's proxy headers trust Caddy's address, which uvicorn
+    reads from ``FORWARDED_ALLOW_IPS`` in its own environment (``Dockerfile`` passes no
+    ``--forwarded-allow-ips``). Unset, every request appears to come from Caddy, so one
+    address's attempts would lock every athlete out; too wide, and a neighbouring container
+    could name any client it likes. Either is a deployment error, so production does not
+    start. Read from the process environment, not ``Settings``: that is what uvicorn sees.
+    Mirrors ``_check_production_secrets``: raise in production, warn elsewhere when set but
+    unusable, stay quiet when unset.
+    """
+    env = os.environ if environ is None else environ
+    value = env.get("FORWARDED_ALLOW_IPS")
+    problem = proxy_trust_problem(value)
+    if problem is None:
+        return
+    if cfg.is_production:
+        raise RuntimeError(
+            f"{problem}. Set it to Caddy's fixed address on the proxy network "
+            "(docs/DEPLOY.md, P9) so the per-IP auth limits see real clients."
+        )
+    if value is not None:
+        logger.warning("%s (allowed outside production)", problem)
 
 
 TOKEN_CUTOFF_REQUIRED_IN_PRODUCTION = (
@@ -368,6 +423,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Critical safety check: production must not log every SQL statement's bound parameters
     _check_production_debug(settings)
 
+    # Critical safety check: production must trust exactly one proxy address for client IPs
+    _check_production_proxy_trust(settings)
+
     # Critical safety check: ensure we're not running against a stale schema
     await _check_alembic_head()
 
@@ -543,9 +601,17 @@ if os.path.isdir(_static_dir):
 
 @app.exception_handler(StarletteHTTPException)
 async def spa_404_handler(request: Request, exc: StarletteHTTPException) -> FileResponse | JSONResponse:
-    """For GET 404s serve the SPA shell; all other errors return JSON."""
+    """For GET 404s serve the SPA shell; all other errors return JSON.
+
+    The exception's headers go out with it: a 429's ``Retry-After`` and a 401's
+    ``WWW-Authenticate`` are part of those responses (before P9 this handler dropped them).
+    """
     if exc.status_code == 404 and request.method == "GET":
         index = os.path.join(_static_dir, "index.html")
         if os.path.isfile(index):
             return FileResponse(index)
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
+    )
