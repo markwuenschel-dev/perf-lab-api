@@ -126,6 +126,39 @@ export function missingRequiredReadings(
   return missing;
 }
 
+/**
+ * A stable identity for the draft a dose preview describes, or `null` when there is no
+ * body to preview (a required reading is missing).
+ *
+ * It names the inputs the preview body is built from, never the body itself:
+ * `buildWorkoutLog` stamps the current time on every call, so a key over the body would
+ * change on a plain re-render and discard a preview that is still correct. Two drafts with
+ * the same key send the same dose-bearing fields; a different key means the preview on
+ * screen describes some other draft.
+ */
+export function doseInputsKey(
+  logType: string,
+  rpe: number | null,
+  durationMin: number | null,
+  distanceKm: number | null,
+  wellness: WorkoutWellness,
+  setGroups: SetGroup[] = [],
+): string | null {
+  if (missingRequiredReadings(logType, rpe, durationMin, distanceKm, setGroups).length) {
+    return null;
+  }
+  return JSON.stringify({
+    logType,
+    modality: resolveModality(logType, setGroups),
+    rpe,
+    durationMin,
+    distanceKm,
+    sleepQuality: wellness.sleepQuality,
+    lifeStressInverse: wellness.lifeStressInverse,
+    sets: groupsToSets(setGroups),
+  });
+}
+
 /** Build a backend WorkoutLog from the modal's form state, or `null` when the
  * athlete has not supplied every required reading.
  *
