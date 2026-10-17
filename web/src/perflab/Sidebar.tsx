@@ -4,6 +4,7 @@ import { SquareCheckBig } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
 import { usePerfLab } from "./store";
+import { PREVIEW_TOOLS } from "./previewTools";
 import type { Screen } from "./store";
 import { AuthedSidebarBlock } from "./sidebar/AuthedSidebarBlock";
 import { GuestSidebarBlock } from "./sidebar/GuestSidebarBlock";
@@ -180,12 +181,15 @@ export function Sidebar() {
             <div className="text-[11px] font-medium text-faint">Athlete</div>
           </div>
         </div>
-        <button
-          onClick={actions.toggleFresh}
-          className="rounded-[9px] border border-white/10 bg-white/[0.03] p-[9px] text-[11px] font-semibold leading-none text-mute"
-        >
-          {state.fresh ? "Exit empty-state preview" : "Preview empty state"}
-        </button>
+        {/* A development tool: a production build never shows it. */}
+        {PREVIEW_TOOLS && (
+          <button
+            onClick={actions.toggleFresh}
+            className="rounded-[9px] border border-white/10 bg-white/[0.03] p-[9px] text-[11px] font-semibold leading-none text-mute"
+          >
+            {state.fresh ? "Exit empty-state preview" : "Preview empty state"}
+          </button>
+        )}
       </div>
     </aside>
   );

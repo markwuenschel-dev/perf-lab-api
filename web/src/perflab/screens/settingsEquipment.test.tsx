@@ -157,3 +157,13 @@ describe("the equipment preference", () => {
     await waitFor(() => expect(preferenceGroup().getByText("No preference")).toBeTruthy());
   });
 });
+
+describe("notifications", () => {
+  it("offers no notification toggles, because nothing sends a notification", () => {
+    render(<SettingsScreen />);
+    expect(screen.queryByText("Notifications")).toBeNull();
+    for (const title of ["Readiness alerts", "Tissue-load warnings", "Weekly summary"]) {
+      expect(screen.queryByText(title)).toBeNull();
+    }
+  });
+});
