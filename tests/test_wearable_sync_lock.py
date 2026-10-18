@@ -183,16 +183,22 @@ async def _scalar(sql: str, **params):
         await engine.dispose()
 
 
+# pg_locks spans the cluster, and each xdist worker has its own database (conftest), where
+# connection ids repeat. Advisory locks are per database, so count only this one's.
+_THIS_DATABASE = "database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+
+
 async def _advisory(cid: int, *, granted: bool) -> int:
     return await _scalar(
         "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = :ns "
-        "AND objid = :id AND objsubid = 2 AND granted = :g", ns=WSY1, id=cid, g=granted)
+        "AND objid = :id AND objsubid = 2 AND granted = :g AND " + _THIS_DATABASE,
+        ns=WSY1, id=cid, g=granted)
 
 
 async def _all_sync_locks_held() -> int:
     return await _scalar(
         "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = :ns "
-        "AND objsubid = 2 AND granted", ns=WSY1)
+        "AND objsubid = 2 AND granted AND " + _THIS_DATABASE, ns=WSY1)
 
 
 async def _lock_is_free(cid: int) -> bool:
@@ -801,3 +807,90 @@ async def test_the_cli_reports_partial_success_for_one_user_too(fake, sessions, 
     assert "1 rows saved across 1 connections, 1 failed" in out
     assert await sync_wearables._run(days=7, user_id=999_999) == 1
     assert "no connection" in capsys.readouterr().out
+
+
+# --- review round 2: a rollback that outlives its cancellation, repeated cancellation --------
+
+
+async def test_a_rollback_still_running_after_its_cancel_quarantines_the_session(
+        fake, sessions, monkeypatch):
+    """A rollback that keeps unwinding after it is cancelled still owns the session: it is not
+    invalidated underneath it, and the batch never reuses it, while the lock and slot are freed."""
+    monkeypatch.setattr(wearable_sync_lock, "CLEANUP_BUDGET_S", 0.2)
+    monkeypatch.setattr(wearable_service, "SYNC_WORK_BUDGET_S", 0.3)
+    uid_a = await _user(sessions, "w4-quarantine-a@test.com")
+    cid_a, _ = await _link(sessions, uid_a, auth_type="pat")
+    uid_b = await _user(sessions, "w4-quarantine-b@test.com")
+    await _link(sessions, uid_b, auth_type="pat")
+    gate, unwound = Gate(), asyncio.Event()
+    fake.fetch_hooks = [gate]
+    invalidated: list[bool] = []
+    try:
+        async with sessions() as db:
+            async def rollback_that_outlives_its_cancel():
+                try:
+                    await asyncio.sleep(60)
+                except asyncio.CancelledError:
+                    await unwound.wait()  # a driver operation still unwinding
+                    raise
+
+            async def counted_invalidate():
+                invalidated.append(True)
+
+            db.rollback = rollback_that_outlives_its_cancel
+            db.invalidate = counted_invalidate
+            reports = await asyncio.wait_for(wearable_service.sync_all(db), 10)
+            assert db.info.get(wearable_service._QUARANTINED)
+    finally:
+        gate.release.set()
+        unwound.set()
+
+    a, b = reports
+    assert not a.ok and a.error.startswith("SyncTimedOut")
+    assert not b.ok and b.error.startswith("SessionQuarantined") and b.rows_confirmed == 0
+    assert invalidated == []                       # never raced the rollback that owns the session
+    assert len(fake.fetches) == 1                  # the second connection was not attempted on it
+    assert await _wellness_days(sessions, uid_b) == []
+    await _settle()
+    assert await _lock_is_free(cid_a) and _process_state_is_clean()
+
+
+async def test_repeated_cancellation_waits_for_cleanup_before_the_unlock_and_slot_release(
+        fake, sessions):
+    uid = await _user(sessions, "w4-recancel@test.com")
+    cid, _ = await _link(sessions, uid, auth_type="pat")
+    gate, in_rollback = Gate(), asyncio.Event()
+    fake.fetch_hooks = [gate]
+    seen: dict[str, object] = {}
+    try:
+        async with sessions() as db:
+            real_rollback = db.rollback
+
+            async def slow_rollback():
+                in_rollback.set()
+                await asyncio.sleep(0.5)
+                await real_rollback()
+                state = wearable_sync_lock._state()
+                seen["lock_held"] = await _advisory(cid, granted=True) == 1
+                seen["capacity_available"] = state.capacity._value
+                seen["rollback_finished"] = True
+
+            db.rollback = slow_rollback
+            task = asyncio.create_task(wearable_service.sync_connection(db, cid))
+            await gate.reached()
+            task.cancel()                          # 1: ends the attempt, cleanup starts
+            await asyncio.wait_for(in_rollback.wait(), 5)
+            task.cancel()                          # 2 and 3: while cleanup runs
+            await asyncio.sleep(0.05)
+            task.cancel()
+            await asyncio.wait({task}, timeout=10)
+            assert task.cancelled()
+            # Cleanup ended before this caller got control back, under the lock and its slot.
+            assert seen == {"lock_held": True,
+                            "capacity_available": wearable_sync_lock.LOCK_CONNECTIONS_PER_PROCESS - 1,
+                            "rollback_finished": True}
+            # And release had finished by then too: no settling needed.
+            assert _process_state_is_clean()
+    finally:
+        gate.release.set()
+    assert await _lock_is_free(cid)

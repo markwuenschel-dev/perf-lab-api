@@ -227,8 +227,10 @@ async def _end_read_only_transaction(db: AsyncSession) -> None:
     and ``sync_targets``' id list). Committing a read-only transaction ends it
     without discarding loaded objects; a transaction that has written anything has a Postgres
     transaction id, and ORM changes not yet flushed show in the session, so both are refused
-    rather than committed as a side effect of a sync.
+    rather than committed as a side effect of a sync. A quarantined session is refused untouched.
     """
+    if why := db.info.get(_QUARANTINED):
+        raise SessionQuarantined(f"this session cannot be used for another sync: {why}")
     if db.new or db.dirty or db.deleted:
         raise RuntimeError("a wearable sync needs a session with no pending changes")
     if not db.in_transaction():
@@ -240,26 +242,44 @@ async def _end_read_only_transaction(db: AsyncSession) -> None:
     await db.commit()
 
 
+class SessionQuarantined(RuntimeError):
+    """The session's cleanup after an earlier sync could not be confirmed; it is never reused."""
+
+
+_QUARANTINED = "wearable_sync.quarantined"
+# Cleanup operations still running on a quarantined session, kept referenced until they end.
+_abandoned: set[asyncio.Future[None]] = set()
+
+
+def _quarantine(db: AsyncSession, op: asyncio.Future[None] | None, why: str) -> None:
+    db.info[_QUARANTINED] = why
+    if op is not None and not op.done():
+        _abandoned.add(op)
+        op.add_done_callback(_abandoned.discard)
+    logger.critical("wearable sync: the work session is quarantined and will not be reused: %s", why)
+
+
 async def _end_work_session(db: AsyncSession) -> None:
     """End whatever the work session left open, within a bound, never replacing the attempt's
     own error.
 
-    Runs while the sync lock and its capacity slot are still held, so it must finish: a rollback
-    that does not return within ``CLEANUP_BUDGET_S`` is cancelled and the session's connection is
-    invalidated (closed rather than returned to the pool), each step bounded. The work runs in its
-    own task, so a cancelled caller still waits for the bounded cleanup before the lock is released.
+    Runs while the sync lock and its capacity slot are still held, so it must finish: it runs in
+    its own task, awaited to the end however often the caller is cancelled, and each step is
+    bounded by ``CLEANUP_BUDGET_S``. A rollback that does not return is cancelled; once it has
+    ended, the session's connection is invalidated (closed rather than returned to the pool).
+    A rollback that is still running after its cancellation owns the session, so the session is
+    never touched again: it is quarantined, and every later sync on it is refused.
     """
-    cleanup = asyncio.ensure_future(_bounded_rollback(db))
-    try:
-        await asyncio.shield(cleanup)
-    except asyncio.CancelledError:
-        await asyncio.wait({cleanup})  # bounded: at most three cleanup budgets
-        raise
+    if db.info.get(_QUARANTINED):
+        return
+    await wearable_sync_lock.finish_despite_cancellation(
+        asyncio.ensure_future(_bounded_rollback(db)))
 
 
 async def _bounded_rollback(db: AsyncSession) -> None:
+    budget = wearable_sync_lock.CLEANUP_BUDGET_S
     rollback = asyncio.ensure_future(db.rollback())
-    done, _ = await asyncio.wait({rollback}, timeout=wearable_sync_lock.CLEANUP_BUDGET_S)
+    done, _ = await asyncio.wait({rollback}, timeout=budget)
     if done:
         exc = None if rollback.cancelled() else rollback.exception()
         if exc is None:
@@ -267,18 +287,21 @@ async def _bounded_rollback(db: AsyncSession) -> None:
         logger.warning("wearable sync: rollback after the attempt failed: %r", exc)
     else:
         rollback.cancel()
-        await asyncio.wait({rollback}, timeout=wearable_sync_lock.CLEANUP_BUDGET_S)
+        done, _ = await asyncio.wait({rollback}, timeout=budget)
+        if not done:
+            # Still unwinding: invalidating now would race it (SQLAlchemy refuses a state change
+            # while another operation is in progress), and so would any later use of the session.
+            _quarantine(db, rollback, f"its rollback did not end within {budget}s of being cancelled")
+            return
         logger.error("wearable sync: rollback did not finish within %ss; invalidating the work "
-                     "session's connection", wearable_sync_lock.CLEANUP_BUDGET_S)
+                     "session's connection", budget)
     invalidate = asyncio.ensure_future(db.invalidate())
-    done, _ = await asyncio.wait({invalidate}, timeout=wearable_sync_lock.CLEANUP_BUDGET_S)
+    done, _ = await asyncio.wait({invalidate}, timeout=budget)
     if not done:
         invalidate.cancel()
-        logger.critical("wearable sync: could not invalidate the work session's connection "
-                        "within %ss", wearable_sync_lock.CLEANUP_BUDGET_S)
+        _quarantine(db, invalidate, f"invalidating its connection did not finish within {budget}s")
     elif not invalidate.cancelled() and invalidate.exception() is not None:
-        logger.critical("wearable sync: invalidating the work session failed: %r",
-                        invalidate.exception())
+        _quarantine(db, None, f"invalidating its connection failed: {invalidate.exception()!r}")
 
 
 async def _read_snapshot(conn: AsyncConnection, connection_id: int) -> _Snapshot | None:

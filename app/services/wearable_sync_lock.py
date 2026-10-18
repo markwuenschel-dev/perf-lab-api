@@ -24,8 +24,8 @@ the connection then sits idle and not in a transaction. Expiry raises ``SyncBusy
 
 The capacity bound is per process: each API worker and each CLI run has its own.
 
-**Release.** Runs as its own task, so a second cancellation of the caller cannot cut it short:
-first every protected write (``protect``) finishes, then ``pg_advisory_unlock`` must return
+**Release.** Runs as its own task, and the caller awaits it to the end however often it is
+cancelled (``finish_despite_cancellation``): first every protected write (``protect``) finishes, then ``pg_advisory_unlock`` must return
 true; if it returns false, raises, or times out, the physical connection is invalidated
 (closing it ends the session, which frees the lock). Only then are the capacity slot and the
 per-id lock released. A protected write never runs after the unlock: the unlock waits for it,
@@ -115,6 +115,27 @@ def _state() -> _ProcessState:
     if state is None:
         state = _states[loop] = _ProcessState()
     return state
+
+
+async def finish_despite_cancellation(task: asyncio.Future[T]) -> T:
+    """Await ``task`` to its end even if the caller is cancelled, any number of times.
+
+    A cancellation of the caller is held back until ``task`` is done, then re-raised once. For
+    cleanup that must complete before what follows it (an unlock, a capacity release). ``task``
+    must be bounded: the caller cannot be cancelled out of this wait.
+    """
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
 
 
 def _is_lock_timeout(exc: DBAPIError) -> bool:
@@ -250,9 +271,9 @@ async def hold_sync_lock(
             lock, conn, connection_id, state, locked=locked and lock is not None,
             held_slot=held_slot))
         try:
-            await asyncio.shield(cleanup)
+            # The caller returns only after the full release, however often it is cancelled.
+            await finish_despite_cancellation(cleanup)
         finally:
             if held_key:
-                # The per-id queue waits on the full release, even if this caller was cancelled.
-                cleanup.add_done_callback(lambda _t: key_lock.release())
-            cleanup.add_done_callback(lambda _t: state.leave_key(connection_id))
+                key_lock.release()
+            state.leave_key(connection_id)
