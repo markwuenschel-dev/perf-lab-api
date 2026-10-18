@@ -9,30 +9,40 @@ the wellness sink together:
 - Every successful link advances the row's ``generation``; a token refresh never does, and
   writes only while the generation it read is unchanged, so a refresh that raced a reconnect
   cannot overwrite the new credentials.
-- Sync: ``sync_connection`` refreshes the OAuth token as needed, pulls new days, and
-  upserts them via the canonical ``readiness_service.upsert_wellness_sample`` sink
-  (source = the connection's own provider slug), advancing ``last_sync_at``. ``sync_all`` drives every connection
-  (used by the nightly cron job).
+- Sync: ``sync_connection`` holds the connection's sync lock (``wearable_sync_lock``), refreshes
+  the OAuth token as needed, pulls new days, and upserts them via the canonical
+  ``readiness_service.upsert_wellness_sample`` sink (source = the connection's own provider slug),
+  advancing ``last_sync_at``. Syncs run when the athlete shows up (the web syncs a stale
+  connection on load and when the check-in opens); there is no nightly job, so nothing keeps
+  data fresh unattended (ADR-0027, superseded). ``sync_all`` drives every connection for the
+  manual catch-up CLI (``app.scripts.sync_wearables``).
 
 Tokens are Fernet-encrypted at rest (``app.core.crypto``); this module and
 ``wearable_oauth`` are the only places that handle them.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
 
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from app.core import crypto
-from app.integrations.base import WearableAdapter
+from app.integrations.base import TokenBundle, WearableAdapter
 from app.integrations.registry import adapter_for
 from app.logic.prescription_evidence import utc_naive
 from app.models.wearable_connection import WearableConnection
 from app.schemas.wellness import WellnessSampleIn
 from app.services import readiness_service
+from app.services.wearable_sync_lock import (
+    PROTECTED_STATEMENT_TIMEOUT_MS,
+    SyncLock,
+    hold_sync_lock,
+)
 from app.services.wellness_shadow_hooks import run_wellness_shadows
 
 logger = logging.getLogger("perflab.wearable")
@@ -151,70 +161,193 @@ async def disconnect(db: AsyncSession, user_id: int, provider: str = DEFAULT_PRO
 
 
 # --- Sync ------------------------------------------------------------------------
+#
+# One attempt (Wave 4, L1; ADR-0027 as superseded):
+#   0. the caller's session ends its read-only transaction (a pending write is refused);
+#   1. the sync lock for the connection id is held (``wearable_sync_lock``; up to 30 s to get it);
+#   2. under a separate work budget, one snapshot of the row — (id, generation) frozen — is read
+#      on the lock connection and used for everything after: the refresh is saved only while that
+#      generation still stands, and the watermark advances only on it. A newer generation is never
+#      adopted mid-attempt: a relink makes this attempt end in ConnectionReplaced, and its tokens
+#      and watermark are left to the new link;
+#   3. no transaction is open on either connection during a provider call.
+# Wellness rows committed before a replacement is detected stay: they are the athlete's own data,
+# and a final ConnectionReplaced does not undo them.
+
+#: The work budget once the lock is held: the token, the fetch (which ``lock_timeout`` does not
+#: bound, nor Oura's pagination), every day's write, and the watermark.
+SYNC_WORK_BUDGET_S = 60.0
 
 
-async def _valid_access_token(db: AsyncSession, conn: WearableConnection) -> str:
-    """Return a usable access token, refreshing an expiring OAuth token in place."""
-    access = crypto.decrypt(conn.access_token_enc)
-    if conn.auth_type != "oauth":
-        return access  # PATs don't expire / can't refresh
-    if conn.expires_at is None:
-        return access
-    if _aware(conn.expires_at) - datetime.now(UTC) > _REFRESH_BUFFER:
-        return access
-    if not conn.refresh_token_enc:
-        logger.warning("Oura connection %s expired with no refresh token", conn.id)
-        return access
-    # Refresh from what is stored now, and write back only if no link replaced it meanwhile:
-    # an OAuth reconnect or a PAT advances the generation, a refresh never does.
-    current = (await db.execute(text(
-        "SELECT generation, refresh_token_enc FROM wearable_connections WHERE id = :i"
-    ), {"i": conn.id})).one_or_none()
+class SyncTimedOut(RuntimeError):
+    """The attempt held the lock but did not finish within ``SYNC_WORK_BUDGET_S``."""
+
+
+@dataclass
+class SyncProgress:
+    """What one attempt durably did, readable after it fails.
+
+    ``rows_confirmed`` counts wellness rows whose commit returned. A write still in flight when
+    the attempt failed (a timeout or a lost connection mid-commit) may or may not have committed:
+    it is ``in_doubt_day``, never assumed rolled back.
+    """
+
+    rows_confirmed: int = 0
+    in_doubt_day: date_cls | None = None
+    credentials_refreshed: bool = False
+
+
+@dataclass(frozen=True)
+class SyncOutcome:
+    rows_written: int
+    last_sync_at: datetime
+
+
+@dataclass(frozen=True)
+class _Snapshot:
+    id: int
+    user_id: int
+    provider: str
+    auth_type: str
+    access_token_enc: str
+    refresh_token_enc: str | None
+    expires_at: datetime | None
+    generation: int
+    last_sync_at: datetime | None
+
+
+async def _end_read_only_transaction(db: AsyncSession) -> None:
+    """End the caller's open transaction, refusing one that holds a write.
+
+    Every caller reaches a sync having only read (the route's auth and connection lookups,
+    ``sync_user``'s lookup, ``sync_all``'s id list). Committing a read-only transaction ends it
+    without discarding loaded objects; a transaction that has written anything has a Postgres
+    transaction id, and ORM changes not yet flushed show in the session, so both are refused
+    rather than committed as a side effect of a sync.
+    """
+    if db.new or db.dirty or db.deleted:
+        raise RuntimeError("a wearable sync needs a session with no pending changes")
+    if not db.in_transaction():
+        return
+    xid = (await db.execute(text("SELECT pg_current_xact_id_if_assigned()"))).scalar()
+    if xid is not None:
+        raise RuntimeError("a wearable sync needs a session whose transaction has not written; "
+                           "commit or roll it back first")
     await db.commit()
-    if current is None or not current.refresh_token_enc:
-        raise ConnectionReplaced(f"connection {conn.id} changed before its refresh")
-    tokens = await _adapter(conn.provider).refresh_tokens(
-        crypto.decrypt(current.refresh_token_enc)
-    )
-    written = (await db.execute(text(
+
+
+async def _rollback_quietly(db: AsyncSession) -> None:
+    """End whatever the work session left open, never replacing the attempt's own error."""
+    try:
+        await asyncio.shield(db.rollback())
+    except Exception as exc:  # noqa: BLE001 — cleanup must not mask the original failure
+        logger.warning("wearable sync: rollback after the attempt failed: %r", exc)
+
+
+async def _read_snapshot(conn: AsyncConnection, connection_id: int) -> _Snapshot | None:
+    row = (await conn.execute(text(
+        "SELECT id, user_id, provider, auth_type, access_token_enc, refresh_token_enc, "
+        "expires_at, generation, last_sync_at FROM wearable_connections WHERE id = :i"
+    ), {"i": connection_id})).mappings().one_or_none()
+    await conn.commit()
+    return None if row is None else _Snapshot(**row)
+
+
+async def _save_refreshed_credentials(
+    conn: AsyncConnection, snap: _Snapshot, tokens: TokenBundle
+) -> bool:
+    """Store a refresh's credentials while the snapshot's generation stands. False if relinked."""
+    await conn.execute(text(f"SET LOCAL statement_timeout = {PROTECTED_STATEMENT_TIMEOUT_MS}"))
+    written = (await conn.execute(text(
         "UPDATE wearable_connections SET access_token_enc = :acc, "
         "refresh_token_enc = COALESCE(:ref, refresh_token_enc), expires_at = :exp, "
         "scope = COALESCE(:scope, scope), updated_at = :now "
         "WHERE id = :i AND generation = :g RETURNING id"
     ), {
-        "i": conn.id, "g": current.generation,
+        "i": snap.id, "g": snap.generation,
         "acc": crypto.encrypt(tokens.access_token),
         "ref": crypto.encrypt(tokens.refresh_token) if tokens.refresh_token else None,
         "exp": stored_expiry(tokens.expires_at), "scope": tokens.scope or None,
         "now": datetime.now(UTC).replace(tzinfo=None),
     })).first()
-    await db.commit()
-    if written is None:
-        raise ConnectionReplaced(f"connection {conn.id} was relinked during its refresh")
+    await conn.commit()
+    return written is not None
+
+
+async def _access_token(lock: SyncLock, snap: _Snapshot, progress: SyncProgress) -> str:
+    """A usable access token for the snapshot, refreshing an expiring OAuth token."""
+    access = crypto.decrypt(snap.access_token_enc)
+    if snap.auth_type != "oauth" or snap.expires_at is None:
+        return access  # PATs don't expire / can't refresh
+    if _aware(snap.expires_at) - datetime.now(UTC) > _REFRESH_BUFFER:
+        return access
+    if not snap.refresh_token_enc:
+        logger.warning("Oura connection %s expired with no refresh token", snap.id)
+        return access
+    tokens = await _adapter(snap.provider).refresh_tokens(crypto.decrypt(snap.refresh_token_enc))
+    # Oura has issued (and may have rotated) credentials: saving them must outlive a timeout or
+    # a cancelled request, and the lock is held until the save finishes or is aborted.
+    saved = await lock.protect(lambda conn: _save_refreshed_credentials(conn, snap, tokens))
+    if not saved:
+        raise ConnectionReplaced(f"connection {snap.id} was relinked during its refresh")
+    progress.credentials_refreshed = True
     return tokens.access_token
 
 
 async def sync_connection(
-    db: AsyncSession, conn: WearableConnection, *, days: int = DEFAULT_SYNC_DAYS
-) -> int:
-    """Pull new days for one connection into WellnessSample. Returns rows written."""
-    access = await _valid_access_token(db, conn)
+    db: AsyncSession, connection_id: int, *, days: int = DEFAULT_SYNC_DAYS,
+    progress: SyncProgress | None = None,
+) -> SyncOutcome:
+    """Pull new days for one connection into WellnessSample, holding its sync lock.
+
+    Raises ``SyncBusy`` if another sync held the lock for the whole acquisition budget,
+    ``SyncTimedOut`` past the work budget, and ``ConnectionReplaced`` if the connection was
+    removed or relinked before the attempt finished. Pass ``progress`` to learn what a failed
+    attempt had already committed.
+    """
+    progress = progress if progress is not None else SyncProgress()
+    await _end_read_only_transaction(db)
+    async with hold_sync_lock(db.get_bind().engine.url, connection_id) as lock:
+        work = asyncio.timeout(SYNC_WORK_BUDGET_S)
+        try:
+            async with work:
+                return await _sync_locked(db, lock, connection_id, days, progress)
+        except TimeoutError as exc:
+            if work.expired():
+                raise SyncTimedOut(
+                    f"wearable connection {connection_id} did not finish syncing within "
+                    f"{SYNC_WORK_BUDGET_S:g}s") from exc
+            raise
+        finally:
+            # Outside the expired work scope, and still under the lock.
+            await _rollback_quietly(db)
+
+
+async def _sync_locked(
+    db: AsyncSession, lock: SyncLock, connection_id: int, days: int, progress: SyncProgress
+) -> SyncOutcome:
+    snap = await _read_snapshot(lock.conn, connection_id)
+    if snap is None:
+        # Removed while this attempt waited. A row recreated since has a new id and its own lock;
+        # it is never looked up by (user, provider) here.
+        raise ConnectionReplaced(f"connection {connection_id} was removed before its sync")
+    access = await _access_token(lock, snap, progress)
+
     end = _utc_today()
-    # Start from the day before the last sync (to catch late-arriving data), else a
-    # trailing window on first run.
-    if conn.last_sync_at is not None:
-        start = _aware(conn.last_sync_at).date() - timedelta(days=1)
+    # Start from the day before the last sync (to catch late-arriving data), else a trailing
+    # window on first run. A watermark always wins over ``days``: this is catch-up, not backfill.
+    if snap.last_sync_at is not None:
+        start = _aware(snap.last_sync_at).date() - timedelta(days=1)
     else:
         start = end - timedelta(days=days)
     if start > end:
         start = end
 
-    readings = await _adapter(conn.provider).fetch_daily_wellness(access, start, end)
-    written = 0
+    readings = await _adapter(snap.provider).fetch_daily_wellness(access, start, end)
     for r in readings:
         payload = WellnessSampleIn(
             date=r.day,
-            source=conn.provider,
+            source=snap.provider,
             hrv_ms=r.hrv_ms,
             hrv_metric=r.hrv_metric,
             sleep_hours=r.sleep_hours,
@@ -229,45 +362,72 @@ async def sync_connection(
             quality=r.quality,
             raw=r.raw or None,
         )
-        sample = await readiness_service.upsert_wellness_sample(db, conn.user_id, payload)
-        written += 1
+        progress.in_doubt_day = r.day
+        sample = await readiness_service.upsert_wellness_sample(db, snap.user_id, payload)
+        progress.rows_confirmed += 1
+        progress.in_doubt_day = None
         # That day is committed: run its shadows now, before the next day's write (P7). Oura
         # supplies no soreness, so the EKF records an explicit skip.
         await run_wellness_shadows(db, sample, assimilate_soreness=False)
 
-    conn.last_sync_at = datetime.now(UTC).replace(tzinfo=None)
-    await db.commit()
-    return written
+    stamped = (await lock.conn.execute(text(
+        "UPDATE wearable_connections SET last_sync_at = :now "
+        "WHERE id = :i AND generation = :g RETURNING last_sync_at"
+    ), {"i": snap.id, "g": snap.generation,
+        "now": datetime.now(UTC).replace(tzinfo=None)})).scalar_one_or_none()
+    await lock.conn.commit()
+    if stamped is None:
+        raise ConnectionReplaced(
+            f"connection {snap.id} was removed or relinked during its sync; "
+            f"{progress.rows_confirmed} wellness rows were kept")
+    return SyncOutcome(rows_written=progress.rows_confirmed, last_sync_at=stamped)
 
 
 async def sync_user(
     db: AsyncSession, user_id: int, *, provider: str = DEFAULT_PROVIDER, days: int = DEFAULT_SYNC_DAYS
-) -> int:
+) -> SyncOutcome | None:
     conn = await get_connection(db, user_id, provider)
     if conn is None:
-        return 0
-    return await sync_connection(db, conn, days=days)
+        return None
+    return await sync_connection(db, conn.id, days=days)
 
 
-async def sync_all(db: AsyncSession, *, days: int = DEFAULT_SYNC_DAYS) -> dict[str, int]:
-    """Sync every stored connection. Returns per-connection row counts + a total.
+@dataclass(frozen=True)
+class ConnectionSyncReport:
+    key: str
+    rows_confirmed: int
+    in_doubt_day: date_cls | None = None
+    error: str | None = None
 
-    One connection failing (revoked token, provider outage) does not abort the run.
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+async def sync_all(db: AsyncSession, *, days: int = DEFAULT_SYNC_DAYS) -> list[ConnectionSyncReport]:
+    """Sync every stored connection, one at a time. One failing does not stop the rest.
+
+    The connections are listed as plain ids first: after a failed attempt the session is rolled
+    back, which expires ORM objects, so each attempt reloads its own row from its id.
     """
-    conns = (await db.execute(select(WearableConnection))).scalars().all()
-    results: dict[str, int] = {}
-    total = 0
-    for conn in conns:
-        key = f"user{conn.user_id}:{conn.provider}"
+    targets = (await db.execute(
+        select(WearableConnection.id, WearableConnection.user_id, WearableConnection.provider)
+        .order_by(WearableConnection.id)
+    )).all()
+    reports: list[ConnectionSyncReport] = []
+    for connection_id, user_id, provider in targets:
+        key = f"user{user_id}:{provider}"
+        progress = SyncProgress()
         try:
-            n = await sync_connection(db, conn, days=days)
-            results[key] = n
-            total += n
+            await sync_connection(db, connection_id, days=days, progress=progress)
         except Exception as exc:  # noqa: BLE001 — isolate per-connection failures
             logger.exception("Wearable sync failed for %s: %s", key, exc)
-            results[key] = -1
-    results["_total"] = total
-    return results
+            await _rollback_quietly(db)
+            reports.append(ConnectionSyncReport(
+                key, progress.rows_confirmed, progress.in_doubt_day, f"{type(exc).__name__}: {exc}"))
+        else:
+            reports.append(ConnectionSyncReport(key, progress.rows_confirmed))
+    return reports
 
 
 # --- small helpers ---------------------------------------------------------------

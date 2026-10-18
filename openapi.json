@@ -11560,7 +11560,7 @@
     },
     "/v1/integrations/oura/sync": {
       "post": {
-        "description": "Pull the caller's Oura data now (on-demand; the cron does this nightly).",
+        "description": "Pull the caller's Oura data now.\n\nThis is how Oura data arrives: the web calls it when the athlete shows up and the last sync\nis stale. There is no nightly job. A sync already running for this connection is waited for\n(up to 30 s, then 409); the sync itself has 60 s (then 504). Rows saved before a 409 or 504\nare kept.",
         "operationId": "sync_now_v1_integrations_oura_sync_post",
         "responses": {
           "200": {

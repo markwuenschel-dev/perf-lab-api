@@ -514,7 +514,12 @@ export interface paths {
         put?: never;
         /**
          * Sync Now
-         * @description Pull the caller's Oura data now (on-demand; the cron does this nightly).
+         * @description Pull the caller's Oura data now.
+         *
+         *     This is how Oura data arrives: the web calls it when the athlete shows up and the last sync
+         *     is stale. There is no nightly job. A sync already running for this connection is waited for
+         *     (up to 30 s, then 409); the sync itself has 60 s (then 504). Rows saved before a 409 or 504
+         *     are kept.
          */
         post: operations["sync_now_v1_integrations_oura_sync_post"];
         delete?: never;

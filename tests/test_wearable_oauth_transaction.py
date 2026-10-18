@@ -812,7 +812,7 @@ async def test_a_refresh_that_raced_a_reconnect_does_not_overwrite_it(http_clien
     async def sync():
         async with sessions() as db:
             conn = await wearable_service.get_connection(db, uid, "oura")
-            return await wearable_service.sync_connection(db, conn)
+            return await wearable_service.sync_connection(db, conn.id)
 
     task = asyncio.create_task(sync())
     await _until_held(fake.refresh_entered, task)
