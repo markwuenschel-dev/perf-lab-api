@@ -37,7 +37,7 @@ from app.integrations.registry import adapter_for
 from app.logic.prescription_evidence import utc_naive
 from app.models.wearable_connection import WearableConnection
 from app.schemas.wellness import WellnessSampleIn
-from app.services import readiness_service
+from app.services import readiness_service, wearable_sync_lock
 from app.services.wearable_sync_lock import (
     PROTECTED_STATEMENT_TIMEOUT_MS,
     SyncLock,
@@ -194,7 +194,11 @@ class SyncProgress:
 
     rows_confirmed: int = 0
     in_doubt_day: date_cls | None = None
-    credentials_refreshed: bool = False
+
+    def acknowledge(self) -> None:
+        """The in-flight day's COMMIT returned: it is durable, whatever happens next."""
+        self.rows_confirmed += 1
+        self.in_doubt_day = None
 
 
 @dataclass(frozen=True)
@@ -220,7 +224,7 @@ async def _end_read_only_transaction(db: AsyncSession) -> None:
     """End the caller's open transaction, refusing one that holds a write.
 
     Every caller reaches a sync having only read (the route's auth and connection lookups,
-    ``sync_user``'s lookup, ``sync_all``'s id list). Committing a read-only transaction ends it
+    and ``sync_targets``' id list). Committing a read-only transaction ends it
     without discarding loaded objects; a transaction that has written anything has a Postgres
     transaction id, and ORM changes not yet flushed show in the session, so both are refused
     rather than committed as a side effect of a sync.
@@ -236,12 +240,45 @@ async def _end_read_only_transaction(db: AsyncSession) -> None:
     await db.commit()
 
 
-async def _rollback_quietly(db: AsyncSession) -> None:
-    """End whatever the work session left open, never replacing the attempt's own error."""
+async def _end_work_session(db: AsyncSession) -> None:
+    """End whatever the work session left open, within a bound, never replacing the attempt's
+    own error.
+
+    Runs while the sync lock and its capacity slot are still held, so it must finish: a rollback
+    that does not return within ``CLEANUP_BUDGET_S`` is cancelled and the session's connection is
+    invalidated (closed rather than returned to the pool), each step bounded. The work runs in its
+    own task, so a cancelled caller still waits for the bounded cleanup before the lock is released.
+    """
+    cleanup = asyncio.ensure_future(_bounded_rollback(db))
     try:
-        await asyncio.shield(db.rollback())
-    except Exception as exc:  # noqa: BLE001 — cleanup must not mask the original failure
+        await asyncio.shield(cleanup)
+    except asyncio.CancelledError:
+        await asyncio.wait({cleanup})  # bounded: at most three cleanup budgets
+        raise
+
+
+async def _bounded_rollback(db: AsyncSession) -> None:
+    rollback = asyncio.ensure_future(db.rollback())
+    done, _ = await asyncio.wait({rollback}, timeout=wearable_sync_lock.CLEANUP_BUDGET_S)
+    if done:
+        exc = None if rollback.cancelled() else rollback.exception()
+        if exc is None:
+            return
         logger.warning("wearable sync: rollback after the attempt failed: %r", exc)
+    else:
+        rollback.cancel()
+        await asyncio.wait({rollback}, timeout=wearable_sync_lock.CLEANUP_BUDGET_S)
+        logger.error("wearable sync: rollback did not finish within %ss; invalidating the work "
+                     "session's connection", wearable_sync_lock.CLEANUP_BUDGET_S)
+    invalidate = asyncio.ensure_future(db.invalidate())
+    done, _ = await asyncio.wait({invalidate}, timeout=wearable_sync_lock.CLEANUP_BUDGET_S)
+    if not done:
+        invalidate.cancel()
+        logger.critical("wearable sync: could not invalidate the work session's connection "
+                        "within %ss", wearable_sync_lock.CLEANUP_BUDGET_S)
+    elif not invalidate.cancelled() and invalidate.exception() is not None:
+        logger.critical("wearable sync: invalidating the work session failed: %r",
+                        invalidate.exception())
 
 
 async def _read_snapshot(conn: AsyncConnection, connection_id: int) -> _Snapshot | None:
@@ -274,7 +311,7 @@ async def _save_refreshed_credentials(
     return written is not None
 
 
-async def _access_token(lock: SyncLock, snap: _Snapshot, progress: SyncProgress) -> str:
+async def _access_token(lock: SyncLock, snap: _Snapshot) -> str:
     """A usable access token for the snapshot, refreshing an expiring OAuth token."""
     access = crypto.decrypt(snap.access_token_enc)
     if snap.auth_type != "oauth" or snap.expires_at is None:
@@ -290,7 +327,6 @@ async def _access_token(lock: SyncLock, snap: _Snapshot, progress: SyncProgress)
     saved = await lock.protect(lambda conn: _save_refreshed_credentials(conn, snap, tokens))
     if not saved:
         raise ConnectionReplaced(f"connection {snap.id} was relinked during its refresh")
-    progress.credentials_refreshed = True
     return tokens.access_token
 
 
@@ -319,8 +355,8 @@ async def sync_connection(
                     f"{SYNC_WORK_BUDGET_S:g}s") from exc
             raise
         finally:
-            # Outside the expired work scope, and still under the lock.
-            await _rollback_quietly(db)
+            # Outside the expired work scope, and still under the lock and its capacity slot.
+            await _end_work_session(db)
 
 
 async def _sync_locked(
@@ -331,7 +367,7 @@ async def _sync_locked(
         # Removed while this attempt waited. A row recreated since has a new id and its own lock;
         # it is never looked up by (user, provider) here.
         raise ConnectionReplaced(f"connection {connection_id} was removed before its sync")
-    access = await _access_token(lock, snap, progress)
+    access = await _access_token(lock, snap)
 
     end = _utc_today()
     # Start from the day before the last sync (to catch late-arriving data), else a trailing
@@ -363,9 +399,8 @@ async def _sync_locked(
             raw=r.raw or None,
         )
         progress.in_doubt_day = r.day
-        sample = await readiness_service.upsert_wellness_sample(db, snap.user_id, payload)
-        progress.rows_confirmed += 1
-        progress.in_doubt_day = None
+        sample = await readiness_service.upsert_wellness_sample(
+            db, snap.user_id, payload, on_committed=progress.acknowledge)
         # That day is committed: run its shadows now, before the next day's write (P7). Oura
         # supplies no soreness, so the EKF records an explicit skip.
         await run_wellness_shadows(db, sample, assimilate_soreness=False)
@@ -383,15 +418,6 @@ async def _sync_locked(
     return SyncOutcome(rows_written=progress.rows_confirmed, last_sync_at=stamped)
 
 
-async def sync_user(
-    db: AsyncSession, user_id: int, *, provider: str = DEFAULT_PROVIDER, days: int = DEFAULT_SYNC_DAYS
-) -> SyncOutcome | None:
-    conn = await get_connection(db, user_id, provider)
-    if conn is None:
-        return None
-    return await sync_connection(db, conn.id, days=days)
-
-
 @dataclass(frozen=True)
 class ConnectionSyncReport:
     key: str
@@ -404,30 +430,41 @@ class ConnectionSyncReport:
         return self.error is None
 
 
-async def sync_all(db: AsyncSession, *, days: int = DEFAULT_SYNC_DAYS) -> list[ConnectionSyncReport]:
-    """Sync every stored connection, one at a time. One failing does not stop the rest.
+async def sync_one(
+    db: AsyncSession, connection_id: int, key: str, *, days: int = DEFAULT_SYNC_DAYS
+) -> ConnectionSyncReport:
+    """Sync one connection and report it, failure included: what was saved, and what is unknown."""
+    progress = SyncProgress()
+    try:
+        await sync_connection(db, connection_id, days=days, progress=progress)
+    except Exception as exc:  # noqa: BLE001 — a failure is reported, with its partial success
+        logger.exception("Wearable sync failed for %s: %s", key, exc)
+        await _end_work_session(db)
+        return ConnectionSyncReport(
+            key, progress.rows_confirmed, progress.in_doubt_day, f"{type(exc).__name__}: {exc}")
+    return ConnectionSyncReport(key, progress.rows_confirmed)
 
-    The connections are listed as plain ids first: after a failed attempt the session is rolled
-    back, which expires ORM objects, so each attempt reloads its own row from its id.
+
+async def sync_targets(
+    db: AsyncSession, *, user_id: int | None = None, provider: str | None = None
+) -> list[tuple[int, str]]:
+    """``(connection_id, report key)`` for every stored connection, or one user's.
+
+    Plain values, not ORM objects: after a failed attempt the session is rolled back, which
+    expires ORM objects, so each attempt reloads its own row from its id.
     """
-    targets = (await db.execute(
-        select(WearableConnection.id, WearableConnection.user_id, WearableConnection.provider)
-        .order_by(WearableConnection.id)
-    )).all()
-    reports: list[ConnectionSyncReport] = []
-    for connection_id, user_id, provider in targets:
-        key = f"user{user_id}:{provider}"
-        progress = SyncProgress()
-        try:
-            await sync_connection(db, connection_id, days=days, progress=progress)
-        except Exception as exc:  # noqa: BLE001 — isolate per-connection failures
-            logger.exception("Wearable sync failed for %s: %s", key, exc)
-            await _rollback_quietly(db)
-            reports.append(ConnectionSyncReport(
-                key, progress.rows_confirmed, progress.in_doubt_day, f"{type(exc).__name__}: {exc}"))
-        else:
-            reports.append(ConnectionSyncReport(key, progress.rows_confirmed))
-    return reports
+    stmt = select(WearableConnection.id, WearableConnection.user_id, WearableConnection.provider)
+    if user_id is not None:
+        stmt = stmt.where(WearableConnection.user_id == user_id)
+    if provider is not None:
+        stmt = stmt.where(WearableConnection.provider == provider)
+    rows = (await db.execute(stmt.order_by(WearableConnection.id))).all()
+    return [(cid, f"user{uid}:{prov}") for cid, uid, prov in rows]
+
+
+async def sync_all(db: AsyncSession, *, days: int = DEFAULT_SYNC_DAYS) -> list[ConnectionSyncReport]:
+    """Sync every stored connection, one at a time. One failing does not stop the rest."""
+    return [await sync_one(db, cid, key, days=days) for cid, key in await sync_targets(db)]
 
 
 # --- small helpers ---------------------------------------------------------------

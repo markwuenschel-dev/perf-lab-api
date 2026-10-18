@@ -44,14 +44,11 @@ def _describe(report: wearable_service.ConnectionSyncReport) -> str:
 
 async def _run(*, days: int, user_id: int | None) -> int:
     async with AsyncSessionLocal() as db:
-        if user_id is not None:
-            outcome = await wearable_service.sync_user(db, user_id, days=days)
-            if outcome is None:
-                print(f"[sync_wearables] user={user_id}: no connection")
-                return 1
-            print(f"[sync_wearables] user={user_id}: wrote {outcome.rows_written} wellness rows")
-            return 0
-        reports = await wearable_service.sync_all(db, days=days)
+        targets = await wearable_service.sync_targets(db, user_id=user_id)
+        if user_id is not None and not targets:
+            print(f"[sync_wearables] user={user_id}: no connection")
+            return 1
+        reports = [await wearable_service.sync_one(db, cid, key, days=days) for cid, key in targets]
     for report in reports:
         print(f"[sync_wearables] {report.key}: {_describe(report)}")
     failed = sum(not r.ok for r in reports)

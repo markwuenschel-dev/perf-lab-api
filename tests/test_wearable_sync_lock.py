@@ -669,10 +669,10 @@ async def _two_connections_one_failing(sessions, monkeypatch):
     await _link(sessions, uid_b, auth_type="pat")
     real = readiness_service.upsert_wellness_sample
 
-    async def fails_on_a_second_day(db, user_id, payload):
+    async def fails_on_a_second_day(db, user_id, payload, **kwargs):
         if user_id == uid_a and payload.date == DAYS[1]:
             await db.execute(text("SELECT * FROM w4_no_such_table"))  # a real database error
-        return await real(db, user_id, payload)
+        return await real(db, user_id, payload, **kwargs)
 
     monkeypatch.setattr(readiness_service, "upsert_wellness_sample", fails_on_a_second_day)
     return uid_a, uid_b
@@ -716,3 +716,88 @@ def test_main_returns_the_run_status(monkeypatch):
 
     monkeypatch.setattr(sync_wearables, "_run", failed)
     assert sync_wearables.main(["--days", "3"]) == 1
+
+
+# --- review round 1: bounded cleanup, the commit boundary, one reporting contract ------------
+
+
+async def test_a_stalled_rollback_is_bounded_and_the_lock_and_slot_are_still_released(
+        fake, sessions, monkeypatch, caplog):
+    """After the work deadline, a rollback that never returns must not hold the lock, its slot,
+    or the response: it is cancelled and the work session's connection invalidated."""
+    monkeypatch.setattr(wearable_sync_lock, "CLEANUP_BUDGET_S", 0.3)
+    monkeypatch.setattr(wearable_service, "SYNC_WORK_BUDGET_S", 0.3)
+    caplog.set_level(logging.INFO)
+    uid = await _user(sessions, "w4-stalled-rollback@test.com")
+    cid, _ = await _link(sessions, uid, auth_type="pat")
+    gate = Gate()
+    fake.fetch_hooks = [gate]
+    invalidated: list[bool] = []
+    try:
+        async with sessions() as db:
+            real_invalidate = db.invalidate
+
+            async def stalled_rollback():
+                await asyncio.sleep(60)
+
+            async def counted_invalidate():
+                invalidated.append(True)
+                await real_invalidate()
+
+            db.rollback = stalled_rollback
+            db.invalidate = counted_invalidate
+            started = time.monotonic()
+            with pytest.raises(wearable_service.SyncTimedOut):
+                await asyncio.wait_for(wearable_service.sync_connection(db, cid), 10)
+            elapsed = time.monotonic() - started
+    finally:
+        gate.release.set()
+    # work budget + rollback budget + its cancel wait + the invalidation, with slack
+    assert elapsed < 0.3 + 3 * 0.3 + 1.5, elapsed
+    assert invalidated == [True]
+    assert any("rollback did not finish" in r.getMessage() for r in caplog.records)
+    await _settle()
+    assert await _lock_is_free(cid) and _process_state_is_clean()
+
+
+async def test_a_day_whose_commit_returned_is_confirmed_even_if_its_read_back_fails(
+        fake, sessions, monkeypatch):
+    uid = await _user(sessions, "w4-ack@test.com")
+    cid, _ = await _link(sessions, uid, auth_type="pat")
+    real_upsert = readiness_service.upsert_wellness_sample
+    real_select = readiness_service.select
+    armed = {"on": False}
+
+    def select_failing_when_armed(*args, **kwargs):
+        if armed["on"]:
+            armed["on"] = False
+            raise RuntimeError("read-back failed")
+        return real_select(*args, **kwargs)
+
+    async def upsert(db, user_id, payload, **kwargs):
+        # The helper's only select() is its read-back, which runs after its COMMIT.
+        armed["on"] = payload.date == DAYS[1]
+        try:
+            return await real_upsert(db, user_id, payload, **kwargs)
+        finally:
+            armed["on"] = False
+
+    monkeypatch.setattr(readiness_service, "select", select_failing_when_armed)
+    monkeypatch.setattr(readiness_service, "upsert_wellness_sample", upsert)
+    async with sessions() as db:
+        report = await wearable_service.sync_one(db, cid, "k")
+    assert (report.ok, report.rows_confirmed, report.in_doubt_day) == (False, 2, None)
+    assert "read-back failed" in report.error
+    assert await _wellness_days(sessions, uid) == DAYS[:2]
+
+
+async def test_the_cli_reports_partial_success_for_one_user_too(fake, sessions, monkeypatch, capsys):
+    uid_a, _ = await _two_connections_one_failing(sessions, monkeypatch)
+    monkeypatch.setattr(sync_wearables, "AsyncSessionLocal", sessions)
+    assert await sync_wearables._run(days=7, user_id=uid_a) == 1
+    out = capsys.readouterr().out
+    assert f"user{uid_a}:oura: FAILED after 1 saved rows" in out
+    assert "may or may not have been saved" in out
+    assert "1 rows saved across 1 connections, 1 failed" in out
+    assert await sync_wearables._run(days=7, user_id=999_999) == 1
+    assert "no connection" in capsys.readouterr().out
