@@ -605,7 +605,7 @@ trusted it could also supply a forwarded client address.
 
 | Network | Members | Why |
 |---|---|---|
-| `perflab_proxy` (new, `172.30.10.0/29`) | `caddy` at `172.30.10.2`, `perf-lab-api` | the only way into the API |
+| `perflab_proxy` (new, `172.30.10.0/29`) | `caddy` at `172.30.10.2`, `perf-lab-api` at `172.30.10.3` | the only way into the API |
 | `perflab_db` (new, `172.30.11.0/29`) | `perf-lab-api`, `postgres` | the API's database path |
 | `stack_edge` | `caddy`, `dominion-realm`, `leave-sprint`, `realmwalkers` | unchanged, minus the API |
 | `stack_data` | `postgres`, `realmwalkers` | unchanged, minus the API |
@@ -623,7 +623,11 @@ sudo cp env/perf-lab-api.env env/perf-lab-api.env.bak.$TS
 ```
 In `docker-compose.yml`:
 - `caddy.networks`: `edge` plus `perflab_proxy: { ipv4_address: 172.30.10.2 }`.
-- `perf-lab-api.networks`: only `perflab_proxy` and `perflab_db` (remove `edge` and `data`).
+- `perf-lab-api.networks`: only `perflab_proxy: { ipv4_address: 172.30.10.3 }` and `perflab_db` (remove
+  `edge` and `data`). **Pin the API too.** Caddy `depends_on` the API, so the API starts first; left on
+  dynamic IPAM it takes the first free address, `.2`, and Caddy then fails with `Address already in use`,
+  taking every site on the box down with it (this happened on 2026-10-17). Every member of a network
+  that has a fixed address needs a fixed address.
 - `postgres.networks`: `data` plus `perflab_db`.
 - top-level `networks`:
   ```yaml
@@ -638,7 +642,7 @@ In `env/perf-lab-api.env`, add one line: `FORWARDED_ALLOW_IPS=172.30.10.2`.
 
 **2. Check the effective config, then apply:**
 ```bash
-sudo docker compose config --format json </dev/null | python3 -c "import json,sys; s=json.load(sys.stdin)['services']; [print(n, sorted((s[n].get('networks') or {}).keys())) for n in ('caddy','perf-lab-api','postgres','realmwalkers')]"
+sudo docker compose config --format json </dev/null | python3 -c "import json,sys; s=json.load(sys.stdin)['services']; [print(n, s[n].get('networks')) for n in ('caddy','perf-lab-api','postgres','realmwalkers')]"   # caddy .2 and perf-lab-api .3 under perflab_proxy
 sudo docker compose up -d caddy postgres perf-lab-api
 ```
 `postgres` is recreated only if its network list changed; it keeps its volume.
@@ -650,7 +654,9 @@ cd /opt/stack/infra
 sudo docker compose exec -T perf-lab-api alembic current </dev/null | tail -1
 # uvicorn's effective trust setting (the old image's uvicorn reads it too)
 sudo docker compose exec -T perf-lab-api printenv FORWARDED_ALLOW_IPS </dev/null    # 172.30.10.2
-sudo docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' $(sudo docker compose ps -q caddy)
+# caddy must hold 172.30.10.2 and the API 172.30.10.3, and `caddy` must be Up (it fronts every site)
+for c in caddy perf-lab-api; do echo "$c: $(sudo docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}' $(sudo docker compose ps -q $c))"; done
+sudo grep -oE "^[a-z0-9.-]+\.nip\.io" Caddyfile | sort -u | while read h; do echo "$h: $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://$h/)"; done
 # neighbours can no longer reach the API: they share no network with it, so the name must not
 # resolve and a request must fail. Each line must print BLOCKED (a node image has no wget,
 # so the probe uses whichever of wget or node the container has).
@@ -667,7 +673,13 @@ Two distinct clients through Caddy: request `/ping` from a workstation and from 
 (`curl https://perflab.44-198-76-44.nip.io/ping` on the box). The API access log must show the two
 different client addresses, not `172.30.10.2` for both.
 
-**4. Then deploy P9** with `./scripts/deploy.sh <P9 merge SHA>` and repeat step 3's checks.
+**If Caddy fails with `Address already in use`** (the API holds `.2`): pin the API to `.3` as above,
+then `sudo docker compose up -d --no-deps perf-lab-api` (recreating it frees `.2`), then
+`sudo docker compose up -d --no-deps caddy`, then re-run step 3.
+
+**4. Then deploy P9** with `./scripts/deploy.sh <P9 merge SHA>` and repeat step 3's checks. The script's
+own health check can report 502 because it runs while the startup catalog seed is still going; re-check
+`/ping` after about 20 seconds before treating it as a failure.
 
 **Rollback.** Network only: restore both `.bak.$TS` files and `sudo docker compose up -d caddy postgres
 perf-lab-api`. App only: `./scripts/deploy.sh 6beae12…` keeps the hardened network; the pre-P9 app
