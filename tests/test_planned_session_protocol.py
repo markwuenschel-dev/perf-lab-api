@@ -20,6 +20,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import pytest
+from calendar_helpers import backend_today
 from conftest import assert_does_not_raise
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -118,7 +119,7 @@ def factory(async_db: AsyncSession) -> async_sessionmaker[AsyncSession]:
 async def _athlete_with_session(
     factory, email: str, *, status: SessionStatus = P, day: date | None = None
 ) -> tuple[int, int]:
-    day = day or date.today()
+    day = day or backend_today()
     async with factory() as db:
         user = User(email=email, hashed_password="h", is_active=True)
         db.add(user)
@@ -147,7 +148,7 @@ async def _session(factory, sid: int) -> PlannedSession:
 
 
 def _log_today(planned_session_id: int | None = None) -> WorkoutLog:
-    at = datetime.combine(date.today(), time(9, 0), tzinfo=UTC)
+    at = datetime.combine(backend_today(), time(9, 0), tzinfo=UTC)
     return WorkoutLog(
         timestamp=at, modality="Running", duration_minutes=30.0, session_rpe=6.0,
         planned_session_id=planned_session_id,
@@ -250,14 +251,14 @@ async def test_link_vs_reschedule_a_moved_session_is_not_linked(factory):
     async def holder_body(db):
         await planning_service.update_session(
             db, uid, sid,
-            PlannedSessionUpdateRequest(scheduled_date=date.today() + timedelta(days=1)),
+            PlannedSessionUpdateRequest(scheduled_date=backend_today() + timedelta(days=1)),
         )
 
     result = await _contend(contender, holder_body, factory, uid=uid, sid=sid, chain=False)
     assert not isinstance(result, Exception), result
     row = await _session(factory, sid)
     assert row.status == P and row.workout_log_id is None
-    assert row.scheduled_date == date.today() + timedelta(days=1)
+    assert row.scheduled_date == backend_today() + timedelta(days=1)
 
 
 @pytest.mark.asyncio
@@ -278,7 +279,7 @@ async def test_issuance_vs_reschedule_a_moved_session_keeps_its_content(factory)
     async def holder_body(db):
         await planning_service.update_session(
             db, uid, sid,
-            PlannedSessionUpdateRequest(scheduled_date=date.today() + timedelta(days=2)),
+            PlannedSessionUpdateRequest(scheduled_date=backend_today() + timedelta(days=2)),
         )
 
     result = await _contend(contender, holder_body, factory, uid=uid, sid=sid, chain=False)
@@ -312,7 +313,7 @@ async def test_feedback_vs_unskip_feedback_sees_the_current_status(factory):
     from app.services import session_feedback_service
 
     uid, sid = await _athlete_with_session(
-        factory, "f3-fb@test.com", status=S, day=date.today() + timedelta(days=1)
+        factory, "f3-fb@test.com", status=S, day=backend_today() + timedelta(days=1)
     )
 
     async def contender():
@@ -438,7 +439,7 @@ async def test_today_never_publishes_a_prescription_it_could_not_persist(factory
         if change == "move":
             await planning_service.update_session(
                 db, uid, sid,
-                PlannedSessionUpdateRequest(scheduled_date=date.today() + timedelta(days=1)),
+                PlannedSessionUpdateRequest(scheduled_date=backend_today() + timedelta(days=1)),
             )
         elif change == "skip":
             await planning_service.update_session(db, uid, sid, PlannedSessionUpdateRequest(status=S))
@@ -492,7 +493,7 @@ async def test_a_status_change_supersedes_the_feedback_it_contradicts(factory, t
     async with factory() as db:
         await planning_service.update_session(
             db, uid, sid,
-            PlannedSessionUpdateRequest(status=target, scheduled_date=date.today()),
+            PlannedSessionUpdateRequest(status=target, scheduled_date=backend_today()),
         )
     assert (await _session(factory, sid)).status == target
     assert await _feedback_rows(factory, sid) == [("skipped", "skipped", True)]
@@ -522,7 +523,7 @@ async def test_a_late_log_supersedes_skipped_feedback_and_new_feedback_follows(f
 async def test_moving_a_session_with_feedback_keeps_its_outcome(factory):
     """A date move does not change the status the feedback describes: allowed."""
     uid, sid = await _skipped_with_feedback(factory, "f3-fb-move@test.com")
-    new_day = date.today() + timedelta(days=3)
+    new_day = backend_today() + timedelta(days=3)
     async with factory() as db:
         await planning_service.update_session(
             db, uid, sid, PlannedSessionUpdateRequest(scheduled_date=new_day)

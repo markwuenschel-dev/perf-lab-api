@@ -28,9 +28,10 @@ session-scoped test schema whenever a database is available, and skip only when
 none is (a hard failure under REQUIRE_DB in CI).
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
 
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -120,14 +121,14 @@ async def test_today_returns_null_prescription_when_no_session_today(async_db):
         goal=BlockGoal.STRENGTH,
         duration_weeks=4,
         sessions_per_week=3,
-        start_date=date.today(),
+        start_date=backend_today(),
         deload_every_n_weeks=4,
     )
     async_db.add(block)
     await async_db.commit()
     await async_db.refresh(block)
 
-    tomorrow = date.today() + timedelta(days=1)
+    tomorrow = backend_today() + timedelta(days=1)
     async_db.add(
         PlannedSession(
             block_id=block.id,
@@ -165,7 +166,7 @@ async def test_today_prescription_validates_as_workout_prescription(async_db):
         goal=BlockGoal.STRENGTH,
         duration_weeks=8,
         sessions_per_week=3,
-        start_date=date.today(),
+        start_date=backend_today(),
         deload_every_n_weeks=4,
     )
     async_db.add(block)
@@ -176,10 +177,10 @@ async def test_today_prescription_validates_as_workout_prescription(async_db):
         PlannedSession(
             block_id=block.id,
             user_id=user.id,
-            scheduled_date=date.today(),
+            scheduled_date=backend_today(),
             week_number=2,
             block_day=1,
-            day_of_week=date.today().isoweekday(),
+            day_of_week=backend_today().isoweekday(),
             category="Heavy Lower",
             modality="Strength",
         )

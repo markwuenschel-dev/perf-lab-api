@@ -5,9 +5,10 @@ with completed/skipped planned sessions, then asserts sensible ACWR + adherence
 values. A brand-new user (no history) must degrade to nulls/insufficient, never
 500. Mirrors the http_client + real-auth-flow pattern in the other route tests.
 """
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 
 from app.models.mesocycle import (
     BlockGoal,
@@ -61,7 +62,7 @@ async def test_overview_with_history_reports_real_values(http_client, async_db):
     hdr = {"Authorization": f"Bearer {token}"}
     uid = await _user_id(http_client, hdr)
 
-    today = date.today()
+    today = backend_today()
 
     # Steady workouts across the last 28 days (span > MIN_HISTORY_DAYS) so a
     # chronic baseline exists; a couple in the last 7 days for the acute leg.

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import pytest
+from calendar_helpers import backend_today
 
 from app.logic.constraint_labels import describe_constraints
 from app.logic.planning import (
@@ -172,7 +173,7 @@ async def test_a_running_blocks_own_mix_decides_its_periodization(
 ) -> None:
     """The block's modality mix travels create_block_with_sessions -> block context ->
     periodization_goal -> the one envelope, for both the explanation and load sizing."""
-    from datetime import date, timedelta
+    from datetime import timedelta
 
     from app.models.user import AthleteProfile, User
     from app.schemas.planning import BlockCreateRequest
@@ -188,7 +189,7 @@ async def test_a_running_blocks_own_mix_decides_its_periodization(
     await async_db.commit()
     await initialize_athlete_state(async_db, user.id)
     await create_block_with_sessions(async_db, user.id, BlockCreateRequest(
-        goal=BlockGoal.RUNNING, start_date=date.today() - timedelta(days=days_ago),
+        goal=BlockGoal.RUNNING, start_date=backend_today() - timedelta(days=days_ago),
         sessions_per_week=3, duration_weeks=8, modality_mix=mix,
     ))
     assert await get_today_session(async_db, user.id) is not None

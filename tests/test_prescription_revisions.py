@@ -15,10 +15,11 @@ Pinned (``app/services/prescription_issuance_service.py``):
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, datetime, time
 from typing import Any
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -148,7 +149,7 @@ def factory(async_db: AsyncSession) -> async_sessionmaker[AsyncSession]:
 
 
 async def _athlete(factory, email: str, equipment: list[str] | None = None) -> tuple[int, int]:
-    today = date.today()
+    today = backend_today()
     async with factory() as db:
         user = User(email=email, hashed_password="h", is_active=True)
         db.add(user)
@@ -358,7 +359,7 @@ async def test_revisions_are_immutable_in_the_database(factory):
 
 def _log(planned_session_id: int, revision_id: int | None = None) -> WorkoutLog:
     return WorkoutLog(
-        timestamp=datetime.combine(date.today(), time(9, 0), tzinfo=UTC), modality="Running",
+        timestamp=datetime.combine(backend_today(), time(9, 0), tzinfo=UTC), modality="Running",
         duration_minutes=30.0, session_rpe=6.0, planned_session_id=planned_session_id,
         prescription_revision_id=revision_id,
     )

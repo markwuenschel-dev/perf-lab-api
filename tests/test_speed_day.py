@@ -24,9 +24,8 @@ before/after comparison over 168 prescriptions and 567 planned weeks.
 """
 from __future__ import annotations
 
-from datetime import date
-
 import pytest
+from calendar_helpers import backend_today
 from sqlalchemy import select
 from test_running_prescriptions import _healthy
 
@@ -154,7 +153,7 @@ async def test_a_sprinting_block_shows_speed_and_prescribes_sprints(
     await async_db.commit()
     await initialize_athlete_state(async_db, user.id)
     await create_block_with_sessions(async_db, user.id, BlockCreateRequest(
-        goal=BlockGoal.RUNNING, start_date=date.today(), sessions_per_week=1,
+        goal=BlockGoal.RUNNING, start_date=backend_today(), sessions_per_week=1,
         modality_mix={"sprinting": 1.0},
     ))
 
@@ -162,7 +161,7 @@ async def test_a_sprinting_block_shows_speed_and_prescribes_sprints(
 
     today = (await async_db.execute(
         select(PlannedSession).where(
-            PlannedSession.user_id == user.id, PlannedSession.scheduled_date == date.today()
+            PlannedSession.user_id == user.id, PlannedSession.scheduled_date == backend_today()
         )
     )).scalar_one()
     assert (today.category, today.domain) == (SPEED_CATEGORY, "running")

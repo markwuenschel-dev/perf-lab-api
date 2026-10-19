@@ -5,7 +5,9 @@ directly (app.services.objective_service), so this test module runs locally
 and in CI regardless of DB availability (see tests/test_objectives_routes.py
 for the DB-gated round trip).
 """
-from datetime import date, timedelta
+from datetime import timedelta
+
+from calendar_helpers import backend_today
 
 from app.services.objective_service import compute_progress_pct, days_to_go
 
@@ -54,7 +56,7 @@ def test_nonpositive_denominator_is_null_not_a_crash():
 
 
 def test_days_to_go_counts_from_today():
-    target = date.today() + timedelta(days=10)
+    target = backend_today() + timedelta(days=10)
     assert days_to_go(target) == 10
 
 
@@ -63,5 +65,5 @@ def test_days_to_go_null_when_no_target_date():
 
 
 def test_days_to_go_can_be_negative_for_past_dates():
-    target = date.today() - timedelta(days=3)
+    target = backend_today() - timedelta(days=3)
     assert days_to_go(target) == -3

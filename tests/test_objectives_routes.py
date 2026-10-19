@@ -4,9 +4,10 @@ Create → list (with progress/days_to_go) → patch status → delete round tri
 for both a benchmark-linked and a free-text objective. Mirrors the
 http_client + real-auth-flow pattern in tests/test_wellness_routes.py.
 """
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from calendar_helpers import backend_today
 
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -44,7 +45,7 @@ async def _mk_benchmark_definition(async_db, code: str = "route_5k_time") -> Ben
 async def test_free_text_objective_create_list_patch_delete(http_client):
     token = await _register_and_get_token(http_client, "obj_free@test.com", "securepass1")
     hdr = {"Authorization": f"Bearer {token}"}
-    target = (date.today() + timedelta(days=30)).isoformat()
+    target = (backend_today() + timedelta(days=30)).isoformat()
 
     create_resp = await http_client.post(
         "/v1/objectives",

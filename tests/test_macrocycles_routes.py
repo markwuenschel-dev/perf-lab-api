@@ -8,6 +8,7 @@ tests/test_objectives_routes.py.
 from datetime import date, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 
 pytestmark = pytest.mark.asyncio
 
@@ -27,7 +28,7 @@ async def _register_and_get_token(client, email: str, password: str) -> str:
 async def _create_objective(client, hdr, *, label: str, target_in_days: int | None = None) -> dict:
     body: dict = {"label": label, "priority": 1}
     if target_in_days is not None:
-        body["target_date"] = (date.today() + timedelta(days=target_in_days)).isoformat()
+        body["target_date"] = (backend_today() + timedelta(days=target_in_days)).isoformat()
     resp = await client.post("/v1/objectives", json=body, headers=hdr)
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -38,7 +39,7 @@ async def test_macrocycle_create_list_get_patch_delete(http_client):
     hdr = {"Authorization": f"Bearer {token}"}
 
     objective = await _create_objective(http_client, hdr, label="Nationals", target_in_days=28)
-    start = date.today().isoformat()
+    start = backend_today().isoformat()
 
     create_resp = await http_client.post(
         "/v1/macrocycles",
@@ -104,7 +105,7 @@ async def test_open_horizon_when_objective_has_no_target(http_client):
     # Still null once a block exists: blocks are never persisted ahead (ADR-0040).
     block = await http_client.post(
         "/v1/planning/blocks",
-        json={"goal": "Strength", "start_date": date.today().isoformat(), "duration_weeks": 2},
+        json={"goal": "Strength", "start_date": backend_today().isoformat(), "duration_weeks": 2},
         headers=hdr,
     )
     assert block.status_code == 200, block.text
@@ -117,7 +118,7 @@ async def test_macrocycle_blocks_timeline(http_client):
     token = await _register_and_get_token(http_client, "macro_blocks@test.com", "securepass1")
     hdr = {"Authorization": f"Bearer {token}"}
     objective = await _create_objective(http_client, hdr, label="Worlds", target_in_days=70)
-    today = date.today()
+    today = backend_today()
     macro = (
         await http_client.post(
             "/v1/macrocycles",

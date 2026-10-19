@@ -15,9 +15,10 @@ keeps these additions from changing ordinary recommendations.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from test_running_prescriptions import _healthy
 from test_scoring_goldens import _athlete
 
@@ -154,7 +155,7 @@ async def test_a_running_blocks_recovery_day_is_prescribed_the_recovery_run(
     await async_db.commit()
     await initialize_athlete_state(async_db, user.id)
     await create_block_with_sessions(async_db, user.id, BlockCreateRequest(
-        goal=BlockGoal.RUNNING, start_date=date.today() - timedelta(days=5),
+        goal=BlockGoal.RUNNING, start_date=backend_today() - timedelta(days=5),
         sessions_per_week=3,
     ))
     today = await get_today_session(async_db, user.id)
@@ -225,7 +226,7 @@ async def test_a_power_blocks_potentiation_day_is_prescribed_the_contrast_sessio
     await async_db.commit()
     await initialize_athlete_state(async_db, user.id)
     await create_block_with_sessions(async_db, user.id, BlockCreateRequest(
-        goal=BlockGoal.POWER, start_date=date.today() - timedelta(days=2), sessions_per_week=3,
+        goal=BlockGoal.POWER, start_date=backend_today() - timedelta(days=2), sessions_per_week=3,
     ))
     today = await get_today_session(async_db, user.id)
     assert today is not None and today.category == STRENGTH_POTENTIATION_CATEGORY

@@ -1,6 +1,7 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -39,7 +40,7 @@ async def test_planning_block_create_list_and_today(async_db):
 
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            start = date.today().isoformat()
+            start = backend_today().isoformat()
             create_resp = await client.post(
                 "/v1/planning/blocks",
                 json={
@@ -60,7 +61,7 @@ async def test_planning_block_create_list_and_today(async_db):
                 "/v1/planning/sessions",
                 params={
                     "start_date": start,
-                    "end_date": (date.today() + timedelta(days=14)).isoformat(),
+                    "end_date": (backend_today() + timedelta(days=14)).isoformat(),
                 },
             )
             assert sessions_resp.status_code == 200

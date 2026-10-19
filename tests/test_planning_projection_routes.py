@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from sqlalchemy import func, select
 
 from app.models.athlete_state import AthleteState
@@ -84,7 +85,7 @@ async def test_state_invalid_is_200_unavailable_not_409(http_client, async_db) -
 async def test_shape_with_an_active_block(http_client, async_db) -> None:
     hdr, uid = await _register(http_client, "c1b-route-shape@t.io")
     await state_service.initialize_athlete_state(async_db, uid)
-    today = date.today()
+    today = backend_today()
     created = await http_client.post(
         "/v1/planning/blocks",
         headers=hdr,
@@ -119,7 +120,7 @@ async def test_shape_with_an_active_block(http_client, async_db) -> None:
 async def test_through_is_capped_and_past_through_is_422(http_client, async_db) -> None:
     hdr, uid = await _register(http_client, "c1b-route-cap@t.io")
     await state_service.initialize_athlete_state(async_db, uid)
-    today = date.today()
+    today = backend_today()
 
     far = await http_client.get(
         URL, headers=hdr, params={"through": (today + timedelta(days=200)).isoformat()}
