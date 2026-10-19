@@ -138,7 +138,7 @@ export function CapacityView({ row, startRow, showDelta }: CapacityViewProps) {
   return (
     <div className="rounded-[18px] border border-white/[0.06] bg-tile px-[22px] py-5">
       <div className="mb-[18px] flex items-center justify-between">
-        <SectionLabel className="text-[10px] text-faint">Capacities · X(t)</SectionLabel>
+        <SectionLabel compact>Capacities · X(t)</SectionLabel>
         <div className="font-mono text-[10px] leading-none text-dim">
           {allDisplayable ? "5 axes · confidence-scored" : `${insufficientCount} of 5 need more evidence`}
         </div>
@@ -159,7 +159,7 @@ function DerivedSummary({ axes, incompleteCount }: { axes: AxisRow[]; incomplete
   if (axes.length === 0) {
     return (
       <div className="flex flex-col justify-center gap-[10px] self-stretch rounded-[14px] border border-white/[0.07] bg-white/[0.04] p-[18px]">
-        <SectionLabel className="text-[10px] text-faint">Profile shape</SectionLabel>
+        <SectionLabel compact>Profile shape</SectionLabel>
         <div className="text-[13px] font-medium leading-[1.5] text-mute">
           Not enough evidence yet across the capacity axes — log training or a benchmark to establish them.
         </div>
@@ -187,7 +187,7 @@ function DerivedSummary({ axes, incompleteCount }: { axes: AxisRow[]; incomplete
   return (
     <div className="flex flex-col justify-center gap-[14px] self-stretch rounded-[14px] border border-white/[0.07] bg-white/[0.04] p-[18px]">
       <div>
-        <SectionLabel className="text-[10px] text-faint">Profile shape</SectionLabel>
+        <SectionLabel compact>Profile shape</SectionLabel>
         <div className="mt-[9px] text-[19px] font-bold leading-[1.1] text-ac">{TYPE_NAMES[dom.field] ?? dom.label}</div>
       </div>
       <div className="flex flex-col gap-[9px]">

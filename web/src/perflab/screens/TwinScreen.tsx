@@ -43,10 +43,6 @@ import { readinessColor, readinessNote, readinessWord } from "../readinessPresen
 // carry no fixture data. Every sample-data import (DAYS, CAP_CFG, SKILL_DEFS, …)
 // left with GuestTwinPreview, so this file cannot render a fabricated number.
 
-// Console section-label spec (mono 10px, faint). Applied here as an override
-// rather than by changing the shared SectionLabel default, which every other
-// screen still renders at 11px until its own pass.
-const TWIN_LABEL = "text-[10px] text-faint";
 // Scrubber ‹ › step buttons: hairline border over a faint fill.
 const STEP_BTN =
   "h-[34px] w-[34px] rounded-[9px] border border-white/[0.07] bg-white/[0.04] text-[15px] leading-none text-soft disabled:opacity-30";
@@ -203,7 +199,7 @@ function AuthedTwinBody({
       {/* time-travel — axis is recorded snapshots, x = ordinal 0..len-1 */}
       <Card className="flex items-center gap-[22px] px-5 py-[15px]">
         <div className="min-w-[118px] flex-none">
-          <SectionLabel className={TWIN_LABEL}>Viewing</SectionLabel>
+          <SectionLabel compact>Viewing</SectionLabel>
           <div className="mt-[7px] flex items-baseline gap-2">
             <span className="text-[18px] font-bold leading-none text-ink">{vDate}</span>
             {vWhen && <span className="text-[11px] font-medium leading-none text-teal">{vWhen}</span>}
@@ -272,7 +268,7 @@ function AuthedTwinBody({
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
         <Card>
           <div className="mb-4 flex items-center justify-between">
-            <SectionLabel className={TWIN_LABEL}>Fatigue · F(t)</SectionLabel>
+            <SectionLabel compact>Fatigue · F(t)</SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">0 fresh → 100 maxed</div>
           </div>
           <div className="flex flex-col gap-[13px]">
@@ -284,7 +280,7 @@ function AuthedTwinBody({
         </Card>
         <Card>
           <div className="mb-4 flex items-center justify-between">
-            <SectionLabel className={TWIN_LABEL}>Tissue load · T(t)</SectionLabel>
+            <SectionLabel compact>Tissue load · T(t)</SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">local stress, not injury</div>
           </div>
           <TissueBodyMap getT={tissueOf} />
@@ -293,7 +289,7 @@ function AuthedTwinBody({
 
       {/* skills — out of the live view for now (no sim skills for authed) */}
       <Card className="px-[22px] py-5">
-        <SectionLabel className={TWIN_LABEL}>Skill state</SectionLabel>
+        <SectionLabel compact>Skill state</SectionLabel>
         <div className="mt-3 text-[12.5px] font-medium leading-[1.5] text-mute">
           Skill detail is not available in this live view yet.
         </div>
@@ -321,7 +317,7 @@ function ReadinessCard({
       <Card className="flex items-center gap-[18px]">
         <NeutralRing />
         <div>
-          <SectionLabel className={TWIN_LABEL}>Readiness</SectionLabel>
+          <SectionLabel compact>Readiness</SectionLabel>
           <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-mute">
             Wellness-adjusted readiness was not recorded for this snapshot.
           </div>
@@ -340,7 +336,7 @@ function ReadinessCard({
       <Card className="flex items-center gap-[18px]">
         <ReadinessRing value={Math.round(canonicalScore)} color={rc} />
         <div>
-          <SectionLabel className={TWIN_LABEL}>Readiness</SectionLabel>
+          <SectionLabel compact>Readiness</SectionLabel>
           <div className="mt-2 text-[18px] font-bold leading-none" style={{ color: rc }}>{readinessWord(canonicalScore)}</div>
           <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(canonicalScore)}</div>
         </div>
@@ -353,7 +349,7 @@ function ReadinessCard({
     <Card className="flex items-center gap-[18px]">
       <NeutralRing />
       <div>
-        <SectionLabel className={TWIN_LABEL}>Readiness</SectionLabel>
+        <SectionLabel compact>Readiness</SectionLabel>
         <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-mute">
           {readinessPendingNote(readinessRes)}
         </div>
@@ -474,7 +470,7 @@ function NextSessionCard() {
   if (!token) {
     return (
       <Card className="px-5 py-4">
-        <SectionLabel className={TWIN_LABEL}>Recommended next session</SectionLabel>
+        <SectionLabel compact>Recommended next session</SectionLabel>
         <div className="mt-2 text-[13px] font-medium leading-[1.5] text-mute">
           Sign in to get a live prescription from your twin.
         </div>
@@ -485,7 +481,7 @@ function NextSessionCard() {
   return (
     <Card className="px-[22px] py-5">
       <div className="mb-3 flex items-center justify-between">
-        <SectionLabel className={TWIN_LABEL}>Recommended next session</SectionLabel>
+        <SectionLabel compact>Recommended next session</SectionLabel>
         <span className="font-mono text-[10px] leading-none text-dim">
           {summary}
         </span>

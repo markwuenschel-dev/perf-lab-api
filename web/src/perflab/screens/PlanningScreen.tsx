@@ -45,9 +45,6 @@ import { Chart, Bars, Line, Marker, Axis, Legend, useVizTheme } from "../viz";
 import { PHASES } from "../sim";
 import { COLORS } from "../readinessPresentation";
 
-// Console section label (mono 10px, faint) — a local override of the shared
-// SectionLabel default, as on Twin / Simulator / History.
-const LABEL = "text-[10px] text-faint";
 const ROW_LABEL = "flex items-center font-mono text-[9px] font-semibold uppercase leading-[1.3] tracking-[0.1em] text-faint";
 const SECONDARY_BTN = "rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft";
 const PRIMARY_BTN = "rounded-[9px] bg-ac px-[15px] py-[9px] text-[12.5px] font-semibold leading-none text-[#0a0c10]";
@@ -577,7 +574,7 @@ function WeekGrid({
   return (
     <Card className="p-[18px]">
       <div className="mb-[14px] flex items-center justify-between gap-3">
-        <SectionLabel className={LABEL}>This week</SectionLabel>
+        <SectionLabel compact>This week</SectionLabel>
         <div className="text-[11px] font-medium leading-none text-dim">{summary}</div>
       </div>
       {error && <div role="alert" className="mb-3 text-[11.5px] font-medium leading-[1.4] text-hot">{error}</div>}
@@ -705,7 +702,7 @@ interface WeekLoadRow {
 function WeekLoadCard({ rows, sample }: { rows: WeekLoadRow[]; sample?: boolean }) {
   return (
     <Card>
-      <SectionLabel className={LABEL}>Week load · planned vs logged{sample ? " · sample" : ""}</SectionLabel>
+      <SectionLabel compact>Week load · planned vs logged{sample ? " · sample" : ""}</SectionLabel>
       <div className="mt-4 flex flex-col gap-[11px]">
         {rows.map((r) => (
           <div key={r.label} className="flex items-center gap-[10px]">
@@ -749,7 +746,7 @@ function ProjectionShell({ children, sample }: { children: ReactNode; sample?: b
   return (
     <Card>
       <div className="flex items-center justify-between gap-2">
-        <SectionLabel className={LABEL}>Forward projection{sample ? " · sample" : ""}</SectionLabel>
+        <SectionLabel compact>Forward projection{sample ? " · sample" : ""}</SectionLabel>
         <span className="font-mono text-[9.5px] leading-none text-dim">load vs modeled fatigue</span>
       </div>
       {children}
@@ -904,7 +901,7 @@ function PrescribedSessionCard({ goal }: { goal: string }) {
   return (
     <Card className="p-[22px]">
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>{preview ? "Preview — nothing planned today" : "Prescribed session"}</SectionLabel>
+        <SectionLabel compact>{preview ? "Preview — nothing planned today" : "Prescribed session"}</SectionLabel>
         <div className="font-mono text-[10px] leading-none text-dim">{prescriptionSummary(prescription)}</div>
       </div>
 
@@ -1108,7 +1105,7 @@ function GuestPlanningPreview() {
       <div className="grid grid-cols-1 items-start gap-[14px] lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="p-[22px]">
           <div className="flex items-center justify-between">
-            <SectionLabel className={LABEL}>Prescribed session · sample</SectionLabel>
+            <SectionLabel compact>Prescribed session · sample</SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">Run · 52 min</div>
           </div>
           <div className="mt-4 text-[22px] font-bold leading-tight text-ink">Tempo intervals — Zone 3</div>
@@ -1121,7 +1118,7 @@ function GuestPlanningPreview() {
           </div>
           <div className="mt-5 border-t border-white/[0.07] pt-4">
             <div className="mb-4 flex items-center justify-between">
-              <SectionLabel className={LABEL}>Stress dose · D(t)</SectionLabel>
+              <SectionLabel compact>Stress dose · D(t)</SectionLabel>
               <div className="font-mono text-[10px] leading-none text-dim">projected per-session</div>
             </div>
             <div className="flex flex-col gap-3">

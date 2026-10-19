@@ -54,9 +54,6 @@ import { dispositionTag } from "../../workoutDisposition";
 const btnGhost =
   "rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft";
 
-// Console section label (mono 10px, faint) — a local override of the shared
-// SectionLabel default, which the not-yet-migrated screens still render at 11px.
-const LABEL = "text-[10px] text-faint";
 
 // Status → user-facing word + colour. "insufficient" (no baseline yet) reads as
 // "building baseline" rather than an invented judgement.
@@ -180,7 +177,7 @@ export function AuthedOverview() {
             <HabitCard habit={habit} />
             <Card>
               <div className="mb-[14px] flex items-center justify-between">
-                <SectionLabel className={LABEL}>Twin snapshot</SectionLabel>
+                <SectionLabel compact>Twin snapshot</SectionLabel>
                 <button onClick={() => actions.setScreen("twin")} className="text-[11px] font-medium leading-none text-teal">Open twin →</button>
               </div>
               <div className="grid grid-cols-2 gap-x-[22px] gap-y-[14px]">
@@ -211,7 +208,7 @@ export function AuthedOverview() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>
-            <SectionLabel className={`${LABEL} mb-[14px]`}>Recent activity</SectionLabel>
+            <SectionLabel compact className="mb-[14px]">Recent activity</SectionLabel>
             <RecentActivity resource={workoutsRes} />
           </Card>
           <InsightsCard readinessRes={readinessRes} todayRes={todayRes} />
@@ -239,7 +236,7 @@ function ReadinessBlock({ readiness }: { readiness: ReturnType<typeof readinessS
       <div className="flex items-center gap-4">
         <NeutralRing />
         <div>
-          <SectionLabel className={LABEL}>Readiness</SectionLabel>
+          <SectionLabel compact>Readiness</SectionLabel>
           <div className="mt-2 max-w-[180px] text-[12.5px] font-medium leading-[1.5] text-mute">{message}</div>
         </div>
       </div>
@@ -251,7 +248,7 @@ function ReadinessBlock({ readiness }: { readiness: ReturnType<typeof readinessS
     <div className="flex items-center gap-4">
       <ReadinessRing value={score.value} color={color} size={96} inner={74} valueClassName="text-[29px]" />
       <div>
-        <SectionLabel className={LABEL}>Readiness</SectionLabel>
+        <SectionLabel compact>Readiness</SectionLabel>
         <div className="mt-2 text-[17px] font-bold leading-none" style={{ color }}>{readinessWord(score.value)}</div>
         {confidenceBand.kind === "value" && (
           <div className="mt-[7px] text-[10.5px] font-semibold leading-none text-dim">
@@ -313,7 +310,7 @@ function MorningCard({
   return (
     <Card className="flex flex-col gap-[14px]">
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>This morning</SectionLabel>
+        <SectionLabel compact>This morning</SectionLabel>
         <button onClick={onCheckin} className="rounded-[8px] bg-ac px-[11px] py-[7px] text-[11px] font-semibold leading-none text-[#0a0c10]">Check in →</button>
       </div>
       <div className="grid grid-cols-4 gap-3">
@@ -449,7 +446,7 @@ function TrainingLoadCard({ load }: { load: ReturnType<typeof loadSection> }) {
   return (
     <Card>
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>Training load</SectionLabel>
+        <SectionLabel compact>Training load</SectionLabel>
         <span className={`font-mono text-[11px] font-semibold leading-none ${status.color}`}>{status.label}</span>
       </div>
       <div className="mt-3 flex items-end gap-2">
@@ -481,7 +478,7 @@ function HabitCard({ habit }: { habit: ReturnType<typeof habitSection> }) {
   return (
     <Card>
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>Habit</SectionLabel>
+        <SectionLabel compact>Habit</SectionLabel>
         <span className="font-mono text-[11px] font-semibold leading-none text-ac">
           {habit.streakDays.kind === "value"
             ? habit.streakDays.value > 0
@@ -593,7 +590,7 @@ function InsightsCard({
   return (
     <Card>
       <div className="mb-[14px] flex items-center justify-between">
-        <SectionLabel className={LABEL}>Insights</SectionLabel>
+        <SectionLabel compact>Insights</SectionLabel>
         <span className="text-[11px] font-medium leading-none text-dim">from readiness &amp; your plan</span>
       </div>
       {insights.length === 0 ? (

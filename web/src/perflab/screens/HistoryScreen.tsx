@@ -16,9 +16,6 @@ import { AEROBIC_CEILING, RANGES, RANGE_WEEKS, filterHistoryWindow, weeklyLoad, 
 
 /** Compact load formatter — real volume-load totals run large, so thousands
  *  collapse to "12.4k". */
-// Console section label (mono 10px, faint) — a local override of the shared
-// SectionLabel default, which the not-yet-migrated screens still render at 11px.
-const LABEL = "text-[10px] text-faint";
 
 function fmtLoad(v: number): string {
   if (!Number.isFinite(v)) return "—";
@@ -47,7 +44,7 @@ function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute:
   return (
     <Card className="px-[22px] py-5">
       <div className="mb-3 flex items-center justify-between">
-        <SectionLabel className={LABEL}>Load balance</SectionLabel>
+        <SectionLabel compact>Load balance</SectionLabel>
         <div className="text-[11px] font-medium leading-none text-dim">acute : chronic</div>
       </div>
       {acwr == null || band == null ? (
@@ -252,7 +249,7 @@ function RecentWellnessCard() {
 
   return (
     <Card className="px-[22px] py-5">
-      <SectionLabel className={cn(LABEL, "mb-2")}>Recent wellness</SectionLabel>
+      <SectionLabel compact className="mb-2">Recent wellness</SectionLabel>
       <ResourceState
         resource={wellnessRes}
         isEmpty={(rows) => rows.length === 0}
@@ -295,7 +292,7 @@ function RecentWellnessCard() {
 export function FieldTestLogCard({ resource }: { resource: AuthedResource<BenchmarkObservationRead[]> }) {
   return (
     <Card className="px-[22px] py-5">
-      <SectionLabel className={cn(LABEL, "mb-2")}>Field test log</SectionLabel>
+      <SectionLabel compact className="mb-2">Field test log</SectionLabel>
       <ResourceState
         resource={resource}
         isEmpty={(rows) => rows.length === 0}
@@ -441,7 +438,7 @@ export function HistoryScreen() {
           <Card className="px-[22px] py-5">
             <div className="mb-2 flex items-start justify-between">
               <div>
-                <SectionLabel className={LABEL}>Readiness</SectionLabel>
+                <SectionLabel compact>Readiness</SectionLabel>
                 <div className="mt-2 flex items-end gap-2">
                   <span className="font-mono text-[30px] font-semibold leading-none text-ink">{latestReadiness ?? "—"}</span>
                   {hDelta && <span className={`mb-1 text-[11px] font-medium leading-none ${hDiff != null && hDiff >= 0 ? "text-good" : "text-hot"}`}>{hDelta}</span>}
@@ -492,7 +489,7 @@ export function HistoryScreen() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
           <Card className="px-[22px] py-5">
             <div className="mb-4 flex items-center justify-between">
-              <SectionLabel className={LABEL}>Weekly training load</SectionLabel>
+              <SectionLabel compact>Weekly training load</SectionLabel>
               <div className="text-[11px] font-medium leading-none text-dim">volume load · last {weeks} weeks</div>
             </div>
             <ResourceState

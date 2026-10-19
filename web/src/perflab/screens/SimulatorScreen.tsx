@@ -34,9 +34,6 @@ const chip = (active: boolean) =>
   );
 const seg = (active: boolean) => cn(chip(active), "flex-1 rounded-[9px] px-[6px] py-[10px] text-center text-[12px]");
 
-// Console section label (mono 10px, faint) — a local override of the shared
-// SectionLabel default, which other screens still render at 11px.
-const LABEL = "text-[10px] text-faint";
 const TILE_LABEL = "font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-faint";
 
 const PRESET_ORDER: SimPresetName[] = ["maintain", "build", "aggressive"];
@@ -205,7 +202,7 @@ export function SimulatorScreen() {
         {/* ── Controls ── */}
         <Card hover={false} className="flex flex-col gap-5 self-start p-[22px]">
           <div>
-            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Quick scenarios</SectionLabel>
+            <SectionLabel compact className="mb-[11px]">Quick scenarios</SectionLabel>
             <div className="flex gap-2">
               {PRESET_ORDER.map((p) => {
                 // Active only while all three values it sets still match.
@@ -219,7 +216,7 @@ export function SimulatorScreen() {
           </div>
           <div className="h-px bg-white/[0.07]" />
           <div>
-            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Goal</SectionLabel>
+            <SectionLabel compact className="mb-[11px]">Goal</SectionLabel>
             {/* Every training goal the backend accepts is offered: the mock's six
                 are its sample subset, and a profile goal like Powerlifting must
                 stay selectable. */}
@@ -232,14 +229,14 @@ export function SimulatorScreen() {
           </div>
           <div>
             <div className="mb-3 flex items-center justify-between">
-              <SectionLabel className={LABEL}>Weekly volume</SectionLabel>
+              <SectionLabel compact>Weekly volume</SectionLabel>
               <span className="font-mono text-[13px] font-semibold leading-none text-ac">{sim.volume}</span>
             </div>
             <input type="range" min={30} max={90} step={2} value={sim.volume} onChange={(e) => actions.setSim({ volume: +e.target.value })} className="w-full cursor-pointer" style={{ accentColor: "var(--ac)" }} />
             <div className="mt-[6px] flex justify-between font-mono text-[10px] leading-none text-dim"><span>30</span><span>90</span></div>
           </div>
           <div>
-            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Training intensity</SectionLabel>
+            <SectionLabel compact className="mb-[11px]">Training intensity</SectionLabel>
             <div className="flex gap-2">
               {(["easy", "balanced", "hard"] as const).map((v) => (
                 <button key={v} onClick={() => actions.setSim({ intensity: v })} aria-pressed={sim.intensity === v} className={seg(sim.intensity === v)}>{v}</button>
@@ -247,7 +244,7 @@ export function SimulatorScreen() {
             </div>
           </div>
           <div>
-            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Recovery emphasis</SectionLabel>
+            <SectionLabel compact className="mb-[11px]">Recovery emphasis</SectionLabel>
             <div className="flex gap-2">
               {(["high", "standard", "minimal"] as const).map((v) => (
                 <button key={v} onClick={() => actions.setSim({ recovery: v })} aria-pressed={sim.recovery === v} className={seg(sim.recovery === v)}>{v}</button>
@@ -255,7 +252,7 @@ export function SimulatorScreen() {
             </div>
           </div>
           <div>
-            <SectionLabel className={cn(LABEL, "mb-[11px]")}>Horizon</SectionLabel>
+            <SectionLabel compact className="mb-[11px]">Horizon</SectionLabel>
             <div className="flex gap-2">
               {[4, 8, 12, 16].map((wk) => (
                 <button key={wk} onClick={() => actions.setSim({ weeks: wk })} aria-pressed={sim.weeks === wk} className={seg(sim.weeks === wk)}>{wk} wk</button>
@@ -296,7 +293,7 @@ export function SimulatorScreen() {
           {/* 8-axis start → projected */}
           <Card className="p-5">
             <div className="mb-[18px] flex items-center justify-between">
-              <SectionLabel className={LABEL}>Capacity projection · X(t)</SectionLabel>
+              <SectionLabel compact>Capacity projection · X(t)</SectionLabel>
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-soft"><span className="h-[6px] w-4 rounded-[2px] bg-ac" />projected</span>
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="h-[10px] w-[2px] bg-faint" />maintain</span>
@@ -326,7 +323,7 @@ export function SimulatorScreen() {
           {/* Trajectory: selectable axis vs maintain */}
           <Card className="p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <SectionLabel className={LABEL}>Trajectory · {selAxis.label}</SectionLabel>
+              <SectionLabel compact>Trajectory · {selAxis.label}</SectionLabel>
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-soft"><span className="h-[3px] w-4 rounded-[2px] bg-ac" />This plan</span>
                 <span className="flex items-center gap-[7px] text-[11px] font-medium leading-none text-mute"><span className="w-4 border-t-2 border-dashed border-faint" />Maintain</span>
@@ -356,7 +353,7 @@ export function SimulatorScreen() {
           {/* Readiness curve */}
           <Card className="p-5">
             <div className="mb-[10px] flex items-center justify-between">
-              <SectionLabel className={LABEL}>Readiness under this plan</SectionLabel>
+              <SectionLabel compact>Readiness under this plan</SectionLabel>
               <span className="font-mono text-[10px] leading-none text-dim">0–100 scale</span>
             </div>
             <Chart

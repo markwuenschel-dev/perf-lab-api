@@ -34,9 +34,6 @@ import { domainLabel } from "../domains";
 import { Card, Pill, ScreenHeader, SectionLabel, Track } from "../ui";
 import { Legend, type LegendItem } from "../viz";
 
-// Section labels in the redesign are 10px/faint (README: Geist Mono 10px/600) — the
-// SectionLabel default, which the not-yet-migrated screens still render at 11px.
-const LABEL = "text-[10px] text-faint";
 
 function statusLabel(status: ObjectiveRead["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -230,7 +227,7 @@ function ObjectivesBody({ objectives }: { objectives: ObjectiveRead[] }) {
       {active.length > 0 && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <SectionLabel className={LABEL}>Display order</SectionLabel>
+            <SectionLabel compact>Display order</SectionLabel>
             <span className="text-[11px] font-medium leading-none text-dim">
               drag or use ↑ ↓ to reorder · display only — it doesn’t change what drives training
             </span>
@@ -289,7 +286,7 @@ function ObjectivesBody({ objectives }: { objectives: ObjectiveRead[] }) {
 
       {closed.length > 0 && (
         <div className="flex flex-col gap-3">
-          <SectionLabel className={LABEL}>Closed</SectionLabel>
+          <SectionLabel compact>Closed</SectionLabel>
           <div className="grid grid-cols-1 gap-[10px] lg:grid-cols-2">
             {closed.map((o) => (
               <ClosedObjectiveCard key={o.id} o={o} busy={mutatingId === o.id} onDelete={() => remove(o.id)} />
