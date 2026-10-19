@@ -4,10 +4,14 @@ date: 2026-07-11
 accepted: "none: the P11 design, pushed straight to main in commit 388be65 with no PR; never approved"
 delivery: partial
 deployed: yes
-activation: "live for revision immutability only (P1, PRs #281/#282); the commitment state machine is not built"
+activation: "revision immutability is live and accepted as ADR-0077; the commitment state machine is not built"
 reconciled: 2026-10-19
 ---
 # Session commitment is execution state; issuance is a user-visible event, not materialization
+
+> **Split 2026-10-19.** The issued-revision immutability clause ("Never silently rewritten", and
+> safety replacing visibly) is accepted separately as [ADR-0077](0077-issued-prescription-revisions-are-immutable.md),
+> as built in P1. Everything else here, the commitment state machine above all, stays `proposed`.
 
 The receding-horizon prescription loop ([ADR-0064](0064-receding-horizon-modality-assignment.md))
 re-solves the microcycle on every `/today` / `/next-session` and adapts modality as objectives
