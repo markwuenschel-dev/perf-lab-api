@@ -23,8 +23,8 @@ movement (ranking, exercises, loads, objectives, and readiness movement that doe
 readiness-redirect outcome) never replaces an issued revision; it informs the next session that has
 not been issued yet.
 
-**Only safety, or the athlete's own recheck, replaces, and visibly.** The replacement rule, as decided in fork 4 and
-implemented in `prescription_issuance_service.decide`:
+**Only safety, or the athlete's own recheck, replaces, and visibly.** The replacement rule, as
+decided in fork 4 and implemented in `prescription_issuance_service.decide`:
 
 | situation | outcome |
 |---|---|
