@@ -1,19 +1,16 @@
 """StrengthDeclineShadow — persisted counterfactual telemetry for the candidate-aware
 prescription-basis decision (INT-02, ADR-0066).
 
-**NO WRITER IS ACTIVE YET — this table is inert (W1-C1, expand step).**
+**The writer exists, but in production it writes nothing** (status 2026-10-19). W1-C2
+(PR #130) carries an immutable payload out of prescription-basis resolution and persists it
+*after* the production prescription commit, in an independent best-effort transaction, via
+``INSERT ... ON CONFLICT DO NOTHING`` (``strength_decline_service.
+persist_strength_decline_shadow_best_effort``). Payloads are only produced when
+``DECLINE_CANDIDATE_PRESCRIPTION_BASIS`` is not ``"off"`` (``app/engine/feature_flags.py``),
+and it is ``"off"``: no rows are written until the flag moves to ``"shadow"``, which is an
+activation decision, not a code change.
 
-This is deployment-enabling infrastructure, not complete functionality. The table
-exists so the database can accept shadow rows; nothing writes to it. The writer
-lands separately in W1-C2, which owns carrying an immutable payload out of
-prescription-basis resolution and persisting it *after* the production prescription
-commit, in an independent best-effort transaction, via ``INSERT ... ON CONFLICT DO
-NOTHING``. Until W1-C2 is verified, INT-02's shadow surface is NOT delivered.
-
-``tests/test_strength_decline_shadow_inert.py`` enforces the no-writer state
-structurally; it must be deleted as part of W1-C2, not weakened.
-
-Why the writer is deferred rather than shipped: the first attempt persisted the row
+Why the writer was deferred to W1-C2 rather than shipped with the table: the first attempt persisted the row
 from inside ``resolve_prescription_basis``, which runs *before* prescription's
 ``db.commit()`` (``prescription_service.py:380``). A shadow-row failure at flush
 would therefore have taken the whole prescription down — while a ``try: db.add(row)``
