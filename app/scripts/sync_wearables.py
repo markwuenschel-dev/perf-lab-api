@@ -29,7 +29,7 @@ import argparse
 import asyncio
 import sys
 
-from app.core.db import AsyncSessionLocal
+from app.core.db import session_scope
 from app.services import wearable_service
 
 
@@ -43,7 +43,9 @@ def _describe(report: wearable_service.ConnectionSyncReport) -> str:
 
 
 async def _run(*, days: int, user_id: int | None) -> int:
-    async with AsyncSessionLocal() as db:
+    # session_scope: a session quarantined by a stuck cleanup is not closed under it, so the
+    # reports below are still printed.
+    async with session_scope() as db:
         targets = await wearable_service.sync_targets(db, user_id=user_id)
         if user_id is not None and not targets:
             print(f"[sync_wearables] user={user_id}: no connection")

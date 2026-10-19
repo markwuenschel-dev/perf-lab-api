@@ -32,6 +32,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from app.core import crypto
+from app.core.db import quarantine_reason, quarantine_session
 from app.integrations.base import TokenBundle, WearableAdapter
 from app.integrations.registry import adapter_for
 from app.logic.prescription_evidence import utc_naive
@@ -229,7 +230,7 @@ async def _end_read_only_transaction(db: AsyncSession) -> None:
     transaction id, and ORM changes not yet flushed show in the session, so both are refused
     rather than committed as a side effect of a sync. A quarantined session is refused untouched.
     """
-    if why := db.info.get(_QUARANTINED):
+    if why := quarantine_reason(db):
         raise SessionQuarantined(f"this session cannot be used for another sync: {why}")
     if db.new or db.dirty or db.deleted:
         raise RuntimeError("a wearable sync needs a session with no pending changes")
@@ -246,16 +247,9 @@ class SessionQuarantined(RuntimeError):
     """The session's cleanup after an earlier sync could not be confirmed; it is never reused."""
 
 
-_QUARANTINED = "wearable_sync.quarantined"
-# Cleanup operations still running on a quarantined session, kept referenced until they end.
-_abandoned: set[asyncio.Future[None]] = set()
-
-
 def _quarantine(db: AsyncSession, op: asyncio.Future[None] | None, why: str) -> None:
-    db.info[_QUARANTINED] = why
-    if op is not None and not op.done():
-        _abandoned.add(op)
-        op.add_done_callback(_abandoned.discard)
+    # The session's owner (``app.core.db.session_scope``) closes it once ``op`` ends.
+    quarantine_session(db, op, why)
     logger.critical("wearable sync: the work session is quarantined and will not be reused: %s", why)
 
 
@@ -268,9 +262,10 @@ async def _end_work_session(db: AsyncSession) -> None:
     bounded by ``CLEANUP_BUDGET_S``. A rollback that does not return is cancelled; once it has
     ended, the session's connection is invalidated (closed rather than returned to the pool).
     A rollback that is still running after its cancellation owns the session, so the session is
-    never touched again: it is quarantined, and every later sync on it is refused.
+    never touched again: it is quarantined, every later sync on it is refused, and its owner
+    (``session_scope``) closes it only once that rollback ends.
     """
-    if db.info.get(_QUARANTINED):
+    if quarantine_reason(db) is not None:
         return
     await wearable_sync_lock.finish_despite_cancellation(
         asyncio.ensure_future(_bounded_rollback(db)))

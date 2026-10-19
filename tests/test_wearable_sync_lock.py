@@ -20,14 +20,16 @@ import pytest
 from conftest import TEST_DATABASE_URL
 from cryptography.fernet import Fernet
 from oauth_helpers import athlete
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy.util import await_only
 
 from app.core import crypto
+from app.core import db as core_db
 from app.core.config import settings
 from app.core.db import get_db
 from app.integrations.base import NormalizedWellness, TokenBundle
@@ -701,7 +703,7 @@ async def test_a_database_failure_on_one_connection_does_not_stop_the_next(fake,
 
 async def test_the_cli_exits_nonzero_and_reports_partial_success(fake, sessions, monkeypatch, capsys):
     await _two_connections_one_failing(sessions, monkeypatch)
-    monkeypatch.setattr(sync_wearables, "AsyncSessionLocal", sessions)
+    monkeypatch.setattr(core_db, "AsyncSessionLocal", sessions)
     assert await sync_wearables._run(days=7, user_id=None) == 1
     out = capsys.readouterr().out
     assert "FAILED after 1 saved rows" in out and "may or may not have been saved" in out
@@ -711,7 +713,7 @@ async def test_the_cli_exits_nonzero_and_reports_partial_success(fake, sessions,
 async def test_the_cli_exits_zero_when_every_connection_syncs(fake, sessions, monkeypatch, capsys):
     uid = await _user(sessions, "w4-cli-ok@test.com")
     await _link(sessions, uid, auth_type="pat")
-    monkeypatch.setattr(sync_wearables, "AsyncSessionLocal", sessions)
+    monkeypatch.setattr(core_db, "AsyncSessionLocal", sessions)
     assert await sync_wearables._run(days=7, user_id=None) == 0
     assert "3 rows saved across 1 connections, 0 failed" in capsys.readouterr().out
 
@@ -799,7 +801,7 @@ async def test_a_day_whose_commit_returned_is_confirmed_even_if_its_read_back_fa
 
 async def test_the_cli_reports_partial_success_for_one_user_too(fake, sessions, monkeypatch, capsys):
     uid_a, _ = await _two_connections_one_failing(sessions, monkeypatch)
-    monkeypatch.setattr(sync_wearables, "AsyncSessionLocal", sessions)
+    monkeypatch.setattr(core_db, "AsyncSessionLocal", sessions)
     assert await sync_wearables._run(days=7, user_id=uid_a) == 1
     out = capsys.readouterr().out
     assert f"user{uid_a}:oura: FAILED after 1 saved rows" in out
@@ -840,7 +842,7 @@ async def test_a_rollback_still_running_after_its_cancel_quarantines_the_session
             db.rollback = rollback_that_outlives_its_cancel
             db.invalidate = counted_invalidate
             reports = await asyncio.wait_for(wearable_service.sync_all(db), 10)
-            assert db.info.get(wearable_service._QUARANTINED)
+            assert core_db.quarantine_reason(db)
     finally:
         gate.release.set()
         unwound.set()
@@ -894,3 +896,133 @@ async def test_repeated_cancellation_waits_for_cleanup_before_the_unlock_and_slo
     finally:
         gate.release.set()
     assert await _lock_is_free(cid)
+
+
+# --- review round 3: the session's owner, while a real rollback still holds it ----------------
+
+
+class HeldRollback:
+    """Holds a real SQLAlchemy rollback in progress (inside its ``after_rollback`` event, so the
+    session's transaction is mid-state-change) until released, resisting cancellation, as a
+    stuck driver operation would. Armed once; only the next rollback is held."""
+
+    def __init__(self) -> None:
+        self.armed = False
+        self.release = asyncio.Event()
+        self.held = asyncio.Event()
+        self.ended = asyncio.Event()
+        self.session: AsyncSession | None = None
+        self.closes_after_end: list[bool] = []  # one entry per close() of the held session
+
+    def listener(self, _session) -> None:
+        if self.armed:
+            self.armed = False
+            await_only(self._hold())
+
+    async def _hold(self) -> None:
+        self.held.set()
+        try:
+            await self.release.wait()
+        except asyncio.CancelledError:
+            await self.release.wait()
+            raise
+        finally:
+            self.ended.set()
+
+
+@pytest.fixture
+def held_rollback(monkeypatch):
+    monkeypatch.setattr(wearable_sync_lock, "CLEANUP_BUDGET_S", 0.2)
+    monkeypatch.setattr(wearable_service, "SYNC_WORK_BUDGET_S", 0.3)
+    held = HeldRollback()
+    real_close = AsyncSession.close
+
+    async def recorded_close(self):
+        if self is held.session:
+            held.closes_after_end.append(held.ended.is_set())
+        return await real_close(self)
+
+    monkeypatch.setattr(AsyncSession, "close", recorded_close)
+    event.listen(Session, "after_rollback", held.listener)
+    yield held
+    held.release.set()
+    event.remove(Session, "after_rollback", held.listener)
+
+
+def _first_day_hangs_for(uid: int, held: HeldRollback, monkeypatch) -> None:
+    """``uid``'s first day opens a transaction on the work session, then hangs past the deadline."""
+    real = readiness_service.upsert_wellness_sample
+
+    async def hangs(db, user_id, payload, **kwargs):
+        if user_id == uid:
+            await db.execute(text("SELECT 1"))
+            held.session, held.armed = db, True
+            await asyncio.sleep(60)
+        return await real(db, user_id, payload, **kwargs)
+
+    monkeypatch.setattr(readiness_service, "upsert_wellness_sample", hangs)
+
+
+async def _deferred_close_done(held: HeldRollback) -> None:
+    held.release.set()
+    await asyncio.wait_for(held.ended.wait(), 5)
+    await _until(lambda: asyncio.sleep(0, result=not core_db._held), timeout=5)
+    # The owner closed it exactly once, and only after the rollback holding it had ended.
+    assert held.closes_after_end == [True]
+
+
+@pytest.fixture
+async def owner_client(sessions, monkeypatch):
+    """The real app with the real ``get_db`` (no override), its factory pointed at the test DB."""
+    from app.main import app
+
+    monkeypatch.setattr(core_db, "AsyncSessionLocal", sessions)
+    app.dependency_overrides.pop(get_db, None)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+
+
+async def test_the_route_still_answers_504_when_its_session_is_quarantined(
+        fake, sessions, held_rollback, owner_client, async_db, monkeypatch, caplog):
+    headers, uid = await athlete(owner_client, async_db, "w4-owner-route@test.com")
+    cid, _ = await _link(sessions, uid, auth_type="pat")
+    _first_day_hangs_for(uid, held_rollback, monkeypatch)
+
+    r = await asyncio.wait_for(owner_client.post("/v1/integrations/oura/sync", headers=headers), 10)
+    assert r.status_code == 504, r.text
+    assert "took too long" in r.json()["detail"]
+    assert held_rollback.held.is_set() and not held_rollback.ended.is_set()  # still holding it
+    assert core_db._held                                                     # close deferred
+
+    await _deferred_close_done(held_rollback)
+    assert not any("closing a quarantined session failed" in r.getMessage() for r in caplog.records)
+    await _settle()
+    assert await _lock_is_free(cid) and _process_state_is_clean()
+
+
+async def test_the_cli_prints_its_reports_when_its_session_is_quarantined(
+        fake, sessions, held_rollback, monkeypatch, capsys, caplog):
+    uid_a = await _user(sessions, "w4-owner-cli-a@test.com")
+    await _link(sessions, uid_a, auth_type="pat")
+    uid_b = await _user(sessions, "w4-owner-cli-b@test.com")
+    await _link(sessions, uid_b, auth_type="pat")
+    _first_day_hangs_for(uid_a, held_rollback, monkeypatch)
+    monkeypatch.setattr(core_db, "AsyncSessionLocal", sessions)
+
+    assert await asyncio.wait_for(sync_wearables._run(days=7, user_id=None), 10) == 1
+    out = capsys.readouterr().out
+    assert f"user{uid_a}:oura: FAILED after 0 saved rows (SyncTimedOut" in out
+    assert f"user{uid_b}:oura: FAILED after 0 saved rows (SessionQuarantined" in out
+    assert "done: 0 rows saved across 2 connections, 2 failed" in out
+    assert not held_rollback.ended.is_set()
+
+    await _deferred_close_done(held_rollback)
+    assert not any("closing a quarantined session failed" in r.getMessage() for r in caplog.records)
+    assert await _wellness_days(sessions, uid_b) == []
+
+
+async def test_an_ordinary_session_is_closed_by_its_owner_at_once(sessions):
+    async with core_db.session_scope(sessions) as db:
+        await db.execute(text("SELECT 1"))
+        assert db.in_transaction()
+    assert not db.in_transaction() and not core_db._held
