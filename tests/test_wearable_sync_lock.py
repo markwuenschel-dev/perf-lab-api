@@ -368,14 +368,21 @@ async def test_the_lock_is_released_however_the_sync_ends(fake, sessions, monkey
 
 async def test_an_unconfirmed_unlock_invalidates_the_connection_and_frees_the_lock(
         fake, sessions, monkeypatch, caplog):
-    monkeypatch.setattr(wearable_sync_lock, "CLEANUP_BUDGET_S", 0)  # the unlock cannot complete
     caplog.set_level(logging.DEBUG, logger=LOCK_LOGGER)
     uid = await _user(sessions, "w4-invalidate@test.com")
     cid, _ = await _link(sessions, uid, auth_type="pat")
 
+    async def unlock_the_wrong_key():
+        # Once the lock is held: the unlock then names a key this session never took, so
+        # pg_advisory_unlock returns false. (Not a zero cleanup budget, which would also cut
+        # the work session's rollback short and quarantine it.)
+        monkeypatch.setattr(wearable_sync_lock, "SYNC_LOCK_NAMESPACE", WSY1 + 1)
+
+    fake.fetch_hooks = [unlock_the_wrong_key]
     assert (await _sync(sessions, cid)).rows_written == 3
     assert any("release not confirmed" in r.getMessage() for r in caplog.records)
     assert any("released by invalidation" in r.getMessage() for r in caplog.records)
+    assert not any("quarantined" in r.getMessage() for r in caplog.records)  # cleanup was normal
     assert await _lock_is_free(cid)
 
 
