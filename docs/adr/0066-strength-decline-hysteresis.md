@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-12
+accepted: "2026-07-12, PR #121 (implements it)"
+delivery: delivered
+deployed: yes
+activation: "state correction live; prescription basis off (DECLINE_CANDIDATE_PRESCRIPTION_BASIS = off, app/engine/feature_flags.py)"
+reconciled: 2026-10-19
 ---
 # A single low benchmark must not durably regress max_strength
 

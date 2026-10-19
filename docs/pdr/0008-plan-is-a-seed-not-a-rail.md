@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
+accepted: "2026-06-21, PR #13 (its body: merging accepts its records)"
+delivery: partial
+deployed: yes
+activation: "live (no starting plan is authored at account creation)"
+reconciled: 2026-10-19
 ---
 # The training plan is a seed, not a rail
 

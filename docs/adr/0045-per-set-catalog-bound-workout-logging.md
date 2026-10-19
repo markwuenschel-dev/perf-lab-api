@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-07
+accepted: "2026-07-09, PR #96 (implements it), then PR #98"
+delivery: delivered
+deployed: yes
+activation: live
+reconciled: 2026-10-19
 ---
 # Workout logging is per-set, catalog-bound, and modality-heterogeneous
 

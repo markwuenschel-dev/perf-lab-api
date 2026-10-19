@@ -29,6 +29,16 @@ the build source, rebuild + restart the service, then verify with `alembic curre
 
 ---
 
+## Merging: only after checks complete
+
+`main` has no branch protection, so `gh pr merge --auto` merges immediately, before CI has finished
+(PR #306 merged two seconds after its first check started on 2026-10-19, and its PR-head Python job
+then failed). Merge with `scripts/merge-on-green.sh <pr>` instead. It waits for the PR's head commit to
+report checks, waits for every workflow run, check run and commit status on it to complete (plus one
+settle poll), refuses unless each one passed (or was skipped or neutral), refuses if the head moved,
+and merges with `--match-head-commit`. `DRY_RUN=1` stops before the merge. Deploy the merge commit
+only after that.
+
 ## Topology (on EC2 host `ip-172-31-18-55`)
 
 Two directories, one compose project (`stack`) at `/opt/stack/infra`:

@@ -1,6 +1,11 @@
 ---
 status: proposed
 date: 2026-07-07
+accepted: "none: PR #92 recorded this design ('decision records, none built') with no approval statement"
+delivery: not-built
+deployed: n/a
+activation: "n/a (only the mapping tables exist; nothing reads them)"
+reconciled: 2026-10-19
 ---
 # Skill state is a domain-filtered projection over measured evidence
 

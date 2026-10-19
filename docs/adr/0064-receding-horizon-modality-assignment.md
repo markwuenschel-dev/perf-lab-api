@@ -1,7 +1,11 @@
 ---
 status: proposed
 date: 2026-07-11
+accepted: "none: the P11 design, pushed straight to main in commit 388be65 with no PR; never approved"
 delivery: partial
+deployed: yes
+activation: seam live; production passes it no constraints
+reconciled: 2026-10-19
 ---
 # Objective mix reaches the plan through hierarchical receding-horizon assignment
 

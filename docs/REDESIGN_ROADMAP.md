@@ -394,7 +394,8 @@ two long-open calls:
 - [x] Reconcile version drift to **0.3.0** (`pyproject` / `app.main` / `/ping`) — done in
   `bc6bcae`.
 - [ ] Delete legacy root `main.py` + `requirements.txt` once the legacy router is
-  confirmed to cover `/compute-metrics`. (`requirements.txt` is stale in both directions —
+  confirmed to cover `/compute-metrics`. **2026-10-19:** confirmed (`app/api/v1/legacy.py` is mounted by `app/main.py`); root `main.py` now only
+  forwards to `app.main:app`, so deleting it is safe whenever `requirements.txt` goes too. (`requirements.txt` is stale in both directions —
   it omits `kagglehub`/`aiofiles` and pulls in the optional `[tasks]`/`[llm]` groups — so
   it should not be used to install; see README **Setup**.)
 - [ ] Rename `constraint_engine/candidate.py` ↔ `candidates.py` for legibility. **Not a

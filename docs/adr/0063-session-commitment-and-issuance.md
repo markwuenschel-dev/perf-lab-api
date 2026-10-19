@@ -1,6 +1,11 @@
 ---
 status: proposed
 date: 2026-07-11
+accepted: "none: the P11 design, pushed straight to main in commit 388be65 with no PR; never approved"
+delivery: partial
+deployed: yes
+activation: "live for revision immutability only (P1, PRs #281/#282); the commitment state machine is not built"
+reconciled: 2026-10-19
 ---
 # Session commitment is execution state; issuance is a user-visible event, not materialization
 

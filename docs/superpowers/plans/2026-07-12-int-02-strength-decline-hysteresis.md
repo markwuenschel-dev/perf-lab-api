@@ -2,6 +2,8 @@
 
 **Status:** DELIVERED 2026-07-12 _(all 11 tasks shipped on branch `feat/int-02-strength-decline-hysteresis`; forks A1/B1/C1 with the §8 amendments. Verified vs Postgres: 944 tests pass, ruff + pyright strict clean repo-wide, OpenAPI unchanged, migrations a032/a033 reversible. ADR-0066 written. State-correctness + prescription-shadow closure states complete; prescription-promotion gated OFF pending validation. PR open, not merged.)_
 
+**Status as of 2026-10-19:** merged (PR #121, 2026-07-12; shadow writer PR #130, 2026-07-14) and deployed. **Live:** the state correction (decline candidates, confirmed regression). **Not live:** the prescription half. `DECLINE_CANDIDATE_PRESCRIPTION_BASIS` is `"off"` (`app/engine/feature_flags.py`), so prescriptions keep the legacy latest-raw e1RM basis and no shadow rows are produced: the writer exists but receives no payloads. Per this contract's own closure states, INT-02 is therefore **not fully resolved**; it stays shadow-capable and off until a shadow decision is made.
+
 **Source:** candidate `INT-02` from the 2026-07-12 Repo Audit Swarm ledger (Algorithm/Numerical; priority +8; was `needs-human-decision`). Locked decision supplied by the user: *asymmetric downward confirmation hysteresis + temporary prescription protection + confirmed state regression via a bounded variance-aware estimator update — not an EWMA watermark, not a floor on current capacity.*
 
 ---

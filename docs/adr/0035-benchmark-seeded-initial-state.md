@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
+accepted: "2026-06-21, PR #13 (its body: merging accepts its records)"
+delivery: partial
+deployed: yes
+activation: "live (onboarding still seeds most axes from the experience prior)"
+reconciled: 2026-10-19
 ---
 # Initial state is benchmark-seeded; experience level is a weak prior
 

@@ -1,6 +1,11 @@
 ---
 status: proposed
 date: 2026-07-11
+accepted: "none: the P11 design, pushed straight to main in commit 388be65 with no PR; never approved"
+delivery: not-built
+deployed: n/a
+activation: n/a
+reconciled: 2026-10-19
 ---
 # Objective progress is a derived signal over P10 evidence, not a column
 

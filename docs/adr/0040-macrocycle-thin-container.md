@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-04
+accepted: "2026-07-04, PR #49 (implements it; its body: flips to accepted on merge)"
+delivery: delivered
+deployed: yes
+activation: live
+reconciled: 2026-10-19
 ---
 # The macrocycle is a thin container, not a materialized plan
 

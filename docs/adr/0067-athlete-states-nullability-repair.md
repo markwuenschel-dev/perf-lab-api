@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-17
+accepted: "2026-07-17, PR #154 (implements it)"
+delivery: delivered
+deployed: yes
+activation: live
+reconciled: 2026-10-19
 ---
 # athlete_states nullability repair: fail-closed decoder, migration reuses the live projector
 

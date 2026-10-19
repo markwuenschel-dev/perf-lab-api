@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-06-21
+accepted: "2026-06-21, PR #13 (its body: merging accepts its records)"
+delivery: delivered
+deployed: yes
+activation: live
+reconciled: 2026-10-19
 ---
 # State math is relative now, physiologically calibrated later; benchmarks are the anchor
 

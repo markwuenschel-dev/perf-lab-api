@@ -22,7 +22,7 @@ implies an architectural one, write both and cross-link them
 | [0004](0004-objectives-first-class.md) | Objectives are a first-class model | accepted |
 | [0005](0005-one-backend-owned-readiness-number.md) | One backend-owned readiness number | accepted |
 | [0006](0006-wearable-sync-cloud-api-first.md) | Wearable sync is cloud-API providers first | accepted |
-| [0007](0007-first-wearable-provider.md) | First wearable provider to integrate | proposed |
-| [0008](0008-plan-is-a-seed-not-a-rail.md) | The training plan is a seed, not a rail | proposed |
-| [0009](0009-onboarding-benchmark-onramp.md) | Onboarding establishes baselines through a benchmark onramp | proposed |
-| [0010](0010-model-self-limits-never-blocks-user.md) | The app never blocks the user; the model self-limits by confidence | proposed |
+| [0007](0007-first-wearable-provider.md) | First wearable provider to integrate | accepted |
+| [0008](0008-plan-is-a-seed-not-a-rail.md) | The training plan is a seed, not a rail | accepted |
+| [0009](0009-onboarding-benchmark-onramp.md) | Onboarding establishes baselines through a benchmark onramp | accepted |
+| [0010](0010-model-self-limits-never-blocks-user.md) | The app never blocks the user; the model self-limits by confidence | accepted |
