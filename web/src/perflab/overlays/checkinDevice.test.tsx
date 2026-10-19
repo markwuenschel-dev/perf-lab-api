@@ -96,3 +96,22 @@ it("without a wearable reading today, the check-in asks for everything by hand",
   await waitFor(() => expect(ingestWellness).toHaveBeenCalledTimes(1));
   expect(ingestWellness.mock.calls[0][0]).toMatchObject({ hrv_ms: 50, resting_hr: 60, sleep_hours: 6 });
 });
+
+it("reads today's device row only after its sync returns, showing manual controls meanwhile", async () => {
+  // A sync can wait behind another one (app load opened at the same moment): the check-in's
+  // wellness read must follow it, and the form stays usable by hand while it is pending.
+  let finishSync: (v: unknown) => void = () => {};
+  syncOura.mockReturnValue(new Promise((resolve) => { finishSync = resolve; }));
+  render(<CheckinModal />);
+
+  await waitFor(() => expect(syncOura).toHaveBeenCalledTimes(1));
+  expect(listWellness).not.toHaveBeenCalled();
+  expect(screen.getByText("Sleep duration")).toBeTruthy();
+  expect(screen.queryByTestId("device-hrv")).toBeNull();
+  expect((screen.getByText("Set today's readiness →") as HTMLButtonElement).disabled).toBe(false);
+
+  finishSync({ rows_written: 1 });
+  await waitFor(() => expect(screen.getByTestId("device-hrv")).toBeTruthy());
+  expect(listWellness).toHaveBeenCalledTimes(1);
+  expect(syncOura.mock.invocationCallOrder[0]).toBeLessThan(listWellness.mock.invocationCallOrder[0]);
+});

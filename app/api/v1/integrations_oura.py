@@ -35,6 +35,7 @@ from app.schemas.wearable import (
     WearableConnectionOut,
 )
 from app.services import wearable_oauth, wearable_service
+from app.services.wearable_sync_lock import SyncBusy
 
 logger = logging.getLogger("perflab.integrations.oura")
 
@@ -165,22 +166,36 @@ async def sync_now(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> SyncResult:
-    """Pull the caller's Oura data now (on-demand; the cron does this nightly)."""
+    """Pull the caller's Oura data now.
+
+    This is how Oura data arrives: the web calls it when the athlete shows up and the last sync
+    is stale. There is no nightly job. A sync already running for this connection is waited for
+    (up to 30 s, then 409); the sync itself has 60 s (then 504). Rows saved before a 409 or 504
+    are kept.
+    """
     conn = await wearable_service.get_connection(db, current_user.id, _PROVIDER)
     if conn is None:
         raise HTTPException(status_code=404, detail="No Oura connection")
     try:
-        written = await wearable_service.sync_connection(db, conn)
+        result = await wearable_service.sync_connection(db, conn.id)
     except wearable_service.ConnectionReplaced:
         raise HTTPException(
             status_code=409, detail="The Oura connection changed during this sync. Sync again."
+        ) from None
+    except SyncBusy:
+        raise HTTPException(
+            status_code=409, detail="Another Oura sync is still running. Try again shortly."
+        ) from None
+    except wearable_service.SyncTimedOut:
+        raise HTTPException(
+            status_code=504, detail="The Oura sync took too long. Data saved so far is kept."
         ) from None
     except (OuraAuthError, OuraApiError) as exc:
         raise HTTPException(status_code=502, detail=f"Oura sync failed: {exc}") from exc
     except EncryptionKeyMissingError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return SyncResult(
-        provider=_PROVIDER, rows_written=written, last_sync_at=conn.last_sync_at
+        provider=_PROVIDER, rows_written=result.rows_written, last_sync_at=result.last_sync_at
     )
 
 

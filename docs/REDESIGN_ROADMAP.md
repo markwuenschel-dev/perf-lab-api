@@ -183,8 +183,9 @@ Token paths, behind an adapter interface so Whoop/Polar are additive.
   ([ADR-0027](adr/0027-background-job-scheduler.md) accepted; no celery/redis). **Hosting
   update:** the app moved off Railway/Render to a self-hosted EC2 docker-compose stack on
   2026-07-10 ([ADR-0028](adr/0028-hosting-platform.md), superseded; see
-  [`docs/DEPLOY.md`](DEPLOY.md)). TODO: confirm how this nightly job is now scheduled on
-  the EC2 stack, since Railway's managed Cron Job no longer exists — not yet documented.
+  [`docs/DEPLOY.md`](DEPLOY.md)). **Resolved 2026-10-18:** no job is scheduled; the web
+  syncs a stale connection when the athlete shows up, and the CLI is a manual catch-up
+  (ADR-0027, superseded).
 - Config: `OURA_CLIENT_ID/SECRET`, `OURA_REDIRECT_URI`, `WEB_APP_URL`, `APP_ENCRYPTION_KEY`.
 - Web: Settings → "Connect Oura" (OAuth) + PAT fallback + sync status + disconnect.
 - **Verify:** connect via PAT (fastest) or OAuth; `POST /v1/integrations/oura/sync` or the

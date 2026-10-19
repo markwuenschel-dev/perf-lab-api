@@ -13,6 +13,7 @@ real data** (ADR-0026); they live here so calibration is a localized edit.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
 
@@ -405,7 +406,8 @@ async def _baselines(
 
 
 async def upsert_wellness_sample(
-    db: AsyncSession, user_id: int, payload: WellnessSampleIn
+    db: AsyncSession, user_id: int, payload: WellnessSampleIn,
+    *, on_committed: Callable[[], None] | None = None,
 ) -> WellnessSample:
     """Idempotent on (user_id, date, source): update in place, else insert.
 
@@ -415,6 +417,9 @@ async def upsert_wellness_sample(
     ``IntegrityError`` — an uncaught 500 on the on-demand path. Letting the database
     resolve the conflict closes that window; the update touches only the signal columns,
     so ``created_at`` is preserved exactly as the old in-place update did.
+
+    ``on_committed`` runs as soon as the COMMIT returns, before the row is read back, so a
+    caller counting durable writes is told even if that read then fails.
     """
     fields = payload.model_dump(exclude={"date", "source"})
     # measured_at is stored as naive UTC. An external client (a phone automation, a
@@ -428,6 +433,8 @@ async def upsert_wellness_sample(
     )
     await db.execute(stmt)
     await db.commit()
+    if on_committed is not None:
+        on_committed()
     # populate_existing: the core INSERT bypasses the ORM unit of work, so an instance
     # this session already loaded for the key would otherwise read back stale. Force the
     # row to reflect the just-written state.
