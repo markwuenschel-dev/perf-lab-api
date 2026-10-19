@@ -16,7 +16,6 @@ import { AEROBIC_CEILING, RANGES, RANGE_WEEKS, filterHistoryWindow, weeklyLoad, 
 
 /** Compact load formatter — real volume-load totals run large, so thousands
  *  collapse to "12.4k". */
-
 function fmtLoad(v: number): string {
   if (!Number.isFinite(v)) return "—";
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`;

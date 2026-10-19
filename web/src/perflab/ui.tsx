@@ -77,7 +77,7 @@ export function SectionLabel({
 }: {
   children: ReactNode;
   className?: string;
-  /** The console screens' smaller, theme-coloured label (SECTION_LABEL_COMPACT). */
+  /** The console screens' smaller label in the theme's faint colour (SECTION_LABEL_COMPACT). */
   compact?: boolean;
 }) {
   return (

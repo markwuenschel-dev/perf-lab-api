@@ -31,7 +31,6 @@ import { Card, Pill, ScreenHeader, SectionLabel } from "../ui";
 import { SampleTag } from "../SampleTag";
 import { axisLabel } from "../prescription/axes";
 
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

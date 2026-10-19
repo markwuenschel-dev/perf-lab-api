@@ -23,7 +23,8 @@ them. Each has one foreign key, to `users.id`, with no `ondelete`. Nothing refer
   table. ADR-0053 notes the hook is "fed by nothing".
 - **`outcome_events`**: the Q3 tissue-risk export and its model card (`app/ml/q3_tissue/`), plus
   `tests/test_telemetry_models.py` and the import check in `tests/test_feature_builders.py`.
-- **`experiment_assignments`**: the Q7 export, `tests/test_experiment_arms.py`, and
+- **`experiment_assignments`**: the Q7 export, `tests/test_experiment_arms.py`, the import check in
+  `tests/test_feature_builders.py`, and
   `tests/test_missed_sessions.py::test_offline_feature_builders_join_only_active_feedback`, which
   inserts rows into it against the migrated database.
 - **`planning_overrides`**: [ADR-0051](../adr/0051-user-owns-structure-engine-owns-safety.md) (user

@@ -54,7 +54,6 @@ import { dispositionTag } from "../../workoutDisposition";
 const btnGhost =
   "rounded-[9px] border border-white/[0.07] bg-white/[0.04] px-[14px] py-[9px] text-[12.5px] font-semibold leading-none text-soft";
 
-
 // Status → user-facing word + colour. "insufficient" (no baseline yet) reads as
 // "building baseline" rather than an invented judgement.
 const LOAD_STATUS: Record<TrainingLoadMetrics["status"], { label: string; color: string }> = {

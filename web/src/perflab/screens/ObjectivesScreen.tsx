@@ -34,7 +34,6 @@ import { domainLabel } from "../domains";
 import { Card, Pill, ScreenHeader, SectionLabel, Track } from "../ui";
 import { Legend, type LegendItem } from "../viz";
 
-
 function statusLabel(status: ObjectiveRead["status"]): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
