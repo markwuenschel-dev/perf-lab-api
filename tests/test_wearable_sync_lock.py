@@ -352,17 +352,17 @@ async def test_lock_timeout_ends_a_cross_process_wait_server_side(fake, sessions
     25-28 s, delaying a lock_timeout pending across a step by up to as much (measured: 7 of 300
     waits ended 2.0-2.45 s late, each at a step). So the backstop is removed and, instead of racing
     it, the test reads the lock_timeout the waiter actually sent and requires it to fit inside the
-    budget, short of it by the server-first margin. The backstop itself is
+    budget (strictly shorter, so the server can fire before the deadline). The backstop itself is
     test_the_acquire_deadline_ends_an_advisory_wait_the_server_does_not."""
     budget_ms = 800
     monkeypatch.setattr(wearable_sync_lock, "ACQUIRE_BUDGET_S", budget_ms / 1000)
     monkeypatch.setattr(wearable_sync_lock, "asyncio", _WithoutAcquireDeadline())
-    sent, stop_recording = _record_lock_timeouts()
     uid = await _user(sessions, "w4-locktimeout@test.com")
     cid, _ = await _link(sessions, uid, auth_type="pat")
     gate = Gate()
     fake.fetch_hooks = [gate]
 
+    sent, stop_recording = _record_lock_timeouts()
     try:
         holder = asyncio.create_task(_sync(sessions, cid))
         await gate.reached()
@@ -379,7 +379,7 @@ async def test_lock_timeout_ends_a_cross_process_wait_server_side(fake, sessions
     # Short of the budget, so the server can fire before the deadline would (not read from the
     # module's margin constant, which a regression could change along with it).
     assert 0 < sent[0] < budget_ms, (
-        f"lock_timeout {sent[0]}ms is not derived from the {budget_ms}ms acquisition budget")
+        f"lock_timeout {sent[0]}ms does not fit inside the {budget_ms}ms acquisition budget")
     with pytest.raises(wearable_sync_lock.SyncBusy) as busy:
         waiter.result()
     cause = busy.value.__cause__
@@ -400,19 +400,26 @@ async def test_the_acquire_deadline_ends_an_advisory_wait_the_server_does_not(
     gate = Gate()
     fake.fetch_hooks = [gate]
 
-    holder = asyncio.create_task(_sync(sessions, cid))
-    await gate.reached()
+    sent, stop_recording = _record_lock_timeouts()
     try:
+        holder = asyncio.create_task(_sync(sessions, cid))
+        await gate.reached()
+        sent.clear()  # only the waiter's acquisition, not the holder's
         started = time.monotonic()
         with pytest.raises(wearable_sync_lock.SyncBusy) as busy:
             await asyncio.wait_for(asyncio.to_thread(_sync_in_another_process, cid), 30)
         elapsed = time.monotonic() - started
+        # While the holder still holds the lock: the cancelled pg_advisory_lock left no waiter
+        # on the server (one that stayed would be granted the lock the moment the holder ends).
+        orphaned_waiters = await _advisory(cid, granted=False)
     finally:
         gate.release.set()
+        stop_recording()
     await asyncio.wait_for(holder, 30)
+    assert sent, "the waiter never reached the advisory-lock query, so no in-flight wait was cancelled"
     assert isinstance(busy.value.__cause__, TimeoutError), repr(busy.value.__cause__)
-    assert elapsed < 10, elapsed  # the deadline ended it, not the 20.6 s lock_timeout
-    assert await _advisory(cid, granted=False) == 0  # the cancelled wait left no waiter behind
+    assert elapsed < 10, elapsed  # failure bound: the deadline ended it, not the 20.6 s lock_timeout
+    assert orphaned_waiters == 0
     assert await _lock_is_free(cid)
 
 
