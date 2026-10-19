@@ -221,6 +221,8 @@ jobs:
         run: |
           bash -n scripts/deploy.sh
           shellcheck scripts/deploy.sh
+          bash -n scripts/merge-on-green.sh
+          shellcheck scripts/merge-on-green.sh
 
       - name: deploy.ps1 parses cleanly
         shell: pwsh
