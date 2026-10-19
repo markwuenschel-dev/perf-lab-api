@@ -1,7 +1,7 @@
 ---
 status: proposed
 date: 2026-07-11
-accepted: "none: recorded as the P11 design (commit 388be65), never approved"
+accepted: "none: the P11 design, pushed straight to main in commit 388be65 with no PR; never approved"
 delivery: not-built
 deployed: n/a
 activation: n/a

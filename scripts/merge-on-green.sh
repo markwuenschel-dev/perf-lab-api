@@ -33,9 +33,12 @@ echo "PR #$pr: head $head"
 runs_api="repos/{owner}/{repo}/commits/$head/check-runs?per_page=100"
 status_api="repos/{owner}/{repo}/commits/$head/status?per_page=100"
 
-# A count that reads as 0 when gh fails, so a transient error means "keep waiting", not a crash.
-count() { local n; n=$("$@" 2>/dev/null) || n=0; echo "${n:-0}"; }
-total_checks() { count gh api "$runs_api" -q '.total_count'; }
+# A failed gh call must always mean "keep waiting", never "done". So a total reads as 0 ("nothing
+# reported yet") and an open count reads as 1 ("something still running") when gh fails.
+total() { local n; n=$("$@" 2>/dev/null) || n=0; echo "${n:-0}"; }
+still_open() { local n; n=$("$@" 2>/dev/null) || n=1; echo "${n:-1}"; }
+total_checks() { total gh api "$runs_api" -q '.total_count'; }
+total_runs() { total gh run list --commit "$head" --json databaseId -q 'length'; }
 
 deadline=$((SECONDS + start_timeout))
 until [ "$(total_checks)" -gt 0 ]; do
@@ -48,14 +51,14 @@ done
 
 deadline=$((SECONDS + finish_timeout))
 while :; do
-  open_runs=$(count gh run list --commit "$head" --json status -q '[.[] | select(.status != "completed")] | length')
-  open_checks=$(count gh api "$runs_api" -q '[.check_runs[] | select(.status != "completed")] | length')
-  open_statuses=$(count gh api "$status_api" -q '[.statuses[] | select(.state == "pending")] | length')
+  open_runs=$(still_open gh run list --commit "$head" --json status -q '[.[] | select(.status != "completed")] | length')
+  open_checks=$(still_open gh api "$runs_api" -q '[.check_runs[] | select(.status != "completed")] | length')
+  open_statuses=$(still_open gh api "$status_api" -q '[.statuses[] | select(.state == "pending")] | length')
   if [ "$open_runs" -eq 0 ] && [ "$open_checks" -eq 0 ] && [ "$open_statuses" -eq 0 ]; then
-    before=$(total_checks)
+    before="$(total_checks)/$(total_runs)"
     sleep "$poll"
-    # Start over if a check appeared during the settle poll (another workflow or app reporting late).
-    [ "$(total_checks)" -eq "$before" ] && break
+    # Start over if a check run or workflow run appeared during the settle poll (or a count failed).
+    [ "$(total_checks)/$(total_runs)" = "$before" ] && [ "$before" != "0/0" ] && break
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
     echo "checks for $head did not complete within ${finish_timeout}s; not merging" >&2
