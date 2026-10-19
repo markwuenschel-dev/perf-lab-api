@@ -67,11 +67,24 @@ export function Tile({
   );
 }
 
-export function SectionLabel({ children, className }: { children: ReactNode; className?: string }) {
+/** The console screens' label: 10px and the theme's faint colour, instead of the 11px default. */
+export const SECTION_LABEL_COMPACT = "text-[10px] text-faint";
+
+export function SectionLabel({
+  children,
+  className,
+  compact = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  /** The console screens' smaller label in the theme's faint colour (SECTION_LABEL_COMPACT). */
+  compact?: boolean;
+}) {
   return (
     <div
       className={cn(
         "font-mono text-[11px] font-semibold uppercase leading-none tracking-[0.14em] text-[#8b919c]",
+        compact && SECTION_LABEL_COMPACT,
         className,
       )}
     >

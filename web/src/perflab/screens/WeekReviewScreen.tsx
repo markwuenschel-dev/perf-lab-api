@@ -31,10 +31,6 @@ import { Card, Pill, ScreenHeader, SectionLabel } from "../ui";
 import { SampleTag } from "../SampleTag";
 import { axisLabel } from "../prescription/axes";
 
-// Console section label (mono 10px, faint) — a local override of the shared
-// SectionLabel default, which the not-yet-migrated screens still render at 11px.
-const LABEL = "text-[10px] text-faint";
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -347,7 +343,7 @@ function WhatMovedCard({ review, sample }: { review: WeekReview; sample: boolean
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>What moved</SectionLabel>
+        <SectionLabel compact>What moved</SectionLabel>
         {sample && <SampleTag />}
       </div>
       {ordered.length === 0 ? (
@@ -461,7 +457,7 @@ function HowItFeltCard({ sessions, onFeedback, sample }: {
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between">
-        <SectionLabel className={LABEL}>How it felt</SectionLabel>
+        <SectionLabel compact>How it felt</SectionLabel>
         {sample && <SampleTag />}
       </div>
       {ordered.length === 0 ? (
@@ -497,7 +493,7 @@ function NextWeekCard({ items, status, sample }: {
   return (
     <Card className="p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <SectionLabel className={LABEL}>What changes next week</SectionLabel>
+        <SectionLabel compact>What changes next week</SectionLabel>
         {sample ? <SampleTag /> : <span className="text-[11px] font-medium leading-none text-dim">already determined — sessions are still set on the day</span>}
       </div>
       {items.length === 0 ? (

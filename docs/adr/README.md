@@ -139,3 +139,4 @@ The index below repeats `status` only; the record is the source of truth.
 | [0074](0074-session-days-slot-weekday-scheduled-date.md) | A planned session has three days: its block slot, its plan weekday and its scheduled date | accepted |
 | [0075](0075-wearable-oauth-is-a-durable-attempt.md) | Connecting a wearable over OAuth is a durable attempt, bound to its browser by PKCE | accepted |
 | [0076](0076-per-ip-auth-limits-in-process.md) | Login and registration are limited per IP, in process, and login always verifies once | accepted |
+| [0077](0077-issued-prescription-revisions-are-immutable.md) | An issued prescription revision is immutable; only safety or the athlete's recheck replaces it | accepted |
