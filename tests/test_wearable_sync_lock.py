@@ -11,6 +11,7 @@ running on another loop.
 """
 import asyncio
 import logging
+import re
 import threading
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -21,7 +22,7 @@ from conftest import TEST_DATABASE_URL
 from cryptography.fernet import Fernet
 from oauth_helpers import athlete
 from sqlalchemy import event, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -328,33 +329,90 @@ class _WithoutAcquireDeadline:
         return asyncio.timeout(None)
 
 
+def _record_lock_timeouts():
+    """Every ``SET LOCAL lock_timeout`` actually sent, in ms, from any engine on any thread."""
+    sent: list[int] = []
+
+    def before(_conn, _cursor, statement, *_args):
+        m = re.match(r"SET LOCAL lock_timeout = '(\d+)ms'", statement)
+        if m:
+            sent.append(int(m.group(1)))
+
+    event.listen(Engine, "before_cursor_execute", before)
+    return sent, lambda: event.remove(Engine, "before_cursor_execute", before)
+
+
 async def test_lock_timeout_ends_a_cross_process_wait_server_side(fake, sessions, monkeypatch):
-    """Proves the [assumed] claim the plan rested on: lock_timeout bounds an advisory-lock wait.
+    """Proves the [assumed] claim the plan rested on: lock_timeout, derived from the acquisition
+    budget, bounds an advisory-lock wait on the server.
 
     Only the server may end the wait here. With the asyncio backstop in place, which of the two
     fires first is decided by the database host's clock, not by this code: Postgres times
-    lock_timeout on its wall clock, and the local Docker VM's steps back ~2.4 s about every
-    30 s, delaying a lock_timeout pending across a step by as much (measured: 7 of 300 waits
-    ended 2.0-2.45 s late, each at a step). The backstop's own path to SyncBusy is
-    test_a_sync_queued_too_long_in_process_is_409."""
-    monkeypatch.setattr(wearable_sync_lock, "ACQUIRE_BUDGET_S", 0.8)
+    lock_timeout on its wall clock, and the local Docker VM's steps back ~2.4 s roughly every
+    25-28 s, delaying a lock_timeout pending across a step by up to as much (measured: 7 of 300
+    waits ended 2.0-2.45 s late, each at a step). So the backstop is removed and, instead of racing
+    it, the test reads the lock_timeout the waiter actually sent and requires it to fit inside the
+    budget, short of it by the server-first margin. The backstop itself is
+    test_the_acquire_deadline_ends_an_advisory_wait_the_server_does_not."""
+    budget_ms = 800
+    monkeypatch.setattr(wearable_sync_lock, "ACQUIRE_BUDGET_S", budget_ms / 1000)
     monkeypatch.setattr(wearable_sync_lock, "asyncio", _WithoutAcquireDeadline())
+    sent, stop_recording = _record_lock_timeouts()
     uid = await _user(sessions, "w4-locktimeout@test.com")
+    cid, _ = await _link(sessions, uid, auth_type="pat")
+    gate = Gate()
+    fake.fetch_hooks = [gate]
+
+    try:
+        holder = asyncio.create_task(_sync(sessions, cid))
+        await gate.reached()
+        sent.clear()  # only the waiter's acquisition, not the holder's
+        waiter = asyncio.ensure_future(asyncio.to_thread(_sync_in_another_process, cid))
+        ended, _ = await asyncio.wait([waiter], timeout=30)
+        gate.release.set()  # either way: a waiter still blocked gets the lock once the holder ends
+        await asyncio.wait_for(holder, 30)
+        await asyncio.wait([waiter], timeout=30)  # a failing run leaves no sync running behind it
+    finally:
+        stop_recording()
+    assert ended, "nothing ended the advisory-lock wait server side: lock_timeout did not bound it"
+    assert len(sent) == 1, sent
+    # Short of the budget, so the server can fire before the deadline would (not read from the
+    # module's margin constant, which a regression could change along with it).
+    assert 0 < sent[0] < budget_ms, (
+        f"lock_timeout {sent[0]}ms is not derived from the {budget_ms}ms acquisition budget")
+    with pytest.raises(wearable_sync_lock.SyncBusy) as busy:
+        waiter.result()
+    cause = busy.value.__cause__
+    assert isinstance(cause, DBAPIError) and wearable_sync_lock._is_lock_timeout(cause)
+    assert await _lock_is_free(cid)
+
+
+async def test_the_acquire_deadline_ends_an_advisory_wait_the_server_does_not(
+        fake, sessions, monkeypatch):
+    """The backstop: when lock_timeout would not end the wait (here: set 20 s past the budget),
+    the asyncio deadline cancels the in-flight pg_advisory_lock, the caller gets SyncBusy caused
+    by TimeoutError, and the cancelled acquisition leaves no lock behind (its connection is
+    invalidated). Deterministic: the server cannot fire within the 0.8 s budget."""
+    monkeypatch.setattr(wearable_sync_lock, "ACQUIRE_BUDGET_S", 0.8)
+    monkeypatch.setattr(wearable_sync_lock, "_SERVER_FIRST_MS", -20_000)
+    uid = await _user(sessions, "w4-backstop@test.com")
     cid, _ = await _link(sessions, uid, auth_type="pat")
     gate = Gate()
     fake.fetch_hooks = [gate]
 
     holder = asyncio.create_task(_sync(sessions, cid))
     await gate.reached()
-    waiter = asyncio.ensure_future(asyncio.to_thread(_sync_in_another_process, cid))
-    ended, _ = await asyncio.wait([waiter], timeout=30)
-    gate.release.set()  # either way: a waiter still blocked gets the lock once the holder ends
+    try:
+        started = time.monotonic()
+        with pytest.raises(wearable_sync_lock.SyncBusy) as busy:
+            await asyncio.wait_for(asyncio.to_thread(_sync_in_another_process, cid), 30)
+        elapsed = time.monotonic() - started
+    finally:
+        gate.release.set()
     await asyncio.wait_for(holder, 30)
-    assert ended, "nothing ended the advisory-lock wait server side: lock_timeout did not bound it"
-    with pytest.raises(wearable_sync_lock.SyncBusy) as busy:
-        waiter.result()
-    cause = busy.value.__cause__
-    assert isinstance(cause, DBAPIError) and wearable_sync_lock._is_lock_timeout(cause)
+    assert isinstance(busy.value.__cause__, TimeoutError), repr(busy.value.__cause__)
+    assert elapsed < 10, elapsed  # the deadline ended it, not the 20.6 s lock_timeout
+    assert await _advisory(cid, granted=False) == 0  # the cancelled wait left no waiter behind
     assert await _lock_is_free(cid)
 
 
