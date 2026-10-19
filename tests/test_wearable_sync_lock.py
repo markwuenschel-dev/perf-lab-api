@@ -316,9 +316,29 @@ async def test_a_sync_queued_too_long_in_process_is_409(fake, sessions, concurre
     assert await _lock_is_free(cid) and _process_state_is_clean()
 
 
+class _WithoutAcquireDeadline:
+    """``wearable_sync_lock``'s view of asyncio, minus the acquire backstop (``timeout_at``,
+    used only around acquisition). Everything else is the real module."""
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+    @staticmethod
+    def timeout_at(when):
+        return asyncio.timeout(None)
+
+
 async def test_lock_timeout_ends_a_cross_process_wait_server_side(fake, sessions, monkeypatch):
-    """Proves the [assumed] claim the plan rested on: lock_timeout bounds an advisory-lock wait."""
+    """Proves the [assumed] claim the plan rested on: lock_timeout bounds an advisory-lock wait.
+
+    Only the server may end the wait here. With the asyncio backstop in place, which of the two
+    fires first is decided by the database host's clock, not by this code: Postgres times
+    lock_timeout on its wall clock, and the local Docker VM's steps back ~2.4 s about every
+    30 s, delaying a lock_timeout pending across a step by as much (measured: 7 of 300 waits
+    ended 2.0-2.45 s late, each at a step). The backstop's own path to SyncBusy is
+    test_a_sync_queued_too_long_in_process_is_409."""
     monkeypatch.setattr(wearable_sync_lock, "ACQUIRE_BUDGET_S", 0.8)
+    monkeypatch.setattr(wearable_sync_lock, "asyncio", _WithoutAcquireDeadline())
     uid = await _user(sessions, "w4-locktimeout@test.com")
     cid, _ = await _link(sessions, uid, auth_type="pat")
     gate = Gate()
@@ -326,12 +346,15 @@ async def test_lock_timeout_ends_a_cross_process_wait_server_side(fake, sessions
 
     holder = asyncio.create_task(_sync(sessions, cid))
     await gate.reached()
+    waiter = asyncio.ensure_future(asyncio.to_thread(_sync_in_another_process, cid))
+    ended, _ = await asyncio.wait([waiter], timeout=30)
+    gate.release.set()  # either way: a waiter still blocked gets the lock once the holder ends
+    await asyncio.wait_for(holder, 30)
+    assert ended, "nothing ended the advisory-lock wait server side: lock_timeout did not bound it"
     with pytest.raises(wearable_sync_lock.SyncBusy) as busy:
-        await asyncio.wait_for(asyncio.to_thread(_sync_in_another_process, cid), 30)
+        waiter.result()
     cause = busy.value.__cause__
     assert isinstance(cause, DBAPIError) and wearable_sync_lock._is_lock_timeout(cause)
-    gate.release.set()
-    await asyncio.wait_for(holder, 30)
     assert await _lock_is_free(cid)
 
 
