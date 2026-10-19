@@ -1,6 +1,10 @@
 ---
 status: proposed
 date: 2026-07-07
+delivery: not-built
+deployed: n/a
+activation: "n/a (the older single-objective boost runs instead)"
+reconciled: 2026-10-19
 ---
 # Objectives drive concurrent training emphasis
 

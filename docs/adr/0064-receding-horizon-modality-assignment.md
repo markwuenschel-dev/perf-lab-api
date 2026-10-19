@@ -2,6 +2,9 @@
 status: proposed
 date: 2026-07-11
 delivery: partial
+deployed: yes
+activation: seam live; production passes it no constraints
+reconciled: 2026-10-19
 ---
 # Objective mix reaches the plan through hierarchical receding-horizon assignment
 

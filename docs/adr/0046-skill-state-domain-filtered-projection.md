@@ -1,6 +1,10 @@
 ---
 status: proposed
 date: 2026-07-07
+delivery: not-built
+deployed: n/a
+activation: "n/a (only the mapping tables exist; nothing reads them)"
+reconciled: 2026-10-19
 ---
 # Skill state is a domain-filtered projection over measured evidence
 

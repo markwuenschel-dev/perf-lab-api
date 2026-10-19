@@ -1,6 +1,10 @@
 ---
 status: proposed
 date: 2026-07-07
+delivery: not-built
+deployed: n/a
+activation: "n/a (planning_overrides table exists, unread)"
+reconciled: 2026-10-19
 ---
 # The user owns intent and structure; the engine owns safety and execution
 

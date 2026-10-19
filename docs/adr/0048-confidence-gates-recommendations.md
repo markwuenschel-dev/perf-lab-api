@@ -1,6 +1,10 @@
 ---
 status: proposed
 date: 2026-07-07
+delivery: partial
+deployed: yes
+activation: "shadow (UNCERTAINTY_CONSERVATISM = shadow, app/engine/feature_flags.py)"
+reconciled: 2026-10-19
 ---
 # Confidence gates recommendations — continuously in the engine, discretely on claims
 

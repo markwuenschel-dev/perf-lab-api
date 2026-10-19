@@ -1,6 +1,10 @@
 ---
 status: proposed
 date: 2026-07-11
+delivery: not-built
+deployed: n/a
+activation: n/a
+reconciled: 2026-10-19
 ---
 # The objective target-share function: multiplicative score, diminishing aggregation, true share floors
 

@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-05
+accepted: "2026-09-06, PR #219 (implements it)"
+delivery: delivered
+deployed: yes
+activation: live
+reconciled: 2026-10-19
 ---
 # Session feedback is advisory; `PlannedSession.status` stays canonical
 

@@ -1,6 +1,11 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-28
+accepted: "2026-09-28, PR #269 (implements it)"
+delivery: delivered
+deployed: yes
+activation: live
+reconciled: 2026-10-19
 ---
 # Planned-week projection is display-only fatigue, not a readiness forecast
 

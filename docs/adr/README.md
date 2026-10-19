@@ -45,6 +45,19 @@ A `proposed` record is written in the **same PR** that embodies the decision
 one. The decision becomes `accepted` when the human **merges** the PR. Records live
 and die with their PR.
 
+**Four separate facts per record** (front matter, kept current by whoever changes them; first
+reconciled 2026-10-19). Merged code is not evidence of acceptance, and acceptance is not evidence of
+delivery:
+
+- `status` / `accepted`: the decision itself. `accepted` names the merged PR (or the approved decision)
+  that accepted it. A record whose design was recorded but never approved stays `proposed`, even when
+  some of its code exists.
+- `delivery`: `delivered`, `partial`, `shadow-only` or `not-built`, for what is on main.
+- `deployed`: whether that code is on the production box.
+- `activation`: whether it is live, shadow, or behind a flag that is off, naming the flag.
+
+The index below repeats `status` only; the record is the source of truth.
+
 ## Index
 
 | # | Decision | Status |
@@ -74,30 +87,30 @@ and die with their PR.
 | [0023](0023-eight-capacity-axes-everywhere.md) | Eight capacity axes, engine to UI, no rollup | accepted |
 | [0024](0024-canonical-units-imperial-pace.md) | Canonical units: sec/mile pace, 0–100 fatigue/tissue | accepted |
 | [0025](0025-generate-ts-types-from-openapi.md) | Generate web TypeScript types from the OpenAPI schema | accepted |
-| [0026](0026-readiness-combine-rule.md) | How acute wellness combines with modeled fatigue | proposed |
+| [0026](0026-readiness-combine-rule.md) | How acute wellness combines with modeled fatigue | accepted |
 | [0027](0027-background-job-scheduler.md) | Background-job scheduler for the nightly wearable pull | superseded (2026-10-18: no scheduler; synced when the athlete shows up) |
 | [0028](0028-hosting-platform.md) | Hosting platform (Railway vs Render) | superseded (moved to EC2, see `docs/DEPLOY.md`) |
 | [0029](0029-periodization-intent-envelope.md) | Periodization lives as an intent envelope on the block | accepted |
 | [0030](0030-block-derived-intent-modality-mix.md) | Training intent is block-derived; modality_mix drives concurrency | accepted |
 | [0031](0031-prescription-seeds-the-log.md) | Prescription seeds the workout log | accepted |
-| [0032](0032-relative-state-math-benchmark-anchored.md) | State math is relative now, calibrated later; benchmarks anchor | proposed |
+| [0032](0032-relative-state-math-benchmark-anchored.md) | State math is relative now, calibrated later; benchmarks anchor | accepted |
 | [0033](0033-training-builds-and-loses-capacity.md) | Workout-driven adaptation must move capacity; capacities detrain | accepted |
 | [0034](0034-residual-based-benchmark-anchor.md) | Benchmark correction is residual-based; backend owns normalization | accepted |
-| [0035](0035-benchmark-seeded-initial-state.md) | Initial state is benchmark-seeded; experience level is a weak prior | proposed |
+| [0035](0035-benchmark-seeded-initial-state.md) | Initial state is benchmark-seeded; experience level is a weak prior | accepted |
 | [0036](0036-per-axis-confidence-scalar.md) | Per-axis capacity confidence: a scalar now, EKF covariance later | accepted |
 | [0037](0037-model-concurrent-interference.md) | Model concurrent-training interference (negative cross-talk) | accepted |
 | [0038](0038-canonical-domain-taxonomy.md) | Canonical domain is the one taxonomy; the prescriber keys on it | accepted |
 | [0039](0039-dose-law-external-load-vs-effort.md) | Dose-law intensity splits external load from internal effort | accepted |
-| [0040](0040-macrocycle-thin-container.md) | The macrocycle is a thin container, not a materialized plan | proposed |
+| [0040](0040-macrocycle-thin-container.md) | The macrocycle is a thin container, not a materialized plan | accepted |
 | [0041](0041-shadow-ekf-state-covariance.md) | Shadow EKF: full joint covariance over X/F/T (scalar → covariance) | accepted |
 | [0042](0042-shadow-mpc-planner.md) | Shadow MPC planner: receding-horizon re-ranking of prescriber candidates | accepted |
 | [0043](0043-hierarchical-per-athlete-parameters.md) | Hierarchical per-athlete parameters (θ_i): partial-pooled recovery β, shadow-only | accepted |
 | [0044](0044-wearable-token-storage.md) | Wearable token storage: Fernet at-rest + OAuth state | accepted |
-| [0045](0045-per-set-catalog-bound-workout-logging.md) | Workout logging is per-set, catalog-bound, and modality-heterogeneous | proposed |
+| [0045](0045-per-set-catalog-bound-workout-logging.md) | Workout logging is per-set, catalog-bound, and modality-heterogeneous | accepted |
 | [0046](0046-skill-state-domain-filtered-projection.md) | Skill state is a domain-filtered projection over measured evidence | proposed |
-| [0047](0047-one-benchmark-assessment-surface.md) | One benchmark assessment surface; no domain-specific seeders | proposed |
+| [0047](0047-one-benchmark-assessment-surface.md) | One benchmark assessment surface; no domain-specific seeders | accepted |
 | [0048](0048-confidence-gates-recommendations.md) | Confidence gates recommendations — continuous ceiling + discrete claim thresholds | proposed |
-| [0049](0049-missing-wellness-is-a-gap-not-imputed.md) | Missing wellness signals are gaps, not imputed | proposed |
+| [0049](0049-missing-wellness-is-a-gap-not-imputed.md) | Missing wellness signals are gaps, not imputed | accepted |
 | [0050](0050-objectives-drive-training-emphasis.md) | Objectives drive concurrent training emphasis (compute modality_mix) | proposed |
 | [0051](0051-user-owns-structure-engine-owns-safety.md) | The user owns intent and structure; the engine owns safety and execution | proposed |
 | [0052](0052-readiness-confidence-report-only.md) | Readiness confidence is a report-only reliability object; gating waits for P13 | accepted |
@@ -105,13 +118,23 @@ and die with their PR.
 | [0054](0054-per-exercise-dose-routing.md) | Per-exercise dose routing through exercise φ vectors | accepted |
 | [0055](0055-strength-evidence-ledger.md) | Training-derived e1RM is estimated lower-bound evidence, not benchmark measurement | accepted |
 | [0056](0056-canonical-percent-1rm-calibration.md) | One canonical, versioned %1RM ↔ load calibration service | accepted |
-| [0057](0057-domaincode-three-roles-one-vocabulary.md) | DomainCode is one vocabulary with three distinct roles | proposed |
-| [0058](0058-observation-provenance-capacity-authority.md) | Observation capacity authority is policy-derived, not caller-asserted | proposed |
-| [0059](0059-seed-uncertainty-and-provisionality-views.md) | Per-axis seed uncertainty by evidence tier; debt and provisionality are views over live confidence | proposed |
+| [0057](0057-domaincode-three-roles-one-vocabulary.md) | DomainCode is one vocabulary with three distinct roles | accepted |
+| [0058](0058-observation-provenance-capacity-authority.md) | Observation capacity authority is policy-derived, not caller-asserted | accepted |
+| [0059](0059-seed-uncertainty-and-provisionality-views.md) | Per-axis seed uncertainty by evidence tier; debt and provisionality are views over live confidence | accepted |
 | [0060](0060-objective-mix-live-receding-horizon-microcycle.md) | The objective mix is recomputed live per request; the microcycle is the accounting horizon | proposed |
 | [0061](0061-objective-target-share-function.md) | The objective target-share function: multiplicative score, diminishing aggregation, true share floors | proposed |
 | [0062](0062-session-load-au-allocation-ledger.md) | Session-RPE load (AU) is the microcycle allocation currency, distinct from state-update dose | proposed |
 | [0063](0063-session-commitment-and-issuance.md) | Session commitment is execution state; issuance is a user-visible event, not materialization | proposed |
 | [0064](0064-receding-horizon-modality-assignment.md) | Objective mix reaches the plan through hierarchical receding-horizon assignment | proposed |
 | [0065](0065-objective-progress-signal-evidence-contract.md) | Objective progress is a derived signal over P10 evidence, not a column | proposed |
-| [0066](0066-strength-decline-hysteresis.md) | A single low benchmark must not durably regress max_strength (downward confirmation hysteresis) | proposed |
+| [0066](0066-strength-decline-hysteresis.md) | A single low benchmark must not durably regress max_strength (downward confirmation hysteresis) | accepted |
+| [0067](0067-athlete-states-nullability-repair.md) | athlete_states nullability repair: fail-closed decoder, migration reuses the live projector | accepted |
+| [0068](0068-ekf-head-correction-replay.md) | Shadow-EKF head-correction replay | accepted |
+| [0069](0069-date-move-does-not-change-session-status.md) | Moving a planned session's date does not change its lifecycle status | accepted |
+| [0070](0070-session-feedback-is-advisory-status-is-canonical.md) | Session feedback is advisory; `PlannedSession.status` stays canonical | accepted |
+| [0071](0071-domain-periodization-envelope.md) | The periodization envelope resolves a block's own template, inside the one entry point | accepted |
+| [0072](0072-equipment-adaptation-preserves-intent.md) | Equipment adaptation preserves training intent | accepted |
+| [0073](0073-planned-week-projection.md) | Planned-week projection is display-only fatigue, not a readiness forecast | accepted |
+| [0074](0074-session-days-slot-weekday-scheduled-date.md) | A planned session has three days: its block slot, its plan weekday and its scheduled date | accepted |
+| [0075](0075-wearable-oauth-is-a-durable-attempt.md) | Connecting a wearable over OAuth is a durable attempt, bound to its browser by PKCE | accepted |
+| [0076](0076-per-ip-auth-limits-in-process.md) | Login and registration are limited per IP, in process, and login always verifies once | accepted |
