@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-07-07
+accepted: "none: PR #92 recorded this design ('decision records, none built') with no approval statement"
 delivery: not-built
 deployed: n/a
 activation: "n/a (planning_overrides table exists, unread)"

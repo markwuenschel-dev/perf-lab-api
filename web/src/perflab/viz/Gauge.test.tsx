@@ -44,7 +44,7 @@ describe("Gauge", () => {
     expect(knobLeft({ variant: "band", pct: 42, band: { start: 0.2, end: 0.6 } })).toBe("100%");
   });
 
-  it("clamps the band highlight to the track", () => {
+  it("clamps band start and width to 0–1", () => {
     const inRange = renderGauge({ variant: "band", pct: 0.5, band: { start: 0.25, end: 0.75 } });
     expect(inRange.children).toHaveLength(2);
     expect(inRange.children[0].style.left).toBe("25%");

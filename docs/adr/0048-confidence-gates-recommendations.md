@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-07-07
+accepted: "none: PR #92 recorded this design ('decision records, none built') with no approval statement"
 delivery: partial
 deployed: yes
 activation: "shadow (UNCERTAINTY_CONSERVATISM = shadow, app/engine/feature_flags.py)"

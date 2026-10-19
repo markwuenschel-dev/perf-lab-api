@@ -50,7 +50,8 @@ reconciled 2026-10-19). Merged code is not evidence of acceptance, and acceptanc
 delivery:
 
 - `status` / `accepted`: the decision itself. `accepted` names the merged PR (or the approved decision)
-  that accepted it. A record whose design was recorded but never approved stays `proposed`, even when
+  that accepted it. On a `proposed` record, `accepted` says why it is not accepted, so the merge rule above is
+  not later read as accepting a design that was only recorded. A record whose design was recorded but never approved stays `proposed`, even when
   some of its code exists.
 - `delivery`: `delivered`, `partial`, `shadow-only` or `not-built`, for what is on main.
 - `deployed`: whether that code is on the production box.
