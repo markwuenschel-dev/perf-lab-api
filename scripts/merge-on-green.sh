@@ -58,7 +58,7 @@ while :; do
     before="$(total_checks)/$(total_runs)"
     sleep "$poll"
     # Start over if a check run or workflow run appeared during the settle poll (or a count failed).
-    [ "$(total_checks)/$(total_runs)" = "$before" ] && [ "$before" != "0/0" ] && break
+    [ "$(total_checks)/$(total_runs)" = "$before" ] && [[ "$before" != 0/* && "$before" != */0 ]] && break
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
     echo "checks for $head did not complete within ${finish_timeout}s; not merging" >&2
