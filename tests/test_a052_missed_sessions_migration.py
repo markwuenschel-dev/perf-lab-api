@@ -225,6 +225,9 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
             # The writer below is today's ORM, which selects every column the model maps, including
             # ones added after a052 (a060's block_day). a052's downgrade never touches them.
             conn.execute(text("ALTER TABLE planned_sessions ADD COLUMN block_day SMALLINT"))
+            # And it reads the athlete's zone (a063, B1) to know which day is "today".
+            conn.execute(text("ALTER TABLE athlete_profiles ADD COLUMN timezone VARCHAR(64), "
+                              "ADD COLUMN timezone_source VARCHAR(16)"))
             uid = conn.execute(
                 text(
                     "INSERT INTO users (email, hashed_password, is_active, created_at) "

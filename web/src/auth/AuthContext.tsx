@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import * as api from "../api/perfLabClient";
+import { browserTimezone, shouldCaptureTimezone } from "../perflab/athleteTimezone";
 import type { OnboardRequest, OnboardResponse, ProfileRead, UserResponse } from "../types";
 import {
   classifyAuthFailure,
@@ -126,11 +127,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       // Profile is best-effort — a missing/failed load just leaves it null and
       // consumers fall back (e.g. sidebar → email local-part).
+      let p: ProfileRead;
       try {
-        const p = await api.getProfile(activeToken);
-        if (!isCancelled()) setProfile(p);
+        p = await api.getProfile(activeToken);
+        if (isCancelled()) return;
+        setProfile(p);
       } catch {
         if (!isCancelled()) setProfile(null);
+        return;
+      }
+      // B1: the athlete's timezone is captured from this browser only while it is unknown. A
+      // known zone (captured before, or chosen in Settings) is never offered again, and the
+      // server refuses to replace it anyway. Best-effort: a failure leaves it unknown (UTC).
+      const zone = browserTimezone();
+      if (zone && shouldCaptureTimezone(p)) {
+        try {
+          const captured = await api.captureDetectedTimezone({ timezone: zone }, activeToken);
+          if (!isCancelled()) setProfile(captured);
+        } catch {
+          /* stays unknown; the next session load offers it again */
+        }
       }
     },
     [logout, toUnavailable],

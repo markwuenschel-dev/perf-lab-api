@@ -33,10 +33,8 @@ export async function syncWearableIfStale(token: string, now = new Date()): Prom
   }
 }
 
-/** The day readiness scores against: the backend's UTC date, the same one the check-in posts. */
-export function utcDay(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
+// The day readiness scores against is the athlete's own (B1): `athleteTodayIso(profile.timezone)`
+// in ./athleteTimezone, the same day the check-in posts.
 
 /** The wellness fields a device measures, per check-in signal (wellness_source_authority's
  *  OBJECTIVE_SIGNALS). A device reading of these outranks a hand-entered one. */

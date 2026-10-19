@@ -7,6 +7,7 @@
 // accepted on the first and refused on the second. Every action here therefore keys off the
 // status the screen was given — never off the date alone.
 import type { PlannedSessionUpdateRequest, SessionStatus } from "@/types";
+import { athleteTodayIso } from "./athleteTimezone";
 
 export type Outcome = "completed" | "modified" | "skipped";
 
@@ -41,13 +42,18 @@ export function isMovable(status: SessionStatus): boolean {
 
 /**
  * The earliest day a missed session may be reopened onto. The server allows a reopen only on
- * its own "today" or later (`check_patch`), and the server's date is UTC [assumed: the API
- * container sets no TZ]. West of UTC the local calendar can still show yesterday — at
- * 00:30Z New York reads the previous day — so the floor is the later of the two dates.
+ * the athlete's "today" or later (`check_patch`), which it counts in the athlete's timezone
+ * (B1) — UTC while that is unknown. This browser's calendar can differ (a trip, or no zone
+ * stored yet: at 00:30Z New York still reads the previous day), so the floor is the later of
+ * the two dates.
  */
-export function reopenFloorIso(localTodayIso: string, now: Date = new Date()): string {
-  const utcToday = now.toISOString().slice(0, 10);
-  return utcToday > localTodayIso ? utcToday : localTodayIso;
+export function reopenFloorIso(
+  localTodayIso: string,
+  now: Date = new Date(),
+  athleteZone: string | null = null,
+): string {
+  const athleteToday = athleteTodayIso(athleteZone, now);
+  return athleteToday > localTodayIso ? athleteToday : localTodayIso;
 }
 
 /**

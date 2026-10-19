@@ -37,6 +37,7 @@ import type {
   PlannedWeekProjection,
   ProfileRead,
   ProfileUpdate,
+  TimezoneCapture,
   ProjectionRequest,
   ProjectionResponse,
   ReadinessScore,
@@ -369,6 +370,25 @@ export async function getProfile(token: string): Promise<ProfileRead> {
   }
   const res = await fetch(`${API_V1_BASE}/profile`, {
     headers: { ...authHeaders(token) },
+  });
+  return handleResponse<ProfileRead>(res, { sessionOn401: true });
+}
+
+/**
+ * Offer the browser's IANA timezone (B1). The backend stores it only while the athlete's zone
+ * is unknown and never replaces a known one; it returns the stored profile either way.
+ */
+export async function captureDetectedTimezone(
+  body: TimezoneCapture,
+  token: string,
+): Promise<ProfileRead> {
+  if (!API_V1_BASE) {
+    throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
+  }
+  const res = await fetch(`${API_V1_BASE}/profile/timezone/detected`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(body),
   });
   return handleResponse<ProfileRead>(res, { sessionOn401: true });
 }

@@ -32,6 +32,9 @@ dependencies = [
     # OAuth token encryption; declared explicitly rather than relying on it arriving
     # transitively via python-jose[cryptography]'s own extra.
     "cryptography>=41.0.0",
+    # B1: athlete timezones are validated against zoneinfo. Declared rather than relied on via
+    # celery -> kombu, so the IANA data does not depend on the base image's system tz database.
+    "tzdata>=2024.1",
     "email-validator>=2.1.0",
     "bcrypt>=4.0.0",
     # Per-IP rate limits on /auth/token and /auth/register (P9, app/core/rate_limit.py):

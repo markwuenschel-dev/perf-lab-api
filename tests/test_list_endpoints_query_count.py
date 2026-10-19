@@ -70,7 +70,9 @@ async def test_list_macrocycles_query_count_is_bounded(async_db: AsyncSession) -
 
     # Two queries total (anchor objectives via IN, block counts via GROUP BY),
     # regardless of the 4 rows — the per-row path would have fired ~8.
-    assert len(statements) <= 2, f"expected <=2 queries, got {len(statements)}:\n" + "\n".join(statements)
+    # Two for the rows, plus one batched read of the owners' timezones (B1: each owner's
+    # "today"). Still a constant, whatever K is.
+    assert len(statements) <= 3, f"expected <=3 queries, got {len(statements)}:\n" + "\n".join(statements)
     assert len(reads) == 4
     assert all(r.objective_label.startswith("goal ") for r in reads)
     assert all(r.block_count == 0 for r in reads)  # no blocks created
@@ -131,7 +133,9 @@ async def test_list_objectives_query_count_is_bounded_and_picks_latest_observati
 
     # Two queries total (definitions via IN, observations via IN), regardless of the 4
     # rows — the per-row path would have fired up to 6 (2 per benchmark-linked objective).
-    assert len(statements) <= 2, f"expected <=2 queries, got {len(statements)}:\n" + "\n".join(statements)
+    # Two for the rows, plus one batched read of the owners' timezones (B1: each owner's
+    # "today"). Still a constant, whatever K is.
+    assert len(statements) <= 3, f"expected <=3 queries, got {len(statements)}:\n" + "\n".join(statements)
 
     by_label = {r.label: r for r in reads}
     for i in range(3):

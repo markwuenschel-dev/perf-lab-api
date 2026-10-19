@@ -18,9 +18,9 @@ import {
   deviceReadingsForDay,
   sourceLabel,
   syncWearableIfStale,
-  utcDay,
   type DeviceReadings,
 } from "../wearableSync";
+import { athleteTodayIso } from "../athleteTimezone";
 import { ReadinessRing } from "../ui";
 import { CloseBtn } from "./LogWorkoutModal";
 
@@ -177,6 +177,7 @@ export function CheckinModal() {
   const [device, setDevice] = useState<DeviceReadings | null>(null);
   const open = state.checkinOpen;
   const token = auth.token;
+  const athleteZone = auth.profile?.timezone ?? null;
   useEffect(() => {
     if (!open || !token) return;
     let live = true;
@@ -184,7 +185,7 @@ export function CheckinModal() {
       await syncWearableIfStale(token);
       try {
         const rows = await listWellness(token, 8);
-        if (live) setDevice(deviceReadingsForDay(rows, utcDay(new Date())));
+        if (live) setDevice(deviceReadingsForDay(rows, athleteTodayIso(athleteZone, new Date())));
       } catch {
         /* the check-in still works by hand */
       }
@@ -192,7 +193,7 @@ export function CheckinModal() {
     return () => {
       live = false;
     };
-  }, [open, token]);
+  }, [open, token, athleteZone]);
 
   if (!state.checkinOpen) return null;
   const ci = state.checkin;
@@ -239,7 +240,7 @@ export function CheckinModal() {
     setSaving(true);
     setSaveError(null);
     try {
-      await ingestWellness(buildWellnessSample(ci, modes, untracked, covered), auth.token);
+      await ingestWellness(buildWellnessSample(ci, modes, untracked, covered, athleteTodayIso(athleteZone)), auth.token);
       const r = await getReadiness(auth.token);
       setSaved(r);
       actions.cacheReadiness(r);

@@ -45,6 +45,7 @@ import {
   type WeightUnit,
 } from "./strengthEvidenceBody";
 import { Card, SectionLabel } from "../ui";
+import { knownTimezones } from "../athleteTimezone";
 
 const ACCENTS = ["#c6f135", "#45d6c4", "#86b8ff", "#f5c451", "#ff8a5c"];
 const EXPERIENCE_LEVELS = ["beginner", "intermediate", "advanced"];
@@ -1072,6 +1073,78 @@ function EquipmentCard() {
   );
 }
 
+/**
+ * The athlete's timezone (B1): which calendar their days — "today", missed sessions, a
+ * check-in's day — are counted in. Captured once from the browser while unknown; changing it
+ * here is the only way it changes afterwards. Stored dates are never rewritten by a change.
+ */
+export function TimezoneCard() {
+  const auth = useAuth();
+  const stored = auth.profile?.timezone ?? null;
+  const source = auth.profile?.timezone_source ?? null;
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const zones = knownTimezones(stored);
+  const value = draft ?? stored ?? "";
+
+  async function save() {
+    if (!auth.token || !draft || draft === stored) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.updateProfile({ timezone: draft }, auth.token);
+      setDraft(null);
+      await auth.refreshProfile();
+    } catch {
+      setError("Couldn't save your timezone. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!auth.token) return null;
+  return (
+    <Card className="p-[22px]">
+      <SectionLabel className="mb-4">Timezone</SectionLabel>
+      <div className="flex flex-col gap-3">
+        <span data-testid="timezone-status" className="text-[12.5px] font-medium leading-[1.45] text-mute">
+          {stored === null
+            ? "Unknown — your days are counted in UTC, and a session gets an extra day before it counts as missed."
+            : `Your days are counted in ${stored}${source === "browser" ? " (detected from your browser)" : ""}.`}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Timezone"
+            value={value}
+            onChange={(e) => setDraft(e.target.value)}
+            className="rounded-[9px] border border-white/10 bg-panel px-3 py-[7px] text-[12.5px] font-medium text-ink"
+          >
+            {stored === null && draft === null && <option value="">Choose a timezone</option>}
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || !draft || draft === stored}
+            className={chipCls(Boolean(draft && draft !== stored))}
+          >
+            {saving ? "Saving…" : "Save timezone"}
+          </button>
+        </div>
+        <span className="text-[11px] font-medium leading-[1.4] text-faint">
+          Changing it moves which day counts as today from now on. Days already planned or logged keep their dates.
+        </span>
+        {error && <div role="alert" className="text-[11.5px] font-medium leading-none text-hot">{error}</div>}
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsScreen() {
   const { state, actions } = usePerfLab();
   const { resolvedTheme, setTheme } = useTheme();
@@ -1151,6 +1224,8 @@ export function SettingsScreen() {
       </Card>
 
       <EquipmentCard />
+
+      <TimezoneCard />
 
       <Card className="p-[22px]">
         <SectionLabel className="mb-[6px]">Theme</SectionLabel>

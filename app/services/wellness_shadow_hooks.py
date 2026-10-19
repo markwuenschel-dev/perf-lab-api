@@ -61,7 +61,8 @@ async def run_wellness_shadows(
     """Run every wellness shadow for one committed sample. Never raises to the caller.
 
     ``as_of`` is the instant the shadows are evaluated at (now, unless a seeder replays history);
-    the recovery shadow records only for a sample of its UTC day. ``assimilate_soreness`` is
+    the recovery shadow records only for a sample of the athlete's calendar day of that instant
+    (B1; the UTC day while their zone is unknown). ``assimilate_soreness`` is
     False for wearable sources, which supply no soreness: the EKF records an explicit skip.
     """
     when = (as_of or _now()).astimezone(UTC)

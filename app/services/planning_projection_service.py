@@ -21,7 +21,7 @@ Shape of the computation
   and never elapses rest days.
 * **Clock** — step times are NAIVE UTC at a fixed session hour: stored state timestamps are
   naive (``models/athlete_state.py``), and mixing aware datetimes would raise on subtraction.
-  "Today" is the server-local ``date.today()``, as ``planning_service.get_today_session`` does.
+  "Today" is the athlete's own today (B1), as ``planning_service.get_today_session`` uses.
 
 Completed sessions are not re-projected: their effect is already in the state.
 """
@@ -51,6 +51,7 @@ from app.schemas.planning import (
 )
 from app.schemas.state import UnifiedStateVector
 from app.services import planning_service, state_service
+from app.services.athlete_calendar_service import calendar_for
 from app.services.dashboard_service import daily_load
 
 #: Longest projectable window, inclusive of today.
@@ -237,7 +238,7 @@ async def planned_week_projection(
 
     Raises ``ProjectionWindowError`` when ``through`` is before today (router -> 422).
     """
-    today = today or date.today()
+    today = today or (await calendar_for(db, user_id)).today()
     window = resolve_window(await _current_block(db, user_id), today, through)
 
     try:

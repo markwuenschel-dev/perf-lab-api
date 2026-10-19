@@ -8,8 +8,6 @@ hard gate.
 
 from __future__ import annotations
 
-from datetime import date
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.vectors import CapacityState
@@ -22,6 +20,7 @@ from app.schemas.onboarding import (
     OnboardingTwinSummary,
 )
 from app.services import assessment_surface_service, state_service
+from app.services.athlete_calendar_service import calendar_for
 
 # How many measurement-debt prompts to surface at once (progressive, not a wall).
 _DEBT_PROMPT_LIMIT = 5
@@ -66,7 +65,9 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> OnboardingStat
     except Exception:
         debt = []
 
-    minor = ob.is_minor(getattr(profile, "date_of_birth", None), date.today()) if profile else False
+    # B1: age turns over on the athlete's own birthday, in their calendar.
+    today = (await calendar_for(db, user_id)).today()
+    minor = ob.is_minor(getattr(profile, "date_of_birth", None), today) if profile else False
     return OnboardingStateResponse(
         status=status,
         completed_reason=completed_reason,

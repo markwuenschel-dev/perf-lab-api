@@ -550,12 +550,14 @@ function WeekGrid({
 }) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overIso, setOverIso] = useState<string | null>(null);
+  const athleteZone = useAuth().profile?.timezone ?? null;
 
   // A session may land on a day of this week that is today or later and has no
   // planned session of its own. Moving into the past would only manufacture a
   // "missed" session; stacking two on one day hides one in this strip.
-  // A missed session is reopened by its move, which the server allows only from ITS today.
-  const reopenFloor = reopenFloorIso(todayIso);
+  // A missed session is reopened by its move, which the server allows only from the athlete's
+  // today (B1: counted in their timezone).
+  const reopenFloor = reopenFloorIso(todayIso, new Date(), athleteZone);
   const reopensById = new Map(cells.flatMap((c) => (c.planned?.sessionId != null ? [[c.planned.sessionId, c.planned.reopens] as const] : [])));
   const canDropOn = (c: DayCell, sessionId: number | null): boolean =>
     onMove != null &&

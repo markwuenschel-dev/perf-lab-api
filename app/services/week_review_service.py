@@ -5,7 +5,8 @@ scoring or state. Rules (plan "Shared rules", B3):
 
 * **Current block** — the most recently created ACTIVE block, the prescription precedent
   (``prescription_service._load_prescription_context``); several ACTIVE blocks may exist.
-* **Today** — server-local ``date.today()``, as ``planning_service.get_today_session`` does.
+* **Today** — the athlete's own today (B1, ``athlete_calendar_service``), as
+  ``planning_service.get_today_session`` uses.
 * **Week membership** — a block week is ``block_id + week_number`` with dates
   ``block.start + (week-1)*7 … +6``. A session belongs by ``scheduled_date`` inside that
   window (ADR-0069: a move changes the date, not ``week_number``).
@@ -53,6 +54,7 @@ from app.schemas.planning import (
 )
 from app.schemas.state import UnifiedStateVector
 from app.services import state_service
+from app.services.athlete_calendar_service import calendar_for
 from app.services.dashboard_service import compute_adherence_pct
 from app.services.planning_service import block_adherence_signals
 
@@ -385,7 +387,7 @@ async def build_week_review(
     Raises:
         WeekReviewNotFound: ``block_id`` is not the caller's, or ``week_number`` is outside it.
     """
-    today = today or date.today()
+    today = today or (await calendar_for(db, user_id)).today()
 
     if block_id is not None:
         block = await _owned_block(db, user_id, block_id)

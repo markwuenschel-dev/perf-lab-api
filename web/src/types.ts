@@ -87,6 +87,7 @@ export type BenchmarkObservationRead = Schemas["BenchmarkObservationRead"];
 /* ---------- Athlete profile (GET / PATCH /v1/profile) ---------- */
 export type ProfileRead = Schemas["ProfileRead"];
 export type ProfileUpdate = Schemas["ProfileUpdate"];
+export type TimezoneCapture = Schemas["TimezoneCapture"];
 
 /* ---------- Planning ---------- */
 export type BlockGoal = Schemas["BlockGoal"];

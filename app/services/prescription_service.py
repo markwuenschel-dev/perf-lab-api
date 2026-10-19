@@ -48,6 +48,7 @@ from app.schemas.state import UnifiedStateVector
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.schemas.wellness import ReadinessScore
 from app.services import dashboard_service, readiness_service, strength_decline_service
+from app.services.athlete_calendar_service import calendar_for
 from app.services.decision_telemetry import persist_prescription_decision
 from app.services.mpc_shadow_service import record_mpc_shadow
 from app.services.objective_service import active_objective_signals
@@ -559,6 +560,9 @@ async def _gather_prescription_context(
     planned_session: PlannedSession | None,
 ) -> _PrescriptionContext:
     """Phase 2 — read all athlete context/signals needed to score. No writes."""
+    # B1: one "today" for the whole context, the athlete's own: the session it targets and the
+    # wellness readiness counts as fresh are of the same calendar day.
+    today = (await calendar_for(db, user_id)).today()
     # Fetch active (unresolved) weak-point tags for context injection
     wp_result = await db.execute(
         select(WeakPoint.tag).where(
@@ -577,7 +581,7 @@ async def _gather_prescription_context(
     if planned_session is not None:
         target_session: PlannedSession | None = planned_session
     else:
-        target_session = await get_today_session(db, user_id)
+        target_session = await get_today_session(db, user_id, for_date=today)
 
     if target_session is not None:
         # Context comes from the session's own block, not a guessed "latest active"
@@ -657,7 +661,7 @@ async def _gather_prescription_context(
     # ADR-0052: acute wellness may transparently nudge the plan through the readiness
     # *score* channel (bounded by WELLNESS_WEIGHT). Confidence is computed here too but is
     # REPORT-ONLY — it is logged for P13 shadow history and never gates the prescription.
-    readiness = await readiness_service.compute_readiness(db, user_id)
+    readiness = await readiness_service.compute_readiness(db, user_id, today=today)
     readiness_override = None if readiness.score is None else readiness.score / 100.0
     readiness_audit = _readiness_audit(readiness, readiness_override)
 

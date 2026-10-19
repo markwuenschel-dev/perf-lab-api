@@ -194,7 +194,8 @@ export function buildWorkoutLog(
     timestamp: new Date().toISOString(),
     // P3a: this form logs a session as it ends, so the server's clock decides when it
     // happened (a slow or fast device can't misplace it). The device time is still sent and
-    // kept for audit, and still decides same-day planned-session matching.
+    // kept for audit, and still decides same-day planned-session matching — on the athlete's
+    // calendar day of this UTC instant once their timezone is known (B1, server-side).
     timestamp_mode: "server_now",
     modality,
     // Non-null by the guard above: every required reading was supplied.

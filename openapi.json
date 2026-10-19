@@ -5987,6 +5987,34 @@
             ],
             "title": "Squat 1Rm Kg"
           },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "IANA timezone the athlete's days are counted in. Null: unknown (UTC is used).",
+            "title": "Timezone"
+          },
+          "timezone_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "browser",
+                  "athlete"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the timezone was set: captured once from the browser, or chosen.",
+            "title": "Timezone Source"
+          },
           "untracked_wellness_signals": {
             "items": {
               "type": "string"
@@ -6200,6 +6228,19 @@
               }
             ],
             "title": "Session Duration Minutes"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
           },
           "untracked_wellness_signals": {
             "anyOf": [
@@ -7835,6 +7876,23 @@
         "title": "SyncResult",
         "type": "object"
       },
+      "TimezoneCapture": {
+        "additionalProperties": false,
+        "description": "The browser's zone (``Intl.DateTimeFormat().resolvedOptions().timeZone``). Stored only\nwhile the athlete's zone is unknown: a later login, device or trip never replaces it.",
+        "properties": {
+          "timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone"
+        ],
+        "title": "TimezoneCapture",
+        "type": "object"
+      },
       "TissueState": {
         "description": "T_t \u2014 accumulated tissue / structural stress (0\u2013100).",
         "properties": {
@@ -9269,7 +9327,7 @@
                 "type": "null"
               }
             ],
-            "description": "The day the readings belong to. Omitted: today (UTC), as readiness counts days.",
+            "description": "The day the readings belong to, in the athlete's calendar. Omitted: the athlete's day of measured_at (or of now), in their timezone (UTC while it is unknown), as readiness counts days.",
             "title": "Date"
           },
           "hrv_metric": {
@@ -12950,6 +13008,53 @@
           }
         ],
         "summary": "Update Profile",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/v1/profile/timezone/detected": {
+      "post": {
+        "description": "The browser's timezone, stored only while the athlete's is unknown (B1).\n\nValidated against the server's zoneinfo (422 otherwise). A known zone \u2014 captured earlier or\nchosen in Settings \u2014 is never replaced: the response is the stored profile either way, so\nthe client can tell whether its zone was taken by comparing.",
+        "operationId": "capture_detected_timezone_v1_profile_timezone_detected_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimezoneCapture"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Capture Detected Timezone",
         "tags": [
           "profile"
         ]

@@ -1,0 +1,58 @@
+/**
+ * The athlete's calendar on the web (B1). The backend owns the athlete's timezone
+ * (`ProfileRead.timezone`, an IANA name; null = unknown, which the backend reads as UTC) and
+ * resolves every "today" from it. The web uses the same zone wherever it sends or matches a
+ * calendar day, so the two never disagree about which day it is.
+ *
+ * Instants stay UTC ISO strings (`toISOString()`); only calendar days go through here.
+ */
+
+/** The browser's IANA zone, or null when the runtime does not report one. */
+export function browserTimezone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === "string" && zone.length > 0 ? zone : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Capture only while the athlete's zone is unknown; a known zone is never replaced. */
+export function shouldCaptureTimezone(profile: { timezone?: string | null } | null): boolean {
+  return profile !== null && (profile.timezone === null || profile.timezone === undefined);
+}
+
+/**
+ * The athlete's calendar date ("YYYY-MM-DD") at the instant `now`, in `zone` — UTC when the
+ * zone is unknown, as the backend does. An unusable zone also falls back to UTC.
+ */
+export function athleteTodayIso(zone: string | null | undefined, now: Date = new Date()): string {
+  if (!zone) return now.toISOString().slice(0, 10);
+  try {
+    // en-CA formats as YYYY-MM-DD; formatToParts keeps it independent of locale quirks.
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
+}
+
+/** Every IANA zone the runtime knows (for the Settings picker), else a short fallback list. */
+export function knownTimezones(current: string | null | undefined): string[] {
+  let zones: string[] = [];
+  try {
+    const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf;
+    zones = supported ? supported("timeZone") : [];
+  } catch {
+    zones = [];
+  }
+  if (!zones.includes("UTC")) zones = ["UTC", ...zones];
+  if (current && !zones.includes(current)) zones = [current, ...zones];
+  return zones;
+}

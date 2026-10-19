@@ -65,9 +65,10 @@ class _Head:
     decision_impact: str
 
 
-def is_as_of_day(ref: WellnessSampleRef, as_of: datetime) -> bool:
-    """True when the sample is of the as-of instant's UTC calendar day."""
-    return ref.sample_date == as_of.astimezone(UTC).date()
+def is_as_of_day(ref: WellnessSampleRef, as_of: datetime, as_of_day: date | None = None) -> bool:
+    """True when the sample is of the as-of day: ``as_of_day`` (the athlete's calendar day of the
+    as-of instant, B1) when given, else the instant's UTC day."""
+    return ref.sample_date == (as_of_day if as_of_day is not None else as_of.astimezone(UTC).date())
 
 
 def _matches(inputs: WellnessInputs | None, ref: WellnessSampleRef,
