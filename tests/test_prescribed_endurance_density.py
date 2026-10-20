@@ -193,7 +193,7 @@ def test_every_density_basis_fits_the_shadow_column() -> None:
 # ── through the real ingest path (database) ──────────────────────────────────
 
 
-async def _athlete_with_planned_run(db, email: str, content: dict[str, Any]):
+async def _athlete_with_planned_run(db, email: str, content: dict[str, Any], day: date):
     from app.models.mesocycle import (
         BlockGoal,
         BlockStatus,
@@ -209,14 +209,14 @@ async def _athlete_with_planned_run(db, email: str, content: dict[str, Any]):
     await db.refresh(user)
     block = MesocycleBlock(
         user_id=user.id, goal=BlockGoal.STRENGTH, status=BlockStatus.ACTIVE,
-        duration_weeks=4, start_date=date.today(), weekly_template=[],
+        duration_weeks=4, start_date=day, weekly_template=[],
     )
     db.add(block)
     await db.commit()
     await db.refresh(block)
     session = PlannedSession(
-        block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        block_day=1, day_of_week=date.today().isoweekday(), category="Threshold Work", modality="running",
+        block_id=block.id, user_id=user.id, scheduled_date=day, week_number=1,
+        block_day=1, day_of_week=day.isoweekday(), category="Threshold Work", modality="running",
         status=SessionStatus.PENDING, prescribed_content=content,
     )
     db.add(session)
@@ -237,11 +237,17 @@ async def test_only_an_explicit_link_lends_the_prescription_to_v1(async_db) -> N
         "exercises": [{"name": "Threshold Tempo Run", "sets": 4, "reps": "5 min / 2 min easy"}],
         **_content(_INTERVALS),
     }
-    explicit_user, explicit_session = await _athlete_with_planned_run(
-        async_db, "linked-run@test.com", content
-    )
-    heuristic_user, _ = await _athlete_with_planned_run(async_db, "matched-run@test.com", content)
+    # One clock read. The log is a naive instant, which production reads as the client's
+    # wall-clock day (state_service._match_planned_session); this client's clock is on UTC, so
+    # both sessions go on the UTC day. A local date.today() differs from it every evening west
+    # of UTC, and the heuristic athlete would then match nothing.
     now = datetime.now(UTC).replace(tzinfo=None)
+    explicit_user, explicit_session = await _athlete_with_planned_run(
+        async_db, "linked-run@test.com", content, now.date()
+    )
+    heuristic_user, heuristic_session = await _athlete_with_planned_run(
+        async_db, "matched-run@test.com", content, now.date()
+    )
 
     def log(**kw: object) -> WorkoutLog:
         return WorkoutLog(timestamp=now, modality="Running", duration_minutes=30.0,
@@ -262,9 +268,9 @@ async def test_only_an_explicit_link_lends_the_prescription_to_v1(async_db) -> N
     assert matched.v1_density_basis == "not_applicable"
     assert matched.v1_dose_json["density_provenance"]["reason"] == "no_explicit_prescription_link"
 
-    snapshots = {
-        r.user_id: r.dose_snapshot
-        for r in (await async_db.execute(select(WorkoutLogORM))).scalars().all()
-    }
+    logs = {r.user_id: r for r in (await async_db.execute(select(WorkoutLogORM))).scalars().all()}
+    # The heuristic athlete really was matched (not merely unlinked), by the same-day heuristic.
+    assert logs[heuristic_user.id].planned_session_id == heuristic_session.id
+    snapshots = {uid: r.dose_snapshot for uid, r in logs.items()}
     assert snapshots[explicit_user.id] == snapshots[heuristic_user.id]
     assert snapshots[explicit_user.id]["dose_model_version"] == "v0"
