@@ -193,7 +193,8 @@ async def _today(
     # one, by the fork-4 rule — so every actionable surface reading /today gets the same
     # revision and identical content until safety requires a replacement.
     result = await prescribe_and_issue(
-        db, user_id, cast(TrainingGoal, goal), planned_session=session, allow_relax=allow_relax
+        db, user_id, cast(TrainingGoal, goal), planned_session=session, allow_relax=allow_relax,
+        today=today,
     )
     rx = result.prescription
     await db.refresh(session)

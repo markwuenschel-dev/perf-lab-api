@@ -33,6 +33,8 @@ UNKNOWN_ZONE_GRACE_DAYS = 1
 KNOWN_ZONE_GRACE_DAYS = 0
 
 _MAX_NAME = 64
+#: Listed by zoneinfo but not a place anyone lives: "Factory" is tzdata's placeholder zone.
+_NOT_A_PLACE = frozenset({"Factory"})
 
 
 class InvalidTimezone(ValueError):
@@ -51,7 +53,8 @@ def validate_timezone(name: str) -> str:
     also opens file paths and names like ``localtime`` that are not zones a browser reports.
     """
     candidate = name.strip()
-    if not candidate or len(candidate) > _MAX_NAME or candidate not in _known_names():
+    if (not candidate or len(candidate) > _MAX_NAME or candidate in _NOT_A_PLACE
+            or candidate not in _known_names()):
         raise InvalidTimezone(f"unknown IANA timezone {name!r}")
     try:
         ZoneInfo(candidate)

@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.athlete_calendar import AthleteCalendar
 from app.models.workout_log import WorkoutLog
 
 
@@ -61,8 +62,13 @@ async def recent_workout_summaries(
     *,
     days: int = 14,
     limit: int = 40,
+    calendar: AthleteCalendar | None = None,
 ) -> list[dict[str, Any]]:
-    """Most recent sessions first — used by prescribe + constraint context."""
+    """Most recent sessions first — used by prescribe + constraint context.
+
+    With ``calendar`` (B1), each summary also carries ``athlete_day``: the ISO calendar day the
+    workout fell on in the athlete's timezone, which day-based constraint rules count.
+    """
     # Naive UTC to match WorkoutLog.session_timestamp (a naive DateTime column);
     # an aware value would make asyncpg reject the comparison bind (INT-19).
     cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days)
@@ -74,4 +80,8 @@ async def recent_workout_summaries(
         .limit(limit)
     )
     rows = result.scalars().all()
-    return [workout_log_to_summary(r) for r in rows]
+    summaries = [workout_log_to_summary(r) for r in rows]
+    if calendar is not None:
+        for summary, row in zip(summaries, rows, strict=True):
+            summary["athlete_day"] = calendar.day_of(row.session_timestamp).isoformat()
+    return summaries

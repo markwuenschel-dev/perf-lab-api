@@ -1,11 +1,14 @@
-"""Resolve and set an athlete's calendar (B1). The only reader and writer of
-``athlete_profiles.timezone``.
+"""Resolve an athlete's calendar, and capture the browser's zone (B1).
 
-* :func:`calendar_for` / :func:`calendars_for` — every "today" in the app resolves through here,
-  request or not (the wearable sync CLI has no request and still has an athlete).
+* :func:`calendar_for` / :func:`calendars_for` — every "today" resolves through here, request
+  or not (the wearable sync CLI has no request and still has an athlete).
+* :func:`calendar_from_stored` — the same, for a zone a reader already selected itself: the
+  wearable sync's snapshot SELECT (``wearable_service._read_snapshot``).
 * :func:`capture_browser_zone` — the browser's zone, written only while the athlete's zone is
   unknown. A later login, another device or a trip never replaces a known zone.
-* :func:`choose_zone` — the athlete's own choice in Settings; replaces whatever was there.
+
+The other code that touches the columns: ``app/api/v1/profile.py`` reads them for
+``ProfileRead`` and writes the athlete's own choice on PATCH.
 """
 from __future__ import annotations
 
@@ -20,7 +23,6 @@ from app.logic.athlete_calendar import (
     UNKNOWN,
     AthleteCalendar,
     InvalidTimezone,
-    TimezoneSource,
     validate_timezone,
 )
 from app.models.user import AthleteProfile
@@ -91,18 +93,3 @@ async def capture_browser_zone(db: AsyncSession, user_id: int, name: str) -> boo
     await db.commit()
     return bool(getattr(result, "rowcount", 0))
 
-
-async def choose_zone(
-    db: AsyncSession, user_id: int, name: str, source: TimezoneSource = "athlete"
-) -> str:
-    """Set the athlete's zone to ``name`` (validated). Commits; returns the stored name."""
-    zone = validate_timezone(name)
-    await _ensure_profile(db, user_id)
-    await db.execute(
-        update(AthleteProfile)
-        .where(AthleteProfile.user_id == user_id)
-        .values(timezone=zone, timezone_source=source)
-        .execution_options(synchronize_session=False)
-    )
-    await db.commit()
-    return zone

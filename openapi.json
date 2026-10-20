@@ -6230,17 +6230,10 @@
             "title": "Session Duration Minutes"
           },
           "timezone": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Timezone"
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
           },
           "untracked_wellness_signals": {
             "anyOf": [

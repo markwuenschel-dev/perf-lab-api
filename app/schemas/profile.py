@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from app.logic.athlete_calendar import InvalidTimezone, validate_timezone
 from app.logic.exercise_slot import EQUIPMENT_PREFERENCE_LOAD_TYPES
@@ -109,8 +110,11 @@ class ProfileUpdate(BaseModel):
     # Full replacement of the explicit "don't track" opt-out list when present.
     untracked_wellness_signals: list[str] | None = None
     # B1: the athlete's choice of timezone (an IANA name, validated). It replaces any zone,
-    # including one captured from the browser. Null is refused: choose "UTC" explicitly.
-    timezone: str | None = Field(None, min_length=1, max_length=64)
+    # including one captured from the browser. Omit it to leave the zone as it is; it is never
+    # null (a zone cannot be cleared back to unknown: choose "UTC" explicitly).
+    # `SkipJsonSchema[None]`: the contract says string (never null); None is only the "omitted"
+    # default, and an explicit null is refused by the validator below.
+    timezone: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
@@ -128,11 +132,17 @@ class ProfileUpdate(BaseModel):
             validate_dob(v, date.today())
         return v
 
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def _refuse_null_timezone(cls, v: Any) -> Any:
+        # Before the length constraints, which cannot judge a null.
+        if v is None:
+            raise ValueError("timezone cannot be null; choose a zone (UTC is one)")
+        return v
+
     @field_validator("timezone")
     @classmethod
-    def _check_timezone(cls, v: str | None) -> str | None:
-        if v is None:
-            raise ValueError("timezone cannot be cleared; choose a zone (UTC is one)")
+    def _check_timezone(cls, v: str) -> str:
         return _valid_zone(v)
 
     @field_validator("equipment_preference")

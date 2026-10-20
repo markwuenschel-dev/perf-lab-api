@@ -126,7 +126,8 @@ def test_iana_names_are_accepted(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", ["", "   ", "EST5EDT-not", "Mars/Olympus", "localtime",
-                                  "../../etc/passwd", "+05:30", "UTC+2", "a" * 65])
+                                  "../../etc/passwd", "+05:30", "UTC+2", "a" * 65,
+                                  "Factory"])
 def test_non_zones_are_refused(name: str) -> None:
     with pytest.raises(InvalidTimezone):
         validate_timezone(name)

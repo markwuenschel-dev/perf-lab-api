@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, TypedDict, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -558,11 +558,14 @@ async def _gather_prescription_context(
     user_id: int,
     goal: TrainingGoal | None,
     planned_session: PlannedSession | None,
+    today: date | None = None,
 ) -> _PrescriptionContext:
     """Phase 2 — read all athlete context/signals needed to score. No writes."""
-    # B1: one "today" for the whole context, the athlete's own: the session it targets and the
-    # wellness readiness counts as fresh are of the same calendar day.
-    today = (await calendar_for(db, user_id)).today()
+    # B1: one "today" for the whole context, the athlete's own: the session it targets, the
+    # wellness readiness counts as fresh and the objective taper are of the same calendar day.
+    # A caller that already resolved it (/planning/today) passes it, so the clock is read once.
+    calendar = await calendar_for(db, user_id)
+    today = today or calendar.today()
     # Fetch active (unresolved) weak-point tags for context injection
     wp_result = await db.execute(
         select(WeakPoint.tag).where(
@@ -639,7 +642,7 @@ async def _gather_prescription_context(
 
     # Objective taper + domain-emphasis (Phase 4a) apply regardless of
     # whether an active block/planned session exists.
-    objective_signals = await active_objective_signals(db, user_id)
+    objective_signals = await active_objective_signals(db, user_id, today=today)
     block_context["objective_taper"] = objective_signals["taper"]
     block_context["objective_domain"] = objective_signals["domain"]
 
@@ -655,7 +658,8 @@ async def _gather_prescription_context(
         profile_goal=profile.primary_goal if profile is not None else None,
     )
 
-    recent = await recent_workout_summaries(db, user_id)
+    # Each summary carries the athlete's day it fell on: day-based rules count those days.
+    recent = await recent_workout_summaries(db, user_id, calendar=calendar)
     kpi_summary = await dashboard_service.latest_kpi_values(db, user_id)
 
     # ADR-0052: acute wellness may transparently nudge the plan through the readiness
@@ -825,10 +829,11 @@ async def prescribe_for_athlete(
     *,
     planned_session: PlannedSession | None = None,
     issue: bool = True,
+    today: date | None = None,
 ) -> WorkoutPrescription:
     """The served prescription only — see :func:`prescribe_and_issue`."""
     result = await prescribe_and_issue(
-        db, user_id, goal, planned_session=planned_session, issue=issue
+        db, user_id, goal, planned_session=planned_session, issue=issue, today=today
     )
     return result.prescription
 
@@ -841,6 +846,7 @@ async def prescribe_and_issue(
     planned_session: PlannedSession | None = None,
     issue: bool = True,
     allow_relax: bool = False,
+    today: date | None = None,
 ) -> PrescriptionResult:
     """
     Full prescription pipeline for one athlete.
@@ -856,6 +862,10 @@ async def prescribe_and_issue(
     will display), the prescription is persisted into exactly that slot and block context
     is taken from its owning block — so the displayed session is always the persisted one.
     Otherwise the target is today's pending session (get_today_session).
+
+    ``today`` is the athlete's calendar day (B1). The planning route passes the day it already
+    resolved, so the session it shows and the context it is prescribed from share one day;
+    omitted, it is resolved once here.
     """
     # Phase 1 — load/gate state. Baseline AthleteState is created only for an athlete
     # who has none. An existing athlete whose state is damaged is refused here — before
@@ -870,7 +880,7 @@ async def prescribe_and_issue(
         ) from exc
 
     # Phase 2 — gather athlete context/signals (read-only).
-    ctx = await _gather_prescription_context(db, user_id, goal, planned_session)
+    ctx = await _gather_prescription_context(db, user_id, goal, planned_session, today)
 
     # Phase 3 — score (fills ctx.candidate_log).
     rx = _score_prescription(state, ctx)

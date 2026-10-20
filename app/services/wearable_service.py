@@ -437,7 +437,7 @@ async def _sync_locked(
             db, snap.user_id, payload, on_committed=progress.acknowledge)
         # That day is committed: run its shadows now, before the next day's write (P7). Oura
         # supplies no soreness, so the EKF records an explicit skip.
-        await run_wellness_shadows(db, sample, assimilate_soreness=False)
+        await run_wellness_shadows(db, sample, assimilate_soreness=False, calendar=calendar)
 
     stamped = (await lock.conn.execute(text(
         "UPDATE wearable_connections SET last_sync_at = :now "

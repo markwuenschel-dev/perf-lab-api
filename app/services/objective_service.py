@@ -403,14 +403,18 @@ class DrivingObjective:
     signals: ObjectiveSignals
 
 
-async def active_objective_signals(db: AsyncSession, user_id: int) -> ObjectiveSignals:
+async def active_objective_signals(
+    db: AsyncSession, user_id: int, *, today: date | None = None
+) -> ObjectiveSignals:
     """``{ taper, domain }`` for the prescriber — the signals half of
     :func:`resolve_driving_objective`, so ``GET /v1/objectives/driving`` can never
     disagree with what prescription receives."""
-    return (await resolve_driving_objective(db, user_id)).signals
+    return (await resolve_driving_objective(db, user_id, today=today)).signals
 
 
-async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingObjective:
+async def resolve_driving_objective(
+    db: AsyncSession, user_id: int, *, today: date | None = None
+) -> DrivingObjective:
     """The objective that drives prescription, the lever that chose it, and the
     ``{ taper, domain }`` signals for the prescriber (both entry points — see
     app.services.prescription_service and app.api.v1.planning's ``/today``). This is the
@@ -425,7 +429,8 @@ async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingOb
     With no active macrocycle (or a dangling anchor) we fall back to the legacy
     all-objectives scan, preserving the exact pre-macrocycle behavior.
     """
-    today = (await calendar_for(db, user_id)).today()  # B1: taper is judged on the athlete's day
+    # B1: taper is judged on the athlete's day; prescription passes the one it resolved.
+    today = today or (await calendar_for(db, user_id)).today()
     macrocycles = await macrocycle_service.list_macrocycles(db, user_id)
     if macrocycles:
         anchor = (
