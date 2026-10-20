@@ -504,12 +504,53 @@ async def test_a_prescription_reads_the_clock_once(async_db, monkeypatch) -> Non
         seen["readiness"] = today
         raise RuntimeError("stop after the context is gathered")
 
+    calendars: list[object] = []
+
+    async def summaries(db, user_id, *, calendar=None, **kw):
+        calendars.append(calendar)
+        return []
+
     monkeypatch.setattr(prescription_service, "active_objective_signals", signals)
     monkeypatch.setattr(prescription_service.readiness_service, "compute_readiness", readiness)
+    monkeypatch.setattr(prescription_service, "recent_workout_summaries", summaries)
     with pytest.raises(RuntimeError, match="stop after"):
         await prescription_service._gather_prescription_context(
             async_db, uid, None, None, date(2030, 1, 1))
     assert seen == {"objective": date(2030, 1, 1), "readiness": date(2030, 1, 1)}
+    # The recent sessions are summarised in the athlete's calendar (the constraint rule's days).
+    assert [getattr(c, "zone_name", None) for c in calendars] == [BRISBANE]
+
+
+async def test_planning_today_prescribes_on_the_day_it_reconciled(
+    http_client: AsyncClient, async_db, clock, monkeypatch,
+) -> None:
+    """/planning/today hands prescription the same day it reconciled and looked the session
+    up with — the athlete's (Brisbane's Jul 16 while UTC is Jul 15)."""
+    from app.api.v1 import planning as planning_routes
+
+    clock(datetime(2026, 7, 15, 15, 0, tzinfo=UTC))
+    headers = await _register(http_client, "b1-today-route@test.com")
+    uid = await _uid(async_db, "b1-today-route@test.com")
+    assert (await http_client.patch("/v1/profile", json={"timezone": BRISBANE}, headers=headers)
+            ).status_code == 200
+    await _days_around(async_db, uid, date(2026, 7, 16))
+    seen: dict[str, date] = {}
+
+    async def reconcile(db, user_id, as_of, *, grace_days):
+        seen["reconciled"] = as_of
+        return 0
+
+    async def prescribe(db, user_id, goal, *, planned_session, allow_relax, today=None):
+        seen["prescribed"] = today
+        seen["session"] = planned_session.scheduled_date
+        raise RuntimeError("stop before prescribing")
+
+    monkeypatch.setattr(planning_routes, "reconcile_missed", reconcile)
+    monkeypatch.setattr(planning_routes, "prescribe_and_issue", prescribe)
+    with pytest.raises(RuntimeError, match="stop before prescribing"):
+        await http_client.get("/v1/planning/today", headers=headers)
+    assert seen == {"reconciled": date(2026, 7, 16), "prescribed": date(2026, 7, 16),
+                    "session": date(2026, 7, 16)}
 
 
 @pytest.mark.parametrize(("zone", "watermark", "window"), [
