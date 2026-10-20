@@ -7,6 +7,7 @@ import {
   FALLBACK_TIMEZONES,
   athleteTodayIso,
   browserTimezone,
+  gridTodayIso,
   knownTimezones,
   shouldCaptureTimezone,
 } from "./athleteTimezone";
@@ -91,6 +92,18 @@ describe("capture only while unknown", () => {
     const zones = knownTimezones("Etc/Weird");
     expect(zones).toContain("UTC");
     expect(zones[0]).toBe("Etc/Weird");
+  });
+});
+
+describe("gridTodayIso", () => {
+  const nyEvening = new Date("2026-10-01T01:00:00Z"); // Sep 30 21:00 in New York
+  it("keeps the earlier of the browser's day and UTC's while the zone is unknown", () => {
+    expect(gridTodayIso(null, "2026-09-30", nyEvening)).toBe("2026-09-30");
+    expect(gridTodayIso(undefined, "2026-10-01", new Date("2026-09-30T23:30:00Z"))).toBe("2026-09-30");
+  });
+  it("is the athlete's own day once the zone is known", () => {
+    expect(gridTodayIso("America/New_York", "2026-10-01", nyEvening)).toBe("2026-09-30");
+    expect(gridTodayIso("Australia/Brisbane", "2026-09-30", nyEvening)).toBe("2026-10-01");
   });
 });
 

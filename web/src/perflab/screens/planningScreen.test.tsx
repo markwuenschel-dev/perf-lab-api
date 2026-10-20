@@ -388,6 +388,28 @@ describe("the week grid", () => {
     expect(within(cell(container, "2026-10-02", "logged")).queryByRole("button")).toBeNull();
   });
 
+  it("while the zone is unknown, a New York evening keeps its own today (the server's grace day)", async () => {
+    // Wed 30 Sep 21:00 in New York is already Thu 1 Oct in UTC. The server counts an unknown
+    // zone's day in UTC but gives it a day of grace, so Wednesday's session is not missed yet:
+    // the grid must not call it missed, nor move "today" to Thursday.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      vi.setSystemTime(new Date("2026-10-01T01:00:00Z"));
+      authProfile = null;
+      const { container } = render(<PlanningScreen />);
+      await waitFor(() => expect(cell(container, "2026-09-30", "planned")).toBeTruthy());
+      expect(within(cell(container, "2026-09-30", "planned")).getByText("TODAY")).toBeTruthy();
+      expect(within(cell(container, "2026-10-01", "planned")).queryByText("TODAY")).toBeNull();
+      const wednesday = within(cell(container, "2026-09-30", "logged"));
+      expect(wednesday.getByRole("button", { name: "Log workout" })).toBeTruthy();
+      expect(wednesday.queryByRole("button", { name: "Mark skipped" })).toBeNull();
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
+  });
+
   it("shows the block cadence from the sessions' own deload/benchmark flags", async () => {
     render(<PlanningScreen />);
     expect(await screen.findByText("Strength block")).toBeTruthy();

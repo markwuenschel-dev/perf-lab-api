@@ -7,6 +7,24 @@
  * Instants stay UTC ISO strings (`toISOString()`); only calendar days go through here.
  */
 
+/**
+ * The day the week grid labels as "today" — and judges a pending session against for "missed".
+ * With a known zone it is the athlete's day, the server's. While the zone is unknown the server
+ * counts the UTC day but keeps a day of grace before calling a session missed, so a session on
+ * this browser's today is not missed yet even when UTC has already moved on: the grid uses the
+ * EARLIER of this browser's day and the UTC day. (`through` and the move floors keep the
+ * server's day: those are what it accepts.)
+ */
+export function gridTodayIso(
+  zone: string | null | undefined,
+  localTodayIso: string,
+  now: Date = new Date(),
+): string {
+  const serverDay = athleteTodayIso(zone, now);
+  if (zone) return serverDay;
+  return localTodayIso < serverDay ? localTodayIso : serverDay;
+}
+
 /** Zones a runtime reports when it does not actually know where it is. */
 const NOT_A_ZONE = new Set(["Etc/Unknown", "Factory"]);
 

@@ -32,7 +32,7 @@ import type {
 } from "@/types";
 import { usePerfLab } from "../store";
 import { canGiveFeedback, isMovable, moveRequest, reopenFloorIso } from "../sessionActions";
-import { athleteTodayIso } from "../athleteTimezone";
+import { athleteTodayIso, gridTodayIso } from "../athleteTimezone";
 import { dispositionTag } from "../workoutDisposition";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, toResourceError, type AuthedResource } from "../resource";
@@ -297,11 +297,15 @@ function AuthedPlanningBody() {
     case "success": {
       if (sessions.data.length === 0) return <PlanningEmptyState onCreate={actions.openBlockCreate} />;
 
-      // B1: the athlete's today (their stored zone; UTC while unknown) — the day the server
-      // counts missed and pending against and the earliest `through` the projection accepts.
-      const todayIso = athleteTodayIso(athleteZone);
+      // B1: the server's today for this athlete (their stored zone; UTC while unknown) — the
+      // earliest `through` the projection accepts and the floor a move must respect.
+      const now = new Date();
+      const todayIso = athleteTodayIso(athleteZone, now);
+      // The grid's "today" and its missed/pending labels: the same day once the zone is known;
+      // while unknown, the earlier of this browser's day and UTC's (the server's grace day).
+      const gridToday = gridTodayIso(athleteZone, isoLocal(now), now);
       const workoutsById = workouts.status === "success" ? new Map(workouts.data.map((w) => [w.id, w])) : null;
-      const cells = buildDayCells(week.monday, sessions.data, workoutsById, state.settings.units, todayIso);
+      const cells = buildDayCells(week.monday, sessions.data, workoutsById, state.settings.units, gridToday);
       const planned = sessions.data.length;
       const completed = sessions.data.filter((s) => s.status === "completed").length;
 
