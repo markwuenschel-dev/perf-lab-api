@@ -32,6 +32,7 @@ import type {
 } from "@/types";
 import { usePerfLab } from "../store";
 import { canGiveFeedback, isMovable, moveRequest, reopenFloorIso } from "../sessionActions";
+import { athleteTodayIso } from "../athleteTimezone";
 import { dispositionTag } from "../workoutDisposition";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, toResourceError, type AuthedResource } from "../resource";
@@ -226,7 +227,8 @@ export function PlanningScreen() {
 // ──────────────────────────────────────────────────────────────────────────
 function AuthedPlanningBody() {
   const { state, actions } = usePerfLab();
-  const { token } = useAuth();
+  const { token, profile } = useAuth();
+  const athleteZone = profile?.timezone ?? null;
   const goal = state.settings.goal;
 
   // The displayed Mon–Sun window. Defaults to the current week, but after a block
@@ -295,7 +297,9 @@ function AuthedPlanningBody() {
     case "success": {
       if (sessions.data.length === 0) return <PlanningEmptyState onCreate={actions.openBlockCreate} />;
 
-      const todayIso = isoLocal(new Date());
+      // B1: the athlete's today (their stored zone; UTC while unknown) — the day the server
+      // counts missed and pending against and the earliest `through` the projection accepts.
+      const todayIso = athleteTodayIso(athleteZone);
       const workoutsById = workouts.status === "success" ? new Map(workouts.data.map((w) => [w.id, w])) : null;
       const cells = buildDayCells(week.monday, sessions.data, workoutsById, state.settings.units, todayIso);
       const planned = sessions.data.length;

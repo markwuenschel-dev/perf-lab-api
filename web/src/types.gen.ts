@@ -3703,7 +3703,7 @@ export interface components {
             /** Session Duration Minutes */
             session_duration_minutes?: number | null;
             /** Timezone */
-            timezone?: string | null;
+            timezone?: string;
             /** Untracked Wellness Signals */
             untracked_wellness_signals?: string[] | null;
         };

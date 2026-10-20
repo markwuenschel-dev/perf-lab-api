@@ -73,6 +73,16 @@ describe("timezone capture on sign-in / app load", () => {
     expect(captureDetectedTimezone).not.toHaveBeenCalled();
   });
 
+  it("survives an API without the capture route (404): session kept, zone stays unknown", async () => {
+    // Mixed-version rollout: the route is missing (an API from before B1, or one rolled back).
+    getProfile.mockResolvedValue({ timezone: null, timezone_source: null });
+    captureDetectedTimezone.mockRejectedValue({ message: "HTTP 404", status: 404 });
+    mount();
+    await waitFor(() => expect(captureDetectedTimezone).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("zone").textContent).toBe("null");
+    expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN);
+  });
+
   it("keeps the session and the unknown zone when the capture fails", async () => {
     getProfile.mockResolvedValue({ timezone: null, timezone_source: null });
     captureDetectedTimezone.mockRejectedValue({ message: "HTTP 422", status: 422 });

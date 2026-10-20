@@ -7,11 +7,14 @@
  * Instants stay UTC ISO strings (`toISOString()`); only calendar days go through here.
  */
 
-/** The browser's IANA zone, or null when the runtime does not report one. */
+/** Zones a runtime reports when it does not actually know where it is. */
+const NOT_A_ZONE = new Set(["Etc/Unknown", "Factory"]);
+
+/** The browser's IANA zone, or null when the runtime does not report a real one. */
 export function browserTimezone(): string | null {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return typeof zone === "string" && zone.length > 0 ? zone : null;
+    return typeof zone === "string" && zone.length > 0 && !NOT_A_ZONE.has(zone) ? zone : null;
   } catch {
     return null;
   }
@@ -43,7 +46,32 @@ export function athleteTodayIso(zone: string | null | undefined, now: Date = new
   }
 }
 
-/** Every IANA zone the runtime knows (for the Settings picker), else a short fallback list. */
+/** Offered when the runtime cannot list its zones (no `Intl.supportedValuesOf`). */
+export const FALLBACK_TIMEZONES: readonly string[] = [
+  "UTC",
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Brisbane",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
+
+/**
+ * Every IANA zone the runtime knows (for the Settings picker). Without
+ * `Intl.supportedValuesOf` it is a short list of common zones plus this browser's; the
+ * stored zone and UTC are always offered. The server validates whatever is chosen.
+ */
 export function knownTimezones(current: string | null | undefined): string[] {
   let zones: string[] = [];
   try {
@@ -51,6 +79,10 @@ export function knownTimezones(current: string | null | undefined): string[] {
     zones = supported ? supported("timeZone") : [];
   } catch {
     zones = [];
+  }
+  if (zones.length === 0) {
+    const own = browserTimezone();
+    zones = [...FALLBACK_TIMEZONES, ...(own && !FALLBACK_TIMEZONES.includes(own) ? [own] : [])];
   }
   if (!zones.includes("UTC")) zones = ["UTC", ...zones];
   if (current && !zones.includes(current)) zones = [current, ...zones];

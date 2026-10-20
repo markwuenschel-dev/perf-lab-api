@@ -3,7 +3,13 @@
 // B1: the web counts the athlete's day in the athlete's stored zone, as the backend does, and
 // falls back to UTC (the backend's reading of an unknown zone).
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { athleteTodayIso, browserTimezone, knownTimezones, shouldCaptureTimezone } from "./athleteTimezone";
+import {
+  FALLBACK_TIMEZONES,
+  athleteTodayIso,
+  browserTimezone,
+  knownTimezones,
+  shouldCaptureTimezone,
+} from "./athleteTimezone";
 import { reopenFloorIso } from "./sessionActions";
 import { buildWellnessSample } from "./wellnessSignals";
 
@@ -54,6 +60,31 @@ describe("capture only while unknown", () => {
       timeZone: "",
     } as Intl.ResolvedDateTimeFormatOptions);
     expect(browserTimezone()).toBeNull();
+  });
+
+  it("treats a runtime that does not know its zone as no zone", () => {
+    for (const fake of ["Etc/Unknown", "Factory"]) {
+      vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+        timeZone: fake,
+      } as Intl.ResolvedDateTimeFormatOptions);
+      expect(browserTimezone()).toBeNull();
+    }
+  });
+
+  it("offers a fallback list when the runtime cannot list its zones", () => {
+    const intl = Intl as unknown as { supportedValuesOf?: unknown };
+    const original = intl.supportedValuesOf;
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      timeZone: "America/Halifax",
+    } as Intl.ResolvedDateTimeFormatOptions);
+    intl.supportedValuesOf = undefined;
+    try {
+      const zones = knownTimezones(null);
+      expect(zones).toEqual(expect.arrayContaining([...FALLBACK_TIMEZONES, "America/Halifax"]));
+      expect(zones.filter((z) => z === "UTC")).toHaveLength(1);
+    } finally {
+      intl.supportedValuesOf = original;
+    }
   });
 
   it("offers UTC and the stored zone in the picker", () => {

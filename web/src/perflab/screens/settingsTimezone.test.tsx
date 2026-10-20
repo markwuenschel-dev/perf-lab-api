@@ -5,11 +5,11 @@
 // explicit save, as the athlete's own choice.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TimezoneCard } from "./SettingsScreen";
+import { TIMEZONE_UNSUPPORTED, TimezoneCard } from "./SettingsScreen";
 
 const updateProfile = vi.fn();
 const refreshProfile = vi.fn();
-let authProfile: { timezone: string | null; timezone_source: string | null } | null = null;
+let authProfile: { timezone?: string | null; timezone_source?: string | null } | null = null;
 
 vi.mock("@/api/perfLabClient", () => ({
   updateProfile: (...args: unknown[]) => updateProfile(...args),
@@ -25,7 +25,9 @@ vi.mock("@/auth/useAuth", () => ({
 
 beforeEach(() => {
   updateProfile.mockReset();
-  updateProfile.mockResolvedValue({});
+  updateProfile.mockImplementation((patch: { timezone?: string }) =>
+    Promise.resolve({ timezone: patch.timezone, timezone_source: "athlete" }),
+  );
   refreshProfile.mockReset();
   refreshProfile.mockResolvedValue(undefined);
 });
@@ -61,5 +63,34 @@ describe("the timezone card", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save timezone" }));
     await waitFor(() => expect(updateProfile).toHaveBeenCalledWith({ timezone: "UTC" }, "athlete-token"));
     await waitFor(() => expect(refreshProfile).toHaveBeenCalled());
+    expect(screen.getByTestId("timezone-saved").textContent).toBe("Saved — your days are now counted in UTC.");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says so when an API from before B1 answers 200 without storing the zone", async () => {
+    authProfile = { timezone: null, timezone_source: null };
+    // The old ProfileUpdate ignores the unknown key; its ProfileRead has no zone at all.
+    updateProfile.mockResolvedValue({ display_name: null });
+    render(<TimezoneCard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Timezone" }), { target: { value: "UTC" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save timezone" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(TIMEZONE_UNSUPPORTED));
+    expect(refreshProfile).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("timezone-saved")).toBeNull();
+  });
+
+  it("shows an old API's profile as unsupported, not as an unknown zone", () => {
+    authProfile = {};
+    render(<TimezoneCard />);
+    expect(screen.getByTestId("timezone-status").textContent).toBe(TIMEZONE_UNSUPPORTED);
+    expect(screen.queryByRole("combobox", { name: "Timezone" })).toBeNull();
+  });
+
+  it("treats a profile that did not load as not loaded, not as an unknown zone", () => {
+    authProfile = null;
+    render(<TimezoneCard />);
+    expect(screen.getByTestId("timezone-status").textContent).toMatch(/hasn't loaded/);
+    expect(screen.getByTestId("timezone-status").textContent).not.toMatch(/Unknown/);
+    expect(screen.queryByRole("combobox", { name: "Timezone" })).toBeNull();
   });
 });

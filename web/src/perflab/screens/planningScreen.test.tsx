@@ -11,7 +11,7 @@
 //   - Mark skipped PATCHes the missed session's status
 //   - logged cells read done / missed / pending (today) / upcoming / rest off the
 //     real session status and date
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlannedSessionRead, PlannedWeekProjection } from "@/types";
 
@@ -20,8 +20,9 @@ const openLog = vi.fn();
 const openCheckin = vi.fn();
 const openFeedback = vi.fn();
 
+let authProfile: { timezone: string | null } | null = null;
 vi.mock("@/auth/useAuth", () => ({
-  useAuth: () => ({ token, user: null, profile: null, email: null, isGuest: token == null }),
+  useAuth: () => ({ token, user: null, profile: authProfile, email: null, isGuest: token == null }),
 }));
 
 const storeState = {
@@ -158,6 +159,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 8, 30, 12, 0, 0));
   token = "real-token";
+  authProfile = null;
   projection = AVAILABLE;
   weekSessions = WEEK;
   workoutsFixture = WORKOUTS;
@@ -189,6 +191,16 @@ describe("forward projection", () => {
     expect(screen.getByText(/Modeled fatigue, not readiness/)).toBeTruthy();
     // The displayed week's Sunday is asked for explicitly.
     expect(getPlannedWeekProjection).toHaveBeenCalledWith("real-token", "2026-10-04");
+  });
+
+  it("counts today in the athlete's zone, so it never asks for a `through` already past there", async () => {
+    // Sun 4 Oct 14:30Z: still Sunday in this browser's week, already Mon 5 Oct in Brisbane.
+    // Asking for through=4 Oct would be refused (422): the server counts Brisbane's day (B1).
+    vi.setSystemTime(new Date("2026-10-04T14:30:00Z"));
+    authProfile = { timezone: "Australia/Brisbane" };
+    render(<PlanningScreen />);
+    await waitFor(() => expect(getPlannedWeekProjection).toHaveBeenCalled());
+    expect(getPlannedWeekProjection).toHaveBeenLastCalledWith("real-token", undefined);
   });
 
   it("explains an unavailable projection and never draws a chart", async () => {
