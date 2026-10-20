@@ -7,6 +7,7 @@ import os
 
 import pytest
 from alembic.config import Config
+from calendar_helpers import backend_today
 from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -200,7 +201,6 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
     holds its row lock while the downgrade starts — the downgrade must wait for it, then see
     its commit and refuse."""
     import asyncio
-    from datetime import date
 
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -257,7 +257,7 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
                 assert not task.done(), "downgrade did not wait for the in-flight writer"
                 await planning_service.update_session(
                     writer, uid, sid,
-                    PlannedSessionUpdateRequest(status=SessionStatus.PENDING, scheduled_date=date.today()),
+                    PlannedSessionUpdateRequest(status=SessionStatus.PENDING, scheduled_date=backend_today()),
                 )
             with pytest.raises(RuntimeError, match="Refusing to downgrade a052"):
                 await asyncio.wait_for(task, timeout=20)

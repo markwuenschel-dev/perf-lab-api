@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from planning_helpers import block_day_of
@@ -74,7 +75,7 @@ async def _athlete(factory, email: str) -> tuple[int, int]:
         await db.commit()
         block = MesocycleBlock(
             user_id=user.id, goal=BlockGoal.STRENGTH, duration_weeks=4, sessions_per_week=3,
-            start_date=date.today() - timedelta(days=14), deload_every_n_weeks=4,
+            start_date=backend_today() - timedelta(days=14), deload_every_n_weeks=4,
             status=BlockStatus.ACTIVE,
         )
         db.add(block)
@@ -86,7 +87,7 @@ async def _add_session(factory, uid: int, bid: int, day: date, status: SessionSt
     async with factory() as db:
         row = PlannedSession(
             block_id=bid, user_id=uid, scheduled_date=day, week_number=1,
-            block_day=block_day_of(date.today() - timedelta(days=14), day),  # _setup's block start
+            block_day=block_day_of(backend_today() - timedelta(days=14), day),  # _setup's block start
             day_of_week=day.isoweekday(), category="Heavy Lower", modality="Strength",
             domain="strength", status=status,
         )
@@ -175,7 +176,7 @@ async def _contend(holder_body, factory, *, uid: int, sid: int, chain: bool) -> 
     reconciliation starts; reconciliation must wait, then decide on the row the holder left."""
     async def contender() -> int:
         async with factory() as db:
-            return await reconcile_missed(db, uid, date.today())
+            return await reconcile_missed(db, uid, backend_today())
 
     async with factory() as holder:
         if chain:
@@ -190,11 +191,11 @@ async def _contend(holder_body, factory, *, uid: int, sid: int, chain: bool) -> 
 
 async def test_a_late_log_that_commits_first_wins(factory, reconcile_on):
     uid, bid = await _athlete(factory, "p2-race-log@test.com")
-    past = date.today() - timedelta(days=3)
+    past = backend_today() - timedelta(days=3)
     sid = await _add_session(factory, uid, bid, past)
 
     async def late_log(db):
-        await state_service.process_new_workout(db, uid, _log_on(date.today(), sid))
+        await state_service.process_new_workout(db, uid, _log_on(backend_today(), sid))
 
     assert await _contend(late_log, factory, uid=uid, sid=sid, chain=True) == 0
     assert await _status(factory, sid) == C
@@ -204,18 +205,18 @@ async def test_a_move_that_commits_first_wins(factory, reconcile_on):
     """The date is re-checked under the lock, not only the status: the session is still
     PENDING after the move, but no longer in the past."""
     uid, bid = await _athlete(factory, "p2-race-move@test.com")
-    sid = await _add_session(factory, uid, bid, date.today() - timedelta(days=3))
+    sid = await _add_session(factory, uid, bid, backend_today() - timedelta(days=3))
 
     async def move_to_today(db):
         await planning_service.update_session(
-            db, uid, sid, PlannedSessionUpdateRequest(scheduled_date=date.today())
+            db, uid, sid, PlannedSessionUpdateRequest(scheduled_date=backend_today())
         )
 
     assert await _contend(move_to_today, factory, uid=uid, sid=sid, chain=False) == 0
     async with factory() as db:
         row = await db.get(PlannedSession, sid)
         assert row is not None
-        assert (row.status, row.scheduled_date) == (P, date.today())
+        assert (row.status, row.scheduled_date) == (P, backend_today())
 
 
 # ── the outcome and its feedback change in one transaction ────────────────────────────
@@ -264,10 +265,10 @@ async def test_a_failed_commit_leaves_both_the_outcome_and_the_feedback(factory,
 
 async def _missed_with_feedback(factory, email: str) -> tuple[int, int, date]:
     uid, bid = await _athlete(factory, email)
-    day = date.today() - timedelta(days=3)
+    day = backend_today() - timedelta(days=3)
     sid = await _add_session(factory, uid, bid, day)
     async with factory() as db:
-        assert await reconcile_missed(db, uid, date.today()) == 1
+        assert await reconcile_missed(db, uid, backend_today()) == 1
     async with factory() as db:
         await session_feedback_service.create_feedback(
             db, uid, SessionFeedbackIn(planned_session_id=sid, status="skipped", skip_reason="ill")
@@ -284,9 +285,9 @@ async def test_feedback_on_a_miss_says_skipped_or_unknown_never_completed(factor
         assert (fb.status, fb.describes_status) == ("skipped", "missed")
 
     uid2, bid2 = await _athlete(factory, "p2-fb-completed@test.com")
-    sid2 = await _add_session(factory, uid2, bid2, date.today() - timedelta(days=3))
+    sid2 = await _add_session(factory, uid2, bid2, backend_today() - timedelta(days=3))
     async with factory() as db:
-        await reconcile_missed(db, uid2, date.today())
+        await reconcile_missed(db, uid2, backend_today())
     async with factory() as db:
         with pytest.raises(HTTPException) as exc:
             await session_feedback_service.create_feedback(
@@ -298,7 +299,7 @@ async def test_feedback_on_a_miss_says_skipped_or_unknown_never_completed(factor
 async def test_a_late_explicit_log_completes_a_miss_and_supersedes_its_feedback(factory, reconcile_on):
     uid, sid, _ = await _missed_with_feedback(factory, "p2-late-explicit@test.com")
     async with factory() as db:
-        await state_service.process_new_workout(db, uid, _log_on(date.today(), sid))
+        await state_service.process_new_workout(db, uid, _log_on(backend_today(), sid))
     assert await _status(factory, sid) == C
     assert await _feedback_rows(factory, sid) == [("skipped", True)]
     async with factory() as db:
@@ -324,7 +325,7 @@ async def test_rescheduling_a_miss_reopens_it_and_supersedes_its_feedback(factor
     assert exc.value.status_code == 409
     async with factory() as db:
         await planning_service.update_session(
-            db, uid, sid, PlannedSessionUpdateRequest(status=P, scheduled_date=date.today())
+            db, uid, sid, PlannedSessionUpdateRequest(status=P, scheduled_date=backend_today())
         )
     assert await _status(factory, sid) == P
     assert await _feedback_rows(factory, sid) == [("skipped", True)]
@@ -332,7 +333,7 @@ async def test_rescheduling_a_miss_reopens_it_and_supersedes_its_feedback(factor
 
 async def test_a_session_cannot_be_patched_to_missed(factory):
     uid, bid = await _athlete(factory, "p2-patch-missed@test.com")
-    sid = await _add_session(factory, uid, bid, date.today() - timedelta(days=3))
+    sid = await _add_session(factory, uid, bid, backend_today() - timedelta(days=3))
     async with factory() as db:
         with pytest.raises(HTTPException) as exc:
             await planning_service.update_session(db, uid, sid, PlannedSessionUpdateRequest(status=M))
@@ -347,7 +348,7 @@ async def test_superseded_feedback_is_invisible_to_every_reader(factory):
     """A completed session with a superseded "modified" report and an active plain one: the
     joins must take one row, and only the active one."""
     uid, bid = await _athlete(factory, "p2-readers@test.com")
-    day = date.today() - timedelta(days=1)
+    day = backend_today() - timedelta(days=1)
     sid = await _add_session(factory, uid, bid, day, C)
     old = await _add_feedback(factory, sid, "modified", "skipped")
     async with factory() as db:
@@ -413,8 +414,8 @@ async def test_the_session_list_reads_missed_only_with_the_flag_on(
 ):
     monkeypatch.setattr(settings, "RECONCILE_MISSED_SESSIONS", flag)
     uid, bid = await _athlete(factory, f"p2-route-{flag}@test.com")
-    past = await _add_session(factory, uid, bid, date.today() - timedelta(days=3))
-    yesterday = await _add_session(factory, uid, bid, date.today() - timedelta(days=1))
+    past = await _add_session(factory, uid, bid, backend_today() - timedelta(days=3))
+    yesterday = await _add_session(factory, uid, bid, backend_today() - timedelta(days=1))
     user = await async_db.get(User, uid)
     assert user is not None
     async for client in _client(async_db, user):
@@ -434,7 +435,7 @@ async def test_offline_feature_builders_join_only_active_feedback(factory, build
 
     module = importlib.import_module(f"app.analysis.feature_builders.{builder}_features")
     uid, bid = await _athlete(factory, f"p2-builder-{builder}@test.com")
-    sid = await _add_session(factory, uid, bid, date.today() - timedelta(days=1), C)
+    sid = await _add_session(factory, uid, bid, backend_today() - timedelta(days=1), C)
     old = await _add_feedback(factory, sid, "skipped", "skipped")
     async with factory() as db:
         await db.execute(
