@@ -11,7 +11,7 @@ and default exclusion from calibration fitting.
 """
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, get_args
 
@@ -207,16 +207,19 @@ async def _athlete_with_planned_run(db, email: str, content: dict[str, Any]):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    # The UTC day: the log below is a naive UTC instant, and the same-day match uses that
+    # instant's own date. A local date.today() differs from it every evening west of UTC.
+    day = datetime.now(UTC).date()
     block = MesocycleBlock(
         user_id=user.id, goal=BlockGoal.STRENGTH, status=BlockStatus.ACTIVE,
-        duration_weeks=4, start_date=date.today(), weekly_template=[],
+        duration_weeks=4, start_date=day, weekly_template=[],
     )
     db.add(block)
     await db.commit()
     await db.refresh(block)
     session = PlannedSession(
-        block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        block_day=1, day_of_week=date.today().isoweekday(), category="Threshold Work", modality="running",
+        block_id=block.id, user_id=user.id, scheduled_date=day, week_number=1,
+        block_day=1, day_of_week=day.isoweekday(), category="Threshold Work", modality="running",
         status=SessionStatus.PENDING, prescribed_content=content,
     )
     db.add(session)
