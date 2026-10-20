@@ -19,9 +19,11 @@ Shape of the computation
   then a zero-dose step elapses the rest of the day, and the end-of-day state is sampled.
   ``engine.simulate.run_schedule`` is deliberately not used: it returns one state per session
   and never elapses rest days.
-* **Clock** — step times are NAIVE UTC at a fixed session hour: stored state timestamps are
-  naive (``models/athlete_state.py``), and mixing aware datetimes would raise on subtraction.
-  "Today" is the athlete's own today (B1), as ``planning_service.get_today_session`` uses.
+* **Clock** — step times are NAIVE UTC: stored state timestamps are naive
+  (``models/athlete_state.py``), and mixing aware datetimes would raise on subtraction. The days
+  are the athlete's own (B1): each starts and ends at the athlete's local midnight, so a day is
+  23 or 25 hours long across a DST change, and sessions sit at a fixed LOCAL hour. "Today" is
+  the athlete's today, as ``planning_service.get_today_session`` uses. Unknown zone = UTC days.
 
 Completed sessions are not re-projected: their effect is already in the state.
 """
@@ -37,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.simulate import make_log, rest_dose, rest_for
+from app.logic.athlete_calendar import UNKNOWN, AthleteCalendar
 from app.logic.constraint_engine import mean_fatigue
 from app.logic.dose_engine import calculate_stress_dose
 from app.logic.planned_session_log import planned_session_to_log, prescribes_rest, session_basis
@@ -139,14 +142,18 @@ def project_planned_days(
     start: date,
     end: date,
     sessions_by_day: Mapping[date, Sequence[tuple[PlannedSession, MesocycleBlock]]],
+    calendar: AthleteCalendar = UNKNOWN,
 ) -> tuple[list[PlannedWeekDay], float | None]:
     """Run ``start..end`` day by day through the engine. Pure and deterministic.
+
+    ``calendar`` fixes what a day is: the athlete's local midnight to the next one, with
+    sessions at ``SESSION_HOUR`` local time (B1). The default is UTC days.
 
     Returns the per-day rows and the peak of their end-of-day mean fatigue (the same series
     the rows report, so the headline number agrees with the chart).
     """
     cur = state.model_copy(update={"timestamp": _naive_utc(state.timestamp)})
-    day_start = datetime.combine(start, time(0, 0))
+    day_start = calendar.day_start_utc(start)
     gap_days = (day_start - cur.timestamp).total_seconds() / 86400.0
     if gap_days > 0:
         cur = rest_for(cur, days=gap_days)[-1]
@@ -173,7 +180,7 @@ def project_planned_days(
                     )
                 )
                 continue
-            when = datetime.combine(d, time(SESSION_HOUR, 0)) + timedelta(hours=trained)
+            when = calendar.at_utc(d, time(SESSION_HOUR, 0)) + timedelta(hours=trained)
             trained += 1
             log = planned_session_to_log(session, block, when)
             dt = when - cur.timestamp
@@ -189,7 +196,7 @@ def project_planned_days(
                 )
             )
 
-        day_end = datetime.combine(d + timedelta(days=1), time(0, 0))
+        day_end = calendar.day_end_utc(d)
         rest_dt = day_end - cur.timestamp
         if rest_dt.total_seconds() > 0:
             rest_log = make_log(day_end, _REST_MODALITY, session_rpe=1.0)
@@ -238,7 +245,8 @@ async def planned_week_projection(
 
     Raises ``ProjectionWindowError`` when ``through`` is before today (router -> 422).
     """
-    today = today or (await calendar_for(db, user_id)).today()
+    calendar = await calendar_for(db, user_id)
+    today = today or calendar.today()
     window = resolve_window(await _current_block(db, user_id), today, through)
 
     try:
@@ -267,7 +275,7 @@ async def planned_week_projection(
     for s in sessions:
         by_day[s.scheduled_date].append((s, blocks[s.block_id]))
 
-    days, peak = project_planned_days(state, window.start, window.end, by_day)
+    days, peak = project_planned_days(state, window.start, window.end, by_day, calendar)
     return PlannedWeekProjection(
         available=True, window=window, days=days, peak_mean_fatigue=peak
     )

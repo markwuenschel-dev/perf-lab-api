@@ -117,6 +117,11 @@ class AthleteCalendar:
         local = datetime.combine(day, time.min, tzinfo=self.zone)
         return local.astimezone(UTC).replace(tzinfo=None)
 
+    def at_utc(self, day: date, wall: time) -> datetime:
+        """The NAIVE UTC instant of wall-clock ``wall`` on ``day`` in this calendar (zoneinfo,
+        fold=0; a wall time a transition skips maps forward)."""
+        return datetime.combine(day, wall, tzinfo=self.zone).astimezone(UTC).replace(tzinfo=None)
+
     def day_end_utc(self, day: date) -> datetime:
         """The NAIVE UTC instant at which ``day`` ends (exclusive): the next day's start."""
         return self.day_start_utc(day + timedelta(days=1))

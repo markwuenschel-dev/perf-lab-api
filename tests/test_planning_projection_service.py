@@ -264,3 +264,65 @@ async def test_undecodable_state_is_unavailable(async_db) -> None:
     proj = await planned_week_projection(async_db, uid, today=D0)
 
     assert (proj.available, proj.reason) == (False, "state_invalid")
+
+
+# ── the athlete's days (B1) ───────────────────────────────────────────────────
+
+
+def _fatigued(when: datetime):
+    state = baseline_state(when=when)
+    for k in state.fatigue_f.KEYS:
+        setattr(state.fatigue_f, k, 30.0)
+    return state
+
+
+def test_a_fixed_offset_zone_projects_the_utc_days_shifted() -> None:
+    """Brisbane (UTC+10, no DST): its local days are UTC days moved 10 hours earlier, so the
+    same plan from the same local moment must project exactly what UTC projects. A rollout
+    that kept UTC days would run a Brisbane day from 10:00 to 10:00 local instead."""
+    from app.logic.athlete_calendar import UNKNOWN, AthleteCalendar
+    block = _block()
+    plan = {D0: [(_session(1, D0), block)], D0 + timedelta(days=2): [(_session(2, D0), block)]}
+    brisbane = AthleteCalendar("Australia/Brisbane")
+    local, peak_local = project_planned_days(
+        _fatigued(datetime(2026, 9, 27, 14, 0)), D0, D0 + timedelta(days=6), plan, brisbane)
+    utc, peak_utc = project_planned_days(
+        _fatigued(datetime(2026, 9, 28, 0, 0)), D0, D0 + timedelta(days=6), plan, UNKNOWN)
+    assert local == utc and peak_local == peak_utc
+    # Under the UTC days the same Brisbane state would first decay 10 hours to the UTC
+    # midnight, a different (lower) fatigue on day one: the bug this pins.
+    shifted, _ = project_planned_days(
+        _fatigued(datetime(2026, 9, 27, 14, 0)), D0, D0 + timedelta(days=6), plan, UNKNOWN)
+    assert shifted[0].mean_fatigue != local[0].mean_fatigue
+
+
+@pytest.mark.parametrize(("day", "hours", "fatigue"), [
+    (date(2026, 3, 8), 23, 23.06),   # New York spring forward: a 23-hour day decays less
+    (date(2026, 11, 1), 25, 22.63),  # fall back: a 25-hour day decays more
+    (date(2026, 3, 9), 24, 22.84),   # an ordinary day
+])
+def test_a_dst_day_is_simulated_for_its_real_length(day: date, hours: int, fatigue: float) -> None:
+    """A New York day runs from local midnight to local midnight: 23 h, 25 h or 24 h. The day-end
+    state equals one engine rest step of exactly that length, and the numbers are pinned."""
+    from app.engine.simulate import make_log, rest_dose
+    from app.logic.athlete_calendar import AthleteCalendar
+    from app.logic.constraint_engine.candidate import mean_fatigue
+    from app.services import planning_projection_service as pps
+    ny = AthleteCalendar("America/New_York")
+    start, end = ny.day_start_utc(day), ny.day_end_utc(day)
+    assert end - start == timedelta(hours=hours)
+    days, _ = project_planned_days(_fatigued(start), day, day, {}, ny)
+    one_step = pps.update_athlete_state(
+        _fatigued(start), rest_dose(), end - start,
+        make_log(end, pps._REST_MODALITY, session_rpe=1.0))
+    assert days[0].mean_fatigue == round(mean_fatigue(one_step), 2) == fatigue
+
+
+def test_sessions_sit_at_the_local_session_hour() -> None:
+    """The slot is SESSION_HOUR on the athlete's wall clock, on both sides of a DST change."""
+    from app.logic.athlete_calendar import AthleteCalendar
+    from app.services import planning_projection_service as pps
+    ny = AthleteCalendar("America/New_York")
+    winter, summer = date(2026, 3, 7), date(2026, 3, 9)
+    assert ny.at_utc(winter, pps.time(pps.SESSION_HOUR, 0)) == datetime(2026, 3, 7, 17, 0)
+    assert ny.at_utc(summer, pps.time(pps.SESSION_HOUR, 0)) == datetime(2026, 3, 9, 16, 0)
