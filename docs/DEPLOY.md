@@ -582,7 +582,9 @@ resolves every "today" through `app/services/athlete_calendar_service.py` and
 **Deploy order.** B1a first, with the same pre-deploy steps as P5a (a recorded `pg_dump` with
 the B1a SHA in its name, and the check that a one-off container runs Alembic alone). Then B1b.
 
-**Rolling B1b back: deploy the B1a SHA** (heads match, so it boots; no database step). Stored
+**B1b's rollback target: `<B1a merge SHA>`** (the merged B1a; filled in once B1a lands).
+
+**Rolling B1b back: deploy `<B1a merge SHA>`** (heads match, so it boots; no database step). Stored
 zones stay in the columns and are ignored: every athlete is counted in UTC again, with the
 missed-session grace day. Nothing B1b wrote is a date that needs undoing: it writes only the
 two zone columns, and every date it stores (a check-in's day, a pushed day, a matched session)
@@ -616,7 +618,7 @@ sudo docker compose run --rm --no-deps --entrypoint alembic perf-lab-api downgra
 
 The downgrade **refuses, changing nothing**, while any athlete has a zone: dropping the columns
 would discard a choice the athlete made. Under B1a alone nothing writes a zone, so the refusal
-means B1b ran; deploy the B1a SHA instead. Clearing the zones (`UPDATE athlete_profiles SET
+means B1b ran; deploy `<B1a merge SHA>` instead. Clearing the zones (`UPDATE athlete_profiles SET
 timezone = NULL, timezone_source = NULL`) is a deliberate, separate act, never part of a
 rollback.
 
