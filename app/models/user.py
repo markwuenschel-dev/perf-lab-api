@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import (
     ARRAY,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,  # ← was missing
@@ -79,6 +80,14 @@ class User(Base):
 class AthleteProfile(Base):
     """One-to-one profile with baseline data"""
     __tablename__ = "athlete_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "(timezone IS NULL AND timezone_source IS NULL) OR (timezone IS NOT NULL "
+            "AND length(timezone) > 0 AND timezone_source IS NOT NULL "
+            "AND timezone_source IN ('browser', 'athlete'))",
+            name="ck_athlete_profiles_timezone_shape",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(
@@ -162,5 +171,12 @@ class AthleteProfile(Base):
     untracked_wellness_signals: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=list, nullable=False
     )
+
+    # === Athlete calendar (B1, a063) ===
+    # IANA zone name; NULL = unknown (UTC fallback, missed-session grace kept). 'UTC' is a
+    # known zone. Validated against zoneinfo by the API, never by the database.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 'browser' (captured once while unknown) | 'athlete' (chosen in Settings); NULL with timezone.
+    timezone_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="profile")
