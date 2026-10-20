@@ -8,6 +8,33 @@
  */
 
 /**
+ * The ONE calendar identity every day-dependent resource is keyed on (B1). The server counts
+ * "today" in the athlete's stored zone, so a response belongs to the calendar it was fetched
+ * under; when the confirmed zone changes, that response is obsolete.
+ *
+ *   "pending"      the profile (and any zone capture) has not settled yet: don't fetch
+ *   "unavailable"  the profile failed to load: the zone is not known to this client
+ *   "unknown"      the server positively says no zone is stored (it counts UTC days)
+ *   "zone:<IANA>"  the athlete's stored zone
+ */
+export type CalendarKey = "pending" | "unavailable" | "unknown" | `zone:${string}`;
+
+export function calendarKeyOf(
+  settled: boolean,
+  profile: { timezone?: string | null } | null,
+): CalendarKey {
+  if (!settled) return "pending";
+  if (profile === null) return "unavailable";
+  return profile.timezone ? `zone:${profile.timezone}` : "unknown";
+}
+
+/** True when date-dependent writes may go ahead: the calendar is established (a known zone, or
+ *  a profile that positively says unknown). Pending or unavailable → wait. */
+export function calendarEstablished(key: CalendarKey | undefined): boolean {
+  return key === "unknown" || (typeof key === "string" && key.startsWith("zone:"));
+}
+
+/**
  * The day the week grid labels as "today" — and judges a pending session against for "missed".
  * With a known zone it is the athlete's day, the server's. While the zone is unknown the server
  * counts the UTC day but keeps a day of grace before calling a session missed, so a session on

@@ -52,7 +52,7 @@ export function TwinScreen() {
   const { state, actions } = usePerfLab();
 
   const historyRes = useAuthedResource<StateHistorySnapshotRead[]>((t) => api.getStateHistory(t, 60), []);
-  const readinessRes = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey]);
+  const readinessRes = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey], { calendar: true });
 
   const isGuest = token == null;
   const syncLabel = isGuest ? "Preview" : twinSyncLabel(historyRes);
@@ -464,7 +464,7 @@ function NextSessionCard() {
   const { token } = useAuth();
   const { state, actions } = usePerfLab();
   const goal = state.settings.goal;
-  const rxRes = useAuthedResource<WorkoutPrescription>((t) => api.getNextSession(goal, t), [goal]);
+  const rxRes = useAuthedResource<WorkoutPrescription>((t) => api.getNextSession(goal, t), [goal], { calendar: true });
   const { summary, body } = nextSessionView(rxRes);
 
   if (!token) {

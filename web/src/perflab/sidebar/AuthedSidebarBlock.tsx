@@ -36,7 +36,7 @@ export function AuthedSidebarBlock() {
   // The sidebar lives outside the screen swap (AppShell.tsx), so it never unmounts:
   // without the refresh key in the deps, a program created mid-session would leave
   // this card claiming "No active block" until a hard reload.
-  const resource = useAuthedResource<MacrocycleRead[]>(fetchMacrocycles, [state.macrocyclesRefreshKey]);
+  const resource = useAuthedResource<MacrocycleRead[]>(fetchMacrocycles, [state.macrocyclesRefreshKey], { calendar: true });
   const view = sidebarBlockView(resource);
 
   switch (view.kind) {

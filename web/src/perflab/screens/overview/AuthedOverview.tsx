@@ -87,7 +87,7 @@ export function AuthedOverview() {
   const { state, actions } = usePerfLab();
   const { user, profile, email, token } = useAuth();
 
-  const readinessRes = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey]);
+  const readinessRes = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey], { calendar: true });
   // A day is several rows, not one: `WellnessSample` is keyed (user, date, source), so a
   // device sync and a manual check-in both land. Asking for 1 returned whichever was
   // ingested last and silently dropped the other's signals. `morningSection` folds the
@@ -101,7 +101,7 @@ export function AuthedOverview() {
   );
   // P3a: a saved workout (applied or record-only) re-reads everything derived from logs.
   const workoutsRes = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 5), [state.workoutsRefreshKey]);
-  const overviewRes = useAuthedResource<OverviewMetrics>((t) => api.getDashboardOverview(t), [state.workoutsRefreshKey]);
+  const overviewRes = useAuthedResource<OverviewMetrics>((t) => api.getDashboardOverview(t), [state.workoutsRefreshKey], { calendar: true });
   const goal = state.settings.goal;
   // P1: today's session is an immutable revision; a re-check may replace it, after which
   // this reload serves the new one.
@@ -109,6 +109,7 @@ export function AuthedOverview() {
   const todayRes = useAuthedResource<TodaySessionResponse>(
     (t) => api.getTodayPlannedSession(goal, t),
     [goal, todayKey, state.workoutsRefreshKey],
+    { calendar: true },
   );
   const recheckToday = async () => {
     if (!token) return;
@@ -686,6 +687,7 @@ export function GoalObjectiveCard() {
       return { objectives, driving };
     },
     [state.objectivesRefreshKey, state.macrocyclesRefreshKey, retryKey],
+    { calendar: true },
   );
   const retry = () => setRetryKey((k) => k + 1);
   const review = () => actions.setScreen("objectives");
@@ -834,7 +836,7 @@ function HeroObjective({
  *  there is no active program — never a fabricated week. */
 export function ProgramWeek() {
   const { state } = usePerfLab();
-  const macrosRes = useAuthedResource<MacrocycleRead[]>((t) => api.listMacrocycles(t), [state.macrocyclesRefreshKey]);
+  const macrosRes = useAuthedResource<MacrocycleRead[]>((t) => api.listMacrocycles(t), [state.macrocyclesRefreshKey], { calendar: true });
   const macro = activeMacrocycle(resourceData(macrosRes));
   if (!macro) return null;
   return <>&nbsp;·&nbsp; {weekProgressLabel(macro.week_progress)}</>;

@@ -59,6 +59,7 @@ export function ObjectivesScreen() {
   const objectivesRes = useAuthedResource<ObjectiveRead[]>(
     (t) => api.listObjectives(t),
     [state.objectivesRefreshKey],
+    { calendar: true },
   );
 
   // Every non-success branch — guest gate, first load, load failure, empty —
@@ -110,6 +111,7 @@ function ObjectivesBody({ objectives }: { objectives: ObjectiveRead[] }) {
   const drivingRes = useAuthedResource<DrivingObjectiveRead>(
     (t) => api.getDrivingObjective(t),
     [state.objectivesRefreshKey, state.macrocyclesRefreshKey],
+    { calendar: true },
   );
   const surfaceRes = useAuthedResource<AssessmentSurfaceRead>(
     (t) => api.getAssessmentSurface(t),
@@ -314,6 +316,7 @@ function ProgramHero({ objectives }: { objectives: ObjectiveRead[] }) {
   const macrosRes = useAuthedResource<MacrocycleRead[]>(
     (t) => api.listMacrocycles(t),
     [state.macrocyclesRefreshKey],
+    { calendar: true },
   );
 
   return (

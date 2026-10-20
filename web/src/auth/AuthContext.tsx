@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import * as api from "../api/perfLabClient";
-import { browserTimezone, shouldCaptureTimezone } from "../perflab/athleteTimezone";
+import { browserTimezone, calendarKeyOf, shouldCaptureTimezone } from "../perflab/athleteTimezone";
 import type { OnboardRequest, OnboardResponse, ProfileRead, UserResponse } from "../types";
 import {
   classifyAuthFailure,
@@ -34,6 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [user, setUser] = useState<UserResponse | null>(null);
   const [profile, setProfile] = useState<ProfileRead | null>(null);
+  // B1: false while the profile load and any zone capture are in flight (see calendarKeyOf).
+  const [calendarSettled, setCalendarSettled] = useState(false);
   const [email, setEmail] = useState(() => getStoredEmail() ?? "");
   const [isLoading, setIsLoading] = useState(false);
   const [onboardingPending, setOnboardingPending] = useState(false);
@@ -68,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       setProfile(null);
     }
+    setCalendarSettled(true);
   }, []);
 
   const enterGuest = useCallback(() => {
@@ -105,12 +108,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const loadSession = useCallback(
     async (activeToken: string, isCancelled: () => boolean) => {
+      setCalendarSettled(false);
+      // Whatever happens below, the calendar is settled once this load is done with it.
+      const settle = () => {
+        if (!isCancelled()) setCalendarSettled(true);
+      };
       try {
         const u = await api.fetchMe(activeToken);
         if (isCancelled()) return;
         if (!isSessionUser(u)) {
           // A 200 that is not a session (proxy interstitial, HTML error page).
           setSessionUnavailable(toUnavailable(MALFORMED_SESSION_RESPONSE));
+          settle();
           return;
         }
         setUser(u);
@@ -123,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         setSessionUnavailable(toUnavailable(failure));
+        settle();
         return;
       }
       // Profile is best-effort — a missing/failed load just leaves it null and
@@ -134,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(p);
       } catch {
         if (!isCancelled()) setProfile(null);
+        settle();
         return;
       }
       // B1: the athlete's timezone is captured from this browser only while it is unknown. A
@@ -148,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           /* stays unknown; the next session load offers it again */
         }
       }
+      settle();
     },
     [logout, toUnavailable],
   );
@@ -232,6 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       user,
       profile,
+      calendarKey: calendarKeyOf(calendarSettled, profile),
       email,
       setEmail,
       isAuthenticated: Boolean(token),
@@ -247,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enterGuest,
       logout,
     }),
-    [token, user, profile, email, isGuest, isLoading, sessionUnavailable, retrySession, onboardingPending, login, register, completeOnboarding, refreshProfile, enterGuest, logout],
+    [token, user, profile, calendarSettled, email, isGuest, isLoading, sessionUnavailable, retrySession, onboardingPending, login, register, completeOnboarding, refreshProfile, enterGuest, logout],
   );
 
   return (

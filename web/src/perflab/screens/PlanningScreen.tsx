@@ -32,7 +32,8 @@ import type {
 } from "@/types";
 import { usePerfLab } from "../store";
 import { canGiveFeedback, isMovable, moveRequest, reopenFloorIso } from "../sessionActions";
-import { athleteTodayIso, gridTodayIso } from "../athleteTimezone";
+import { athleteTodayIso, calendarEstablished, gridTodayIso } from "../athleteTimezone";
+import { parseServerUtc } from "../wearableSync";
 import { dispositionTag } from "../workoutDisposition";
 import { useAuthedResource } from "../useAuthedResource";
 import { assertNever, toResourceError, type AuthedResource } from "../resource";
@@ -231,11 +232,15 @@ function AuthedPlanningBody() {
   const athleteZone = profile?.timezone ?? null;
   const goal = state.settings.goal;
 
-  // The displayed Mon–Sun window. Defaults to the current week, but after a block
-  // is created it re-derives from that block's start_date (`planningWeekAnchor`).
+  // The displayed Mon–Sun window. An explicitly selected week (`planningWeekAnchor`: a block
+  // just created, a week chosen elsewhere) wins. Otherwise it is the week of the athlete's
+  // today (B1) — the same day the grid labels as today, so the default week always holds it.
   const week = useMemo(
-    () => weekWindowFor(state.planningWeekAnchor ? parseIsoLocal(state.planningWeekAnchor) : new Date()),
-    [state.planningWeekAnchor],
+    () =>
+      weekWindowFor(
+        parseIsoLocal(state.planningWeekAnchor ?? gridTodayIso(athleteZone, isoLocal(new Date()))),
+      ),
+    [state.planningWeekAnchor, athleteZone],
   );
   // Bumped after this screen's own writes (reschedule, mark skipped) so the week,
   // the block cadence and the projection re-read what the server now holds.
@@ -254,6 +259,7 @@ function AuthedPlanningBody() {
   const sessions = useAuthedResource<PlannedSessionRead[]>(
     (t) => api.listPlannedSessions(t, { start_date: week.start_date, end_date: week.end_date }),
     [week.start_date, state.planningRefreshKey, state.feedbackRefreshKey, writeKey],
+    { calendar: true },
   );
   // The fulfilled sessions' summaries (RPE, minutes, distance) for the Logged row.
   const workouts = useAuthedResource<WorkoutLogSummary[]>((t) => api.listWorkouts(t, 60), [week.start_date, writeKey]);
@@ -316,7 +322,9 @@ function AuthedPlanningBody() {
       // Logged training inside the displayed week — all of it, planned or not.
       const inWeek = workoutsById
         ? [...workoutsById.values()].filter((w) => {
-            const d = isoLocal(new Date(w.session_timestamp));
+            // The athlete's day the workout happened on (B1): the server's naive-UTC instant
+            // in their zone (UTC while unknown), as the dashboard groups it.
+            const d = athleteTodayIso(athleteZone, parseServerUtc(w.session_timestamp));
             return d >= week.start_date && d <= week.end_date;
           })
         : null;
@@ -375,7 +383,7 @@ function AuthedPlanningBody() {
 // "Readiness unavailable" without touching the week strip or session card.
 function ReadinessPill() {
   const { state } = usePerfLab();
-  const readiness = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey]);
+  const readiness = useAuthedResource<ReadinessScore>((t) => api.getReadiness(t), [state.readinessRefreshKey], { calendar: true });
   const { label, known } = readinessPillView(readiness);
   return <ReadinessChip label={label} known={known} />;
 }
@@ -558,7 +566,11 @@ function WeekGrid({
 }) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overIso, setOverIso] = useState<string | null>(null);
-  const athleteZone = useAuth().profile?.timezone ?? null;
+  const { profile, calendarKey } = useAuth();
+  const athleteZone = profile?.timezone ?? null;
+  // B1: a move's earliest day is the athlete's today, so no move is offered until the profile
+  // has established the calendar (loading or failed is not "unknown").
+  const calendarReady = calendarEstablished(calendarKey);
 
   // A session may land on a day of this week that is today or later and has no
   // planned session of its own. Moving into the past would only manufacture a
@@ -569,6 +581,7 @@ function WeekGrid({
   const reopensById = new Map(cells.flatMap((c) => (c.planned?.sessionId != null ? [[c.planned.sessionId, c.planned.reopens] as const] : [])));
   const canDropOn = (c: DayCell, sessionId: number | null): boolean =>
     onMove != null &&
+    calendarReady &&
     c.iso >= (sessionId != null && reopensById.get(sessionId) ? reopenFloor : todayIso) &&
     c.planned == null;
 
@@ -744,7 +757,7 @@ function WeekLoadCard({ rows, sample }: { rows: WeekLoadRow[]; sample?: boolean 
 // Forward projection (C1b, ADR-0073) — load vs modeled fatigue, never readiness.
 // ──────────────────────────────────────────────────────────────────────────
 function LiveForwardProjection({ through, refreshKey }: { through?: string; refreshKey: number }) {
-  const projection = useAuthedResource<PlannedWeekProjection>((t) => api.getPlannedWeekProjection(t, through), [through, refreshKey]);
+  const projection = useAuthedResource<PlannedWeekProjection>((t) => api.getPlannedWeekProjection(t, through), [through, refreshKey], { calendar: true });
   return (
     <ProjectionShell>
       <ProjectionResourceBody resource={projection} />
@@ -894,7 +907,7 @@ function PrescribedSessionCard({ goal }: { goal: string }) {
       return { prescription: res.prescription, revision: res.revision ?? null, planned: true };
     }
     return { prescription: await api.getNextSession(goal, t), revision: null, planned: false };
-  }, [goal, todayKey, state.workoutsRefreshKey]);
+  }, [goal, todayKey, state.workoutsRefreshKey], { calendar: true });
   const prescription: AuthedResource<WorkoutPrescription> =
     today.status === "success" ? { ...today, data: today.data.prescription } : today;
   const revision = today.status === "success" ? today.data.revision : null;

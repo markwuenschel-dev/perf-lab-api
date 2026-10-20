@@ -25,7 +25,8 @@ vi.mock("@/api/perfLabClient", () => ({
 }));
 
 vi.mock("@/auth/useAuth", () => ({
-  useAuth: () => ({ token: "athlete-token", profile: { untracked_wellness_signals: [] } }),
+  // The profile says no zone is stored: an established (UTC) calendar, so the check-in can save.
+  useAuth: () => ({ token: "athlete-token", profile: { untracked_wellness_signals: [] }, calendarKey: "unknown" }),
 }));
 
 vi.mock("../store", async (importOriginal) => {

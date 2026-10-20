@@ -128,6 +128,7 @@ function AuthedWeekReview() {
   const resource = useAuthedResource<WeekReview>(
     (t) => api.getWeekReview(t, sel ?? undefined),
     [sel?.block_id, sel?.week_number, state.feedbackRefreshKey],
+    { calendar: true },
   );
   const data = resourceData(resource);
 

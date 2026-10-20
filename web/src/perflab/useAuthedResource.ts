@@ -26,11 +26,27 @@ import {
 
 export type { AuthedResource } from "./resource";
 
+export type AuthedResourceOptions = {
+  /**
+   * B1: the response depends on which day the server counts as the athlete's today (readiness,
+   * today's session, missed statuses, countdowns...). Such a resource is keyed on the ONE
+   * calendar identity (`useAuth().calendarKey`): it does not fetch while the calendar is still
+   * pending (the profile and any zone capture have not settled), and a confirmed change of
+   * calendar discards the payload and refetches, so a response fetched under the obsolete
+   * calendar is never shown — not even one still in flight.
+   */
+  calendar?: boolean;
+};
+
 export function useAuthedResource<T>(
   fetcher: (token: string) => Promise<T>,
   deps: unknown[] = [],
+  options: AuthedResourceOptions = {},
 ): AuthedResource<T> {
-  const { token } = useAuth();
+  const { token, calendarKey } = useAuth();
+  // `calendarKey` is absent only where a test double of the auth context omits it.
+  const calendar = options.calendar ? (calendarKey ?? "") : "";
+  const waiting = calendar === "pending";
   const [state, setState] = useState<AuthedResource<T>>(() => initialResource(token != null));
 
   // Identity is adjusted during render, not in an effect: a token that arrives
@@ -39,9 +55,11 @@ export function useAuthedResource<T>(
   // `loading || data === null` dance and flashed empty states for one frame).
   // A replaced token discards the previous user's payload in the same commit —
   // an effect would leave one frame of the wrong athlete's data on screen.
-  const [identity, setIdentity] = useState(token);
-  if (identity !== token) {
-    setIdentity(token);
+  // A calendar change is an identity change too (B1): the old payload belongs to another day.
+  const key = `${token ?? ""}|${calendar}`;
+  const [identity, setIdentity] = useState(key);
+  if (identity !== key) {
+    setIdentity(key);
     setState(initialResource(token != null));
   }
 
@@ -54,6 +72,8 @@ export function useAuthedResource<T>(
       setState((s) => (s.status === "guest" ? s : { status: "guest" }));
       return;
     }
+    // The calendar is not settled yet: stay `loading`, ask nothing (the key's change refetches).
+    if (waiting) return;
 
     // Request authority: React runs this effect's cleanup before the next effect
     // (token replaced, deps changed) and on unmount, so `cancelled` is what stops
@@ -80,7 +100,7 @@ export function useAuthedResource<T>(
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, ...deps]);
+  }, [token, calendar, ...deps]);
 
   return state;
 }

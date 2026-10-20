@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "./AuthContext";
 import { useAuth } from "./useAuth";
+import { useAuthedResource } from "../perflab/useAuthedResource";
 
 const fetchMe = vi.fn();
 const getProfile = vi.fn();
@@ -54,6 +55,66 @@ afterEach(() => {
   fetchMe.mockReset();
   getProfile.mockReset();
   captureDetectedTimezone.mockReset();
+  readToday.mockReset();
+});
+
+const readToday = vi.fn();
+
+/** A day-dependent resource, as a screen would hold one (e.g. readiness, today's session). */
+function DayProbe() {
+  const auth = useAuth();
+  const res = useAuthedResource((t) => readToday(t), [], { calendar: true });
+  return (
+    <span data-testid="day">
+      {auth.calendarKey}:{res.status === "success" ? String(res.data) : res.status}
+    </span>
+  );
+}
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+describe("day-dependent data follows the confirmed calendar", () => {
+  it("waits for the capture, then reads the athlete's day; a later zone change refetches", async () => {
+    getProfile.mockResolvedValueOnce({ timezone: null, timezone_source: null });
+    const capture = deferred<unknown>();
+    captureDetectedTimezone.mockReturnValue(capture.promise);
+    readToday.mockResolvedValueOnce("New York day");
+    sessionStorage.setItem("perf_lab_access_token", TOKEN);
+    sessionStorage.setItem("perf_lab_session_email", USER.email);
+    render(
+      <AuthProvider>
+        <DayProbe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(captureDetectedTimezone).toHaveBeenCalledTimes(1));
+    // The capture is still in flight: nothing day-dependent has been asked under the UTC day.
+    expect(readToday).not.toHaveBeenCalled();
+    expect(screen.getByTestId("day").textContent).toBe("pending:loading");
+    capture.resolve({ timezone: "America/New_York", timezone_source: "browser" });
+    await waitFor(() =>
+      expect(screen.getByTestId("day").textContent).toBe("zone:America/New_York:New York day"),
+    );
+    expect(readToday).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the calendar as unavailable, not unknown, when the profile fails to load", async () => {
+    getProfile.mockRejectedValueOnce({ message: "HTTP 503", status: 503 });
+    readToday.mockResolvedValue("server day");
+    sessionStorage.setItem("perf_lab_access_token", TOKEN);
+    sessionStorage.setItem("perf_lab_session_email", USER.email);
+    render(
+      <AuthProvider>
+        <DayProbe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("day").textContent).toBe("unavailable:server day"));
+  });
 });
 
 describe("timezone capture on sign-in / app load", () => {

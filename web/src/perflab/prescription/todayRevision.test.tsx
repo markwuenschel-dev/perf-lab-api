@@ -116,7 +116,7 @@ let nextSessionCalls = 0;
 let recheckCalls = 0;
 
 vi.mock("@/auth/useAuth", () => ({
-  useAuth: () => ({ token: "real-token", user: null, profile: null, email: null, isGuest: false }),
+  useAuth: () => ({ token: "real-token", user: null, profile: null, email: null, isGuest: false, calendarKey: "unknown" }),
 }));
 
 vi.mock("../store", () => ({

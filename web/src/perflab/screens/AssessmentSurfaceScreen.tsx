@@ -186,7 +186,7 @@ function OnboardingBanner() {
   const { token } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
   const [busy, setBusy] = useState(false);
-  const state = useAuthedResource((t) => getOnboardingState(t), [refreshKey]);
+  const state = useAuthedResource((t) => getOnboardingState(t), [refreshKey], { calendar: true });
 
   async function leave() {
     if (!token) return;

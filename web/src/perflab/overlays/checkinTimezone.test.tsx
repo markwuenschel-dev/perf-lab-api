@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CheckinModal } from "./CheckinModal";
 
 const listWellness = vi.fn();
+const refreshProfile = vi.fn();
+let calendarKey = "zone:America/Los_Angeles";
 const ingestWellness = vi.fn();
 
 vi.mock("@/api/perfLabClient", () => ({
@@ -22,6 +24,8 @@ vi.mock("@/auth/useAuth", () => ({
   useAuth: () => ({
     token: "athlete-token",
     profile: { untracked_wellness_signals: [], timezone: "America/Los_Angeles", timezone_source: "browser" },
+    calendarKey,
+    refreshProfile,
   }),
 }));
 
@@ -41,6 +45,8 @@ vi.mock("../store", async (importOriginal) => {
 
 beforeEach(() => {
   // 03:00Z on Jan 15 is 19:00 on Jan 14 in Los Angeles. Only Date is faked; timers stay real.
+  calendarKey = "zone:America/Los_Angeles";
+  refreshProfile.mockReset();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-01-15T03:00:00Z"));
   listWellness.mockResolvedValue([
@@ -65,4 +71,22 @@ it("shows the device row and posts the sample on the athlete's own day", async (
   fireEvent.click(screen.getByText("Set today's readiness →"));
   await waitFor(() => expect(ingestWellness).toHaveBeenCalledTimes(1));
   expect(ingestWellness.mock.calls[0][0]).toMatchObject({ date: "2026-01-14", source: "manual" });
+});
+
+it.each([
+  ["pending", /Loading your profile/],
+  ["unavailable", /didn't load/],
+])("does not save while the calendar is %s, and says why", async (key, message) => {
+  calendarKey = key;
+  render(<CheckinModal />);
+  expect(screen.getByTestId("checkin-calendar").textContent).toMatch(message);
+  const submit = screen.getByText("Set today's readiness →") as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(submit);
+  await new Promise((r) => setTimeout(r, 20));
+  expect(ingestWellness).not.toHaveBeenCalled();
+  if (key === "unavailable") {
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refreshProfile).toHaveBeenCalledTimes(1);
+  }
 });

@@ -10,8 +10,9 @@ import { useAuthedResource } from "./useAuthedResource";
 import type { AuthedResource } from "./resource";
 
 let token: string | null = null;
+let calendarKey: string | undefined = undefined;
 vi.mock("@/auth/useAuth", () => ({
-  useAuth: () => ({ token }),
+  useAuth: () => ({ token, calendarKey }),
 }));
 
 function deferred<T>() {
@@ -37,6 +38,7 @@ function renderResource<T>(fetcher: (t: string) => Promise<T>, deps: () => unkno
 
 beforeEach(() => {
   token = null;
+  calendarKey = undefined;
 });
 
 afterEach(() => {
@@ -214,5 +216,69 @@ describe("unmount", () => {
     });
 
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("calendar identity (B1)", () => {
+  function renderCalendarResource<T>(fetcher: (t: string) => Promise<T>) {
+    const seen: AuthedResource<T>[] = [];
+    const view = renderHook(() => {
+      const resource = useAuthedResource(fetcher, [], { calendar: true });
+      seen.push(resource);
+      return resource;
+    });
+    return { ...view, seen };
+  }
+
+  it("does not fetch while the calendar is pending, then fetches once it settles", async () => {
+    token = "t1";
+    calendarKey = "pending";
+    const fetcher = vi.fn(() => Promise.resolve("today"));
+    const { result, rerender } = renderCalendarResource(fetcher);
+    expect(result.current).toEqual({ status: "loading" });
+    expect(fetcher).not.toHaveBeenCalled();
+    calendarKey = "zone:America/New_York";
+    rerender();
+    await waitFor(() => expect(result.current).toEqual({ status: "success", data: "today", refresh: { status: "idle" } }));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches on a confirmed calendar change and never shows the obsolete response", async () => {
+    token = "t1";
+    calendarKey = "unknown";
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const fetcher = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, rerender, seen } = renderCalendarResource(fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1); // fetched under the UTC calendar
+    calendarKey = "zone:America/New_York"; // the capture is confirmed after that fetch began
+    rerender();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await act(async () => first.resolve("UTC day"));
+    expect(result.current).toEqual({ status: "loading" });
+    await act(async () => second.resolve("New York day"));
+    expect(result.current).toEqual({ status: "success", data: "New York day", refresh: { status: "idle" } });
+    expect(seen.some((r) => r.status === "success" && r.data === "UTC day")).toBe(false);
+  });
+
+  it("drops a payload fetched under the old calendar in the same commit as the change", async () => {
+    token = "t1";
+    calendarKey = "unknown";
+    const fetcher = vi.fn().mockResolvedValueOnce("UTC day").mockReturnValueOnce(deferred<string>().promise);
+    const { result, rerender } = renderCalendarResource(fetcher);
+    await waitFor(() => expect(result.current.status).toBe("success"));
+    calendarKey = "zone:Australia/Brisbane";
+    rerender();
+    expect(result.current).toEqual({ status: "loading" });
+  });
+
+  it("leaves a resource that is not day-dependent alone", async () => {
+    token = "t1";
+    calendarKey = "pending";
+    const fetcher = vi.fn(() => Promise.resolve("history"));
+    const { result } = renderResource(fetcher);
+    await waitFor(() => expect(result.current.status).toBe("success"));
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

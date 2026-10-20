@@ -79,6 +79,7 @@ function GoalChips() {
   const objectivesRes = useAuthedResource<ObjectiveRead[]>(
     (t) => api.listObjectives(t),
     [state.objectivesRefreshKey],
+    { calendar: true },
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);

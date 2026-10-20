@@ -83,6 +83,7 @@ export function MacrocycleCreateModal() {
   const objectivesResource = useAuthedResource<ObjectiveRead[]>(
     (t) => listObjectives(t, "active"),
     [state.objectivesRefreshKey, state.macrocycleCreateOpen],
+    { calendar: true },
   );
 
   if (!state.macrocycleCreateOpen) return null;
