@@ -243,7 +243,7 @@ export function CheckinModal() {
       actions.applyCheckin();
       return;
     }
-    if (!calendarEstablished(auth.calendarKey)) return;
+    // The button is disabled while the calendar is pending or unavailable (calendarBlocked).
     setSaving(true);
     setSaveError(null);
     try {
