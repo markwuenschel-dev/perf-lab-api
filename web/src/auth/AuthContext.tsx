@@ -30,26 +30,34 @@ import {
   setStoredToken,
 } from "./tokenStorage";
 
-/** How long the profile load may take before the calendar is treated as unavailable (B1): a hung
- *  request must not leave every day-dependent screen loading with no way to retry. */
+/** How long the session check (/auth/me) and the profile load may each take before they count as
+ *  failed (B1): a hung request must not leave every day-dependent screen loading with no way to
+ *  retry. */
 export const PROFILE_LOAD_TIMEOUT_MS = 8000;
 
-/** The profile, or a rejection once `ms` pass (the request itself is aborted too). */
-async function loadProfileWithin(token: string, ms: number): Promise<ProfileRead> {
+/**
+ * `run`'s result, or a rejection once `ms` pass; the request is aborted too. The rejection is a
+ * `TypeError`, what `fetch` throws when no response arrives, so the session-failure policy reads
+ * a timeout as a network failure: the session is kept and the check is retryable.
+ */
+async function within<T>(ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       abort.abort();
-      reject(new Error("profile load timed out"));
+      reject(new TypeError("request timed out"));
     }, ms);
   });
   try {
-    return await Promise.race([api.getProfile(token, abort.signal), timeout]);
+    return await Promise.race([run(abort.signal), timeout]);
   } finally {
     clearTimeout(timer);
   }
 }
+
+const loadProfileWithin = (token: string, ms: number) =>
+  within(ms, (signal) => api.getProfile(token, signal));
 
 export function AuthProvider({
   children,
@@ -93,11 +101,17 @@ export function AuthProvider({
       setProfile(null);
       return;
     }
+    // Bound to the session it started in: after a logout or another athlete's login, this
+    // answer is about someone else and must not touch the state.
+    const stale = () => getStoredToken() !== t;
     try {
-      setProfile(await loadProfileWithin(t, profileTimeoutMs));
+      const p = await loadProfileWithin(t, profileTimeoutMs);
+      if (stale()) return;
+      setProfile(p);
     } catch {
       // A failed refresh is not news about the zone: keep the last confirmed profile (and with
       // it the calendar). With none confirmed yet, the calendar stays "unavailable".
+      if (stale()) return;
     }
     setCalendarSettled(true);
   }, [profileTimeoutMs]);
@@ -144,7 +158,7 @@ export function AuthProvider({
         if (!isCancelled()) setCalendarSettled(true);
       };
       try {
-        const u = await api.fetchMe(activeToken);
+        const u = await within(profileTimeoutMs, (signal) => api.fetchMe(activeToken, signal));
         if (isCancelled()) return;
         if (!isSessionUser(u)) {
           // A 200 that is not a session (proxy interstitial, HTML error page).
@@ -201,7 +215,9 @@ export function AuthProvider({
   const retrySession = useCallback(async () => {
     const t = getStoredToken();
     if (!t) return;
-    await loadSession(t, () => false);
+    // Cancelled the moment the session changes: a retry's late answers belong to the session
+    // it was started for, never to the next one.
+    await loadSession(t, () => getStoredToken() !== t);
   }, [loadSession]);
 
   useEffect(() => {

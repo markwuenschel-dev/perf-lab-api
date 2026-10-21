@@ -216,12 +216,13 @@ export async function login(
   return handleResponse<TokenResponse>(res);
 }
 
-export async function fetchMe(token: string): Promise<UserResponse> {
+export async function fetchMe(token: string, signal?: AbortSignal): Promise<UserResponse> {
   if (!IS_CONFIGURED) {
     throw new Error("VITE_API_BASE_URL is not configured");
   }
   const res = await fetch(`${API_ROOT}/auth/me`, {
     headers: { ...authHeaders(token) },
+    signal,
   });
   return handleResponse<UserResponse>(res, { sessionOn401: true });
 }

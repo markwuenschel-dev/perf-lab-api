@@ -40,11 +40,16 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/** Every (token, calendarKey) pair the app rendered, in order. */
+const rendered: [string | null, string][] = [];
+
 function Probe() {
   const auth = useAuth();
   const res = useAuthedResource((t) => readToday(t), [], { calendar: true });
+  rendered.push([auth.token, auth.calendarKey]);
   return (
     <div>
+      <span data-testid="session">{auth.sessionUnavailable ? auth.sessionUnavailable.reason : "ok"}</span>
       <span data-testid="day">
         {auth.calendarKey}:{res.status === "success" ? String(res.data) : res.status}
       </span>
@@ -80,6 +85,7 @@ afterEach(() => {
   sessionStorage.clear();
   vi.restoreAllMocks();
   for (const f of [fetchMe, getProfile, captureDetectedTimezone, login, readToday]) f.mockReset();
+  rendered.length = 0;
 });
 
 describe("the profile settles the calendar; the capture never blocks", () => {
@@ -165,6 +171,20 @@ describe("the calendar starts over with the session", () => {
     expect(day()).toMatch(/^pending:/);
   });
 
+  it("on a new login without a logout, never pairing the new token with the old calendar", async () => {
+    await established();
+    login.mockResolvedValue({ access_token: "token-b" });
+    const nextProfile = deferred<unknown>();
+    getProfile.mockReturnValue(nextProfile.promise);
+    fireEvent.click(screen.getByText("login"));
+    await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(2));
+    expect(day()).toBe("pending:loading");
+    // At no render did athlete B's token stand next to athlete A's London calendar.
+    expect(rendered.filter(([t, k]) => t === "token-b" && k === "zone:Europe/London")).toEqual([]);
+    await act(async () => nextProfile.resolve({ timezone: "Asia/Tokyo", timezone_source: "athlete" }));
+    await waitFor(() => expect(day()).toBe("zone:Asia/Tokyo:London day"));
+  });
+
   it("on a new login, until the new session's profile answers", async () => {
     await established();
     fireEvent.click(screen.getByText("logout"));
@@ -176,5 +196,55 @@ describe("the calendar starts over with the session", () => {
     expect(day()).toBe("pending:loading");
     await act(async () => nextProfile.resolve({ timezone: "Asia/Tokyo", timezone_source: "athlete" }));
     await waitFor(() => expect(day()).toBe("zone:Asia/Tokyo:London day"));
+  });
+});
+
+
+describe("late answers belong to the session that asked", () => {
+  it("a retry and a refresh that resolve after another athlete logs in change nothing", async () => {
+    const lateRetry = deferred<unknown>();
+    const lateRefresh = deferred<unknown>();
+    getProfile
+      .mockResolvedValueOnce({ timezone: "Europe/London", timezone_source: "athlete" }) // A's load
+      .mockReturnValueOnce(lateRetry.promise) // A's retry
+      .mockReturnValueOnce(lateRefresh.promise) // A's refresh
+      .mockResolvedValueOnce({ timezone: "Asia/Tokyo", timezone_source: "athlete" }); // B's load
+    readToday.mockResolvedValue("a day");
+    mount();
+    await waitFor(() => expect(day()).toBe("zone:Europe/London:a day"));
+    fireEvent.click(screen.getByText("retry"));
+    fireEvent.click(screen.getByText("refresh"));
+    await waitFor(() => expect(getProfile).toHaveBeenCalledTimes(3));
+
+    fireEvent.click(screen.getByText("logout"));
+    login.mockResolvedValue({ access_token: "token-b" });
+    fireEvent.click(screen.getByText("login"));
+    await waitFor(() => expect(day()).toBe("zone:Asia/Tokyo:a day"));
+
+    // Athlete A's answers arrive now: they must not become athlete B's calendar.
+    await act(async () => {
+      lateRetry.resolve({ timezone: "America/Chicago", timezone_source: "athlete" });
+      lateRefresh.resolve({ timezone: "America/Chicago", timezone_source: "athlete" });
+    });
+    await act(async () => undefined);
+    expect(day()).toBe("zone:Asia/Tokyo:a day");
+    expect(rendered.some(([, k]) => k === "zone:America/Chicago")).toBe(false);
+  });
+});
+
+describe("a hung session check (/auth/me)", () => {
+  it("times out to a retryable unavailable session; day data is not left loading", async () => {
+    fetchMe.mockReturnValue(never());
+    readToday.mockResolvedValue("server day");
+    mount(30);
+    expect(day()).toBe("pending:loading");
+    // A timeout is a network failure: the token is kept and the check can be retried.
+    await waitFor(() => expect(screen.getByTestId("session").textContent).toBe("network"));
+    expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN);
+    expect((fetchMe.mock.calls[0][1] as AbortSignal).aborted).toBe(true);
+    // No profile was read, so the calendar is "unavailable" (not pending): the day-dependent
+    // read goes ahead and shows the server's view instead of a spinner that never ends.
+    await waitFor(() => expect(day()).toBe("unavailable:server day"));
+    expect(getProfile).not.toHaveBeenCalled();
   });
 });
