@@ -82,6 +82,27 @@ BENCHMARKS: list[dict[str, Any]] = [
            "inputs": ["run_300m_seconds", "run_1p5mi_seconds"],
            "output": "estimated VO₂max (ml/kg/min)",
        }),
+    # B2: the standalone maximal 1.5 mi run (protocol version 1). The definition above and its
+    # history are preserved untouched. DISPLAY-ONLY (observation_authority.
+    # DISPLAY_ONLY_PROTOCOL_CODES): no state targets, no standardization rules, no MAPPINGS row,
+    # and a zero weight, so nothing here can reach capacity even through a catalog edit. Its raw
+    # value is the reported time; the George 1993 estimate and its inputs live on each
+    # observation's protocol_metadata (app/logic/vo2_estimate.py).
+    _b(code="run_1p5mi_time_trial", name="1.5 mi time trial",
+       domain="running", metric_type="time", unit="seconds",
+       is_primary_anchor=False, better_direction="lower", observation_weight=0.0,
+       state_targets=[],
+       domain_lenses=["running"],
+       measurement_protocol={
+           "summary": "A maximal 1.5 mi run: the distance as fast as possible, self-paced, on a "
+                      "measured course.",
+           "protocol_version": 1,
+           "inputs": ["elapsed_time_s"],
+           "estimate_inputs": ["body_mass", "sex"],
+           "population_gate": "age_at_performance",
+           "estimate_model": {"id": "george1993_1p5mi_run", "version": 1},
+           "output": "the time; a display-only estimated VO₂max (ml/kg/min)",
+       }),
     # Sprinting
     _b(code="sprint_0_30_split", name="0–30 m split", domain="running", metric_type="time",
        unit="seconds", is_primary_anchor=True, better_direction="lower", observation_weight=1.0,
@@ -325,6 +346,12 @@ BENCHMARK_EXPLANATIONS: dict[str, dict[str, str]] = {
         "description": "An estimate of your VO₂max (aerobic capacity). The onramp aerobic "
                        "benchmark.",
         "protocol_summary": "A two-part run test: a 300 m all-out run and a 1.5 mi time trial.",
+    },
+    "run_1p5mi_time_trial": {
+        "description": "Your time for 1.5 miles run as fast as you can. With your body mass and "
+                       "sex it gives an estimated VO₂max, which is not used for your plan.",
+        "protocol_summary": "Warm up, then run 1.5 mi (2.41 km) as fast as you can on a flat, "
+                            "measured course, pacing yourself, and record the time.",
     },
     # Sprinting
     "sprint_0_30_split": {

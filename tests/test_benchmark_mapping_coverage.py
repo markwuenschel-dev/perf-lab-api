@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.engine.state_bridge import sync_legacy_from_vectors
+from app.logic.observation_authority import DISPLAY_ONLY_PROTOCOL_CODES
 from app.logic.state_update_v0 import apply_benchmark_observation, normalize_score01
 from app.schemas.engine_vectors import CapacityState, FatigueState, TissueState
 from app.schemas.state import UnifiedStateVector
@@ -26,11 +27,18 @@ _BENCH_BY_CODE = {b["code"]: b for b in BENCHMARKS}
 
 
 def _is_deferred(bench: dict) -> bool:
-    return bool(bench.get("is_validator_only"))
+    # Display-only definitions (B2) are not deferred but excluded: they must never map.
+    return bool(bench.get("is_validator_only")) or bench["code"] in DISPLAY_ONLY_PROTOCOL_CODES
 
 
 def _mapped_codes() -> set[str]:
     return {m["benchmark_code"] for m in MAPPINGS}
+
+
+def test_display_only_defs_have_no_mapping():
+    """The converse of the coverage rule: a display-only record has no route to the state."""
+    assert DISPLAY_ONLY_PROTOCOL_CODES <= set(_BENCH_BY_CODE)
+    assert not (_mapped_codes() & DISPLAY_ONLY_PROTOCOL_CODES)
 
 
 def test_every_non_deferred_def_has_a_mapping():

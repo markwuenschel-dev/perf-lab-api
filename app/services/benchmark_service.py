@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
+from app.logic import vo2_estimate as vo2
 from app.logic.ekf.observation import mapping_specs_from_orm
 from app.logic.prescription_evidence import utc_naive
 from app.logic.replay_inputs import (
@@ -230,8 +231,20 @@ def _resolve_authority(
         )
     collection_mode = body.collection_mode or oa.default_collection_mode(body.source)
 
+    # B2 (D4): a display-only definition's observation carries no authority, whatever the writer
+    # sent. The labels are the server's, the requested effect is `none` (narrow-only, so the
+    # resolver can never return more), and it may not size a load. The value is still what the
+    # athlete reported (measured), so nothing is relabelled to pass a gate.
+    display_only = definition.code in oa.DISPLAY_ONLY_PROTOCOL_CODES
+    requested_capacity_effect = oa.CE_NONE if display_only else body.requested_capacity_effect
+
     is_workout = source_type == oa.ST_WORKOUT_EXTRACTION
-    if is_workout:
+    if display_only:
+        evidence_type = se.EV_DISPLAY_ONLY_PERFORMANCE
+        value_semantics = se.VS_MEASURED
+        observation_model = vo2.MODEL_ID
+        actor_type = "system" if is_workout else "athlete"
+    elif is_workout:
         evidence_type = body.evidence_type or se.EV_ESTIMATED_FROM_TRAINING_SET
         value_semantics = body.value_semantics or se.VS_ESTIMATED
         observation_model = body.observation_model or "workout_e1rm_extraction_v1"
@@ -253,16 +266,18 @@ def _resolve_authority(
         evidence_type=evidence_type,
         value_semantics=value_semantics,
         protocol_validity=protocol_validity,
-        requested_capacity_effect=body.requested_capacity_effect,
+        requested_capacity_effect=requested_capacity_effect,
     )
     if resolution.over_request_clamped:
         logger.warning(
             "capacity_effect over-request clamped: user requested=%s -> resolved=%s (%s)",
-            body.requested_capacity_effect, resolution.capacity_effect, resolution.resolution_reason,
+            requested_capacity_effect, resolution.capacity_effect, resolution.resolution_reason,
         )
     flags = resolution.legacy_flags()
     affects_prescription = (
-        body.affects_prescription if body.affects_prescription is not None else True
+        False
+        if display_only
+        else body.affects_prescription if body.affects_prescription is not None else True
     )
     return {
         "source_type": source_type,
@@ -385,6 +400,7 @@ async def stage_observation(
     *,
     performed_at: datetime | None = None,
     provenance_operation: str = oa.OP_LIVE_WRITE,
+    server_protocol_metadata: dict[str, Any] | None = None,
 ) -> StagedObservation:
     """Stage an observation and its state consequences in the caller's transaction.
 
@@ -399,6 +415,11 @@ async def stage_observation(
     ``provenance_operation`` names the server-side operation writing the row. It is a
     parameter of this function, never a field of the request body, so a client cannot claim
     another writer's provenance.
+
+    ``server_protocol_metadata`` is for display-only definitions (B2), whose metadata is the
+    server's: the time-trial writer passes the inputs it captured and the estimate it made.
+    A request body's ``protocol_metadata`` is never stored for them; without the server's, the
+    run is saved with its inputs absent, so no estimate is shown for it.
 
     Takes the state-chain lock first (F2): the observation may append a state row built from
     the current state, so it must not read that predecessor while another writer can append.
@@ -419,6 +440,19 @@ async def stage_observation(
     # row the caller does not own.
     await _verify_log_fk_ownership(db, user_id, body)
 
+    display_only = definition.code in oa.DISPLAY_ONLY_PROTOCOL_CODES
+    protocol_metadata = body.protocol_metadata
+    if display_only:
+        # The run is checked and its metadata built here, before anything is written. A raw
+        # value the protocol cannot hold is refused (ValueError → 400 at the routes).
+        protocol_metadata = (
+            server_protocol_metadata
+            if server_protocol_metadata is not None
+            else vo2.assess(elapsed_time_s=body.raw_value)
+        )
+    elif server_protocol_metadata is not None:
+        raise ValueError("server protocol metadata is only for display-only definitions")
+
     # Backend-owned normalization (ADR-0034): derive a [0,1] score from the
     # definition's standardization_rules; expose it as a 0-100 normalized_value when
     # the client didn't supply one. score01 drives the residual capacity anchor.
@@ -426,6 +460,10 @@ async def stage_observation(
     normalized_value = body.normalized_value
     if normalized_value is None and score01 is not None:
         normalized_value = round(score01 * 100.0, 2)
+    if display_only:
+        # No score for a display-only record: nothing may grade or anchor on it.
+        score01 = None
+        normalized_value = None
 
     authority = _resolve_authority(body, definition, provenance_operation=provenance_operation)
     # A client may send observed_at with an offset. Stored timestamps are naive UTC, and the
@@ -452,7 +490,7 @@ async def stage_observation(
         heart_rate_avg=body.heart_rate_avg,
         heart_rate_drift_pct=body.heart_rate_drift_pct,
         notes=body.notes,
-        protocol_metadata=body.protocol_metadata,
+        protocol_metadata=protocol_metadata,
         validity_status=body.validity_status,
         source=body.source,
         exercise_id=body.exercise_id,
@@ -465,7 +503,8 @@ async def stage_observation(
         effort_fidelity=body.effort_fidelity,
         confidence=body.confidence,
         observation_weight=body.observation_weight,
-        model_version=body.model_version,
+        model_version=str(vo2.MODEL_VERSION) if display_only else body.model_version,
+        protocol_version=str(vo2.PROTOCOL_VERSION) if display_only else None,
         **authority,
     )
     db.add(obs)

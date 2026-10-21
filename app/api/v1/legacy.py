@@ -227,6 +227,14 @@ def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
     # truth. The run field test is now assessed via the one assessment surface
     # (POST /v1/benchmarks/observations), which owns the state seed. This endpoint
     # remains only to compute VO₂/zones for display; it writes no state.
+    #
+    # B2: SUPERSEDED, kept deprecated and unchanged. The web app no longer calls it (onboarding
+    # records a run_1p5mi_time_trial instead; app/logic/vo2_estimate.py holds the corrected
+    # George 1993 model). Its VO₂ is wrong as written (163 used as kg, sex fixed at male, 2.76),
+    # its grades are unsourced, and its 300 m "fatigue factor" has no published basis
+    # (docs/audits/2026-10-21-run-vo2-field-test-audit.md). It is not deleted in this train: it
+    # is in the published OpenAPI contract and the API docs, so a caller outside this repo cannot
+    # be ruled out. Remove it in its own change.
     try:
         t300 = _bounded(parse_time_to_seconds(payload.time_300m), TIME_300M_BOUNDS, "time_300m")
         t15 = _bounded(parse_time_to_seconds(payload.time_1p5mi), TIME_1P5MI_BOUNDS, "time_1p5mi")

@@ -49,6 +49,11 @@ EV_REPORTED_ESTIMATE = "reported_estimate"
 # demonstrated reading; it carries no capacity authority (observation_authority.evidence_cap), so
 # it can never establish a demonstrated capacity floor (ADR-0055).
 EV_MODELED_ESTIMATE = "modeled_estimate"
+# A performance the athlete reports (B2: a 1.5 mi time) recorded only so a display-only estimate
+# can be shown beside it. The value itself is what the athlete ran; the label says the record
+# carries no authority of any kind: observation_authority.evidence_cap gives it `none`, and it is
+# outside DEMONSTRATED_EVIDENCE_TYPES, so no capacity, prescription or attainment reader counts it.
+EV_DISPLAY_ONLY_PERFORMANCE = "display_only_performance"
 
 CAPACITY_AUTHORITATIVE_EVIDENCE: frozenset[str] = frozenset(
     {EV_DIRECT_MEASUREMENT, EV_PROTOCOL_GRADE_ESTIMATE}

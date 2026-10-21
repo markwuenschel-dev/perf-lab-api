@@ -19,6 +19,7 @@ from app.schemas.onboarding import (
 from app.services import (
     benchmark_service,
     onboarding_service,
+    run_time_trial_service,
     state_service,
     strength_evidence_service,
 )
@@ -95,6 +96,15 @@ async def onboard_athlete(
         profile.display_name = request.display_name
     profile.primary_goal = _resolved(request.goal, profile.primary_goal, DEFAULT_GOAL)
     profile.date_of_birth = _resolved(request.date_of_birth, profile.date_of_birth)
+    # B2: a time trial dated after today or before birth refuses the request before any write
+    # commits (nothing below has committed; the session is discarded on the exception).
+    if request.run_time_trial is not None:
+        try:
+            await run_time_trial_service.check_time_trial(
+                db, user_id, request.run_time_trial, date_of_birth=profile.date_of_birth
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
     experience_years = _resolved(request.experience_years, profile.experience_years, 0.0)
     profile.experience_years = experience_years
     experience_level = _resolved(
@@ -181,17 +191,40 @@ async def onboard_athlete(
         for report in request.strength
     ]
 
+    # B2: the 1.5 mi run, display-only. Its estimate reads the date of birth resolved above —
+    # once, now — and captures the age it gives on the record; a later profile change cannot
+    # move it. Missing estimate inputs save the run without an estimate; they never refuse it.
+    time_trial = (
+        await run_time_trial_service.stage_time_trial(
+            db, user_id, request.run_time_trial,
+            date_of_birth=profile.date_of_birth,
+            collection_mode=oa.CM_ONBOARDING_ONRAMP,
+            skip_if_recorded=True,
+        )
+        if request.run_time_trial is not None
+        else None
+    )
+
     await db.commit()
 
     for result in results:
         if result.staged is not None:
             await benchmark_service.complete_observation(db, user_id, result.staged)
+    if time_trial is not None:
+        if time_trial.staged is not None:
+            await benchmark_service.complete_observation(db, user_id, time_trial.staged)
+        await db.refresh(time_trial.observation)  # loaded after the commit, for the read below
 
     return OnboardResponse(
         user_id=user_id,
         profile_id=profile_id,
         message="Athlete profile and baseline state ready.",
         strength=[result.outcome for result in results],
+        run_time_trial=(
+            run_time_trial_service.estimate_read(time_trial.observation)
+            if time_trial is not None
+            else None
+        ),
     )
 
 

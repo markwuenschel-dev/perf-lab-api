@@ -192,6 +192,14 @@ PV_INVALID = "invalid"
 # provenance_operation — migration is NOT a collection_mode.
 OP_LIVE_WRITE = "live_write"
 OP_SCHEMA_BACKFILL = "schema_backfill"
+#: Benchmark definitions whose observations are display-only (B2, D4). Whatever a writer sends,
+#: ``benchmark_service`` stamps them ``EV_DISPLAY_ONLY_PERFORMANCE``, requests ``none``, refuses them
+#: as a prescription basis, and owns their ``protocol_metadata``. Keyed by code, not by seed data,
+#: so a catalog row cannot grant authority by accident.
+DISPLAY_ONLY_PROTOCOL_CODES: frozenset[str] = frozenset({"run_1p5mi_time_trial"})
+
+#: The 1.5 mi time-trial writer (``app/services/run_time_trial_service.py``). Server-chosen.
+OP_RUN_TIME_TRIAL = "run_time_trial"
 #: The strength-report writer (``app/services/strength_evidence_service.py``). Chosen by the
 #: server for rows that writer creates, never taken from a request body; the profile's
 #: squat/bench/deadlift projection reads only rows carrying it.
@@ -285,6 +293,9 @@ def evidence_cap(evidence_type: str | None, value_semantics: str | None) -> str:
     vs = value_semantics or se.VS_UNKNOWN
     if vs == se.VS_UNKNOWN:
         return CE_NONE  # hard denial: unknown value means nothing
+    if evidence_type == se.EV_DISPLAY_ONLY_PERFORMANCE:
+        # Recorded so a display-only estimate can be shown (B2, D4): no authority at all.
+        return CE_NONE
     if evidence_type == se.EV_MODELED_ESTIMATE:
         # A model's point estimate is not a floor the athlete demonstrated, and it may overshoot:
         # no capacity authority at all, whatever the source or mode (ADR-0055, P4-2b).
