@@ -47,9 +47,13 @@ from datetime import date
 from typing import Any, Literal
 
 # The verification gate (owner decision D1). False: no estimate is computed or shown anywhere,
-# and a run is still saved with its performance intact. Set it True only once the owner has
-# confirmed COEFFICIENTS against the primary text, and record the date and source here.
-GEORGE_1993_COEFFICIENTS_VERIFIED = False
+# and a run is still saved with its performance intact.
+# Enabled 2026-10-21 by the owner: COEFFICIENTS were checked against the primary text (George et
+# al. 1993, Table 2, 1.5-Mile Run, relative VO2max, p. 404, read from the co-author's full-text PDF;
+# see docs/audits/2026-10-21-run-vo2-field-test-audit.md) and the owner reproduced 46.2883
+# (163 lb, 12:00) and 40.7295 (60 kg, 13:30). The 1 = male coding for this model is an inference
+# from the same paper, accepted as such for this display-only release.
+GEORGE_1993_COEFFICIENTS_VERIFIED = True
 
 #: The benchmark definition this module serves. Must equal the display-only code that
 #: observation_authority enforces (pinned by a test).
