@@ -57,9 +57,11 @@ def test_groups_partition_rows_and_heads_are_reported_apart() -> None:
     report, _ = sweep.summarize(rows, users_total=6, active_user_ids={2}, deployed_sha="abc")
 
     assert report.heads == {"canonical": 1, "missing": 0, "incomplete": 1, "malformed": 1,
-                            "unsupported_version": 1, "nonfinite": 0}
+                            "unsupported_version": 1, "nonfinite": 0,
+                            "conversion_failed": 0}
     assert report.historical == {"canonical": 0, "missing": 1, "incomplete": 0, "malformed": 0,
-                                 "unsupported_version": 0, "nonfinite": 0}
+                                 "unsupported_version": 0, "nonfinite": 0,
+                                 "conversion_failed": 0}
     assert sum(report.heads.values()) + sum(report.historical.values()) == report.rows_total == 5
     # "No state row" is absence, not damage: 6 users, 4 with rows.
     assert report.users_without_state == 2
@@ -141,9 +143,11 @@ async def test_the_sweep_is_read_only_and_agrees_with_the_repository(
     assert repo_head is not None and repo_head.engine_state == EMPTY
     # A's head is EMPTY (vector_empty); B's is SECRET, which lacks f and t (missing_vectors).
     assert out["heads"] == {"canonical": 0, "missing": 0, "incomplete": 2, "malformed": 0,
-                            "unsupported_version": 0, "nonfinite": 0}
+                            "unsupported_version": 0, "nonfinite": 0,
+                                 "conversion_failed": 0}
     assert out["historical"] == {"canonical": 1, "missing": 1, "incomplete": 0,
-                                 "malformed": 0, "unsupported_version": 0, "nonfinite": 0}
+                                 "malformed": 0, "unsupported_version": 0, "nonfinite": 0,
+                                 "conversion_failed": 0}
     assert out["users_total"] == 3 and out["users_without_state"] == 1
     assert (out["deployed_sha"], out["codec_version"], out["exit_code"], code) == (
         "test-sha", "v2", 1, 1

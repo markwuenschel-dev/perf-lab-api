@@ -95,7 +95,12 @@ def _references(source: str, names: frozenset[str], filename: str = "<src>") -> 
 
     Four forms carry the dependency: a bare name, a module attribute
     (`state_service.load_current_state`), a `from x import (name as alias)` of any layout, and
-    `getattr(module, "name")`. A module that *defines* a name is not a caller of it.
+    `getattr(module, "name")`.
+
+    A local definition excuses only a BARE-name reference to itself (`load_current_state()`
+    inside the module that defines it). It never excuses the other three forms: a module that
+    defines its own `load_current_state` and also calls `state_service.load_current_state` or
+    imports it is still a caller (C1 review: that was a blind spot).
     """
     tree = ast.parse(source, filename=filename)
     defined = {
@@ -106,6 +111,8 @@ def _references(source: str, names: frozenset[str], filename: str = "<src>") -> 
     for node in ast.walk(tree):
         referenced: str | None = None
         if isinstance(node, ast.Name):
+            if node.id in defined:
+                continue  # its own definition, called by bare name
             referenced = node.id
         elif isinstance(node, ast.Attribute):
             referenced = node.attr
@@ -123,7 +130,7 @@ def _references(source: str, names: frozenset[str], filename: str = "<src>") -> 
             and isinstance(node.args[1].value, str)
         ):
             referenced = node.args[1].value
-        if referenced in names and referenced not in defined:
+        if referenced in names:
             return True
     return False
 
@@ -215,8 +222,9 @@ def test_the_guard_catches_every_form_of_a_forbidden_caller(name: str, form: str
         "from app.services.state_service import load_or_init_current_state_strict\n",
         "from app.services import state_service\nstate_service.has_state(db, 1)\n",
         "async def load_current_state():\n    return None\n",
+        "def load_current_state():\n    return load_current_state()\n",
     ],
-    ids=["docstring", "strict", "strict-init", "existence", "definition"],
+    ids=["docstring", "strict", "strict-init", "existence", "definition", "own-recursion"],
 )
 def test_the_guard_does_not_flag_strict_or_prose(source: str) -> None:
     assert not _references(source, _PERMISSIVE_NAMES)
@@ -267,6 +275,8 @@ def _permissive_reference_counts(path: Path, names: frozenset[str]) -> dict[str,
         for x in ast.walk(node):
             ref = None
             if isinstance(x, ast.Name):
+                if x.id == own_name:
+                    continue  # recursion by bare name; never excuses the forms below
                 ref = x.id
             elif isinstance(x, ast.Attribute):
                 ref = x.attr
@@ -278,7 +288,7 @@ def _permissive_reference_counts(path: Path, names: frozenset[str]) -> dict[str,
                 and isinstance(x.args[1], ast.Constant) and isinstance(x.args[1].value, str)
             ):
                 ref = x.args[1].value
-            if ref in names and ref != own_name:
+            if ref in names:
                 n += 1
         return n
 
@@ -326,3 +336,36 @@ def test_the_reference_counter_sees_every_scope(
     path = tmp_path / "m.py"
     path.write_text(source, encoding="utf-8")
     assert _permissive_reference_counts(path, _PERMISSIVE_NAMES) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A local definition of the same name must not hide a real dependency (C1 review).
+        "from app.services import state_service\n"
+        "async def load_current_state(db, u):\n"
+        "    return await state_service.load_current_state(db, u)\n",
+        "from app.services.state_service import load_current_state as real\n"
+        "def load_current_state():\n    pass\n",
+        "def f(row):\n"
+        "    def unified_from_athlete_row(r):\n        return r\n"
+        "    return state_bridge.unified_from_athlete_row(row)\n",
+        "class Repo:\n"
+        "    def load_recent_states(self):\n"
+        "        return getattr(state_service, 'load_recent_states')()\n",
+    ],
+    ids=["attribute-beside-local-def", "import-beside-local-def", "attribute-beside-nested-def",
+         "getattr-beside-method"],
+)
+def test_a_local_definition_never_hides_a_real_dependency(source: str) -> None:
+    assert _references(source, _PERMISSIVE_NAMES)
+
+
+def test_the_counter_does_not_excuse_an_attribute_named_like_its_function(tmp_path: Path) -> None:
+    path = tmp_path / "m.py"
+    path.write_text(
+        "async def load_current_state(db, u):\n"
+        "    return await state_service.load_current_state(db, u)\n",
+        encoding="utf-8",
+    )
+    assert _permissive_reference_counts(path, _PERMISSIVE_NAMES) == {"load_current_state": 1}

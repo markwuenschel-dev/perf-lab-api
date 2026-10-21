@@ -66,13 +66,16 @@ from app.engine.engine_state_codec import (
     inspect_declared_version,
     payload_hash,
 )
+from app.engine.state_loading import unified_from_athlete_row_strict
 from app.models.athlete_state import AthleteState
 from app.models.user import User
 from app.models.workout_log import WorkoutLog
 
 # Classes that BLOCK 2B if any active athlete is in them: the row is damaged, and strict
 # loading will refuse it at every decision surface until it is repaired.
-BLOCKING = {"empty_vectors", "partial_vectors", "malformed_current", "nonfinite_value"}
+BLOCKING = {
+    "empty_vectors", "partial_vectors", "malformed_current", "nonfinite_value", "conversion_failed",
+}
 
 # Not corruption. A legacy-migration population needing attested backfill before strict.
 MIGRATION = {"null_engine_state_legacy_row"}
@@ -169,11 +172,34 @@ def classify(row: AthleteState) -> RowVerdict:
             cls = "missing_or_invalid_version"
         return verdict(cls, code)
 
-    if bad_scalars:
-        return verdict("nonfinite_value", f"legacy scalars: {','.join(bad_scalars)}")
-    if _nonfinite_in_payload(payload):
-        return verdict("nonfinite_value", "non-finite inside engine_state vectors")
+    # C1: clearance is the strict loader's WHOLE conversion, not the codec alone. The decoded
+    # payload is also assembled into a state vector with the row's other fields (timestamp,
+    # s_struct_signal, habit_strength, skill_state), and that can fail where the codec did not.
+    # A row is "valid_current" exactly when unified_from_athlete_row_strict accepts it — no
+    # wider (a false CLEAR) and no narrower (a block for something the loader never reads).
+    try:
+        unified_from_athlete_row_strict(row)
+    except Exception as exc:  # noqa: BLE001 - any refusal by the loader is a refusal here
+        # The exception's type only: its message can carry field values, which are athlete data.
+        return verdict("conversion_failed", type(exc).__name__)
     return verdict("valid_current", "")
+
+
+def hazards(row: Any) -> list[str]:
+    """Warnings about a row the strict loader ACCEPTS. Reported, never a block for C1.
+
+    * ``legacy_scalars_nonfinite`` — a legacy column is NaN/inf. The strict loader never reads
+      those columns, but display recovery and the legacy mirror's readers do.
+    * ``payload_nonfinite_accepted`` — a non-finite value inside the payload that the codec and
+      the vector model let through (a field with no range constraint). The strict loader would
+      hand it to decision code, so it is named loudly — but C1 does not change that path.
+    """
+    out = []
+    if _nonfinite_scalars(row):
+        out.append("legacy_scalars_nonfinite")
+    if _nonfinite_in_payload(row.engine_state):
+        out.append("payload_nonfinite_accepted")
+    return out
 
 
 # --- The C1 sweep: every row, heads by the repository's own ordering ----------------------
@@ -190,8 +216,13 @@ GROUP_OF: dict[str, str] = {
     "missing_or_invalid_version": "malformed",
     "unsupported_future_version": "unsupported_version",
     "nonfinite_value": "nonfinite",
+    "conversion_failed": "conversion_failed",
 }
-GROUPS = ("canonical", "missing", "incomplete", "malformed", "unsupported_version", "nonfinite")
+GROUPS = (
+    "canonical", "missing", "incomplete", "malformed", "unsupported_version", "nonfinite",
+    "conversion_failed",
+)
+HAZARDS = ("legacy_scalars_nonfinite", "payload_nonfinite_accepted")
 
 
 def head_key(row: Any) -> tuple[Any, int]:
@@ -226,6 +257,8 @@ class SweepReport:
     head_classes: dict[str, int]
     historical_classes: dict[str, int]
     noncanonical_heads_active_90d: int
+    head_hazards: dict[str, int]
+    historical_hazards: dict[str, int]
 
     @property
     def noncanonical_heads(self) -> int:
@@ -247,6 +280,8 @@ class SweepReport:
             "head_classes": self.head_classes,
             "historical_classes": self.historical_classes,
             "noncanonical_heads_active_90d": self.noncanonical_heads_active_90d,
+            "head_hazards": self.head_hazards,
+            "historical_hazards": self.historical_hazards,
         }
 
 
@@ -271,6 +306,14 @@ def summarize(
         c = Counter(GROUP_OF[v.classification] for v in vs)
         return {g: c.get(g, 0) for g in GROUPS}
 
+    by_id = {r.id: r for r in rows}
+
+    def hazard_counts(vs: list[RowVerdict]) -> dict[str, int]:
+        c = Counter(
+            h for v in vs if v.classification == "valid_current" for h in hazards(by_id[v.state_id])
+        )
+        return {h: c.get(h, 0) for h in HAZARDS}
+
     report = SweepReport(
         deployed_sha=deployed_sha,
         codec_version=f"v{MAX_READ_VERSION}",
@@ -285,6 +328,8 @@ def summarize(
             1 for v in head_v
             if v.classification != "valid_current" and v.user_id in active_user_ids
         ),
+        head_hazards=hazard_counts(head_v),
+        historical_hazards=hazard_counts(hist_v),
     )
     return report, head_v + hist_v
 
@@ -315,13 +360,19 @@ def verdict_lines(report: SweepReport) -> tuple[int, list[str]]:
                 "never repair it."
             )
     else:
-        lines.append("CLEAR FOR C1: every athlete head decodes as canonical state.")
+        lines.append(
+            "CLEAR FOR C1: the strict loader accepts every athlete head "
+            "(unified_from_athlete_row_strict, the same conversion C1's paths call)."
+        )
     if report.noncanonical_historical:
         lines += [
             f"HISTORY: {report.noncanonical_historical} non-head row(s) hold no canonical state.",
             "  They affect display only. Retain their degraded-display inputs (the legacy",
             "  columns) until an explicit retention or archival decision exists.",
         ]
+    for name, n in {**report.head_hazards}.items():
+        if n:
+            lines.append(f"WARN (not a C1 block): {n} accepted head(s) with {name}.")
     if not report.noncanonical_heads and not report.noncanonical_historical:
         lines += [
             "STORAGE: zero rows depend on the legacy columns. No backfill is needed; a later",
@@ -379,6 +430,7 @@ async def audit_with_db(
     print()
     print(f"  head classes        : {report.head_classes}")
     print(f"  historical classes  : {report.historical_classes}")
+    print(f"  head hazards        : {report.head_hazards}  (warnings; the loader accepts these)")
     if verbose:
         print("\n  per-row (ids, hash and codec code only):")
         for v in sorted(verdicts, key=lambda x: (x.user_id, x.state_id)):
