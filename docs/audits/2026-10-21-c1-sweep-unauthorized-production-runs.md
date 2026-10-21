@@ -88,6 +88,12 @@ a drop migration's own precondition recheck remain required.
   missing, uploads the committed blob from `HEAD`, and refuses a working copy that differs from
   `HEAD`, staged or unstaged (the version that ran checked unstaged changes only).
 - Its test (`c1-sweep-run.offline-test.sh`) uses fake transports by absolute path, a `.invalid`
-  target, a nonexistent key, fakes for every remote command (verified before use), and a
-  throwaway repository; it asserts the fake remote was used and that the upload equals the
-  committed blob.
+  target, a nonexistent key, and a throwaway repository; it asserts the fake remote was used and
+  that the upload equals the committed blob. The remote body runs locally under fakes for
+  `sudo`, `docker`, `git` and `rm` (each verified with `command -v` before use); shell builtins
+  and `bash` itself are real. Its working directory and every `/tmp/audit_engine_state.py` path
+  are rewritten into the fixture, and the fake `rm` records cleanup requests, deletes nothing,
+  and refuses paths outside the fixture. An earlier version of the harness faked only
+  `sudo`/`docker`/`git`, so its simulated cleanup ran the real `rm -f /tmp/audit_engine_state.py`
+  on this machine; a regression now runs that unconfined body and asserts the boundary refuses
+  it and that the local file is untouched.
