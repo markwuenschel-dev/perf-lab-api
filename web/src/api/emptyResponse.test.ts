@@ -128,6 +128,7 @@ describe("error handling is unchanged by the fix", () => {
 
     await expect(deleteObjective(7, "tok")).rejects.toMatchObject({ status: 401 });
     expect(cleared).toHaveBeenCalledTimes(1);
+    expect(cleared).toHaveBeenCalledWith("tok"); // the token the refused request carried
     setUnauthorizedHandler(null);
   });
 });

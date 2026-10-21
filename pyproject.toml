@@ -33,7 +33,9 @@ dependencies = [
     # transitively via python-jose[cryptography]'s own extra.
     "cryptography>=41.0.0",
     # B1: athlete timezones are validated against zoneinfo. Declared rather than relied on via
-    # celery -> kombu, so the IANA data does not depend on the base image's system tz database.
+    # celery -> kombu. zoneinfo reads the system tz database (TZPATH) first and this package
+    # only as a fallback, and available_timezones() is the union of both: so this is the zone
+    # data when the image has no system tz database, and the zone list on Windows.
     "tzdata>=2024.1",
     "email-validator>=2.1.0",
     "bcrypt>=4.0.0",

@@ -83,8 +83,9 @@ function authHeaders(token: string): HeadersInit {
 }
 
 type HandleOpts = {
-  /** If true, notify auth layer to clear session on 401 */
-  sessionOn401?: boolean;
+  /** The bearer token this request was sent with. On a 401 the auth layer is told which token
+   *  was refused, and signs out only if it is still the current session's. */
+  sessionOn401?: string;
 };
 
 async function handleResponse<T>(
@@ -92,7 +93,7 @@ async function handleResponse<T>(
   opts?: HandleOpts,
 ): Promise<T> {
   if (res.status === 401 && opts?.sessionOn401) {
-    notifyUnauthorized();
+    notifyUnauthorized(opts.sessionOn401);
   }
 
   const contentType = res.headers.get("content-type");
@@ -224,7 +225,7 @@ export async function fetchMe(token: string, signal?: AbortSignal): Promise<User
     headers: { ...authHeaders(token) },
     signal,
   });
-  return handleResponse<UserResponse>(res, { sessionOn401: true });
+  return handleResponse<UserResponse>(res, { sessionOn401: token });
 }
 
 /**
@@ -239,7 +240,7 @@ export async function getNextSession(
   }
   const url = `${API_V1_BASE}/next-session?goal=${encodeURIComponent(goal)}`;
   const res = await fetch(url, { headers: { ...authHeaders(token) } });
-  return handleResponse<WorkoutPrescription>(res, { sessionOn401: true });
+  return handleResponse<WorkoutPrescription>(res, { sessionOn401: token });
 }
 
 /**
@@ -261,7 +262,7 @@ export async function logWorkout(
     },
     body: JSON.stringify(log),
   });
-  return handleResponse<LogWorkoutResponse>(res, { sessionOn401: true });
+  return handleResponse<LogWorkoutResponse>(res, { sessionOn401: token });
 }
 
 /**
@@ -298,7 +299,7 @@ export async function getSimulateProjection(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<ProjectionResponse>(res, { sessionOn401: true });
+  return handleResponse<ProjectionResponse>(res, { sessionOn401: token });
 }
 
 /**
@@ -314,7 +315,7 @@ export async function onboard(request: OnboardRequest, token: string): Promise<O
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(request),
   });
-  return handleResponse<OnboardResponse>(res, { sessionOn401: true });
+  return handleResponse<OnboardResponse>(res, { sessionOn401: token });
 }
 
 /** The athlete's recent state snapshots, oldest→newest (Twin time-travel, trends).
@@ -331,7 +332,7 @@ export async function getStateHistory(
   const res = await fetch(`${API_V1_BASE}/state-history${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<StateHistorySnapshotRead[]>(res, { sessionOn401: true });
+  return handleResponse<StateHistorySnapshotRead[]>(res, { sessionOn401: token });
 }
 
 /** The athlete's logged workouts, most recent first (recent sessions, load). */
@@ -344,7 +345,7 @@ export async function listWorkouts(
   const res = await fetch(`${API_V1_BASE}/workouts${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<WorkoutLogSummary[]>(res, { sessionOn401: true });
+  return handleResponse<WorkoutLogSummary[]>(res, { sessionOn401: token });
 }
 
 /** Past benchmark observations (field tests), newest first. Optionally filter by
@@ -361,7 +362,7 @@ export async function listBenchmarkObservations(
   const res = await fetch(`${API_V1_BASE}/benchmarks/observations${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<BenchmarkObservationRead[]>(res, { sessionOn401: true });
+  return handleResponse<BenchmarkObservationRead[]>(res, { sessionOn401: token });
 }
 
 /** Load the authenticated athlete's profile (Settings hydrates from this). */
@@ -373,7 +374,7 @@ export async function getProfile(token: string, signal?: AbortSignal): Promise<P
     headers: { ...authHeaders(token) },
     signal,
   });
-  return handleResponse<ProfileRead>(res, { sessionOn401: true });
+  return handleResponse<ProfileRead>(res, { sessionOn401: token });
 }
 
 /**
@@ -392,7 +393,7 @@ export async function captureDetectedTimezone(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<ProfileRead>(res, { sessionOn401: true });
+  return handleResponse<ProfileRead>(res, { sessionOn401: token });
 }
 
 /** Partial-update the athlete's profile; returns the saved row. */
@@ -408,7 +409,7 @@ export async function updateProfile(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(patch),
   });
-  return handleResponse<ProfileRead>(res, { sessionOn401: true });
+  return handleResponse<ProfileRead>(res, { sessionOn401: token });
 }
 
 /**
@@ -436,7 +437,7 @@ export async function createPlanningBlock(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<BlockRead>(res, { sessionOn401: true });
+  return handleResponse<BlockRead>(res, { sessionOn401: token });
 }
 
 /** Planning: the week a block request WOULD generate. Persists nothing — the create screen
@@ -451,7 +452,7 @@ export async function previewPlanningBlock(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<WeeklyTemplateSlotPreview[]>(res, { sessionOn401: true });
+  return handleResponse<WeeklyTemplateSlotPreview[]>(res, { sessionOn401: token });
 }
 
 export async function listPlanningBlocks(token: string): Promise<BlockRead[]> {
@@ -459,7 +460,7 @@ export async function listPlanningBlocks(token: string): Promise<BlockRead[]> {
   const res = await fetch(`${API_V1_BASE}/planning/blocks`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<BlockRead[]>(res, { sessionOn401: true });
+  return handleResponse<BlockRead[]>(res, { sessionOn401: token });
 }
 
 export async function updatePlanningBlock(
@@ -473,7 +474,7 @@ export async function updatePlanningBlock(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<BlockRead>(res, { sessionOn401: true });
+  return handleResponse<BlockRead>(res, { sessionOn401: token });
 }
 
 type SessionListParams = {
@@ -491,7 +492,7 @@ export async function listPlannedSessions(
   if (params?.end_date) query.set("end_date", params.end_date);
   const url = `${API_V1_BASE}/planning/sessions${query.toString() ? `?${query.toString()}` : ""}`;
   const res = await fetch(url, { headers: { ...authHeaders(token) } });
-  return handleResponse<PlannedSessionRead[]>(res, { sessionOn401: true });
+  return handleResponse<PlannedSessionRead[]>(res, { sessionOn401: token });
 }
 
 export async function updatePlannedSession(
@@ -505,7 +506,7 @@ export async function updatePlannedSession(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<PlannedSessionRead>(res, { sessionOn401: true });
+  return handleResponse<PlannedSessionRead>(res, { sessionOn401: token });
 }
 
 /**
@@ -524,7 +525,7 @@ export async function getPlannedWeekProjection(
   const res = await fetch(`${API_V1_BASE}/planning/projection${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<PlannedWeekProjection>(res, { sessionOn401: true });
+  return handleResponse<PlannedWeekProjection>(res, { sessionOn401: token });
 }
 
 /**
@@ -544,7 +545,7 @@ export async function getWeekReview(
   if (params?.week_number != null) query.set("week_number", String(params.week_number));
   const url = `${API_V1_BASE}/planning/week-review${query.toString() ? `?${query.toString()}` : ""}`;
   const res = await fetch(url, { headers: { ...authHeaders(token) } });
-  return handleResponse<WeekReview>(res, { sessionOn401: true });
+  return handleResponse<WeekReview>(res, { sessionOn401: token });
 }
 
 export async function getTodayPlannedSession(
@@ -554,7 +555,7 @@ export async function getTodayPlannedSession(
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const url = `${API_V1_BASE}/planning/today?goal=${encodeURIComponent(goal)}`;
   const res = await fetch(url, { headers: { ...authHeaders(token) } });
-  return handleResponse<TodaySessionResponse>(res, { sessionOn401: true });
+  return handleResponse<TodaySessionResponse>(res, { sessionOn401: token });
 }
 
 /**
@@ -569,7 +570,7 @@ export async function recheckTodayPlannedSession(
   if (!API_V1_BASE) throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   const url = `${API_V1_BASE}/planning/today/recheck?goal=${encodeURIComponent(goal)}`;
   const res = await fetch(url, { method: "POST", headers: { ...authHeaders(token) } });
-  return handleResponse<TodaySessionResponse>(res, { sessionOn401: true });
+  return handleResponse<TodaySessionResponse>(res, { sessionOn401: token });
 }
 
 /**
@@ -586,7 +587,7 @@ export async function ingestWellness(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<WellnessSampleOut>(res, { sessionOn401: true });
+  return handleResponse<WellnessSampleOut>(res, { sessionOn401: token });
 }
 
 /** Wellness (P5): recent daily-wellness samples (most recent first). */
@@ -599,7 +600,7 @@ export async function listWellness(
   const res = await fetch(`${API_V1_BASE}/wellness${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<WellnessSampleOut[]>(res, { sessionOn401: true });
+  return handleResponse<WellnessSampleOut[]>(res, { sessionOn401: token });
 }
 
 /* ---------- Session feedback (athlete-reported outcomes) ---------- */
@@ -620,7 +621,7 @@ export async function createSessionFeedback(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<SessionFeedbackOut>(res, { sessionOn401: true });
+  return handleResponse<SessionFeedbackOut>(res, { sessionOn401: token });
 }
 
 /** The athlete's recent reported session outcomes, newest first. */
@@ -633,7 +634,7 @@ export async function listSessionFeedback(
   const res = await fetch(`${API_V1_BASE}/feedback${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<SessionFeedbackOut[]>(res, { sessionOn401: true });
+  return handleResponse<SessionFeedbackOut[]>(res, { sessionOn401: token });
 }
 
 /**
@@ -646,7 +647,7 @@ export async function getReadiness(token: string): Promise<ReadinessScore> {
   const res = await fetch(`${API_V1_BASE}/readiness`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<ReadinessScore>(res, { sessionOn401: true });
+  return handleResponse<ReadinessScore>(res, { sessionOn401: token });
 }
 
 /**
@@ -659,7 +660,7 @@ export async function getDashboardOverview(token: string): Promise<OverviewMetri
   const res = await fetch(`${API_V1_BASE}/dashboard/overview`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<OverviewMetrics>(res, { sessionOn401: true });
+  return handleResponse<OverviewMetrics>(res, { sessionOn401: token });
 }
 
 /**
@@ -676,7 +677,7 @@ export async function createObjective(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+  return handleResponse<ObjectiveRead>(res, { sessionOn401: token });
 }
 
 /** Benchmark assessment surface (P10, ADR-0047): the one domain-filtered catalog view
@@ -689,7 +690,7 @@ export async function getAssessmentSurface(
   const res = await fetch(`${API_V1_BASE}/benchmarks/assessment-surface?mode=${mode}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<AssessmentSurfaceRead>(res, { sessionOn401: true });
+  return handleResponse<AssessmentSurfaceRead>(res, { sessionOn401: token });
 }
 
 /** Submit a benchmark assessment as a single observation (P10). The backend owns the
@@ -704,7 +705,7 @@ export async function submitBenchmarkObservation(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<BenchmarkObservationRead>(res, { sessionOn401: true });
+  return handleResponse<BenchmarkObservationRead>(res, { sessionOn401: token });
 }
 
 /** Report a strength observation for a canonical lift from Assess (S2). Build the body
@@ -722,7 +723,7 @@ export async function submitStrengthEvidence(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  const reply = await handleResponse<unknown>(res, { sessionOn401: true });
+  const reply = await handleResponse<unknown>(res, { sessionOn401: token });
   if (!isStrengthOutcome(reply)) {
     // A 2xx whose body is not a StrengthOutcome confirms nothing: the save may or may not have
     // been recorded. No `status`, so a keyed caller keeps the attempt for Retry.
@@ -804,7 +805,7 @@ export async function listStrengthReports(
   const res = await fetch(`${API_V1_BASE}/benchmarks/strength-reports${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<UnderivedStrengthReportRead[]>(res, { sessionOn401: true });
+  return handleResponse<UnderivedStrengthReportRead[]>(res, { sessionOn401: token });
 }
 
 /** Non-blocking onboarding state (P10, PDR-0010): status, the safety hard-gate,
@@ -814,7 +815,7 @@ export async function getOnboardingState(token: string): Promise<OnboardingState
   const res = await fetch(`${API_V1_BASE}/onboarding/state`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<OnboardingStateResponse>(res, { sessionOn401: true });
+  return handleResponse<OnboardingStateResponse>(res, { sessionOn401: token });
 }
 
 /** Leave onboarding with a reason (finished | done_for_now | skipped) — never locks out. */
@@ -828,7 +829,7 @@ export async function completeOnboarding(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ reason }),
   });
-  return handleResponse<OnboardingStateResponse>(res, { sessionOn401: true });
+  return handleResponse<OnboardingStateResponse>(res, { sessionOn401: token });
 }
 
 /** Objectives (P4a): list the athlete's objectives, optionally filtered by status. */
@@ -841,7 +842,7 @@ export async function listObjectives(
   const res = await fetch(`${API_V1_BASE}/objectives${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: true });
+  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: token });
 }
 
 /** Objectives (P4a): partial-update an objective (e.g. mark achieved/abandoned). */
@@ -856,7 +857,7 @@ export async function updateObjective(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<ObjectiveRead>(res, { sessionOn401: true });
+  return handleResponse<ObjectiveRead>(res, { sessionOn401: token });
 }
 
 /** Objectives: set the DISPLAY order of the caller's active objectives (`display_rank`
@@ -873,7 +874,7 @@ export async function setObjectiveOrder(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: true });
+  return handleResponse<ObjectiveRead[]>(res, { sessionOn401: token });
 }
 
 /** Objectives: the objective that actually drives prescription (program anchor, else
@@ -883,7 +884,7 @@ export async function getDrivingObjective(token: string): Promise<DrivingObjecti
   const res = await fetch(`${API_V1_BASE}/objectives/driving`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<DrivingObjectiveRead>(res, { sessionOn401: true });
+  return handleResponse<DrivingObjectiveRead>(res, { sessionOn401: token });
 }
 
 /** Objectives (P4a): delete an objective. */
@@ -893,7 +894,7 @@ export async function deleteObjective(id: number, token: string): Promise<void> 
     method: "DELETE",
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<void>(res, { sessionOn401: true });
+  return handleResponse<void>(res, { sessionOn401: token });
 }
 
 /* ---------- Wearable sync / Oura (Phase 2) ---------- */
@@ -909,13 +910,13 @@ export async function getOuraAuthorizeUrl(
   const res = await fetch(`${API_V1_BASE}/integrations/oura/authorize?${query.toString()}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<AuthorizeUrlResponse>(res, { sessionOn401: true });
+  return handleResponse<AuthorizeUrlResponse>(res, { sessionOn401: token });
 }
 
 /** A /complete or /cancel 200 that isn't a shape the server sends is not an outcome: it is
  *  thrown, so the caller keeps the attempt's inputs instead of treating it as terminal. */
-async function attemptResult(res: Response): Promise<OAuthAttemptResult> {
-  const body = await handleResponse<unknown>(res, { sessionOn401: true });
+async function attemptResult(res: Response, token: string): Promise<OAuthAttemptResult> {
+  const body = await handleResponse<unknown>(res, { sessionOn401: token });
   const result = readAttemptResult(body);
   if (result === null) {
     const error: ApiError = { message: "Unexpected reply from Perf Lab", status: res.status, details: body };
@@ -937,7 +938,7 @@ export async function completeOuraAuthorization(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return attemptResult(res);
+  return attemptResult(res, token);
 }
 
 /** Oura: the athlete declined at Oura. Returns where the attempt stands afterwards, which is
@@ -952,7 +953,7 @@ export async function cancelOuraAuthorization(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return attemptResult(res);
+  return attemptResult(res, token);
 }
 
 /* ---------- Phone-pushed wellness (Apple Watch via an iOS Shortcut) ---------- */
@@ -971,7 +972,7 @@ export async function createIngestToken(label: string, token: string): Promise<I
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify({ label }),
   });
-  return handleResponse<IngestTokenCreated>(res, { sessionOn401: true });
+  return handleResponse<IngestTokenCreated>(res, { sessionOn401: token });
 }
 
 /** The athlete's active ingest tokens; `last_used_at` is the last successful push. */
@@ -980,7 +981,7 @@ export async function listIngestTokens(token: string): Promise<IngestTokenOut[]>
   const res = await fetch(`${API_V1_BASE}/wellness/ingest-tokens`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<IngestTokenOut[]>(res, { sessionOn401: true });
+  return handleResponse<IngestTokenOut[]>(res, { sessionOn401: token });
 }
 
 /** Revoke an ingest token; the phone automation using it stops working immediately. */
@@ -990,7 +991,7 @@ export async function revokeIngestToken(id: number, token: string): Promise<void
     method: "DELETE",
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<void>(res, { sessionOn401: true });
+  return handleResponse<void>(res, { sessionOn401: token });
 }
 
 /** Oura: pull the athlete's recent data now (the app also does this when data is stale). */
@@ -1000,7 +1001,7 @@ export async function syncOura(token: string): Promise<SyncResult> {
     method: "POST",
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<SyncResult>(res, { sessionOn401: true });
+  return handleResponse<SyncResult>(res, { sessionOn401: token });
 }
 
 /** Oura: the current connection status (no tokens are ever returned). */
@@ -1009,7 +1010,7 @@ export async function getWearableConnection(token: string): Promise<ConnectionSt
   const res = await fetch(`${API_V1_BASE}/integrations/oura/connection`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<ConnectionStatus>(res, { sessionOn401: true });
+  return handleResponse<ConnectionStatus>(res, { sessionOn401: token });
 }
 
 /** Oura: disconnect (deletes the stored connection + tokens). */
@@ -1019,7 +1020,7 @@ export async function disconnectOura(token: string): Promise<void> {
     method: "DELETE",
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<void>(res, { sessionOn401: true });
+  return handleResponse<void>(res, { sessionOn401: token });
 }
 
 /**
@@ -1037,7 +1038,7 @@ export async function createMacrocycle(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<MacrocycleRead>(res, { sessionOn401: true });
+  return handleResponse<MacrocycleRead>(res, { sessionOn401: token });
 }
 
 /** Macrocycles (P5): list the athlete's macrocycles (active by default). */
@@ -1050,7 +1051,7 @@ export async function listMacrocycles(
   const res = await fetch(`${API_V1_BASE}/macrocycles${query}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<MacrocycleRead[]>(res, { sessionOn401: true });
+  return handleResponse<MacrocycleRead[]>(res, { sessionOn401: token });
 }
 
 /** Macrocycles (P5): fetch one macrocycle by id. */
@@ -1062,7 +1063,7 @@ export async function getMacrocycle(
   const res = await fetch(`${API_V1_BASE}/macrocycles/${id}`, {
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<MacrocycleRead>(res, { sessionOn401: true });
+  return handleResponse<MacrocycleRead>(res, { sessionOn401: token });
 }
 
 /** Macrocycles (P5): partial-update a macrocycle (e.g. re-anchor start_date, mark achieved). */
@@ -1077,7 +1078,7 @@ export async function updateMacrocycle(
     headers: { "Content-Type": "application/json", ...authHeaders(token) },
     body: JSON.stringify(body),
   });
-  return handleResponse<MacrocycleRead>(res, { sessionOn401: true });
+  return handleResponse<MacrocycleRead>(res, { sessionOn401: token });
 }
 
 /** Macrocycles (P5): delete a macrocycle. */
@@ -1087,5 +1088,5 @@ export async function deleteMacrocycle(id: number, token: string): Promise<void>
     method: "DELETE",
     headers: { ...authHeaders(token) },
   });
-  return handleResponse<void>(res, { sessionOn401: true });
+  return handleResponse<void>(res, { sessionOn401: token });
 }

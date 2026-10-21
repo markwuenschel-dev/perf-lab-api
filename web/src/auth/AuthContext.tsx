@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -83,7 +84,12 @@ export function AuthProvider({
   const [sessionUnavailable, setSessionUnavailable] =
     useState<SessionUnavailable | null>(null);
 
+  // Bumped by every login and logout: a login's late answers are dropped once another login or
+  // a logout has happened since it started.
+  const loginGeneration = useRef(0);
+
   const logout = useCallback(() => {
+    loginGeneration.current += 1;
     clearStoredSession();
     setToken(null);
     setUser(null);
@@ -124,7 +130,10 @@ export function AuthProvider({
   }, []);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => {
+    setUnauthorizedHandler((requestToken) => {
+      // A 401 refuses the token its request was sent with. A late one for an earlier session's
+      // token says nothing about the current session, which stands.
+      if (getStoredToken() !== requestToken) return;
       clearStoredSession();
       setToken(null);
       setUser(null);
@@ -172,7 +181,10 @@ export function AuthProvider({
         if (isCancelled()) return;
         const failure = classifyAuthFailure(err);
         if (failure.action === "sign-out") {
-          logout();
+          // A 401 refuses the token this load used. `isCancelled` flips only in the effect's
+          // cleanup, after React commits a newer token, while login stores that token at once:
+          // in that gap an earlier session's 401 must not sign out the new session.
+          if (getStoredToken() === activeToken) logout();
           return;
         }
         setSessionUnavailable(toUnavailable(failure));
@@ -234,30 +246,44 @@ export function AuthProvider({
     };
   }, [token, loadSession]);
 
-  const login = useCallback(async (emailIn: string, password: string) => {
+  /** Resolves true when this login established the session, false when a logout or a newer
+   *  login superseded it (its answers then changed nothing). */
+  const login = useCallback(async (emailIn: string, password: string): Promise<boolean> => {
+    const generation = ++loginGeneration.current;
     setIsLoading(true);
     try {
       const tr = await api.login(emailIn, password);
+      // A logout or another login since this one started: this answer is not the session now.
+      if (loginGeneration.current !== generation) return false;
       setStoredToken(tr.access_token);
       setStoredEmail(emailIn);
       setEmail(emailIn);
       setIsGuest(false); // a real session supersedes any guest session
       setCalendarSettled(false); // the new session's calendar is not known until its profile is
       setToken(tr.access_token);
-      const u = await api.fetchMe(tr.access_token);
+      // Bounded like the session load's check: a hung /auth/me rejects (aborted) instead of
+      // leaving the spinner up. Nothing is written on failure; the token is stored, so the
+      // session load for it (the effect above) owns the retryable `sessionUnavailable` state.
+      const u = await within(profileTimeoutMs, (signal) => api.fetchMe(tr.access_token, signal));
+      // Bound to this login's session: after a logout or a newer login it must not touch state.
+      if (loginGeneration.current !== generation || getStoredToken() !== tr.access_token) {
+        return false;
+      }
       setUser(u);
+      return true;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [profileTimeoutMs]);
 
   const register = useCallback(
     async (emailIn: string, password: string) => {
       setIsLoading(true);
       try {
         await api.register(emailIn, password);
-        await login(emailIn, password);
-        setOnboardingPending(true);
+        // Onboarding belongs to the session this register created: not to one a logout or a
+        // newer login put in its place.
+        if (await login(emailIn, password)) setOnboardingPending(true);
       } finally {
         setIsLoading(false);
       }

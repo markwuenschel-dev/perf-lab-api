@@ -43,7 +43,8 @@ export type AuthContextValue = {
   /** Re-attempt the session check. Clears `sessionUnavailable` on success. */
   retrySession: () => Promise<void>;
   onboardingPending: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** True when this login established the session; false when it was superseded. */
+  login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string) => Promise<void>;
   /** Resolves to the server's response — including what happened to each strength report — or
    *  to undefined for a guest, whose onboarding sends nothing. */
