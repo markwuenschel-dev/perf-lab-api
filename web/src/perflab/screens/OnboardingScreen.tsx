@@ -137,7 +137,8 @@ function SavedRunCard({ run }: { run: Vo2EstimateRead }) {
             {run.population_label}
           </p>
           <p className="m-0 mt-1 text-[11.5px] font-medium leading-[1.5] text-faint">
-            Typical error of this estimate: ±{run.see_ml_kg_min} ml·kg⁻¹·min⁻¹ (George et al., 1993).
+            The study's cross-validation SEE: ±{run.see_ml_kg_min} ml·kg⁻¹·min⁻¹ (George et al., 1993).
+            Individual error outside that study population has not been established.
           </p>
         </>
       ) : (
