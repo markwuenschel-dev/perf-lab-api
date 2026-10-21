@@ -363,6 +363,8 @@ async def test_a_hostile_writer_and_catalog_still_get_no_authority(
     assert (row.evidence_type, row.capacity_effect, row.affects_prescription) == (
         se.EV_DISPLAY_ONLY_PERFORMANCE, oa.CE_NONE, False
     )
+    # The writer's request is replaced by the server's, not merely outvoted by the policy.
+    assert row.requested_capacity_effect == oa.CE_NONE
     assert row.observation_model == "george1993_1p5mi_run"
     assert row.normalized_value is None
     # The client's metadata is discarded: no forged estimate is stored or shown.
