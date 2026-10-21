@@ -232,39 +232,88 @@ def test_c1_decision_paths_reference_no_permissive_loader(module: str) -> None:
     assert not _references(path.read_text(encoding="utf-8"), _PERMISSIVE_NAMES, str(path))
 
 
-# --- Inside the allowlisted module, per function (C1 review) ------------------------------
-# The module allowlist above cannot see a NEW decision function added inside state_service.py
-# that decodes permissively — that is how process_new_workout's head read went unnoticed. So
-# within that one module, the functions that may name the permissive decoder are pinned too.
-# DO NOT ADD TO THIS SET. 2D empties it.
-STATE_SERVICE_PERMISSIVE_FUNCTIONS: frozenset[str] = frozenset(
-    {
-        "stage_baseline_state",  # decodes the row it just built
-        "load_current_state",  # the permissive wrappers themselves (2C/2D)
-        "load_recent_states",
-        "load_recent_state_snapshots",
-        "load_or_init_current_state",
-        # Rows it wrote itself or already decoded strictly (the head read is strict as of C1).
-        "process_new_workout",
-    }
-)
+# --- Inside the allowlisted module, per reference (C1 review) -----------------------------
+# The module allowlist above cannot see a NEW permissive decode added inside state_service.py —
+# that is how process_new_workout's head read went unnoticed. A per-function set is not enough
+# either: process_new_workout legitimately decodes rows it wrote itself, so reverting its head
+# read would add a reference without adding a function. So the number of permissive references
+# is pinned per scope. ONLY DECREASE THESE. 2D empties the map.
+STATE_SERVICE_PERMISSIVE_REFERENCES: dict[str, int] = {
+    "stage_baseline_state": 1,  # decodes the row it just built
+    "load_current_state": 1,  # the permissive wrappers themselves (2C/2D)
+    "load_recent_states": 1,
+    "load_recent_state_snapshots": 1,
+    "load_or_init_current_state": 2,  # its own decode, and the decoder it names for init
+    # Rows it wrote itself or already decoded strictly — the record-only head, the tail-replay
+    # head, the committed new row, the post-e1RM re-read. The head READ is strict as of C1.
+    "process_new_workout": 4,
+}
 
 
-def _functions_referencing(path: Path, names: frozenset[str]) -> set[str]:
+def _permissive_reference_counts(path: Path, names: frozenset[str]) -> dict[str, int]:
+    """Permissive-name references per top-level function; anything else counts as <module>.
+
+    Counts code references only (names, attributes, import aliases, getattr strings), and every
+    scope including class bodies and module-level statements, so an alias like
+    `_dec = unified_from_athlete_row` at module level is seen too.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    out: set[str] = set()
-    for fn in tree.body:
-        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            src = ast.unparse(fn)
-            if _references(src, names - {fn.name}):
-                out.add(fn.name)
-    return out
+    counts: dict[str, int] = {}
+
+    def hits(node: ast.AST, own_name: str | None) -> int:
+        n = 0
+        for x in ast.walk(node):
+            ref = None
+            if isinstance(x, ast.Name):
+                ref = x.id
+            elif isinstance(x, ast.Attribute):
+                ref = x.attr
+            elif isinstance(x, ast.alias):
+                ref = x.name
+            elif (
+                isinstance(x, ast.Call) and isinstance(x.func, ast.Name)
+                and x.func.id == "getattr" and len(x.args) >= 2
+                and isinstance(x.args[1], ast.Constant) and isinstance(x.args[1].value, str)
+            ):
+                ref = x.args[1].value
+            if ref in names and ref != own_name:
+                n += 1
+        return n
+
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            key, n = stmt.name, hits(stmt, stmt.name)
+        elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            continue  # importing the name is not a use; every use is counted where it occurs
+        else:
+            key, n = "<module>", hits(stmt, None)
+        if n:
+            counts[key] = counts.get(key, 0) + n
+    return counts
 
 
-def test_permissive_decodes_inside_state_service_are_pinned_per_function() -> None:
-    actual = _functions_referencing(APP / "services" / "state_service.py", _PERMISSIVE_NAMES)
-    assert actual == STATE_SERVICE_PERMISSIVE_FUNCTIONS, (
-        f"added: {sorted(actual - STATE_SERVICE_PERMISSIVE_FUNCTIONS)}, "
-        f"stale: {sorted(STATE_SERVICE_PERMISSIVE_FUNCTIONS - actual)}. A new function in "
-        "state_service.py must decode strictly; a removed one must leave this set."
+def test_permissive_decodes_inside_state_service_are_pinned_per_reference() -> None:
+    actual = _permissive_reference_counts(APP / "services" / "state_service.py", _PERMISSIVE_NAMES)
+    assert actual == STATE_SERVICE_PERMISSIVE_REFERENCES, (
+        f"actual {actual} != pinned {STATE_SERVICE_PERMISSIVE_REFERENCES}. A new permissive "
+        "decode in state_service.py must be strict instead; a removed one lowers its count."
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("async def f(row):\n    return unified_from_athlete_row(row)\n", {"f": 1}),
+        ("_dec = unified_from_athlete_row\n", {"<module>": 1}),
+        ("class C:\n    def m(self, r):\n        return load_current_state(r)\n", {"<module>": 1}),
+        ("from app.engine.state_bridge import unified_from_athlete_row\n", {}),
+        ("async def load_current_state(db, uid):\n    return None\n", {}),
+    ],
+    ids=["function", "module-alias", "class-method", "import-only", "definition"],
+)
+def test_the_reference_counter_sees_every_scope(
+    tmp_path: Path, source: str, expected: dict[str, int]
+) -> None:
+    path = tmp_path / "m.py"
+    path.write_text(source, encoding="utf-8")
+    assert _permissive_reference_counts(path, _PERMISSIVE_NAMES) == expected
