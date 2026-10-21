@@ -239,6 +239,13 @@ it("shows the saved estimate as not used for the plan, labelled extrapolated, wi
   expect(card.textContent).toContain("46.3");
   expect(card.textContent).toContain("Estimated VO₂max — not used for your plan.");
   expect(card.textContent).toContain("Extrapolated and unvalidated");
+  // The 3.9 is the study's cross-validation SEE, not this athlete's error — least of all for
+  // an extrapolated result, which is exactly this case.
+  expect(card.textContent).toContain("The study's cross-validation SEE: ±3.9");
+  expect(card.textContent).toContain(
+    "Individual error outside that study population has not been established.",
+  );
+  expect(card.textContent).not.toContain("Typical error of this estimate");
   for (const grade of ["Excellent", "Good", "Average", "Poor", "Satisfactory", "Marginal"]) {
     expect(card.textContent).not.toContain(grade);
   }

@@ -19,7 +19,7 @@ const inputCls =
   "mt-[9px] w-full rounded-[11px] border border-white/10 bg-panel px-[14px] py-3 text-[15px] text-ink";
 
 const HIGHLIGHTS = [
-  ["01", "Field test", "300 m + 1.5 mi → VO₂, profile & pace zones."],
+  ["01", "1.5 mi run", "A timed run gives an estimated VO₂max, for reference only."],
   ["02", "Digital twin", "A state vector S(t) that evolves as you train."],
   ["03", "Adaptive plan", "Sessions prescribed against your readiness."],
 ] as const;
