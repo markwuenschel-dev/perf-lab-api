@@ -42,10 +42,13 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # C1: `api/v1/simulate.py` was never listed because the guard only matched two names;
         # it reached `load_or_init_current_state`. It is strict as of C1 (capability
         # `projection`), so it is not listed now either.
-        "api/v1/history.py",  # 2C: display recovery (load_recent_state_snapshots)
-        "services/dashboard_service.py",  # 2C: display recovery
+        # 2C REMOVED `api/v1/history.py` and `services/dashboard_service.py` — display
+        # recovery with provenance (DISPLAY_LOADER_ALLOWLIST below), and an unshowable row
+        # refuses the surface (409) instead of being dropped.
         "services/ekf_shadow_service.py",  # S3: skip adapter
-        "services/onboarding_service.py",  # 2B4: strict, or explicit initialization
+        # 2C REMOVED `services/onboarding_service.py` — strict: its twin summary reads only
+        # live confidence, which a legacy recovery does not have; damaged state is reported
+        # as `state_available=false`, never recovered and never initialized over.
         # 2B1 REMOVED `services/prescription_service.py` — both load-sizing sites are strict
         # as of that slice, and a decode failure is translated to CanonicalStateInvalid at
         # the service, then mapped to 409 by the global handler.
@@ -65,10 +68,11 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
 
 # Display recovery may be imported ONLY by surfaces proven unable to affect prescription,
 # readiness, eligibility, benchmark selection, state mutation, or objective progress.
-# Empty until 2C wires dashboard/history.
 DISPLAY_LOADER_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "services/state_service.py",  # defines the wrapper
+        "services/state_service.py",  # defines the wrappers
+        "services/dashboard_service.py",  # 2C: /v1/dashboard/readiness, returned with provenance
+        "api/v1/history.py",  # 2C: /v1/state-history, every row carries its provenance
     }
 )
 
@@ -82,11 +86,17 @@ _PERMISSIVE_NAMES = frozenset(
         "load_current_state",
         "load_or_init_current_state",
         "load_recent_states",
-        "load_recent_state_snapshots",
     }
 )
+# `load_recent_state_snapshots` moved here in 2C: it now reads through display recovery and
+# marks every row's provenance, so it is a display entry point, not a permissive one.
 _DISPLAY_NAMES = frozenset(
-    {"load_current_state_for_display", "reconstruct_legacy_state_for_display", "ReadOnlyStateView"}
+    {
+        "load_current_state_for_display",
+        "reconstruct_legacy_state_for_display",
+        "ReadOnlyStateView",
+        "load_recent_state_snapshots",
+    }
 )
 
 
@@ -250,7 +260,6 @@ STATE_SERVICE_PERMISSIVE_REFERENCES: dict[str, int] = {
     "stage_baseline_state": 1,  # decodes the row it just built
     "load_current_state": 1,  # the permissive wrappers themselves (2C/2D)
     "load_recent_states": 1,
-    "load_recent_state_snapshots": 1,
     "load_or_init_current_state": 2,  # its own decode, and the decoder it names for init
     # Rows it wrote itself or already decoded strictly — the record-only head, the tail-replay
     # head, the committed new row, the post-e1RM re-read. The head READ is strict as of C1.

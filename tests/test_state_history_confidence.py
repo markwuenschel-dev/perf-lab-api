@@ -32,11 +32,18 @@ def _vec(**variances: float) -> UnifiedStateVector:
     )
 
 
+def _snap(state: UnifiedStateVector, snapshot_id: int) -> StateHistorySnapshotRead:
+    return StateHistorySnapshotRead.from_state(
+        state, snapshot_id=snapshot_id, state_source="canonical", degradation_reason=None,
+        codec_version="v2",
+    )
+
+
 # ── projection / per-row derivation ───────────────────────────────────────────
 
 def test_from_state_derives_band_from_that_rows_own_variance():
     # aerobic <= 0.35 established; glycolytic <= 1.05 provisional; max_strength > 1.05 insufficient
-    snap = StateHistorySnapshotRead.from_state(
+    snap = _snap(
         _vec(aerobic=0.10, glycolytic=0.50, max_strength=1.20), snapshot_id=7
     )
     status = snap.capacity_confidence_status
@@ -48,14 +55,14 @@ def test_from_state_derives_band_from_that_rows_own_variance():
 
 
 def test_from_state_covers_all_eight_capacity_axes():
-    snap = StateHistorySnapshotRead.from_state(_vec(), snapshot_id=1)
+    snap = _snap(_vec(), snapshot_id=1)
     assert set(snap.capacity_confidence_status) == set(CapacityConfidence.KEYS)
     assert len(snap.capacity_confidence_status) == 8
 
 
 def test_from_state_preserves_canonical_vector_fields_and_carries_id():
     vec = _vec(power=0.2)
-    snap = StateHistorySnapshotRead.from_state(vec, snapshot_id=42)
+    snap = _snap(vec, snapshot_id=42)
     assert snap.snapshot_id == 42  # persisted identity survives the projection
     assert snap.timestamp == vec.timestamp
     assert snap.capacity_x == vec.capacity_x
@@ -66,7 +73,7 @@ def test_from_state_preserves_canonical_vector_fields_and_carries_id():
 
 def test_thresholds_are_at_the_boundaries():
     """Boundary values land on the inclusive side of each band (<=)."""
-    snap = StateHistorySnapshotRead.from_state(
+    snap = _snap(
         _vec(aerobic=0.35, glycolytic=1.05, max_strength=1.06), snapshot_id=1
     )
     assert snap.capacity_confidence_status["aerobic"] == STATUS_ESTABLISHED

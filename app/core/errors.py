@@ -95,6 +95,39 @@ def normalize_decode_error(exc: EngineStateDecodeError) -> str:
     return "canonical_state_malformed"
 
 
+# A display surface that cannot honestly show anything (INT-15 2C). Not an authority
+# refusal: nothing was decided. Distinct from an empty result — "no history yet" is 200 [].
+DisplaySurface = Literal["history", "dashboard"]
+
+_DISPLAY_AVAILABILITY_FIELD: dict[str, str] = {
+    "history": "history_available",
+    "dashboard": "dashboard_state_available",
+}
+
+DISPLAY_ERROR_CODE = "display_state_unavailable"
+
+
+class DisplayStateRefused(Exception):
+    """A display surface has a stored row it cannot show, even as a degraded recovery.
+
+    Raised instead of omitting the row: today's consumers treat the last history row as the
+    latest state, so dropping an unreadable head would silently present an older one as
+    current. ``reason`` is the internal display reason (logs only, never the client).
+    """
+
+    def __init__(self, surface: DisplaySurface, reason: str) -> None:
+        self.surface = surface
+        self.reason = reason
+        super().__init__(f"{surface} unavailable: {reason}")
+
+    def to_response_body(self) -> dict[str, object]:
+        return {
+            "error": DISPLAY_ERROR_CODE,
+            _DISPLAY_AVAILABILITY_FIELD[self.surface]: False,
+            "resolution_available_in_product": False,
+        }
+
+
 class CanonicalStateInvalid(Exception):
     """An authority-bearing capability refused: canonical state cannot be trusted.
 

@@ -51,7 +51,7 @@ from app.core.config import (
     settings,
 )
 from app.core.db import engine
-from app.core.errors import CanonicalStateInvalid
+from app.core.errors import CanonicalStateInvalid, DisplayStateRefused
 from app.engine.engine_state_codec import EngineStateDecodeError
 
 logger = logging.getLogger("perflab")
@@ -532,6 +532,25 @@ async def canonical_state_invalid_handler(
         "canonical_state_invalid: capability=%s reason=%s path=%s",
         exc.capability,
         exc.normalized_reason,
+        request.url.path,
+    )
+    return JSONResponse(status_code=409, content=exc.to_response_body())
+
+
+@app.exception_handler(DisplayStateRefused)
+async def display_state_refused_handler(
+    request: Request, exc: DisplayStateRefused
+) -> JSONResponse:
+    """A display surface holds a row it cannot show even degraded (INT-15 2C).
+
+    409, like a canonical refusal: resending changes nothing, the stored state conflicts.
+    A separate code from ``canonical_state_invalid`` because nothing was refused on
+    authority grounds, and distinct from an empty 200 (no state yet).
+    """
+    logger.warning(
+        "display_state_unavailable: surface=%s reason=%s path=%s",
+        exc.surface,
+        exc.reason,
         request.url.path,
     )
     return JSONResponse(status_code=409, content=exc.to_response_body())

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.config import settings
-from app.core.errors import CanonicalStateInvalid, normalize_decode_error
+from app.core.errors import CanonicalStateInvalid, DisplayStateRefused, normalize_decode_error
 from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
@@ -21,6 +21,7 @@ from app.engine.state_bridge import (
     unified_from_athlete_row,
 )
 from app.engine.state_loading import (
+    DisplayStateUnavailable,
     ReadOnlyStateView,
     reconstruct_legacy_state_for_display,
     unified_from_athlete_row_strict,
@@ -392,17 +393,37 @@ async def load_recent_state_snapshots(
 ) -> list[StateHistorySnapshotRead]:
     """Recent state snapshots projected for the history endpoint, oldest→newest.
 
-    Like load_recent_states, but carries each row's persisted id as ``snapshot_id`` and
-    derives the per-axis confidence-presentation band (ADR-0059). Pairs the id with the
-    converted vector here — above the repository seam — so the route stays free of ORM/id
-    knowledge, and so the durable snapshot identity survives the row→vector conversion
-    that ``unified_from_athlete_row`` would otherwise drop.
+    A DISPLAY surface (INT-15 2C): each row goes through the explicit display recovery, so a
+    row whose canonical payload cannot be decoded may still appear, reconstructed from the
+    legacy mirror and marked ``state_source="legacy_recovery"`` / ``degraded`` with its
+    reason. Carries each row's persisted id as ``snapshot_id`` and derives the per-axis
+    confidence-presentation band (ADR-0059), above the repository seam so the route holds
+    no ORM/id knowledge.
+
+    Raises:
+        DisplayStateRefused("history"): some row in the window cannot be shown even
+            degraded (future version, or unusable legacy scalars). The whole window is
+            refused rather than the row omitted: Overview and Twin read the LAST row as the
+            latest state, so dropping an unreadable head would silently present an older
+            snapshot as current. No history at all stays an empty list.
     """
     rows = await AthleteContextRepository(db).list_recent_states(user_id, limit)
-    return [
-        StateHistorySnapshotRead.from_state(unified_from_athlete_row(r), snapshot_id=r.id)
-        for r in reversed(rows)
-    ]
+    snapshots: list[StateHistorySnapshotRead] = []
+    for r in reversed(rows):
+        try:
+            view = reconstruct_legacy_state_for_display(r)
+        except DisplayStateUnavailable as exc:
+            raise DisplayStateRefused("history", exc.reason) from exc
+        snapshots.append(
+            StateHistorySnapshotRead.from_state(
+                view.state,
+                snapshot_id=r.id,
+                state_source=view.source,
+                degradation_reason=view.degradation_reason,
+                codec_version=view.codec_version,
+            )
+        )
+    return snapshots
 
 
 async def load_recent_workouts(

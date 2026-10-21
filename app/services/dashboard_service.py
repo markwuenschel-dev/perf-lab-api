@@ -7,6 +7,8 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import DisplayStateRefused
+from app.engine.state_loading import DisplayStateUnavailable, ReadOnlyStateView
 from app.logic.derived_metric_formulas import CUSTOM_FORMULAS
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -23,9 +25,8 @@ from app.schemas.dashboard import (
     OverviewMetrics,
     TrainingLoadMetrics,
 )
-from app.schemas.state import UnifiedStateVector
 from app.services.athlete_calendar_service import calendar_for
-from app.services.state_service import load_current_state
+from app.services.state_service import load_current_state_for_display
 
 # --- Overview / dashboard-tile constants -----------------------------------
 ACUTE_DAYS = 7
@@ -387,9 +388,14 @@ async def domain_summary(
 async def readiness_payload(
     db: AsyncSession,
     user_id: int,
-) -> tuple[UnifiedStateVector | None, dict[str, Any]]:
-    state = await load_current_state(db, user_id)
-    if state is None:
+) -> tuple[ReadOnlyStateView | None, dict[str, Any]]:
+    # Display surface (INT-15 2C): a recovered state is returned WITH its provenance, and a
+    # row that cannot be shown even degraded is refused (409), never silently skipped.
+    try:
+        view = await load_current_state_for_display(db, user_id)
+    except DisplayStateUnavailable as exc:
+        raise DisplayStateRefused("dashboard", exc.reason) from exc
+    if view is None:
         return None, {"note": "no_athlete_state"}
     kpi = await latest_kpi_values(db, user_id)
     flags: dict[str, Any] = {}
@@ -402,7 +408,7 @@ async def readiness_payload(
     ratio = kpi.get("wl_snatch_cj_ratio")
     if ratio is not None and ratio < WL_SNATCH_CJ_RATIO_LOW_BELOW:
         flags["wl_snatch_share_low"] = True
-    return state, flags
+    return view, flags
 
 
 # ---------------------------------------------------------------------------

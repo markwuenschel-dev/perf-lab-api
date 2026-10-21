@@ -9,7 +9,7 @@ existing test would still have gone green (the route tests only assert that the
 These tests pin each threshold *and its strictness* by asserting the flag flips
 exactly at the boundary — the value on the boundary produces no flag, one tick
 past it produces exactly one flag with an exact key name. The DB seam
-(``load_current_state`` / ``latest_kpi_values``) is monkeypatched, so this is a
+(``load_current_state_for_display`` / ``latest_kpi_values``) is monkeypatched, so this is a
 pure characterization of the flag logic and runs without Postgres.
 """
 
@@ -27,7 +27,7 @@ def _install(monkeypatch, kpi_values: dict[str, float]) -> None:
     async def _kpis(db, user_id):
         return dict(kpi_values)
 
-    monkeypatch.setattr(dashboard_service, "load_current_state", _state)
+    monkeypatch.setattr(dashboard_service, "load_current_state_for_display", _state)
     monkeypatch.setattr(dashboard_service, "latest_kpi_values", _kpis)
 
 

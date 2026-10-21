@@ -90,13 +90,35 @@ class StateHistorySnapshotRead(UnifiedStateVector):
         ...,
         description="Version of the confidence-presentation policy that produced the statuses.",
     )
+    state_source: Literal["canonical", "legacy_recovery"] = Field(
+        ...,
+        description=(
+            "Where this snapshot's values came from. `legacy_recovery` means they were "
+            "reconstructed from the lossy legacy scalar mirror because the canonical payload "
+            "could not be decoded: show them with a recovered-state warning, and do not "
+            "present capacity_confidence / capacity_confidence_status as measured (a "
+            "recovered row has no observed confidence; those are the weak prior)."
+        ),
+    )
+    degraded: bool = Field(..., description="True exactly when state_source is legacy_recovery.")
+    degradation_reason: str | None = Field(
+        ..., description="Why the canonical payload could not be used; null when canonical."
+    )
+    codec_version: str = Field(..., description="Engine-state codec version of the reader.")
 
     @classmethod
     def from_state(
-        cls, state: UnifiedStateVector, snapshot_id: int
+        cls,
+        state: UnifiedStateVector,
+        snapshot_id: int,
+        *,
+        state_source: Literal["canonical", "legacy_recovery"],
+        degradation_reason: str | None,
+        codec_version: str,
     ) -> "StateHistorySnapshotRead":
-        """Project a domain state vector + its persisted row id into the read model,
-        deriving per-axis confidence status from that vector's own variance (all 8 axes)."""
+        """Project a domain state vector + its persisted row id + its provenance into the
+        read model, deriving per-axis confidence status from that vector's own variance
+        (all 8 axes)."""
         statuses: dict[str, ConfidenceStatus] = {
             axis: confidence_status(getattr(state.capacity_confidence, axis))
             for axis in CapacityConfidence.KEYS
@@ -106,6 +128,10 @@ class StateHistorySnapshotRead(UnifiedStateVector):
             **state.model_dump(),
             capacity_confidence_status=statuses,
             confidence_presentation_policy_version=POLICY_VERSION,
+            state_source=state_source,
+            degraded=state_source == "legacy_recovery",
+            degradation_reason=degradation_reason,
+            codec_version=codec_version,
         )
 
 
