@@ -28,6 +28,8 @@ import { WhyThisSession } from "../prescription/WhyThisSession";
 import { LoadExplanation } from "../prescription/LoadExplanation";
 import { Chart, Line, Marker, Ring, useVizTheme } from "../viz";
 import { meanFatigue, relativeTime } from "../stateVector";
+import { isRecovered, isStateUnavailable, mixedWindowNote, RECOVERED_WARNING, recoveredCount } from "../provenance";
+import { RecoveredNote } from "../RecoveredNote";
 import { CapacityView } from "./twin/CapacityView";
 import { GuestTwinPreview } from "./twin/GuestTwinPreview";
 import { MiniTile } from "./twin/MiniTile";
@@ -124,6 +126,16 @@ function AuthedTwinBody({
       return <TwinSkeleton />;
     // ---- ERROR: honest retry, distinct from empty (no sim, no manufactured 50s) ----
     case "error":
+      // INT-15 2C: a coded "state cannot be shown" refusal is not a transient failure — no
+      // retry prompt, and never an older snapshot standing in for the current one.
+      if (isStateUnavailable(historyRes.error)) {
+        return (
+          <Card className="px-[22px] py-8 text-center">
+            <div className="text-[14px] font-semibold text-ink">Twin state unavailable</div>
+            <div className="mx-auto mt-2 max-w-[440px] text-[12.5px] font-medium leading-[1.5] text-mute">{historyRes.error.message}</div>
+          </Card>
+        );
+      }
       return (
         <Card className="px-[22px] py-8 text-center">
           <div className="text-[14px] font-semibold text-ink">Couldn&apos;t load your twin</div>
@@ -183,6 +195,8 @@ function AuthedTwinBody({
     return m == null ? [] : [[i, m] as [number, number]];
   });
   const rowMeanF = meanFatigue(row);
+  const rowRecovered = isRecovered(row);
+  const windowNote = mixedWindowNote(recoveredCount(rows), len, { marked: false });
 
   // Canonical readiness for the LATEST snapshot only (PDR-0005: never recompute).
   const canonicalScore = resourceData(readinessRes)?.score ?? null;
@@ -243,6 +257,10 @@ function AuthedTwinBody({
           <button onClick={() => actions.setSelectedTwinSnapshot(rows[len - 1].snapshot_id)} className="rounded-[9px] bg-ink px-[13px] py-[9px] text-[12px] font-semibold leading-none text-canvas">Today</button>
         </div>
       </Card>
+
+      {/* INT-15 2C: every value below comes from this snapshot; say so when it is a recovery */}
+      {rowRecovered && <RecoveredNote>{`Viewing a recovered snapshot. ${RECOVERED_WARNING}`}</RecoveredNote>}
+      {!rowRecovered && windowNote && <RecoveredNote>{windowNote}</RecoveredNote>}
 
       {/* readiness + two live tiles */}
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[300px_1fr]">

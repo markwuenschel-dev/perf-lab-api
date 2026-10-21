@@ -16,8 +16,12 @@
 // Pure module: no React, no fetching. The transition table lives here so it can
 // be tested without a DOM; useAuthedResource only wires it to effects.
 
+import { isStateUnavailable } from "./provenance";
+
 export interface ResourceError {
   message: string;
+  /** A machine-readable refusal code carried from the ApiError, when there is one. */
+  code?: string;
 }
 
 export type RefreshState<E = ResourceError> =
@@ -73,7 +77,10 @@ export function reduceResource<T, E>(
       return { status: "success", data: event.data, refresh: IDLE };
 
     case "request-failed":
-      // A failure only erases data when there was none worth keeping.
+      // A failure only erases data when there was none worth keeping — except a coded
+      // "state cannot be shown" refusal (INT-15 2C): it is permanent until repaired, and the
+      // payload still on screen would present an older snapshot as current.
+      if (isStateUnavailable(event.error)) return { status: "error", error: event.error };
       return state.status === "success"
         ? { ...state, refresh: { status: "error", error: event.error } }
         : { status: "error", error: event.error };
@@ -135,7 +142,10 @@ export function resourceData<T, E>(resource: AuthedResource<T, E>): T | null {
 
 export function toResourceError(e: unknown): ResourceError {
   const message = (e as { message?: unknown } | null)?.message;
-  return { message: typeof message === "string" && message ? message : "Failed to load" };
+  const code = (e as { code?: unknown } | null)?.code;
+  const out: ResourceError = { message: typeof message === "string" && message ? message : "Failed to load" };
+  if (typeof code === "string" && code) out.code = code;
+  return out;
 }
 
 export function assertNever(value: never): never {

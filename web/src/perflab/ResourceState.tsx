@@ -23,6 +23,7 @@ import {
   type RefreshState,
   type ResourceError,
 } from "./resource";
+import { isStateUnavailable } from "./provenance";
 
 export interface NoticeAction {
   label: string;
@@ -100,6 +101,20 @@ export function ResourceState<T>({
       );
 
     case "error":
+      // INT-15 2C: a coded "state cannot be shown" refusal overrides the screen's retry copy.
+      // It is not a transient load failure, and no retry or action of the athlete's fixes it.
+      if (isStateUnavailable(branch.error)) {
+        return (
+          <Notice
+            variant={variant}
+            tone="error"
+            content={{ title: "Training state unavailable", body: branch.error.message }}
+            icon={icon}
+            className={className}
+            live="alert"
+          />
+        );
+      }
       return (
         <Notice
           variant={variant}

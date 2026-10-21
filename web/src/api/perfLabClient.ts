@@ -1,6 +1,7 @@
 // src/api/perfLabClient.ts
 import { notifyUnauthorized } from "../auth/sessionBridge";
 import { readAttemptResult } from "./ouraReply";
+import { DISPLAY_STATE_UNAVAILABLE, STATE_UNAVAILABLE_MESSAGE } from "../perflab/provenance";
 import type {
   ApiError,
   AssessmentSurfaceRead,
@@ -126,6 +127,20 @@ async function handleResponse<T>(
         .join("; ");
     } else {
       message = res.statusText || "API request failed";
+    }
+
+    // INT-15 2C: a display surface that cannot show the stored state at all says so with a
+    // coded 409 body and no `detail`. Give it its own message and code, so consumers render
+    // "unavailable" (never "empty", never a stale snapshot as current) and never offer a retry.
+    const bodyCode = (detail as { error?: unknown } | null)?.error;
+    if (res.status === 409 && bodyCode === DISPLAY_STATE_UNAVAILABLE) {
+      const unavailable: ApiError = {
+        message: STATE_UNAVAILABLE_MESSAGE,
+        status: res.status,
+        details: detail,
+        code: DISPLAY_STATE_UNAVAILABLE,
+      };
+      throw unavailable;
     }
 
     const error: ApiError = {

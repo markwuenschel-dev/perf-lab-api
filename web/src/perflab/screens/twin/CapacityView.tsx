@@ -25,6 +25,8 @@
 
 import { Meter, Radar, type RadarAxis } from "../../viz";
 import { SectionLabel } from "../../ui";
+import { isRecovered } from "../../provenance";
+import { RecoveredNote } from "../../RecoveredNote";
 import type { CapacityState, ConfidenceStatus, StateHistorySnapshotRead } from "@/types";
 
 // ---- Five plotted axes: X_t field mapping + canonical ceilings ----
@@ -89,9 +91,11 @@ interface AxisRow {
   ceil: number;
   raw: number;
   startRaw: number;
-  status: ConfStatus;
+  /** `unmeasured`: a recovered snapshot (INT-15 2C) has no measured confidence at all. */
+  status: ConfStatus | "unmeasured";
   displayable: boolean;
   provisional: boolean;
+  recovered: boolean;
   /** Normalized (clamped) fraction — DRAWING only; the shown number is `raw`. */
   norm: number;
 }
@@ -111,11 +115,14 @@ export function CapacityView({ row, startRow, showDelta }: CapacityViewProps) {
   const cap = row.capacity_x;
   const startCap = startRow.capacity_x;
   const statusMap = row.capacity_confidence_status ?? {};
+  // INT-15 2C: a recovered snapshot's confidence statuses come from the weak prior, not a
+  // measurement, so NO band is shown for it: every axis is drawn as an unmeasured estimate.
+  const recovered = isRecovered(row);
 
   const axes: AxisRow[] = AXES.map((a) => {
     const raw = cap ? cap[a.field] : 0;
     const startRaw = startCap ? startCap[a.field] : raw;
-    const status = narrowStatus(statusMap[a.field]);
+    const status = recovered ? "unmeasured" : narrowStatus(statusMap[a.field]);
     const displayable = status !== "insufficient";
     return {
       field: a.field,
@@ -127,6 +134,7 @@ export function CapacityView({ row, startRow, showDelta }: CapacityViewProps) {
       status,
       displayable,
       provisional: status === "provisional",
+      recovered,
       norm: clamp01(raw / a.ceil),
     };
   });
@@ -136,13 +144,18 @@ export function CapacityView({ row, startRow, showDelta }: CapacityViewProps) {
   const allDisplayable = insufficientCount === 0;
 
   return (
-    <div className="rounded-[18px] border border-white/[0.06] bg-tile px-[22px] py-5">
+    <div data-testid="capacity-view" className="rounded-[18px] border border-white/[0.06] bg-tile px-[22px] py-5">
       <div className="mb-[18px] flex items-center justify-between">
         <SectionLabel compact>Capacities · X(t)</SectionLabel>
         <div className="font-mono text-[10px] leading-none text-dim">
-          {allDisplayable ? "5 axes · confidence-scored" : `${insufficientCount} of 5 need more evidence`}
+          {recovered
+            ? "recovered estimate · confidence not measured"
+            : allDisplayable
+              ? "5 axes · confidence-scored"
+              : `${insufficientCount} of 5 need more evidence`}
         </div>
       </div>
+      {recovered && <RecoveredNote className="mb-4" />}
       {allDisplayable ? (
         <RadarPanel axes={axes} displayableAxes={displayableAxes} showDelta={showDelta} />
       ) : (
@@ -322,7 +335,7 @@ function AxisBarRow({ axis, showDelta }: { axis: AxisRow; showDelta: boolean }) 
 // ramp for an established value. One definition for both the radar-mode rows
 // and the bars-mode tiles so the two can't drift.
 function axisFill(axis: AxisRow): string {
-  return axis.provisional
+  return axis.provisional || axis.recovered
     ? "repeating-linear-gradient(90deg,var(--ac) 0 6px,transparent 6px 10px)"
     : "linear-gradient(90deg,var(--ac),#a7e36e)";
 }
