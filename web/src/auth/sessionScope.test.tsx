@@ -6,6 +6,7 @@
 //     current session; a 401 for the current token still does.
 //   - Login's own /auth/me is bounded: a hung one clears the spinner and leaves a retryable
 //     session, and a login's late answers after a logout + another login change nothing.
+//   - The session load's own 401 sign-out is bound to the token that load used.
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,6 +138,26 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** Runs `then` right after `token` is written to storage: before React commits it, i.e. while
+ *  the previous token's effect has not been cleaned up yet. (A stub, because jsdom's Storage
+ *  methods cannot be spied on.) */
+function onTokenStored(token: string, then: () => void) {
+  const items = new Map<string, string>();
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const k = sessionStorage.key(i)!;
+    items.set(k, sessionStorage.getItem(k)!);
+  }
+  vi.stubGlobal("sessionStorage", {
+    getItem: (k: string) => items.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      items.set(k, v);
+      if (k === "perf_lab_access_token" && v === token) then();
+    },
+    removeItem: (k: string) => void items.delete(k),
+    clear: () => items.clear(),
+  });
+}
+
 describe("a 401 signs out only the session whose token it refused", () => {
   it("a late 401 for token A, after token B is stored, leaves B's session standing", async () => {
     const lateA = deferred();
@@ -217,5 +238,19 @@ describe("login's own /auth/me", () => {
     expect(text("token")).toBe(TOKEN_B);
     expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN_B);
     expect(text("user")).toBe(USER_B.email);
+  });
+});
+
+describe("the session load's own 401 sign-out", () => {
+  it("an old token's /auth/me 401 landing after a new login stored its token leaves the new session", async () => {
+    const lateA = deferred();
+    routes.me[TOKEN_A] = () => lateA.promise.then(() => json(401, { detail: "Not authenticated" }));
+    await mount(TOKEN_A); // A's session load is waiting on /auth/me
+    onTokenStored(TOKEN_B, () => lateA.resolve());
+    fireEvent.click(screen.getByText("login b"));
+    await waitFor(() => expect(text("user")).toBe(USER_B.email));
+    await act(async () => undefined);
+    expect(text("token")).toBe(TOKEN_B);
+    expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN_B);
   });
 });

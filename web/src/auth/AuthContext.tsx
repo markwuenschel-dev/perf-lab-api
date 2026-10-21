@@ -181,7 +181,10 @@ export function AuthProvider({
         if (isCancelled()) return;
         const failure = classifyAuthFailure(err);
         if (failure.action === "sign-out") {
-          logout();
+          // A 401 refuses the token this load used. `isCancelled` flips only in the effect's
+          // cleanup, after React commits a newer token, while login stores that token at once:
+          // in that gap an earlier session's 401 must not sign out the new session.
+          if (getStoredToken() === activeToken) logout();
           return;
         }
         setSessionUnavailable(toUnavailable(failure));
