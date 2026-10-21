@@ -167,7 +167,7 @@ describe("the calendar starts over with the session", () => {
 
   it("on a 401", async () => {
     await established();
-    await act(async () => notifyUnauthorized());
+    await act(async () => notifyUnauthorized(TOKEN));
     expect(day()).toMatch(/^pending:/);
   });
 

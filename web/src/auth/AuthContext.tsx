@@ -124,7 +124,10 @@ export function AuthProvider({
   }, []);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => {
+    setUnauthorizedHandler((requestToken) => {
+      // A 401 refuses the token its request was sent with. A late one for an earlier session's
+      // token says nothing about the current session, which stands.
+      if (getStoredToken() !== requestToken) return;
       clearStoredSession();
       setToken(null);
       setUser(null);
