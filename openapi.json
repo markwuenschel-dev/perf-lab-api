@@ -4829,6 +4829,17 @@
               }
             ]
           },
+          "run_time_trial_refused": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Time Trial Refused"
+          },
           "strength": {
             "items": {
               "$ref": "#/components/schemas/StrengthOutcome"
@@ -6782,14 +6793,13 @@
             "anyOf": [
               {
                 "exclusiveMinimum": 0.0,
-                "maximum": 700.0,
                 "type": "number"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Body mass as the athlete entered it, in body_mass_unit.",
+            "description": "Body mass as the athlete entered it, in body_mass_unit: 25-300 kg (55.1-661.4 lb).",
             "title": "Body Mass"
           },
           "body_mass_unit": {

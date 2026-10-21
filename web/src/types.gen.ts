@@ -3186,6 +3186,8 @@ export interface components {
             /** Profile Id */
             profile_id: number;
             run_time_trial?: components["schemas"]["Vo2EstimateRead"] | null;
+            /** Run Time Trial Refused */
+            run_time_trial_refused?: string | null;
             /** Strength */
             strength?: components["schemas"]["StrengthOutcome"][];
             /** User Id */
@@ -3986,7 +3988,7 @@ export interface components {
         RunTimeTrialReport: {
             /**
              * Body Mass
-             * @description Body mass as the athlete entered it, in body_mass_unit.
+             * @description Body mass as the athlete entered it, in body_mass_unit: 25-300 kg (55.1-661.4 lb).
              */
             body_mass?: number | null;
             /** Body Mass Unit */
