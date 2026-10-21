@@ -3988,7 +3988,7 @@ export interface components {
         RunTimeTrialReport: {
             /**
              * Body Mass
-             * @description Body mass as the athlete entered it, in body_mass_unit: 25-300 kg (55.1-661.4 lb).
+             * @description Body mass as the athlete entered it, in body_mass_unit: 25-300 kg (55.2-661.3 lb).
              */
             body_mass?: number | null;
             /** Body Mass Unit */
