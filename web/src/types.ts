@@ -67,6 +67,10 @@ export type OnboardResponse = Schemas["OnboardResponse"];
 export type OnboardingStateResponse = Schemas["OnboardingStateResponse"];
 export type OnboardingTwinSummary = Schemas["OnboardingTwinSummary"];
 export type CompleteOnboardingRequest = Schemas["CompleteOnboardingRequest"];
+/** A 1.5 mi time trial (B2): the time, and the estimate model's own inputs, none defaulted. */
+export type RunTimeTrialReport = Schemas["RunTimeTrialReport"];
+/** A saved time trial and its display-only VO₂max estimate — never used for the plan (B2). */
+export type Vo2EstimateRead = Schemas["Vo2EstimateRead"];
 
 /* ---------- Benchmark assessment surface (P10, ADR-0047) ---------- */
 export type AssessmentSurfaceRead = Schemas["AssessmentSurfaceRead"];

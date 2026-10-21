@@ -10,8 +10,10 @@
 // no longer carries a fixture render tree at all, and the boundary between
 // "sampled" and "live" is a file boundary rather than a comment banner.
 //
-// Nothing here is authoritative. Every number is sim-derived except the VO₂ /
-// Profile tiles when viewing today, which read the athlete's cached field test.
+// Nothing here is authoritative, and every number is sim-derived sample data. The VO₂ /
+// Profile tiles used to read a cached /compute-metrics result on "today", mixing a real
+// (and miscalculated) figure into the sample athlete; B2 removed that, so the tiles are sample
+// values and say so.
 
 import { usePerfLab } from "../../store";
 import { Card, MetricBar, ReadinessRing, SectionLabel } from "../../ui";
@@ -38,7 +40,6 @@ export function GuestTwinPreview() {
   if (di == null || di > N - 1) di = N - 1;
   if (di < 0) di = 0;
   const D = DAYS[di];
-  const isToday = di === N - 1;
   const tDate = dayMonthLabel(D.date);
   const daysAgo = N - 1 - di;
   const tWhen = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
@@ -46,12 +47,9 @@ export function GuestTwinPreview() {
 
   const clampDay = (i: number) => Math.max(0, Math.min(N - 1, i));
 
-  // VO₂ / Profile tiles read the cached field test when viewing today; the sim
-  // backs the historical days (and the case where no field test has been run).
-  const ft = isToday ? state.fieldTest : null;
-  const tVo2 = ft ? ft.vo2_max : D.vo2;
-  const tProfileVal = ft ? ft.fatigue_percent : D.profile;
-  const tProfileFoot = ft ? ft.fatigue_profile : "endurance-biased";
+  // Sample values only, on every day (B2): the sample athlete's sim, never a cached result.
+  const tVo2 = D.vo2;
+  const tProfileVal = D.profile;
 
   const sparkData = DAYS.map((d, i) => [i, d.readiness] as [number, number]);
 
@@ -138,8 +136,8 @@ export function GuestTwinPreview() {
           </div>
         </Card>
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
-          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — sample data." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="field test" footColor="text-teal" />
-          <MiniTile tip="Speed↔endurance bias — sample data." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot={tProfileFoot} footColor="text-info" />
+          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — sample data." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="sample data" footColor="text-teal" />
+          <MiniTile tip="Speed↔endurance bias — sample data." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot="sample data" footColor="text-info" />
           <MiniTile label="Habit" value={<>{D.habit}<span className="text-[16px] text-faint">%</span></>} sub="adherence" bar={D.habit} />
           <MiniTile tip="Structural adaptation drive — sample data." label="Struct. signal" value={D.signal.toFixed(1)} sub="adaptation drive" foot={tSignalTrend} footColor="text-teal" />
         </div>

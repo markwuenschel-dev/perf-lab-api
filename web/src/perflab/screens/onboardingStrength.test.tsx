@@ -27,7 +27,6 @@ vi.mock("@/auth/useAuth", () => ({
 }));
 
 vi.mock("@/api/perfLabClient", () => ({
-  computeMetrics: vi.fn(),
   createObjective: (...args: unknown[]) => createObjective(...args),
 }));
 
