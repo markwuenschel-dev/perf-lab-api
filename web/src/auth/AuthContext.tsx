@@ -246,13 +246,15 @@ export function AuthProvider({
     };
   }, [token, loadSession]);
 
-  const login = useCallback(async (emailIn: string, password: string) => {
+  /** Resolves true when this login established the session, false when a logout or a newer
+   *  login superseded it (its answers then changed nothing). */
+  const login = useCallback(async (emailIn: string, password: string): Promise<boolean> => {
     const generation = ++loginGeneration.current;
     setIsLoading(true);
     try {
       const tr = await api.login(emailIn, password);
       // A logout or another login since this one started: this answer is not the session now.
-      if (loginGeneration.current !== generation) return;
+      if (loginGeneration.current !== generation) return false;
       setStoredToken(tr.access_token);
       setStoredEmail(emailIn);
       setEmail(emailIn);
@@ -264,8 +266,11 @@ export function AuthProvider({
       // session load for it (the effect above) owns the retryable `sessionUnavailable` state.
       const u = await within(profileTimeoutMs, (signal) => api.fetchMe(tr.access_token, signal));
       // Bound to this login's session: after a logout or a newer login it must not touch state.
-      if (loginGeneration.current !== generation || getStoredToken() !== tr.access_token) return;
+      if (loginGeneration.current !== generation || getStoredToken() !== tr.access_token) {
+        return false;
+      }
       setUser(u);
+      return true;
     } finally {
       setIsLoading(false);
     }
@@ -276,8 +281,9 @@ export function AuthProvider({
       setIsLoading(true);
       try {
         await api.register(emailIn, password);
-        await login(emailIn, password);
-        setOnboardingPending(true);
+        // Onboarding belongs to the session this register created: not to one a logout or a
+        // newer login put in its place.
+        if (await login(emailIn, password)) setOnboardingPending(true);
       } finally {
         setIsLoading(false);
       }

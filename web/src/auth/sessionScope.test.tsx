@@ -7,6 +7,7 @@
 //   - Login's own /auth/me is bounded: a hung one clears the spinner and leaves a retryable
 //     session, and a login's late answers after a logout + another login change nothing.
 //   - The session load's own 401 sign-out is bound to the token that load used.
+//   - Register opens onboarding only for the session its login established.
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -58,6 +59,7 @@ async function router(input: RequestInfo | URL, init?: RequestInit): Promise<Res
     const email = new URLSearchParams(String(init?.body)).get("username") ?? "";
     return routes.token[email](init);
   }
+  if (path === "/auth/register") return json(201, USER_B);
   if (path === "/auth/me") return routes.me[bearer(init)](init);
   if (path === "/v1/profile") return json(200, PROFILE);
   if (path === "/v1/dashboard/overview") return routes.overview[bearer(init)](init);
@@ -94,6 +96,8 @@ async function mount(storedToken: string | null, timeoutMs = 8000) {
         <span data-testid="user">{auth.user?.email ?? "none"}</span>
         <span data-testid="loading">{String(auth.isLoading)}</span>
         <span data-testid="session">{auth.sessionUnavailable?.reason ?? "ok"}</span>
+        <span data-testid="onboarding">{String(auth.onboardingPending)}</span>
+        <button onClick={() => void auth.register(USER_B.email, "pw").catch(() => undefined)}>register b</button>
         <button onClick={() => void auth.login(USER_A.email, "pw").catch(() => undefined)}>login a</button>
         <button onClick={() => void auth.login(USER_B.email, "pw").catch(() => undefined)}>login b</button>
         <button onClick={() => auth.logout()}>logout</button>
@@ -252,5 +256,43 @@ describe("the session load's own 401 sign-out", () => {
     await act(async () => undefined);
     expect(text("token")).toBe(TOKEN_B);
     expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN_B);
+  });
+});
+
+describe("register opens onboarding only for the session it established", () => {
+  it("opens it when its login establishes the session", async () => {
+    await mount(null);
+    fireEvent.click(screen.getByText("register b"));
+    await waitFor(() => expect(text("onboarding")).toBe("true"));
+    expect(text("user")).toBe(USER_B.email);
+  });
+
+  it("does not open it when a logout supersedes its login", async () => {
+    const lateToken = deferred();
+    routes.token[USER_B.email] = () =>
+      lateToken.promise.then(() => json(200, { access_token: TOKEN_B, token_type: "bearer" }));
+    await mount(null);
+    fireEvent.click(screen.getByText("register b"));
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBe(2)); // register, token
+    fireEvent.click(screen.getByText("logout"));
+    await act(async () => lateToken.resolve());
+    await act(async () => undefined);
+    expect(text("onboarding")).toBe("false");
+    expect(text("token")).toBe("none");
+  });
+
+  it("does not open it when a newer login supersedes its login", async () => {
+    const lateToken = deferred();
+    routes.token[USER_B.email] = () =>
+      lateToken.promise.then(() => json(200, { access_token: TOKEN_B, token_type: "bearer" }));
+    await mount(null);
+    fireEvent.click(screen.getByText("register b"));
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBe(2));
+    fireEvent.click(screen.getByText("login a"));
+    await waitFor(() => expect(text("user")).toBe(USER_A.email));
+    await act(async () => lateToken.resolve());
+    await act(async () => undefined);
+    expect(text("onboarding")).toBe("false");
+    expect(text("token")).toBe(TOKEN_A);
   });
 });
