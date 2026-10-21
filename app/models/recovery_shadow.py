@@ -7,8 +7,11 @@ Capture-only: no value here affects a prescription or state update.
 
 ``decision_impact`` names what a row is. ``"none_shadow_only"`` marks a computed row. From P7b,
 ``"skipped_not_as_of_day"`` marks a row recording that the shadow declined to compute (the
-sample was not of the as-of UTC day), with empty multipliers. Readers must recognize computed
-evidence positively; ``app.services.shadow_evidence`` is the reader that does.
+sample was not of the as-of UTC day), with empty multipliers. From INT-15 S3, a row whose
+``decision_impact`` is ``"skipped_missing"``, ``"skipped_incomplete"``, ``"skipped_malformed"`` or
+``"skipped_future_version"`` records declining to compute because the athlete's current state
+could not be decoded (never reconstructed), also with empty multipliers. Readers must recognize
+computed evidence positively; ``app.services.shadow_evidence`` is the reader that does.
 """
 from datetime import datetime
 from typing import Any

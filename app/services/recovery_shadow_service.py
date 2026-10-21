@@ -31,7 +31,7 @@ from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.services.athlete_calendar_service import calendar_for
 from app.services.shadow_evidence import RECORDED, SKIPPED_NOT_AS_OF_DAY
-from app.services.state_service import load_current_state
+from app.services.state_service import try_load_current_state_for_shadow
 from app.services.telemetry_common import best_effort_write
 from app.services.wellness_shadow_chain import (
     WellnessSampleRef,
@@ -69,10 +69,21 @@ async def _append(
         calendar = await calendar_for(tdb, ref.user_id)
     as_of_day = calendar.day_of(as_of)
     kind = RECORDED if is_as_of_day(ref, as_of, as_of_day) else SKIPPED_NOT_AS_OF_DAY
+    state = None
+    if kind == RECORDED:
+        # INT-15 S3: classify the current state BEFORE the unchanged-input shortcut. Unchanged
+        # wellness does not mean unchanged state: a head that became damaged since the last
+        # computation must supersede it with a skip, never leave it standing as current.
+        loaded = await try_load_current_state_for_shadow(tdb, ref.user_id)
+        if loaded is not None and loaded.state is None:
+            kind = loaded.outcome  # a damaged-state skip; never reconstructed
+        elif loaded is not None:
+            state = loaded.state
     if await head_holds(tdb, RecoveryShadowLog, ref, model_version, digest, kind):
         return "unchanged"
 
-    if kind == SKIPPED_NOT_AS_OF_DAY:
+    if kind != RECORDED:
+        skip = kind
         appended = await append_to_chain(
             tdb, ref, snapshot,
             lambda: RecoveryShadowLog(
@@ -82,17 +93,20 @@ async def _append(
                 fatigue_before={},
                 baseline_clearance_multiplier={},
                 learned_clearance_multiplier={},
-                decision_impact=SKIPPED_NOT_AS_OF_DAY,
+                decision_impact=skip,
             ),
-            model=RecoveryShadowLog, model_version=model_version, kind=kind,
+            model=RecoveryShadowLog, model_version=model_version, kind=skip,
         )
         if appended != "appended":  # satisfied meanwhile, or the sample changed
             return appended
-        logger.info("recovery shadow skipped for sample %s: %s is not the as-of day of %s",
-                    ref.sample_id, ref.sample_date, as_of.isoformat())
-        return SKIPPED_NOT_AS_OF_DAY
+        if skip == SKIPPED_NOT_AS_OF_DAY:
+            logger.info("recovery shadow skipped for sample %s: %s is not the as-of day of %s",
+                        ref.sample_id, ref.sample_date, as_of.isoformat())
+        else:
+            logger.info("recovery shadow skipped for sample %s: current state %s",
+                        ref.sample_id, skip)
+        return skip
 
-    state = await load_current_state(tdb, ref.user_id)
     fatigue_before = (
         {a: round(float(getattr(state.fatigue_f, a)), 2) for a in FatigueState.KEYS}
         if state is not None
@@ -126,7 +140,9 @@ async def record_recovery_shadow(
     raises to the caller.
 
     Takes an immutable snapshot, never a live WellnessSample ORM instance (AUD-C24). Returns
-    ``recorded`` | ``skipped_not_as_of_day`` | ``unchanged`` | ``stale`` | ``failed``.
+    ``recorded`` | ``skipped_not_as_of_day`` | ``unchanged`` | ``stale`` | ``failed``, or a
+    damaged-state skip (``skipped_missing`` | ``skipped_incomplete`` | ``skipped_malformed`` |
+    ``skipped_future_version``).
     """
     outcome = "failed"
     async with best_effort_write(db, f"recovery shadow log for user {ref.user_id}") as tx:

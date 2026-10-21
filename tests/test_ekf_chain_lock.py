@@ -99,8 +99,9 @@ def test_lock_precedes_every_chain_read_or_replay_operation() -> None:
     """Presence alone is insufficient: moving the helper below the prior/head read reopens the race."""
     defs = _appender_defs()
     dependencies = {
-        "record_ekf_predict": ("load_current_state", "_load_latest_belief"),
-        "record_ekf_update": ("load_current_state", "_load_latest_belief"),
+        # `_current_state_or_skip` is the state read (INT-15 S3: strict, or a logged skip).
+        "record_ekf_predict": ("_current_state_or_skip", "_load_latest_belief"),
+        "record_ekf_update": ("_current_state_or_skip", "_load_latest_belief"),
         "record_ekf_wellness_observation": (
             "_replay_pending_head_correction",
             "_assimilate_or_classify",

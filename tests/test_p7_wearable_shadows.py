@@ -149,10 +149,12 @@ async def test_a_week_of_oura_runs_each_shadow_per_day_and_a_resync_adds_nothing
     assert all(r.decision_impact == RECORDED for r in personalization)
     assert await _rows(async_db, EkfShadowLog, uid) == []  # Oura supplies no soreness
 
-    # Identical days: nothing is written, and nothing is recomputed either (no state read for
-    # recovery, no history frame for personalization), so a re-sync costs only the head checks.
+    # Identical days: nothing is written, and nothing is recomputed either (no history frame for
+    # personalization), so a re-sync costs the head checks plus ONE state read: recovery classifies
+    # the as-of day's current state before its unchanged-input shortcut (INT-15 S3), because
+    # unchanged wellness does not mean unchanged state.
     calls = {"state": 0, "frame": 0}
-    real_state = recovery_shadow_service.load_current_state
+    real_state = recovery_shadow_service.try_load_current_state_for_shadow
     real_frame = personalization_shadow_service._build_recovery_frame
 
     async def _counted_state(*args, **kwargs):
@@ -163,10 +165,12 @@ async def test_a_week_of_oura_runs_each_shadow_per_day_and_a_resync_adds_nothing
         calls["frame"] += 1
         return await real_frame(*args, **kwargs)
 
-    monkeypatch.setattr(recovery_shadow_service, "load_current_state", _counted_state)
+    monkeypatch.setattr(
+        recovery_shadow_service, "try_load_current_state_for_shadow", _counted_state
+    )
     monkeypatch.setattr(personalization_shadow_service, "_build_recovery_frame", _counted_frame)
     await _sync(http_client, login)
-    assert calls == {"state": 0, "frame": 0}
+    assert calls == {"state": 1, "frame": 0}  # today's sample only; other days are skips
     assert len(await _rows(async_db, RecoveryShadowLog, uid)) == 7
     assert len(await _rows(async_db, PersonalizationShadowLog, uid)) == 7
 
@@ -338,7 +342,7 @@ async def test_a_delayed_snapshot_never_supersedes_newer_committed_inputs(
         computed.append("frame")
 
     with monkeypatch.context() as m:
-        m.setattr(recovery_shadow_service, "load_current_state", _no_state)
+        m.setattr(recovery_shadow_service, "try_load_current_state_for_shadow", _no_state)
         m.setattr(personalization_shadow_service, "_build_recovery_frame", _no_frame)
         assert await recovery_shadow_service.record_recovery_shadow(
             async_db, ref, old, as_of=AS_OF) == "stale"

@@ -44,7 +44,9 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # `projection`), so it is not listed now either.
         "api/v1/history.py",  # 2C: display recovery (load_recent_state_snapshots)
         "services/dashboard_service.py",  # 2C: display recovery
-        "services/ekf_shadow_service.py",  # S3: skip adapter
+        # S3 REMOVED `services/ekf_shadow_service.py` and `services/recovery_shadow_service.py`
+        # — they read `try_load_current_state_for_shadow`: canonical state or a recorded skip,
+        # never a reconstruction.
         "services/onboarding_service.py",  # 2B4: strict, or explicit initialization
         # 2B1 REMOVED `services/prescription_service.py` — both load-sizing sites are strict
         # as of that slice, and a decode failure is translated to CanonicalStateInvalid at
@@ -52,7 +54,6 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # 2B2 REMOVED `services/readiness_service.py` — strict as of that slice. Readiness
         # is not display: it gates prescription, so it refuses rather than scoring an
         # athlete from a legacy reconstruction.
-        "services/recovery_shadow_service.py",  # S3: skip adapter
         # S4 REMOVED `scripts/repair_capacity_corruption.py` — it is strict as of this
         # slice. It was never the INT-15 forensic repair utility (that path,
         # `read_raw_state_for_repair`, is still unimplemented); it is the ADR-0055 capacity
