@@ -375,8 +375,11 @@ def verdict_lines(report: SweepReport) -> tuple[int, list[str]]:
             lines.append(f"WARN (not a C1 block): {n} accepted head(s) with {name}.")
     if not report.noncanonical_heads and not report.noncanonical_historical:
         lines += [
-            "STORAGE: zero rows depend on the legacy columns. No backfill is needed; a later",
-            "  drop migration must recheck this itself and refuse if it no longer holds.",
+            "STORAGE: the strict loader reads every row without the legacy columns, so no",
+            "  backfill is needed for it. That is not proof nothing else reads them: other",
+            "  readers (prescriber, constraint engine, display recovery) are not examined here.",
+            "  The INT-05 reader audit and a drop migration's own precondition recheck remain",
+            "  required; the migration must refuse if this no longer holds.",
         ]
     return code, lines
 
