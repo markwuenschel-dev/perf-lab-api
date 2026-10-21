@@ -27,21 +27,13 @@ def build_constraint_context(
         "skill": cap.skill,
         "mobility": cap.mobility,
         "work_capacity": cap.work_capacity,
-        "c_met_aerobic": state.c_met_aerobic,
-        "c_nm_force": state.c_nm_force,
-        "c_struct": state.c_struct,
-        "b_met_anaerobic": state.b_met_anaerobic,
         "habit_strength": state.habit_strength,
     }
     fatigue_state = {k: getattr(fat, k) for k in fat.KEYS}
     tissue_state = {k: getattr(tis, k) for k in tis.KEYS}
-    legacy = {
-        "f_met_systemic": state.f_met_systemic,
-        "f_nm_peripheral": state.f_nm_peripheral,
-        "f_nm_central": state.f_nm_central,
-        "f_struct_damage": state.f_struct_damage,
-        "s_struct_signal": state.s_struct_signal,
-    }
+    # INT-05 C4: rules read the decomposed vectors above, never the legacy scalar mirror.
+    # ``s_struct_signal`` is its own state (not a mirror), so it stays here.
+    legacy = {"s_struct_signal": state.s_struct_signal}
 
     return ConstraintContext(
         goal=goal,

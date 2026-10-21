@@ -177,7 +177,12 @@ function AuthedTwinBody({
   };
 
   const { date: vDate, when: vWhen } = viewingLabel(row.timestamp);
-  const sparkData = rows.map((r, i) => [i, meanFatigue(r)] as [number, number]);
+  // A row without a decomposed fatigue vector has no point (never the legacy scalars).
+  const sparkData = rows.flatMap((r, i) => {
+    const m = meanFatigue(r);
+    return m == null ? [] : [[i, m] as [number, number]];
+  });
+  const rowMeanF = meanFatigue(row);
 
   // Canonical readiness for the LATEST snapshot only (PDR-0005: never recompute).
   const canonicalScore = resourceData(readinessRes)?.score ?? null;
@@ -216,7 +221,7 @@ function AuthedTwinBody({
             className="h-[38px] w-full"
           >
             {!thin && <Line data={sparkData} color={accent} opacity={0.7} label="Mean fatigue" />}
-            <Marker x={di} y={meanFatigue(row)} color={accent} />
+            {rowMeanF != null && <Marker x={di} y={rowMeanF} color={accent} />}
           </Chart>
           <input
             type="range"
@@ -241,7 +246,7 @@ function AuthedTwinBody({
 
       {/* readiness + two live tiles */}
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[300px_1fr]">
-        <ReadinessCard isLatest={isLatest} canonicalScore={canonicalScore} readinessRes={readinessRes} meanF={Math.round(meanFatigue(row))} />
+        <ReadinessCard isLatest={isLatest} canonicalScore={canonicalScore} readinessRes={readinessRes} meanF={rowMeanF == null ? null : Math.round(rowMeanF)} />
         <div className="grid grid-cols-2 gap-[14px]">
           <MiniTile
             tip="Consistency of training vs plan — habit strength on a 0–100 scale."
@@ -307,7 +312,7 @@ function ReadinessCard({
   isLatest: boolean;
   canonicalScore: number | null;
   readinessRes: AuthedResource<ReadinessScore>;
-  meanF: number;
+  meanF: number | null;
 }) {
   // HISTORICAL snapshot: a neutral, non-scored ring + an honest message and a
   // SEPARATE labeled mean-fatigue metric. Never fill the ring from 100−meanF or
@@ -322,7 +327,7 @@ function ReadinessCard({
             Wellness-adjusted readiness was not recorded for this snapshot.
           </div>
           <div className="mt-[11px] font-mono text-[13px] font-semibold leading-none text-soft">
-            Mean fatigue · {meanF} / 100
+            Mean fatigue · {meanF == null ? "not recorded" : `${meanF} / 100`}
           </div>
         </div>
       </Card>

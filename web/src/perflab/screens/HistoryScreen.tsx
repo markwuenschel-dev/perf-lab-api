@@ -218,7 +218,11 @@ function AerobicCapacityCard({ resource, latest, windowStart }: {
         // guard is only what TypeScript needs to narrow the prop.
         if (!latest) return null;
         const val = aerobicValue(latest);
-        const delta = windowStart ? val - aerobicValue(windowStart) : null;
+        if (val == null) {
+          return <div className="mt-3 text-[12px] leading-snug text-dim">Not recorded on your latest state.</div>;
+        }
+        const start = windowStart ? aerobicValue(windowStart) : null;
+        const delta = start != null ? val - start : null;
         const pct = Math.max(0, Math.min(100, (val / AEROBIC_CEILING) * 100));
         return (
           <>
@@ -363,13 +367,16 @@ export function HistoryScreen() {
   // from a null payload here.
   const historyRows = resourceData(historyRes);
   const visibleHistory = historyRows ? filterHistoryWindow(historyRows, weeks) : [];
-  const readinessSeries = visibleHistory.map(fatigueDisplayProxy);
+  // Rows without a decomposed fatigue vector have no point to plot (INT-05 C4: never filled
+  // from the legacy scalars). `plottedHistory` keeps each point's own row for time travel.
+  const plottedHistory = visibleHistory.filter((r) => fatigueDisplayProxy(r) != null);
+  const readinessSeries = plottedHistory.map((r) => fatigueDisplayProxy(r) as number);
   const N = readinessSeries.length;
   const latestReadiness = N > 0 ? readinessSeries[N - 1] : null;
   const hDiff = N >= 2 ? readinessSeries[N - 1] - readinessSeries[0] : null;
   const hDelta = hDiff == null ? "" : `${hDiff >= 0 ? "+" : "−"}${Math.abs(hDiff)} vs window start`;
-  const latestSnap = N > 0 ? visibleHistory[N - 1] : null;
-  const windowStartSnap = N > 0 ? visibleHistory[0] : null;
+  const latestSnap = visibleHistory.length > 0 ? visibleHistory[visibleHistory.length - 1] : null;
+  const windowStartSnap = visibleHistory.length > 0 ? visibleHistory[0] : null;
 
   // Weekly load over the same window (real workouts only; null → empty state).
   const realLoad = weeklyLoad(resourceData(workoutsRes), weeks);
@@ -394,7 +401,7 @@ export function HistoryScreen() {
   // Time-travel the twin from a clicked readiness dot — hand it the CLICKED ROW's
   // snapshot_id (its durable identity), never the chart index.
   const goDay = (i: number) => {
-    const picked = visibleHistory[i];
+    const picked = plottedHistory[i];
     if (picked) {
       actions.setSelectedTwinSnapshot(picked.snapshot_id);
       actions.setScreen("twin");

@@ -36,13 +36,13 @@ def test_gymnastics_wrist_ignored_for_other_goals():
 
 
 def test_olympic_soft_when_systemic_high():
-    ctx = _ctx("OlympicLifts", legacy={"f_met_systemic": 70.0})
+    ctx = _ctx("OlympicLifts", fatigue={"metabolic": 70.0})
     result = universal_olympic_metabolic_check({"metabolic_emphasis": 0.6}, ctx)
     assert not result.passed
     assert result.severity.value == "soft"
 
 
 def test_olympic_ok_when_metabolic_emphasis_low():
-    ctx = _ctx("OlympicLifts", legacy={"f_met_systemic": 70.0})
+    ctx = _ctx("OlympicLifts", fatigue={"metabolic": 70.0})
     result = universal_olympic_metabolic_check({"metabolic_emphasis": 0.4}, ctx)
     assert result.passed

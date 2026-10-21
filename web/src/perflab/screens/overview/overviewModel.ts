@@ -153,8 +153,11 @@ export interface TrendView {
 export function trendSection(resource: AuthedResource<StateHistorySnapshotRead[]>): TrendView {
   const series = fold<StateHistorySnapshotRead[], number[]>(resource, (rows) => {
     if (rows.length === 0) return { kind: "empty", reason: "no_data" };
-    if (rows.length < 2) return { kind: "empty", reason: "insufficient_history" };
-    return { kind: "value", value: rows.map(fatigueDisplayProxy) };
+    // A row without a decomposed fatigue vector has no point to plot; it is dropped, never
+    // filled from the legacy scalars (INT-05 C4).
+    const points = rows.map(fatigueDisplayProxy).filter((v): v is number => v != null);
+    if (points.length < 2) return { kind: "empty", reason: "insufficient_history" };
+    return { kind: "value", value: points };
   });
   const delta: MetricState<number> =
     series.kind === "value"
@@ -303,7 +306,10 @@ export function twinSnapshotSection(
       const v = snapshotCapacity(s, "max_strength");
       return v == null ? null : Math.round(v);
     }),
-    meanFatigue: derive((s) => Math.round(meanFatigue(s))),
+    meanFatigue: derive((s) => {
+      const v = meanFatigue(s);
+      return v == null ? null : Math.round(v);
+    }),
     peakTissue: derive((s) => peakTissue(s)),
   };
 }

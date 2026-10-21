@@ -25,8 +25,10 @@ import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.vectors import FatigueState
+from app.engine.engine_state_codec import EngineStateDecodeError, decode_engine_state
 from app.engine.parameter_overrides import apply_parameter_overrides, load_namespace_override
 from app.engine.parameters import default_parameters
+from app.engine.state_bridge import sync_legacy_from_vectors
 from app.logic.personalization.hierarchical import (
     experience_prior_scale,
     partial_pool_with_sampling_var,
@@ -68,9 +70,22 @@ def _zscore(field: str, value: float, clip: float) -> float:
     return max(-clip, min(clip, z))
 
 
-def _mean_fatigue(row: AthleteState) -> float:
-    parts = (row.f_met_systemic, row.f_nm_peripheral, row.f_nm_central, row.f_struct_damage)
-    return sum(float(p) for p in parts) / len(parts)
+_MEAN_FATIGUE_CHANNELS = ("f_met_systemic", "f_nm_peripheral", "f_nm_central", "f_struct_damage")
+
+
+def _mean_fatigue(row: AthleteState) -> float | None:
+    """The four-channel mean fatigue this shadow has always fitted on, from canonical state.
+
+    INT-05 C4: computed from the row's decoded engine_state (the same projection the legacy
+    columns mirror, ``sync_legacy_from_vectors``), never from the columns themselves. A row
+    whose payload does not decode strictly yields None: skipped, never reconstructed.
+    """
+    try:
+        decoded = decode_engine_state(row.engine_state)
+    except EngineStateDecodeError:
+        return None
+    mirror = sync_legacy_from_vectors(decoded.capacity, decoded.fatigue, decoded.tissue)
+    return sum(float(mirror[k]) for k in _MEAN_FATIGUE_CHANNELS) / len(_MEAN_FATIGUE_CHANNELS)
 
 
 async def _build_recovery_frame(
@@ -88,8 +103,9 @@ async def _build_recovery_frame(
     if not w_rows or not s_rows:
         return np.empty((0, 3)), np.empty((0,))
 
-    # Latest mean-fatigue per calendar day.
-    fat_by_day: dict[Any, float] = {}
+    # Latest mean-fatigue per calendar day. A day whose latest row does not decode is
+    # unknown (None), not silently backfilled from an earlier row of that day.
+    fat_by_day: dict[Any, float | None] = {}
     for r in s_rows:
         fat_by_day[r.timestamp.date()] = _mean_fatigue(r)
     latest = max(w_rows, key=lambda r: r.recorded_date).recorded_date
@@ -102,14 +118,15 @@ async def _build_recovery_frame(
         if d < cutoff:
             continue
         nxt = d + timedelta(days=1)
-        if d not in fat_by_day or nxt not in fat_by_day:
+        today_f, next_f = fat_by_day.get(d), fat_by_day.get(nxt)
+        if today_f is None or next_f is None:
             continue
         raw = [getattr(r, _SIGNAL_FIELD[s], None) for s in _FIT_SIGNALS]
         vals = [v for v in raw if v is not None]
         if len(vals) != len(_FIT_SIGNALS):
             continue
         z_list.append([_zscore(_SIGNAL_FIELD[s], float(v), clip) for s, v in zip(_FIT_SIGNALS, vals, strict=True)])
-        y_list.append(fat_by_day[d] - fat_by_day[nxt])
+        y_list.append(today_f - next_f)
     return np.array(z_list, dtype=float), np.array(y_list, dtype=float)
 
 
