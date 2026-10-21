@@ -2,8 +2,9 @@ import copy
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -531,6 +532,67 @@ async def load_or_init_current_state_strict(
             db, user_id, decode=unified_from_athlete_row_strict
         )
     return unified_from_athlete_row_strict(row)
+
+
+ShadowLoadOutcome = Literal[
+    "loaded",
+    "skipped_missing",
+    "skipped_incomplete",
+    "skipped_malformed",
+    "skipped_future_version",
+]
+
+# The internal decode taxonomy (`normalize_decode_error`) -> a shadow's skip outcome. One to one,
+# so a shadow records the same precision an operator or repair job would see.
+_SHADOW_SKIP: dict[str, ShadowLoadOutcome] = {
+    "canonical_state_missing": "skipped_missing",
+    "canonical_state_incomplete": "skipped_incomplete",
+    "canonical_state_malformed": "skipped_malformed",
+    "canonical_state_version_unsupported": "skipped_future_version",
+}
+
+
+@dataclass(frozen=True)
+class ShadowStateLoadResult:
+    """A shadow's view of the athlete's current state: canonical, or a reason it was skipped.
+
+    ``state`` is set only when ``outcome == "loaded"``. A skip carries no state at all — there
+    is no reconstruction to fall back to, so a shadow cannot compute from a lossy vector.
+    """
+
+    outcome: ShadowLoadOutcome
+    state: UnifiedStateVector | None = None
+
+
+async def try_load_current_state_for_shadow(
+    db: AsyncSession, user_id: int
+) -> ShadowStateLoadResult | None:
+    """Canonical state for a shadow estimator, a typed skip, or None if no state exists yet.
+
+    Shadows are not display (INT-15 slice 3): they compute a counterfactual from the state, so
+    a legacy reconstruction would feed them a vector nobody observed. They are not decisions
+    either, so a decode failure is not a refusal: it is neither recovered nor raised, but becomes
+    a skip the shadow records. (Shadows run in their own transactions after the main write has
+    committed, which protects that write from a shadow's rollback; they still add latency and
+    share the database with it.)
+
+    None and a skip stay distinct, as in the strict loader: None is "no state row yet" (a new
+    athlete, each shadow's existing no-op), ``skipped_missing`` is a row with no payload.
+    Anything other than a decode failure still propagates, to the shadow's best-effort write.
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    if row is None:
+        return None
+    try:
+        state = unified_from_athlete_row_strict(row)
+    except EngineStateDecodeError as exc:
+        outcome = _SHADOW_SKIP[normalize_decode_error(exc)]
+        logger.info(
+            "shadow_state_skipped outcome=%s user_id=%s state_row_id=%s",
+            outcome, user_id, getattr(row, "id", None),
+        )
+        return ShadowStateLoadResult(outcome=outcome)
+    return ShadowStateLoadResult(outcome="loaded", state=state)
 
 
 async def load_current_state_for_display(

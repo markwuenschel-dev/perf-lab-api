@@ -37,7 +37,7 @@ from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.repositories.athlete_context_repository import AthleteContextRepository, WellnessInputs
-from app.services.shadow_evidence import RECORDED, inputs_hash, snapshot_of
+from app.services.shadow_evidence import RECORDED, STATE_SKIPS, inputs_hash, snapshot_of
 
 logger = logging.getLogger(__name__)
 
@@ -117,9 +117,13 @@ async def _head(
 
 def _satisfies(head: _Head | None, digest: str, kind: str) -> bool:
     """A head with this hash satisfies any request, except that a computed request needs a
-    computed head (a skip whose day has come gets its computation)."""
+    computed head (a skip whose day has come gets its computation), and a damaged-state skip
+    needs that same skip (INT-15 S3: state that became damaged under unchanged inputs must
+    supersede the computation, which no longer describes the athlete's current state)."""
     if head is None or head.content_hash != digest:
         return False
+    if kind in STATE_SKIPS:
+        return head.decision_impact == kind
     return kind != RECORDED or head.decision_impact == RECORDED
 
 

@@ -45,7 +45,9 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # 2C REMOVED `api/v1/history.py` and `services/dashboard_service.py` — display
         # recovery with provenance (DISPLAY_LOADER_ALLOWLIST below), and an unshowable row
         # refuses the surface (409) instead of being dropped.
-        "services/ekf_shadow_service.py",  # S3: skip adapter
+        # S3 REMOVED `services/ekf_shadow_service.py` and `services/recovery_shadow_service.py`
+        # — they read `try_load_current_state_for_shadow`: canonical state or a recorded skip,
+        # never a reconstruction.
         # 2C REMOVED `services/onboarding_service.py` — strict: its twin summary reads only
         # live confidence, which a legacy recovery does not have; damaged state is reported
         # as `state_available=false`, never recovered and never initialized over.
@@ -55,7 +57,6 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # 2B2 REMOVED `services/readiness_service.py` — strict as of that slice. Readiness
         # is not display: it gates prescription, so it refuses rather than scoring an
         # athlete from a legacy reconstruction.
-        "services/recovery_shadow_service.py",  # S3: skip adapter
         # S4 REMOVED `scripts/repair_capacity_corruption.py` — it is strict as of this
         # slice. It was never the INT-15 forensic repair utility (that path,
         # `read_raw_state_for_repair`, is still unimplemented); it is the ADR-0055 capacity
