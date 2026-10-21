@@ -90,7 +90,7 @@ def _sessions_in_window(
 
 def universal_fatigue_ok(c: dict[str, Any], ctx: ConstraintContext) -> ConstraintResult:
     """Hard: systemic metabolic fatigue too high for any structured session."""
-    if float(ctx.legacy.get("f_met_systemic", 0)) > 80:
+    if float(ctx.fatigue_state.get("metabolic", 0)) > 80:
         return _fail("universal_fatigue_ok", msg="systemic fatigue critical — rest required")
     return _ok("universal_fatigue_ok")
 
@@ -123,7 +123,7 @@ def universal_olympic_metabolic_check(c: dict[str, Any], ctx: ConstraintContext)
     """Soft: Olympic lifts with high systemic fatigue and metabolic-heavy session."""
     if ctx.goal != "OlympicLifts":
         return _ok("universal_olympic_metabolic_check", hard=False)
-    met_sys = float(ctx.legacy.get("f_met_systemic", 0))
+    met_sys = float(ctx.fatigue_state.get("metabolic", 0))
     met_emph = float(c.get("metabolic_emphasis", 0))
     if met_sys > 65 and met_emph > 0.55:
         return _fail(
@@ -138,7 +138,7 @@ def universal_running_zone2_majority(c: dict[str, Any], ctx: ConstraintContext) 
     """Soft: Running goals — prefer easy volume when fatigued."""
     if ctx.goal not in ("Running", "HalfMarathon", "FullMarathon"):
         return _ok("universal_running_zone2_majority", hard=False)
-    met_sys = float(ctx.legacy.get("f_met_systemic", 0))
+    met_sys = float(ctx.fatigue_state.get("metabolic", 0))
     if c.get("intensity_bucket") in ("high", "max") and met_sys > 50:
         return _fail(
             "universal_running_zone2_majority",
@@ -152,7 +152,7 @@ def universal_sprint_neural_freshness(c: dict[str, Any], ctx: ConstraintContext)
     """Soft: Sprinting requires CNS freshness."""
     if ctx.goal != "Sprinting":
         return _ok("universal_sprint_neural_freshness", hard=False)
-    if float(ctx.legacy.get("f_nm_central", 0)) > 58:
+    if float(ctx.fatigue_state.get("cns", 0)) > 58:
         return _fail(
             "universal_sprint_neural_freshness",
             hard=False,
@@ -180,7 +180,7 @@ def universal_metcon_fatigue_stack(c: dict[str, Any], ctx: ConstraintContext) ->
     """Soft: MetCon with high systemic load."""
     if ctx.goal != "MetCon":
         return _ok("universal_metcon_fatigue_stack", hard=False)
-    if float(ctx.legacy.get("f_met_systemic", 0)) > 70:
+    if float(ctx.fatigue_state.get("metabolic", 0)) > 70:
         return _fail(
             "universal_metcon_fatigue_stack",
             hard=False,
@@ -193,7 +193,7 @@ def universal_pl_deadlift_cns(c: dict[str, Any], ctx: ConstraintContext) -> Cons
     """Soft: Powerlifting — rotate CNS-heavy lifts when central fatigue high."""
     if ctx.goal != "Powerlifting":
         return _ok("universal_pl_deadlift_cns", hard=False)
-    cns = float(ctx.legacy.get("f_nm_central", 0))
+    cns = float(ctx.fatigue_state.get("cns", 0))
     if cns > 55 and c.get("intensity_bucket") == "high":
         return _fail(
             "universal_pl_deadlift_cns",
@@ -254,7 +254,7 @@ def olift_require_freshness_for_heavy_technical_singles(
     tags = set(c.get("tags") or [])
     if "heavy_technical" not in tags and c.get("intensity_bucket") not in ("high", "max"):
         return _ok("olift_require_freshness_for_heavy_technical_singles")
-    cns = float(ctx.legacy.get("f_nm_central", 0))
+    cns = float(ctx.fatigue_state.get("cns", 0))
     if cns > 58:
         return _fail(
             "olift_require_freshness_for_heavy_technical_singles",
@@ -357,7 +357,7 @@ def prefer_threshold_before_vo2_if_base_low(
     c: dict[str, Any], ctx: ConstraintContext,
 ) -> ConstraintResult:
     tags = list(c.get("tags") or [])
-    if ctx.athlete_state.get("c_met_aerobic", 50) < 25 and (
+    if ctx.athlete_state.get("aerobic", 50) < 25 and (
         "vo2_candidate" in tags or "threshold_or_vo2" in tags
     ):
         return _fail(
@@ -398,7 +398,7 @@ def pl_do_not_max_when_readiness_low(c: dict[str, Any], ctx: ConstraintContext) 
     if c.get("intensity_bucket") not in ("high", "max"):
         return _ok("pl_do_not_max_when_readiness_low")
     r = (
-        float(ctx.legacy.get("f_nm_central", 0)) + float(ctx.legacy.get("f_met_systemic", 0))
+        float(ctx.fatigue_state.get("cns", 0)) + float(ctx.fatigue_state.get("metabolic", 0))
     ) / 2
     if r > 62:
         return _fail(
@@ -444,7 +444,7 @@ def prefer_balanced_push_pull_accessory(
 def pl_limit_volume_if_bar_speed_collapse(
     c: dict[str, Any], ctx: ConstraintContext,
 ) -> ConstraintResult:
-    periph = float(ctx.legacy.get("f_nm_peripheral", 0))
+    periph = float(ctx.fatigue_state.get("muscular", 0))
     if periph > 60 and float(c.get("volume_load_proxy") or 0) > 0.72:
         return _fail(
             "pl_limit_volume_if_bar_speed_collapse",

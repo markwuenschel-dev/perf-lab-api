@@ -21,6 +21,7 @@ The generic equipment map stays only for a caller with no catalog loaded.
 from __future__ import annotations
 
 import pytest
+from state_axes import with_axes
 
 from app.logic.constraint_engine.candidate import SessionCandidate
 from app.logic.prescriber import (
@@ -56,10 +57,7 @@ def _kit(name: str, catalog) -> list[str] | None:
 
 def _state(**legacy: float):
     level, _ = sm.EXPERIENCE["intermediate"]
-    s = sm._state(level, *sm.FRESHNESS["fresh"]).model_copy(deep=True)
-    for k, v in legacy.items():
-        setattr(s, k, v)
-    return s
+    return with_axes(sm._state(level, *sm.FRESHNESS["fresh"]), **legacy)
 
 
 def _redirects() -> list[tuple[SessionCandidate, str]]:

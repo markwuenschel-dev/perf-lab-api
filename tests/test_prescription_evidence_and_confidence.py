@@ -14,6 +14,7 @@ label before discarding it.
 from datetime import UTC, datetime
 
 import pytest
+from state_axes import split_legacy, with_axes
 
 from app.domain.vectors import CapacityConfidence
 from app.logic.confidence_presentation import POLICY_VERSION
@@ -36,6 +37,7 @@ from app.schemas.state import UnifiedStateVector
 
 
 def _state(**over: object) -> UnifiedStateVector:
+    axes, rest = split_legacy(over)
     base: dict[str, object] = {
         "timestamp": datetime.now(UTC),
         "c_met_aerobic": 500.0,
@@ -43,8 +45,8 @@ def _state(**over: object) -> UnifiedStateVector:
         "c_struct": 50.0,
         "b_met_anaerobic": 50.0,
     }
-    base.update(over)
-    return UnifiedStateVector(**base)  # type: ignore[arg-type]
+    base.update(rest)
+    return with_axes(UnifiedStateVector(**base), **{"c_met_aerobic": 500.0, **axes})  # type: ignore[arg-type]
 
 
 # ── evidence carries the number, not just the phrase ──────────────────────────
@@ -103,7 +105,7 @@ def test_a_two_sided_rule_does_not_fire_on_an_unpopulated_axis() -> None:
 
 
 def test_capacity_backed_driver_carries_its_confidence_band() -> None:
-    """The rule reads the legacy scalar mirror; the variance lives under the decomposed name.
+    """The rule keeps the legacy axis id; it reads, and its variance lives, under the decomposed name.
 
     ``c_met_aerobic`` vs ``capacity_confidence.aerobic`` — matching on the axis name alone
     would silently report "no uncertainty modelled" for the one driver that has some, and
