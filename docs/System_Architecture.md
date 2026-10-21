@@ -56,7 +56,7 @@ Auth and legacy routes are outside `/v1`:
 /auth/register
 /auth/token
 /auth/me
-/compute-metrics
+/compute-metrics      (retired: 410 Gone)
 /program/run
 /program/strength
 /ping

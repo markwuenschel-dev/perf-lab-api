@@ -180,12 +180,10 @@ export async function createPlanningBlock(body: BlockCreateRequest, token: strin
 export async function listPlanningBlocks(token: string): Promise<BlockRead[]>
 export async function listPlannedSessions(token: string, params?): Promise<PlannedSessionRead[]>
 export async function getTodayPlannedSession(goal: string, token: string): Promise<TodaySessionResponse>
-export async function computeMetrics(req: ComputeMetricsRequest): Promise<MetricsResponse>
 ```
 
-> The field-test endpoint (`computeMetrics` → `POST /compute-metrics`) hits the
-> backend **legacy router, which has no `/v1` prefix**, so it uses `API_ROOT`
-> directly. `HeroFlowColumn` calls it through this client like everything else.
+> The legacy field-test endpoint `POST /compute-metrics` is retired (always `410 Gone`);
+> the client has no caller for it. Onboarding records a `run_1p5mi_time_trial` instead.
 
 **Key behaviors:**
 - All functions throw an `ApiError` (typed `{ message, status, details }`) on

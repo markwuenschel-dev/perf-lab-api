@@ -80,7 +80,6 @@ mapping lives in `web/src/types.ts`:
 
 | OpenAPI schema (`components.schemas`) | Frontend alias | Route |
 |---|---|---|
-| `MetricsRequest` | `ComputeMetricsRequest` | `POST /compute-metrics` (legacy, no `/v1`) |
 | `RegisterRequest` | (used inline) | `POST /auth/register` |
 
 Literal/enum fields that Pydantic defines inline (e.g. `WorkoutLog.modality`) are
@@ -89,8 +88,9 @@ Literal/enum fields that Pydantic defines inline (e.g. `WorkoutLog.modality`) ar
 
 ## Route prefixes
 
-- Most routers mount under `/v1`; auth is under `/auth`; the legacy field-test
-  endpoint `/compute-metrics` has **no** prefix.
+- Most routers mount under `/v1`; auth is under `/auth`; the legacy routes
+  (`/program/run`, `/program/strength`, and the retired `/compute-metrics`, which always
+  returns 410) have **no** prefix.
 - The web client (`web/src/api/perfLabClient.ts`) appends `/v1` to
   `VITE_API_BASE_URL` itself, so that env var must be set **without** a `/v1` suffix.
 

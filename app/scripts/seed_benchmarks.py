@@ -69,7 +69,7 @@ BENCHMARKS: list[dict[str, Any]] = [
        is_primary_anchor=False, is_validator_only=True, better_direction="higher",
        observation_weight=0.5, state_targets=["aerobic"]),
     # Legacy 300 m + 1.5 mi Field Test, now a benchmark definition (ADR-0047).
-    # /compute-metrics is demoted to the internal calculator behind this def.
+    # /compute-metrics was its calculator; it is retired (410 Gone) as of 2026-10-21.
     _b(code="run_vo2_field_test_300m_1p5mi", name="VO₂ field test (300 m + 1.5 mi)",
        domain="running", metric_type="score", unit="ml_kg_min",
        is_primary_anchor=True, better_direction="higher", observation_weight=0.9,

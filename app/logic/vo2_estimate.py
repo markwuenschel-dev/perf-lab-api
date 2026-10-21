@@ -20,7 +20,8 @@ column, p. 404:
 * GENDER coding: the paper prints "0 = female; 1 = male" only for its 1-mile jog model. The
   same coding for the 1.5-mile model is INFERRED from the same paper (positive coefficient,
   higher male VO₂max).
-* There is no heart-rate term. The legacy calculator (app/api/v1/legacy.py ``vo2_from_1p5``) used
+* There is no heart-rate term. The retired legacy calculator (``vo2_from_1p5``, formerly behind
+  POST /compute-metrics, now a 410 tombstone in app/api/v1/legacy.py) used
   2.76 and applied the per-kg coefficient to a hard-coded 163 with sex fixed at male. It is not
   this model.
 
@@ -71,8 +72,8 @@ UNITS = "ml/kg/min"
 LB_TO_KG = 0.45359237
 SECONDS_PER_MINUTE = 60.0
 
-#: A 1.5 mi time this model can be given: 3 min - 4 h, the same envelope as the legacy calculator
-#: (app/api/v1/legacy.py TIME_1P5MI_BOUNDS). Outside it the time is refused, not saved.
+#: A 1.5 mi time this model can be given: 3 min - 4 h, the same envelope the retired legacy
+#: calculator used (its TIME_1P5MI_BOUNDS). Outside it the time is refused, not saved.
 ELAPSED_TIME_BOUNDS_S: tuple[float, float] = (180.0, 14400.0)
 #: A body mass the request may carry, in kg. Outside it the request is refused with the field
 #: named, so a typo never reaches the record.

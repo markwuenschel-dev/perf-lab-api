@@ -469,7 +469,7 @@ app.add_middleware(
 # Auth (no /v1 prefix — required for OAuth2 compatibility)
 app.include_router(auth.router)
 
-# Legacy v0.1 routes (used by frontend HeroFlowColumn)
+# Legacy v0.1 routes: /program/run, /program/strength, and the retired /compute-metrics (410)
 app.include_router(legacy.router)
 
 # Modern v1 API
