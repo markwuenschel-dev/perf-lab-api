@@ -304,7 +304,7 @@ The planning UI displays:
 It uses non-v1 endpoints:
 
 ```text
-POST /compute-metrics
+POST /compute-metrics   (retired 2026-10-21: always 410 Gone)
 GET /program/run
 GET /program/strength
 ```

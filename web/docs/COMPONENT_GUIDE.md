@@ -25,7 +25,7 @@ This fires after `register()` succeeds. Once `completeOnboarding()` resolves
 (success or failure), `onboardingPending` is cleared and the main app renders.
 
 **Tab model:**
-- `"field"` → `HeroFlowColumn` (VO₂ field test via `computeMetrics`)
+- `"field"` → `HeroFlowColumn` (legacy field-test tab; `computeMetrics` and `/compute-metrics` are retired)
 - `"twin"` → `DigitalTwinPanel` (live training engine)
 - `"planning"` → `PlanningPanel` (block/session planning surface)
 

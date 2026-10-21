@@ -49,7 +49,7 @@ Auth and legacy endpoints are outside the `/v1` prefix:
 
 ```text
 /auth/*
-/compute-metrics
+/compute-metrics      (retired: 410 Gone)
 /program/run
 /program/strength
 /ping
@@ -151,11 +151,20 @@ Does it mutate state?
 
 No.
 
-### POST /compute-metrics
+### POST /compute-metrics (retired)
 
-Legacy v0.1 field-test endpoint used by the frontend's `HeroFlowColumn`.
+**Retired 2026-10-21. Every request receives `410 Gone`**, whatever its body: valid, malformed or empty. It no longer returns metrics. Its VO2 estimate was miscalculated (a fixed 163 used as body mass in kg, sex fixed at male, a 2.76 time coefficient), and its grades and 300 m fatigue factor had no published basis (`docs/audits/2026-10-21-run-vo2-field-test-audit.md`).
 
-It accepts age/sex/300m/1.5mi inputs and returns VO2 estimate, categories, fatigue profile, race pace, and pace zones.
+Response (`410`):
+
+```json
+{
+  "detail": "POST /compute-metrics is retired. ...",
+  "replacement": "Record the run as a run_1p5mi_time_trial through POST /v1/onboard ..., then read GET /v1/benchmarks/vo2-estimates"
+}
+```
+
+Replacement: record a 1.5-mile time trial (`run_1p5mi_time_trial`) through `POST /v1/onboard`, and read the corrected George et al. (1993) estimate from `GET /v1/benchmarks/vo2-estimates`. That estimate is display-only: it never changes capacity, prescription or achievements.
 
 Does it mutate state?
 
@@ -164,7 +173,7 @@ No.
 ### GET /program/run
 ### GET /program/strength
 
-Legacy static program endpoints preserved for compatibility with the older field-test UI.
+Legacy static program endpoints, preserved for compatibility.
 
 Does it mutate state?
 

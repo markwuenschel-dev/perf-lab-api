@@ -228,7 +228,7 @@ Legacy field-test / VO2 surface.
 
 Uses legacy non-v1 endpoints:
 
-- `POST /compute-metrics`
+- `POST /compute-metrics` (retired 2026-10-21: always `410 Gone`)
 - `GET /program/run`
 - `GET /program/strength`
 

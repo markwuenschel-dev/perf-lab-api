@@ -1,158 +1,26 @@
 """
 app/api/v1/legacy.py
 
-Legacy v0.1 endpoints preserved for frontend compatibility.
-    POST /compute-metrics
+Legacy v0.1 endpoints.
+    POST /compute-metrics   RETIRED: always 410 Gone (see below)
     GET  /program/run
     GET  /program/strength
 """
 
 
-import math
-from typing import Any
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 router = APIRouter(tags=["Legacy"])
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def parse_time_to_seconds(text: str) -> float:
-    """Parse ``SS``, ``MM:SS`` or ``HH:MM:SS`` into seconds.
-
-    Raises ``ValueError`` for anything that is not a finite, strictly positive duration:
-    malformed text, ``nan``/``inf``, a negative component, or a zero total. The callers
-    divide by these values, so a zero or non-finite time must never reach the math.
-    """
-    text = text.strip()
-    parts = text.split(":")
-    if len(parts) > 3:
-        raise ValueError(f"not a time: {text!r}")
-    values = [float(p) for p in parts]  # float('') / float('abc') raise ValueError
-    # copysign catches "-0" too: a signed component is malformed even when it is zero.
-    if any(not math.isfinite(v) or math.copysign(1.0, v) < 0 for v in values):
-        raise ValueError(f"not a finite, non-negative time: {text!r}")
-    seconds = 0.0
-    for v in values:
-        seconds = seconds * 60 + v
-    if not math.isfinite(seconds) or seconds <= 0:
-        raise ValueError(f"time must be positive: {text!r}")
-    return seconds
-
-
-# Usable input ranges, in seconds. Generous around human performance (300 m world-class
-# ≈ 31 s, 1.5 mi ≈ 6:20; walking pace ≈ 3–4 min and ≈ 30 min) so no real athlete is
-# refused, while values the formulas cannot use — 1e-323 underflowing a denominator to
-# zero, 1e308 overflowing a ratio — never reach them.
-TIME_300M_BOUNDS = (20.0, 1800.0)  # 20 s – 30 min
-TIME_1P5MI_BOUNDS = (180.0, 14400.0)  # 3 min – 4 h
-
-
-def _bounded(seconds: float, bounds: tuple[float, float], field: str) -> float:
-    lo, hi = bounds
-    if not lo <= seconds <= hi:
-        raise ValueError(f"{field} must be between {lo:g} and {hi:g} seconds, got {seconds:g}")
-    return seconds
-
-
-def vo2_from_1p5(time_sec: float) -> float:
-    time_min = time_sec / 60.0
-    return 88.02 - (0.1656 * 163) - (2.76 * time_min) + (3.716 * 1)
-
-
-def vo2_category_male_36_45(vo2: float) -> str:
-    if vo2 >= 51:
-        return "Excellent"
-    if vo2 >= 43:
-        return "Good"
-    if vo2 >= 38:
-        return "Above Average"
-    if vo2 >= 34:
-        return "Average"
-    if vo2 >= 30:
-        return "Below Average"
-    return "Poor"
-
-
-def result_category_male_30_39(time_sec: float) -> str:
-    if time_sec < 630:
-        return "Excellent"
-    if time_sec < 720:
-        return "Good"
-    if time_sec < 780:
-        return "Satisfactory"
-    if time_sec < 900:
-        return "Marginal"
-    return "Poor"
-
-
-def fatigue_factor(time_300: float, time_1p5: float) -> float:
-    pace_300 = time_300 / 300.0
-    pace_1p5 = time_1p5 / 2400.0
-    return pace_300 / pace_1p5
-
-
-def fatigue_profile(ff_percent: float) -> str:
-    if ff_percent < -5:
-        return "Endurance-biased (aerobic strength)"
-    if ff_percent > 5:
-        return "Speed-biased (anaerobic strength)"
-    return "Balanced"
-
-
-def pace_zone_bounds(base_pace_sec: float) -> list[dict[str, Any]]:
-    zones: list[dict[str, Any]] = [
-        {"name": "Easy / Recovery",     "slow_offset_sec": 150, "fast_offset_sec": 210, "notes": "Very easy; conversational. RPE 3–4"},
-        {"name": "Steady State",         "slow_offset_sec": 60,  "fast_offset_sec": 90,  "notes": "Comfortable but purposeful. RPE 5"},
-        {"name": "Tempo",                "slow_offset_sec": 0,   "fast_offset_sec": 30,  "notes": "Comfortably hard; 20–40 min sustained. RPE 6–7"},
-        {"name": "Interval / VO₂",       "slow_offset_sec": -30, "fast_offset_sec": 0,   "notes": "Hard; 3–8 min reps. RPE 7–8"},
-        {"name": "Fast Repeats / Speed", "slow_offset_sec": -60, "fast_offset_sec": -30, "notes": "Very hard; short reps. RPE 8–9"},
-    ]
-    result: list[dict[str, Any]] = []
-    for z in zones:
-        result.append({
-            "name": z["name"],
-            "slow_pace_sec": base_pace_sec + z["slow_offset_sec"],
-            "fast_pace_sec": base_pace_sec + z["fast_offset_sec"],
-            "slow_offset_sec": z["slow_offset_sec"],
-            "fast_offset_sec": z["fast_offset_sec"],
-            "notes": z["notes"],
-        })
-    return result
-
-
-# ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
 
-class MetricsRequest(BaseModel):
-    age: int
-    sex: str
-    time_300m: str
-    time_1p5mi: str
-
-
-class Zone(BaseModel):
-    name: str
-    slow_pace_sec: float
-    fast_pace_sec: float
-    slow_offset_sec: float
-    fast_offset_sec: float
-    notes: str
-
-
-class MetricsResponse(BaseModel):
-    vo2_max: float
-    vo2_category: str
-    result_category: str
-    fatigue_percent: float
-    fatigue_profile: str
-    race_pace_sec_per_mile: float
-    zones: list[Zone]
+class RetiredEndpoint(BaseModel):
+    detail: str
+    replacement: str
 
 
 class RunSession(BaseModel):
@@ -220,50 +88,34 @@ for _wk in range(8, 11):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/compute-metrics", response_model=MetricsResponse, deprecated=True)
-def compute_metrics(payload: MetricsRequest) -> MetricsResponse:
-    # DEMOTED (ADR-0047): a stateless calculator behind the
-    # run_vo2_field_test_300m_1p5mi benchmark definition — never a seeding source of
-    # truth. The run field test is now assessed via the one assessment surface
-    # (POST /v1/benchmarks/observations), which owns the state seed. This endpoint
-    # remains only to compute VO₂/zones for display; it writes no state.
-    #
-    # B2: SUPERSEDED, kept deprecated and unchanged. The web app no longer calls it (onboarding
-    # records a run_1p5mi_time_trial instead; app/logic/vo2_estimate.py holds the corrected
-    # George 1993 model). Its VO₂ is wrong as written (163 used as kg, sex fixed at male, 2.76),
-    # its grades are unsourced, and its 300 m "fatigue factor" has no published basis
-    # (docs/audits/2026-10-21-run-vo2-field-test-audit.md). It is not deleted in this train: it
-    # is in the published OpenAPI contract and the API docs, so a caller outside this repo cannot
-    # be ruled out. Remove it in its own change.
-    try:
-        t300 = _bounded(parse_time_to_seconds(payload.time_300m), TIME_300M_BOUNDS, "time_300m")
-        t15 = _bounded(parse_time_to_seconds(payload.time_1p5mi), TIME_1P5MI_BOUNDS, "time_1p5mi")
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Times must be positive durations as SS, MM:SS or HH:MM:SS ({exc}).",
-        ) from None
-    vo2 = vo2_from_1p5(t15)
-    ff = fatigue_factor(t300, t15)
-    ff_percent = (ff - 1.0) * 100.0
-    race_pace_sec = t15 / 1.5
-    zones = [Zone(**z) for z in pace_zone_bounds(race_pace_sec)]
-    # Defense in depth: the bounds above keep every intermediate finite, but a response
-    # with a non-finite number serializes as JSON null (a silent 200), so prove it.
-    numbers = [vo2, ff_percent, race_pace_sec] + [
-        v for z in zones for v in (z.slow_pace_sec, z.fast_pace_sec)
-    ]
-    if not all(math.isfinite(n) for n in numbers):
-        raise HTTPException(status_code=422, detail="These times do not produce finite metrics.")
-    return MetricsResponse(
-        vo2_max=vo2,
-        vo2_category=vo2_category_male_36_45(vo2),
-        result_category=result_category_male_30_39(t15),
-        fatigue_percent=ff_percent,
-        fatigue_profile=fatigue_profile(ff_percent),
-        race_pace_sec_per_mile=race_pace_sec,
-        zones=zones,
-    )
+COMPUTE_METRICS_RETIRED = RetiredEndpoint(
+    detail=(
+        "POST /compute-metrics is retired. Its VO2max estimate was miscalculated (a fixed 163 used "
+        "as body mass in kg, sex fixed at male, a 2.76 time coefficient) and its grades and 300 m "
+        "fatigue factor had no published basis. Record a 1.5-mile time trial instead; the "
+        "corrected George et al. (1993) estimate is display-only."
+    ),
+    replacement=(
+        "Record the run as a run_1p5mi_time_trial through POST /v1/onboard (which captures the "
+        "body mass, sex and age the estimate needs), then read GET /v1/benchmarks/vo2-estimates"
+    ),
+)
+
+
+# RETIRED 2026-10-21 (owner decision; docs/audits/2026-10-21-run-vo2-field-test-audit.md). A
+# tombstone, not a deletion: the route stayed in the published contract, so an outside caller gets
+# a clear 410 rather than a 404 or a wrong number. It deliberately declares no request body, so a
+# valid, malformed or empty submission all receive the same retirement response.
+@router.post(
+    "/compute-metrics",
+    status_code=410,
+    response_model=RetiredEndpoint,
+    deprecated=True,
+    summary="Retired: always 410 Gone",
+    responses={410: {"description": "This endpoint is retired; see `replacement`."}},
+)
+def compute_metrics() -> RetiredEndpoint:
+    return COMPUTE_METRICS_RETIRED
 
 
 @router.get("/program/run", response_model=list[RunSession])

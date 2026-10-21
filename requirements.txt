@@ -15,7 +15,7 @@
 # listing the optional llm/tasks/observability groups unconditionally instead of
 # marking them optional as pyproject.toml does. Deleting this file outright is tracked
 # separately in docs/REDESIGN_ROADMAP.md, bundled with removing the legacy root
-# main.py once its /compute-metrics route is confirmed migrated — out of scope here.
+# main.py (its /compute-metrics route is retired, 410 Gone, as of 2026-10-21) — out of scope here.
 # =============================================
 
 

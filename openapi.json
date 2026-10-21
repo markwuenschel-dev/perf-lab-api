@@ -4080,80 +4080,6 @@
         "title": "MeasurementRecommendation",
         "type": "object"
       },
-      "MetricsRequest": {
-        "properties": {
-          "age": {
-            "title": "Age",
-            "type": "integer"
-          },
-          "sex": {
-            "title": "Sex",
-            "type": "string"
-          },
-          "time_1p5mi": {
-            "title": "Time 1P5Mi",
-            "type": "string"
-          },
-          "time_300m": {
-            "title": "Time 300M",
-            "type": "string"
-          }
-        },
-        "required": [
-          "age",
-          "sex",
-          "time_300m",
-          "time_1p5mi"
-        ],
-        "title": "MetricsRequest",
-        "type": "object"
-      },
-      "MetricsResponse": {
-        "properties": {
-          "fatigue_percent": {
-            "title": "Fatigue Percent",
-            "type": "number"
-          },
-          "fatigue_profile": {
-            "title": "Fatigue Profile",
-            "type": "string"
-          },
-          "race_pace_sec_per_mile": {
-            "title": "Race Pace Sec Per Mile",
-            "type": "number"
-          },
-          "result_category": {
-            "title": "Result Category",
-            "type": "string"
-          },
-          "vo2_category": {
-            "title": "Vo2 Category",
-            "type": "string"
-          },
-          "vo2_max": {
-            "title": "Vo2 Max",
-            "type": "number"
-          },
-          "zones": {
-            "items": {
-              "$ref": "#/components/schemas/Zone"
-            },
-            "title": "Zones",
-            "type": "array"
-          }
-        },
-        "required": [
-          "vo2_max",
-          "vo2_category",
-          "result_category",
-          "fatigue_percent",
-          "fatigue_profile",
-          "race_pace_sec_per_mile",
-          "zones"
-        ],
-        "title": "MetricsResponse",
-        "type": "object"
-      },
       "OAuthAttemptResult": {
         "description": "Where one authorization attempt stands. ``succeeded`` carries ``linked``; ``failed``\ncarries a ``reason`` code (``cancelled``, ``expired``, ``claim_stale``,\n``exchange_rejected``, ``exchange_failed``).",
         "properties": {
@@ -6740,6 +6666,24 @@
           "password"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RetiredEndpoint": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "replacement": {
+            "title": "Replacement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "replacement"
+        ],
+        "title": "RetiredEndpoint",
         "type": "object"
       },
       "RunSession": {
@@ -10591,44 +10535,6 @@
         },
         "title": "WorkoutSetEntry",
         "type": "object"
-      },
-      "Zone": {
-        "properties": {
-          "fast_offset_sec": {
-            "title": "Fast Offset Sec",
-            "type": "number"
-          },
-          "fast_pace_sec": {
-            "title": "Fast Pace Sec",
-            "type": "number"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "notes": {
-            "title": "Notes",
-            "type": "string"
-          },
-          "slow_offset_sec": {
-            "title": "Slow Offset Sec",
-            "type": "number"
-          },
-          "slow_pace_sec": {
-            "title": "Slow Pace Sec",
-            "type": "number"
-          }
-        },
-        "required": [
-          "name",
-          "slow_pace_sec",
-          "fast_pace_sec",
-          "slow_offset_sec",
-          "fast_offset_sec",
-          "notes"
-        ],
-        "title": "Zone",
-        "type": "object"
       }
     },
     "securitySchemes": {
@@ -10772,39 +10678,19 @@
       "post": {
         "deprecated": true,
         "operationId": "compute_metrics_compute_metrics_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MetricsRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
-          "200": {
+          "410": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MetricsResponse"
+                  "$ref": "#/components/schemas/RetiredEndpoint"
                 }
               }
             },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "This endpoint is retired; see `replacement`."
           }
         },
-        "summary": "Compute Metrics",
+        "summary": "Retired: always 410 Gone",
         "tags": [
           "Legacy"
         ]

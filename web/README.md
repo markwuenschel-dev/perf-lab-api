@@ -28,7 +28,7 @@ The frontend interacts with **two different FastAPI entrypoints** from the backe
 
 | UI Panel                  | Backend Entrypoint          | Routes Used                                      | Auth Required? |
 |---------------------------|-----------------------------|--------------------------------------------------|----------------|
-| **Hero / Tactical Running** | Legacy (`app.main:app`, legacy router) | `POST /compute-metrics`, `GET /program/run`, `GET /program/strength` | No |
+| **Hero / Tactical Running** | Legacy (`app.main:app`, legacy router) | `POST /compute-metrics` (retired: 410), `GET /program/run`, `GET /program/strength` | No |
 | **Digital Twin**          | Primary (`app.main:app`)   | `/ping`, `/v1/simulate-dose`, `/v1/log-workout`, `/v1/next-session`, auth routes | Yes for protected v1 routes |
 
 > **Local development tip:** Run both `uvicorn main:app --reload` (legacy) **and** `uvicorn app.main:app --reload` (primary) if you want full functionality.
@@ -122,7 +122,7 @@ npm run lint      # ESLint
 Development Notes
 
 CORS: The backend currently allows *. Tighten allow_origins in production.
-Legacy vs Primary: Some legacy routes (/compute-metrics) are not mounted on app.main:app. Make sure the legacy server is running if you need the tactical column.
+Legacy routes: /compute-metrics is retired (always 410 Gone); /program/run and /program/strength are still served by app.main:app.
 State Management: Currently lightweight (React Context). Future expansion may add TanStack Query or Zustand for richer caching of state history.
 Testing: No test suite configured yet. Vitest + React Testing Library is a natural next step.
 

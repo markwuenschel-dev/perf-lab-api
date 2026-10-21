@@ -68,7 +68,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Compute Metrics
+         * Retired: always 410 Gone
          * @deprecated
          */
         post: operations["compute_metrics_compute_metrics_post"];
@@ -2963,34 +2963,6 @@ export interface components {
              */
             reason: string;
         };
-        /** MetricsRequest */
-        MetricsRequest: {
-            /** Age */
-            age: number;
-            /** Sex */
-            sex: string;
-            /** Time 1P5Mi */
-            time_1p5mi: string;
-            /** Time 300M */
-            time_300m: string;
-        };
-        /** MetricsResponse */
-        MetricsResponse: {
-            /** Fatigue Percent */
-            fatigue_percent: number;
-            /** Fatigue Profile */
-            fatigue_profile: string;
-            /** Race Pace Sec Per Mile */
-            race_pace_sec_per_mile: number;
-            /** Result Category */
-            result_category: string;
-            /** Vo2 Category */
-            vo2_category: string;
-            /** Vo2 Max */
-            vo2_max: number;
-            /** Zones */
-            zones: components["schemas"]["Zone"][];
-        };
         /**
          * OAuthAttemptResult
          * @description Where one authorization attempt stands. ``succeeded`` carries ``linked``; ``failed``
@@ -3957,6 +3929,13 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** RetiredEndpoint */
+        RetiredEndpoint: {
+            /** Detail */
+            detail: string;
+            /** Replacement */
+            replacement: string;
         };
         /** RunSession */
         RunSession: {
@@ -5587,21 +5566,6 @@ export interface components {
             /** Tempo */
             tempo?: string | null;
         };
-        /** Zone */
-        Zone: {
-            /** Fast Offset Sec */
-            fast_offset_sec: number;
-            /** Fast Pace Sec */
-            fast_pace_sec: number;
-            /** Name */
-            name: string;
-            /** Notes */
-            notes: string;
-            /** Slow Offset Sec */
-            slow_offset_sec: number;
-            /** Slow Pace Sec */
-            slow_pace_sec: number;
-        };
     };
     responses: never;
     parameters: never;
@@ -5718,28 +5682,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MetricsRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Successful Response */
-            200: {
+            /** @description This endpoint is retired; see `replacement`. */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MetricsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["RetiredEndpoint"];
                 };
             };
         };
