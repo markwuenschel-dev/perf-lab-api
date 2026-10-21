@@ -4,6 +4,8 @@
 // (only `fetch` is stubbed, routed by path and bearer token):
 //   - A 401 answering a request made with an earlier session's token does not sign out the
 //     current session; a 401 for the current token still does.
+//   - Login's own /auth/me is bounded: a hung one clears the spinner and leaves a retryable
+//     session, and a login's late answers after a logout + another login change nothing.
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,6 +29,13 @@ function deferred<T = void>() {
     resolve = res;
   });
   return { promise, resolve };
+}
+
+/** A request that never answers, but rejects like fetch does once its signal aborts. */
+function hang(signal: AbortSignal | null | undefined): Promise<Response> {
+  return new Promise((_, reject) => {
+    signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+  });
 }
 
 type Route = (init: RequestInit | undefined) => Promise<Response> | Response;
@@ -155,5 +164,58 @@ describe("a 401 signs out only the session whose token it refused", () => {
     await waitFor(() => expect(text("token")).toBe("none"));
     expect(text("user")).toBe("none");
     expect(sessionStorage.getItem("perf_lab_access_token")).toBeNull();
+  });
+});
+
+describe("login's own /auth/me", () => {
+  it("a hung one clears the spinner and leaves a retryable session", async () => {
+    routes.me[TOKEN_B] = (init) => hang(init?.signal);
+    await mount(null, 30);
+    fireEvent.click(screen.getByText("login b"));
+    await waitFor(() => expect(text("token")).toBe(TOKEN_B));
+    // Not a stuck spinner: the login's check times out, and so does the session load's.
+    await waitFor(() => expect(text("loading")).toBe("false"));
+    await waitFor(() => expect(text("session")).toBe("network"));
+    expect(text("user")).toBe("none");
+    expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN_B);
+
+    // Retryable: once /auth/me answers, the retry confirms the session.
+    routes.me[TOKEN_B] = () => json(200, USER_B);
+    fireEvent.click(screen.getByText("retry"));
+    await waitFor(() => expect(text("user")).toBe(USER_B.email));
+    expect(text("session")).toBe("ok");
+  });
+
+  it("a login's /auth/me answering after a logout and another login changes nothing", async () => {
+    const lateMeA = deferred();
+    routes.me[TOKEN_A] = () => lateMeA.promise.then(() => json(200, USER_A));
+    await mount(null);
+    fireEvent.click(screen.getByText("login a"));
+    await waitFor(() => expect(text("token")).toBe(TOKEN_A));
+
+    fireEvent.click(screen.getByText("logout"));
+    fireEvent.click(screen.getByText("login b"));
+    await waitFor(() => expect(text("user")).toBe(USER_B.email));
+
+    await act(async () => lateMeA.resolve());
+    await act(async () => undefined);
+    expect(text("user")).toBe(USER_B.email);
+    expect(text("token")).toBe(TOKEN_B);
+  });
+
+  it("a login's /auth/token answering after another login does not replace the newer session", async () => {
+    const lateTokenA = deferred();
+    routes.token[USER_A.email] = () =>
+      lateTokenA.promise.then(() => json(200, { access_token: TOKEN_A, token_type: "bearer" }));
+    await mount(null);
+    fireEvent.click(screen.getByText("login a"));
+    fireEvent.click(screen.getByText("login b"));
+    await waitFor(() => expect(text("user")).toBe(USER_B.email));
+
+    await act(async () => lateTokenA.resolve());
+    await act(async () => undefined);
+    expect(text("token")).toBe(TOKEN_B);
+    expect(sessionStorage.getItem("perf_lab_access_token")).toBe(TOKEN_B);
+    expect(text("user")).toBe(USER_B.email);
   });
 });
