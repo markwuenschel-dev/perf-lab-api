@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CheckinModal } from "./CheckinModal";
 
 const listWellness = vi.fn();
-const refreshProfile = vi.fn();
+const retrySession = vi.fn();
 let calendarKey = "zone:America/Los_Angeles";
 const ingestWellness = vi.fn();
 
@@ -25,7 +25,7 @@ vi.mock("@/auth/useAuth", () => ({
     token: "athlete-token",
     profile: { untracked_wellness_signals: [], timezone: "America/Los_Angeles", timezone_source: "browser" },
     calendarKey,
-    refreshProfile,
+    retrySession,
   }),
 }));
 
@@ -46,7 +46,7 @@ vi.mock("../store", async (importOriginal) => {
 beforeEach(() => {
   // 03:00Z on Jan 15 is 19:00 on Jan 14 in Los Angeles. Only Date is faked; timers stay real.
   calendarKey = "zone:America/Los_Angeles";
-  refreshProfile.mockReset();
+  retrySession.mockReset();
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-01-15T03:00:00Z"));
   listWellness.mockResolvedValue([
@@ -87,6 +87,7 @@ it.each([
   expect(ingestWellness).not.toHaveBeenCalled();
   if (key === "unavailable") {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(refreshProfile).toHaveBeenCalledTimes(1);
+    // The whole session load again — profile AND zone capture — not a bare profile refresh.
+    expect(retrySession).toHaveBeenCalledTimes(1);
   }
 });

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/useAuth";
+import { calendarEstablished } from "../athleteTimezone";
 import {
   getNextSession,
   getTodayPlannedSession,
@@ -90,7 +91,8 @@ export function LogWorkoutModal() {
   // prescriptionPrefill.ts). Each exercise arrives as a TARGET the athlete confirms or
   // overwrites — never as a reading. Silent no-op when signed out or nothing is prescribed.
   useEffect(() => {
-    if (!logOpen || !auth.token) return;
+    // B1: today's session is the athlete's day; wait until the profile has established it.
+    if (!logOpen || !auth.token || !calendarEstablished(auth.calendarKey)) return;
     const token = auth.token;
     let cancelled = false;
     (async () => {
@@ -123,7 +125,7 @@ export function LogWorkoutModal() {
     return () => {
       cancelled = true;
     };
-  }, [logOpen, auth.token, goal]);
+  }, [logOpen, auth.token, goal, auth.calendarKey]);
 
   // Real D(t) preview from POST /v1/simulate-dose (debounced). Unauthenticated, so it
   // works signed out too. Every answer is stored with the draft it describes.

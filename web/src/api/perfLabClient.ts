@@ -364,12 +364,13 @@ export async function listBenchmarkObservations(
 }
 
 /** Load the authenticated athlete's profile (Settings hydrates from this). */
-export async function getProfile(token: string): Promise<ProfileRead> {
+export async function getProfile(token: string, signal?: AbortSignal): Promise<ProfileRead> {
   if (!API_V1_BASE) {
     throw new Error("VITE_API_BASE_URL is not configured (no /v1 base)");
   }
   const res = await fetch(`${API_V1_BASE}/profile`, {
     headers: { ...authHeaders(token) },
+    signal,
   });
   return handleResponse<ProfileRead>(res, { sessionOn401: true });
 }

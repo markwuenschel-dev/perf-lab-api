@@ -30,7 +30,34 @@ import {
   setStoredToken,
 } from "./tokenStorage";
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+/** How long the profile load may take before the calendar is treated as unavailable (B1): a hung
+ *  request must not leave every day-dependent screen loading with no way to retry. */
+export const PROFILE_LOAD_TIMEOUT_MS = 8000;
+
+/** The profile, or a rejection once `ms` pass (the request itself is aborted too). */
+async function loadProfileWithin(token: string, ms: number): Promise<ProfileRead> {
+  const abort = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      reject(new Error("profile load timed out"));
+    }, ms);
+  });
+  try {
+    return await Promise.race([api.getProfile(token, abort.signal), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function AuthProvider({
+  children,
+  profileTimeoutMs = PROFILE_LOAD_TIMEOUT_MS,
+}: {
+  children: ReactNode;
+  profileTimeoutMs?: number;
+}) {
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [user, setUser] = useState<UserResponse | null>(null);
   const [profile, setProfile] = useState<ProfileRead | null>(null);
@@ -53,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     setProfile(null);
+    setCalendarSettled(false);
     setIsGuest(false);
     setSessionUnavailable(null);
   }, []);
@@ -66,12 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      setProfile(await api.getProfile(t));
+      setProfile(await loadProfileWithin(t, profileTimeoutMs));
     } catch {
-      setProfile(null);
+      // A failed refresh is not news about the zone: keep the last confirmed profile (and with
+      // it the calendar). With none confirmed yet, the calendar stays "unavailable".
     }
     setCalendarSettled(true);
-  }, []);
+  }, [profileTimeoutMs]);
 
   const enterGuest = useCallback(() => {
     // Drop straight into onboarding (App routes on onboardingPending), exactly
@@ -85,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearStoredSession();
       setToken(null);
       setUser(null);
+      setCalendarSettled(false);
     });
     return () => setUnauthorizedHandler(null);
   }, []);
@@ -139,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // consumers fall back (e.g. sidebar → email local-part).
       let p: ProfileRead;
       try {
-        p = await api.getProfile(activeToken);
+        p = await loadProfileWithin(activeToken, profileTimeoutMs);
         if (isCancelled()) return;
         setProfile(p);
       } catch {
@@ -147,6 +177,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         settle();
         return;
       }
+      // The profile is the server's word on the zone ("unknown" included): the calendar is
+      // settled now, and day-dependent data loads. The capture below is optional and never
+      // blocks it; when it succeeds, the confirmed zone changes the key and the data refetches.
+      settle();
       // B1: the athlete's timezone is captured from this browser only while it is unknown. A
       // known zone (captured before, or chosen in Settings) is never offered again, and the
       // server refuses to replace it anyway. Best-effort: a failure leaves it unknown (UTC).
@@ -159,9 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           /* stays unknown; the next session load offers it again */
         }
       }
-      settle();
     },
-    [logout, toUnavailable],
+    [logout, toUnavailable, profileTimeoutMs],
   );
 
   /** Retry a session check that failed transiently, from a UI affordance. */
@@ -193,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStoredEmail(emailIn);
       setEmail(emailIn);
       setIsGuest(false); // a real session supersedes any guest session
+      setCalendarSettled(false); // the new session's calendar is not known until its profile is
       setToken(tr.access_token);
       const u = await api.fetchMe(tr.access_token);
       setUser(u);

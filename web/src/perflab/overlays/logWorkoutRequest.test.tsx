@@ -36,10 +36,13 @@ vi.mock("@/auth/useAuth", () => ({
     token: AUTH_TOKEN,
     user: { email: "athlete@example.com" },
     profile: null,
+    // B1: the prefill reads today's session, so it waits for an established calendar.
+    calendarKey: authCalendarKey,
     email: "athlete@example.com",
     isGuest: false,
   }),
 }));
+let authCalendarKey = "unknown";
 
 /** What the pre-fill reads: today's plan and the fresh prescription. Empty by default. */
 /** GET /v1/planning/today. `null` = nothing planned today. */
@@ -404,6 +407,18 @@ describe("the recommended workout pre-fills Log Workout", () => {
   };
   beforeEach(resetPrefill);
   afterEach(resetPrefill);
+
+  it("does not read today's session while the calendar is pending, then does once it is set", async () => {
+    authCalendarKey = "pending";
+    storeGoal = "Powerlifting";
+    const { rerender } = render(<LogWorkoutModal />);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(nextSessionGoals).toEqual([]);
+    authCalendarKey = "zone:America/New_York";
+    rerender(<LogWorkoutModal />);
+    await vi.waitFor(() => expect(nextSessionGoals).toEqual(["Powerlifting"]));
+    authCalendarKey = "unknown";
+  });
 
   it("asks for the athlete's own goal, never 'hybrid'", async () => {
     storeGoal = "Powerlifting";

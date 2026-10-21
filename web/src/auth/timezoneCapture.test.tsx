@@ -80,11 +80,11 @@ function deferred<T>() {
 }
 
 describe("day-dependent data follows the confirmed calendar", () => {
-  it("waits for the capture, then reads the athlete's day; a later zone change refetches", async () => {
+  it("does not hold day data for the capture: it loads on the profile, then follows the zone", async () => {
     getProfile.mockResolvedValueOnce({ timezone: null, timezone_source: null });
     const capture = deferred<unknown>();
     captureDetectedTimezone.mockReturnValue(capture.promise);
-    readToday.mockResolvedValueOnce("New York day");
+    readToday.mockResolvedValueOnce("UTC day").mockResolvedValueOnce("New York day");
     sessionStorage.setItem("perf_lab_access_token", TOKEN);
     sessionStorage.setItem("perf_lab_session_email", USER.email);
     render(
@@ -92,15 +92,12 @@ describe("day-dependent data follows the confirmed calendar", () => {
         <DayProbe />
       </AuthProvider>,
     );
-    await waitFor(() => expect(captureDetectedTimezone).toHaveBeenCalledTimes(1));
-    // The capture is still in flight: nothing day-dependent has been asked under the UTC day.
-    expect(readToday).not.toHaveBeenCalled();
-    expect(screen.getByTestId("day").textContent).toBe("pending:loading");
+    await waitFor(() => expect(screen.getByTestId("day").textContent).toBe("unknown:UTC day"));
     capture.resolve({ timezone: "America/New_York", timezone_source: "browser" });
     await waitFor(() =>
       expect(screen.getByTestId("day").textContent).toBe("zone:America/New_York:New York day"),
     );
-    expect(readToday).toHaveBeenCalledTimes(1);
+    expect(readToday).toHaveBeenCalledTimes(2);
   });
 
   it("shows the calendar as unavailable, not unknown, when the profile fails to load", async () => {

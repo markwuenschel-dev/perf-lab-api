@@ -391,7 +391,7 @@ export function CheckinModal() {
                   ? "Your profile didn't load, so today's date can't be confirmed. "
                   : "Loading your profile to confirm today's date… "}
                 {calendarFailed && (
-                  <button type="button" onClick={() => void auth.refreshProfile()} className="font-semibold text-ac underline">
+                  <button type="button" onClick={() => void auth.retrySession()} className="font-semibold text-ac underline">
                     Retry
                   </button>
                 )}
