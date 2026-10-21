@@ -55,7 +55,7 @@ function snapshot(over: Partial<StateHistorySnapshotRead> = {}): StateHistorySna
     fatigue_f: { cns: 20, muscular: 30, metabolic: 25, structural: 15, tendon: 10, grip: 5 },
     tissue_t: { knee: 22, lumbar: 11 },
     c_met_aerobic: 301,
-    c_nm_force: 122,
+    c_nm_force: 2962, // the real mirror: 21 × 122 + 400
     ...over,
   } as unknown as StateHistorySnapshotRead;
 }
@@ -396,5 +396,31 @@ describe("no authenticated state produces fixture-backed athlete data", () => {
       habitSection(ok(overviewMetrics({ adherence: { pct: null, streak_days: 0, window_days: 28 } } as Partial<OverviewMetrics>))),
     ]);
     FIXTURE_NUMBERS.forEach((n) => expect(json).not.toContain(String(n)));
+  });
+});
+
+// ---- INT-05 C4: no legacy-mirror fallback ---------------------------------------------
+
+describe("legacy scalar mirrors are never read (INT-05 C4)", () => {
+  it("reports strength as not recorded, never the mis-scaled c_nm_force", () => {
+    const row = snapshot({ capacity_x: { aerobic: 301 }, c_nm_force: 1450 } as Partial<StateHistorySnapshotRead>);
+    expect(twinSnapshotSection(ok([row])).strength).toEqual({ kind: "empty", reason: "not_recorded" });
+  });
+  it("reports mean fatigue as not recorded without the decomposed vector", () => {
+    const row = snapshot({ fatigue_f: undefined, f_met_systemic: 40, f_nm_central: 40, f_nm_peripheral: 40, f_struct_damage: 40 } as unknown as Partial<StateHistorySnapshotRead>);
+    expect(twinSnapshotSection(ok([row])).meanFatigue).toEqual({ kind: "empty", reason: "not_recorded" });
+  });
+  it("follows the vectors when the mirrors disagree", () => {
+    // Vector mean = (20+30+25+15+10+5)/6 = 17.5 → 18; the mirrors claim 90 everywhere.
+    const row = snapshot({ c_met_aerobic: 9, f_met_systemic: 90, f_nm_central: 90, f_nm_peripheral: 90, f_struct_damage: 90 } as Partial<StateHistorySnapshotRead>);
+    const view = twinSnapshotSection(ok([row]));
+    expect(view.meanFatigue).toEqual({ kind: "value", value: 18 });
+    expect(view.aerobic).toEqual({ kind: "value", value: 301 });
+  });
+  it("drops a trend row without a fatigue vector instead of filling it from the scalars", () => {
+    const bare = snapshot({ fatigue_f: undefined, f_met_systemic: 0 } as unknown as Partial<StateHistorySnapshotRead>);
+    // 100 − round-free mean 17.5 = 82.5 → 83 for each full row.
+    expect(trendSection(ok([snapshot(), bare, snapshot()])).series).toEqual({ kind: "value", value: [83, 83] });
+    expect(trendSection(ok([snapshot(), bare])).series).toEqual({ kind: "empty", reason: "insufficient_history" });
   });
 });

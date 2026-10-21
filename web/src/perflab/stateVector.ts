@@ -6,13 +6,14 @@
 // through their interface.
 import type { CapacityState, UnifiedStateVector } from "@/types";
 
-/** Mean of the six fatigue axes (0–100), from the decomposed vector when present,
- *  else the legacy fatigue scalars. */
-export function meanFatigue(sv: UnifiedStateVector): number {
+/** Mean of the six decomposed fatigue axes (0–100), or null when the vector is missing
+ *  or any axis is non-finite. INT-05 C4: never the legacy fatigue scalars — they are a
+ *  lossy four-channel mirror, so averaging them is a different number, not a fallback. */
+export function meanFatigue(sv: UnifiedStateVector): number | null {
   const f = sv.fatigue_f;
-  const vals = f
-    ? [f.cns, f.muscular, f.metabolic, f.structural, f.tendon, f.grip]
-    : [sv.f_nm_central, sv.f_nm_peripheral, sv.f_met_systemic, sv.f_struct_damage];
+  if (!f) return null;
+  const vals = [f.cns, f.muscular, f.metabolic, f.structural, f.tendon, f.grip];
+  if (!vals.every((v) => typeof v === "number" && Number.isFinite(v))) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
@@ -24,8 +25,9 @@ export function meanFatigue(sv: UnifiedStateVector): number {
  *  line over per-snapshot state history, where no backend readiness score is carried.
  *  It must never feed decision logic — display only. (Renamed from the ambiguous
  *  `stateReadinessProxy` so it cannot be mistaken for the canonical number.) */
-export function fatigueDisplayProxy(sv: UnifiedStateVector): number {
-  return Math.round(Math.max(0, Math.min(100, 100 - meanFatigue(sv))));
+export function fatigueDisplayProxy(sv: UnifiedStateVector): number | null {
+  const m = meanFatigue(sv);
+  return m == null ? null : Math.round(Math.max(0, Math.min(100, 100 - m)));
 }
 
 /** Highest-loaded tissue region + its value, from a state vector. */
@@ -67,25 +69,18 @@ export function readCapacity(state: CapacityState | null | undefined, key: Capac
   return { availability: "available", value: v };
 }
 
-// Legacy scalar mirrors (ADR-0007) — real values, used only when the decomposed
-// capacity_x axis is unavailable. Only the axes that actually have a mirror.
-const LEGACY_CAPACITY_MIRROR: Partial<Record<CapacityKey, (sv: UnifiedStateVector) => number>> = {
-  aerobic: (sv) => sv.c_met_aerobic,
-  max_strength: (sv) => sv.c_nm_force,
-};
-
-/** Capacity value for a state vector: the decomposed axis when present and finite,
- *  else its legacy scalar mirror if one exists, else null. Never returns 0 for
- *  missing data — a nullable result the caller must render honestly (not `?? 0`). */
+/** Capacity value for a state vector: the decomposed axis when present and finite, else
+ *  null. Never returns 0 for missing data — a nullable result the caller must render
+ *  honestly (not `?? 0`). INT-05 C4: no legacy-mirror fallback. The strength "mirror"
+ *  (`c_nm_force = 21 × max_strength + 400`) is on a different scale from the axis, so the
+ *  old fallback displayed a wrong number rather than a missing one. */
 export function snapshotCapacity(sv: UnifiedStateVector, key: CapacityKey): number | null {
   const read = readCapacity(sv.capacity_x, key);
-  if (read.availability === "available") return read.value;
-  const legacy = LEGACY_CAPACITY_MIRROR[key];
-  return legacy ? legacy(sv) : null;
+  return read.availability === "available" ? read.value : null;
 }
 
-/** Aerobic capacity for a state vector — the decomposed axis or its legacy mirror
- *  (both always present on a snapshot, so this is always a real number). */
-export function aerobicValue(sv: UnifiedStateVector): number {
-  return sv.capacity_x?.aerobic ?? sv.c_met_aerobic;
+/** Aerobic capacity for a state vector — the decomposed axis, or null when it is missing or
+ *  non-finite (never the legacy `c_met_aerobic` mirror). */
+export function aerobicValue(sv: UnifiedStateVector): number | null {
+  return snapshotCapacity(sv, "aerobic");
 }
