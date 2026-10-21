@@ -293,15 +293,16 @@ async def initialize_athlete_state(
     run_5k_seconds: float | None = None,
     experience_years: float = 0.0,
     goal: str | None = None,
-    decode: Callable[[AthleteState], UnifiedStateVector] = unified_from_athlete_row,
+    decode: Callable[[AthleteState], UnifiedStateVector] = unified_from_athlete_row_strict,
 ) -> UnifiedStateVector:
     """Creates baseline S0 for a new user and commits it — exactly once (F2).
 
     Double-checked under the state-chain lock: callers decide "no state yet" from a read that
     another writer can overtake (a concurrent first workout or observation). If a row exists
     once the lock is held, nothing is inserted and that state is returned through ``decode``
-    (the caller's policy: strict callers pass the strict decoder). Either way this commits,
-    as its contract always has, which also releases the lock.
+    — strict by default (C1): only a caller that names the permissive decoder itself gets a
+    legacy reconstruction, so a new caller cannot inherit one. Either way this commits, as
+    its contract always has, which also releases the lock.
     """
     await lock_athlete_chain(db, user_id)
     existing = await AthleteContextRepository(db).get_latest_state(user_id)
@@ -430,7 +431,8 @@ async def load_or_init_current_state(
     """
     row = await AthleteContextRepository(db).get_latest_state(user_id)
     if row is None:
-        return await initialize_athlete_state(db, user_id)
+        # Permissive on purpose, and named: this wrapper's policy until 2D deletes it.
+        return await initialize_athlete_state(db, user_id, decode=unified_from_athlete_row)
     return unified_from_athlete_row(row)
 
 
@@ -1113,6 +1115,11 @@ async def _extract_e1rm_observations(
             )
             written += 1
         except Exception:
+            # Each successful spec committed inside create_observation, so this discards only
+            # the failed spec's flushed-but-uncommitted rows. Without it they stay in the
+            # session and ride along on the next commit (a shadow write below), a partial
+            # observation no one decided to keep.
+            await db.rollback()
             logger.warning(
                 "e1RM extraction failed for user %s code %s",
                 user_id, spec.get("code"), exc_info=True,

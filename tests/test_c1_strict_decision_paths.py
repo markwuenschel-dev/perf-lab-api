@@ -31,7 +31,10 @@ from app.logic import vo2_estimate as vo2
 from app.models.athlete_state import AthleteState
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
+from app.models.exercise import Exercise
 from app.models.observation_mapping import ObservationMapping
+from app.models.strength_report import StrengthSubmissionKey, UnderivedStrengthReport
+from app.models.user import AthleteProfile, User
 from app.models.weak_point import WeakPoint
 from app.models.workout_log import WorkoutLog
 from app.scripts.seed_benchmarks import BENCHMARKS, MAPPINGS
@@ -39,6 +42,7 @@ from app.scripts.seed_benchmarks import BENCHMARKS, MAPPINGS
 pytestmark = pytest.mark.asyncio
 
 MEASURED = "run_vo2_field_test_300m_1p5mi"
+SQUAT = "pl_e1rm_squat"
 TIME_TRIAL = vo2.PROTOCOL_CODE
 
 # Every way a head can exist without canonical state. Healthy legacy scalars sit beside each,
@@ -64,7 +68,7 @@ WORKOUT = {
 
 async def _seed_catalog(db: AsyncSession) -> None:
     by_code = {row["code"]: row for row in BENCHMARKS}
-    defs = {code: BenchmarkDefinition(**by_code[code]) for code in (MEASURED, TIME_TRIAL)}
+    defs = {code: BenchmarkDefinition(**by_code[code]) for code in (MEASURED, TIME_TRIAL, SQUAT)}
     db.add_all(defs.values())
     await db.flush()
     for m in MAPPINGS:
@@ -75,6 +79,11 @@ async def _seed_catalog(db: AsyncSession) -> None:
                 mapping_type=m["mapping_type"], coefficient=m["coefficient"],
                 intercept=m.get("intercept", 0.0), config=m.get("config"),
             ))
+    # A canonical lift whose e1RM is the squat benchmark: strength reports may only name these.
+    db.add(Exercise(
+        name="C1 Back Squat", modality="Strength", movement_pattern="squat",
+        load_type="barbell", is_benchmark=True, e1rm_benchmark_code=SQUAT,
+    ))
     await db.commit()
 
 
@@ -129,6 +138,12 @@ async def _snapshot(user_id: int) -> dict[str, Any]:
                 "observations": await _count(db, BenchmarkObservation, user_id),
                 "workouts": await _count(db, WorkoutLog, user_id),
                 "weak_points": await _count(db, WeakPoint, user_id),
+                "strength_reports": await _count(db, UnderivedStrengthReport, user_id),
+                "submission_keys": await _count(db, StrengthSubmissionKey, user_id),
+                "profile": (await db.execute(
+                    select(AthleteProfile.date_of_birth, AthleteProfile.primary_goal)
+                    .where(AthleteProfile.user_id == user_id)
+                )).first(),
             }
     finally:
         await engine.dispose()
@@ -289,3 +304,110 @@ async def test_onboarding_records_the_run_for_an_athlete_with_damaged_state(
     assert resp.status_code == 200, resp.text
     assert resp.json()["run_time_trial"]["status"] == "estimated"
     assert (await _snapshot(uid))["states"] == before["states"]
+
+
+# --- Strength evidence: the report and its observation commit together, or not at all -----
+
+
+def _ago(days: int) -> str:
+    return datetime.fromtimestamp(datetime.now(UTC).timestamp() - days * 86400, UTC).isoformat()
+
+
+@pytest.mark.usefixtures("no_legacy_reconstruction")
+@pytest.mark.parametrize(
+    "report",
+    [
+        # Measured: applies canonical state (bidirectional).
+        pytest.param({"method": "tested_max", "value_kg": 140.0}, id="tested-max"),
+        # Estimated: the deferred floor-ratchet branch. It only records shadow evidence, but
+        # that evidence is computed from the head, so it refuses too (benchmark_service.py,
+        # the upward_lower_bound branch) rather than shadowing a reconstruction.
+        pytest.param({"method": "estimate", "value_kg": 140.0}, id="estimate"),
+    ],
+)
+@pytest.mark.parametrize("payload", DAMAGED[:2])
+async def test_strength_evidence_over_a_damaged_head_refuses_atomically(
+    http_client: AsyncClient, async_db: AsyncSession, report: dict[str, Any], payload: Any,
+) -> None:
+    await _seed_catalog(async_db)
+    hdr, uid = await _athlete(
+        http_client, f"c1-str-{report['method']}-{payload_hash(payload)[:8]}@t.io"
+    )
+    await _damaged_head(async_db, uid, payload)
+    before = await _snapshot(uid)
+
+    resp = await http_client.post("/v1/benchmarks/strength-evidence", headers=hdr, json={
+        "benchmark_code": SQUAT, "collection_mode": "retest", "performed_at": _ago(2), **report,
+    })
+    await async_db.rollback()
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["benchmark_update_applied"] is False
+    # No report row, no submission key, no observation, chain untouched.
+    assert await _snapshot(uid) == before
+
+
+@pytest.mark.usefixtures("no_legacy_reconstruction")
+async def test_onboarding_strength_over_a_damaged_head_is_evidence_only(
+    http_client: AsyncClient, async_db: AsyncSession,
+) -> None:
+    """Onboarding strength is a prior (initialize_prior), and a prior never overwrites an
+    athlete who has a row — damaged or not. That check reads row existence only (has_state),
+    so no state is decoded: the report is kept as evidence, the chain is untouched, and the
+    legacy reconstruction is never reached."""
+    await _seed_catalog(async_db)
+    hdr, uid = await _athlete(http_client, "c1-onboard-strength@t.io")
+    await _damaged_head(async_db, uid, {"version": 2, "x": {}, "f": {}, "t": {}})
+    before = await _snapshot(uid)
+
+    resp = await http_client.post("/v1/onboard", headers=hdr, json={
+        "goal": "Powerlifting", "date_of_birth": "1990-01-01", "equipment": ["barbell"],
+        "available_days_per_week": 4, "session_duration_minutes": 60,
+        "strength": [{"benchmark_code": SQUAT, "method": "tested_max", "value_kg": 140.0,
+                      "performed_at": _ago(2)}],
+    })
+
+    assert resp.status_code == 200, resp.text
+    assert [o["outcome"] for o in resp.json()["strength"]] == ["recorded"]
+    after = await _snapshot(uid)
+    assert after["states"] == before["states"]  # no state row, head byte-identical
+    assert after["observations"] == before["observations"] + 1
+
+
+# --- e1RM extraction: a failed spec leaves nothing for a later commit (C1 review) ---------
+
+
+async def test_a_failed_e1rm_spec_leaves_no_flushed_row_for_a_later_commit(
+    async_db: AsyncSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_extract_e1rm_observations` is best-effort per spec. A spec that fails after flushing
+    must not leave its row in the session, where the next commit (a shadow write) would make
+    it durable."""
+    from app.services import benchmark_service, state_service
+
+    owner = User(email="c1-e1rm-owner@t.io", hashed_password="x", is_active=True)
+    async_db.add(owner)
+    await async_db.commit()
+
+    async def _flush_then_fail(db: AsyncSession, *_a: Any, **_k: Any) -> None:
+        db.add(User(email="c1-e1rm-leftover@t.io", hashed_password="x", is_active=True))
+        await db.flush()
+        raise RuntimeError("simulated failure after a flush")
+
+    monkeypatch.setattr(benchmark_service, "create_observation", _flush_then_fail)
+
+    written = await state_service._extract_e1rm_observations(
+        async_db, owner.id, [{"code": SQUAT, "raw_value": 100.0}], datetime(2026, 10, 1), None
+    )
+    await async_db.commit()  # the later commit the leftover would otherwise ride on
+
+    assert written == 0
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    try:
+        async with AsyncSession(engine) as fresh:
+            leftover = await fresh.execute(
+                select(func.count()).select_from(User).where(User.email == "c1-e1rm-leftover@t.io")
+            )
+            assert leftover.scalar_one() == 0
+    finally:
+        await engine.dispose()

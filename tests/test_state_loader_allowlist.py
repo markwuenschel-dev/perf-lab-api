@@ -230,3 +230,41 @@ def test_c1_decision_paths_reference_no_permissive_loader(module: str) -> None:
     """The three C1 callers, by file: none of them may reach a permissive entry point."""
     path = APP / module
     assert not _references(path.read_text(encoding="utf-8"), _PERMISSIVE_NAMES, str(path))
+
+
+# --- Inside the allowlisted module, per function (C1 review) ------------------------------
+# The module allowlist above cannot see a NEW decision function added inside state_service.py
+# that decodes permissively — that is how process_new_workout's head read went unnoticed. So
+# within that one module, the functions that may name the permissive decoder are pinned too.
+# DO NOT ADD TO THIS SET. 2D empties it.
+STATE_SERVICE_PERMISSIVE_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "stage_baseline_state",  # decodes the row it just built
+        "load_current_state",  # the permissive wrappers themselves (2C/2D)
+        "load_recent_states",
+        "load_recent_state_snapshots",
+        "load_or_init_current_state",
+        # Rows it wrote itself or already decoded strictly (the head read is strict as of C1).
+        "process_new_workout",
+    }
+)
+
+
+def _functions_referencing(path: Path, names: frozenset[str]) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    out: set[str] = set()
+    for fn in tree.body:
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            src = ast.unparse(fn)
+            if _references(src, names - {fn.name}):
+                out.add(fn.name)
+    return out
+
+
+def test_permissive_decodes_inside_state_service_are_pinned_per_function() -> None:
+    actual = _functions_referencing(APP / "services" / "state_service.py", _PERMISSIVE_NAMES)
+    assert actual == STATE_SERVICE_PERMISSIVE_FUNCTIONS, (
+        f"added: {sorted(actual - STATE_SERVICE_PERMISSIVE_FUNCTIONS)}, "
+        f"stale: {sorted(STATE_SERVICE_PERMISSIVE_FUNCTIONS - actual)}. A new function in "
+        "state_service.py must decode strictly; a removed one must leave this set."
+    )

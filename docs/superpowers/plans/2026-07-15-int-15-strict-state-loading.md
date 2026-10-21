@@ -136,12 +136,14 @@ existence) only.
 | `state_service.process_new_workout` head read | **Strict** (C1) | `workout`: the transition is the next canonical row. Missing from the original table; it promoted legacy reconstructions into canonical state |
 | `api/v1/simulate.py` (`/simulate/projection`) | **Strict** (C1) | `projection`: the athlete's own forecast is not display-only. It reached `load_or_init_current_state`, which the old guard did not match |
 | `assessment_surface_service` | **Strict** (C1) | `assessment`: variance ranks the next benchmark |
-| `api/v1/onboard.py` | Decodes nothing | stages a baseline only when no row exists; the B2 run reads no state |
+| `api/v1/onboard.py` | Decodes nothing directly | stages a baseline only when no row exists; the B2 run reads no state; strength reports go through `stage_observation` as priors (`initialize_prior`), and a prior over ANY existing row is evidence-only via `has_state`, so it decodes nothing either (pinned: `test_onboarding_strength_over_a_damaged_head_is_evidence_only`) |
 | `onboarding_service._twin_summary` | Permissive → **2C** | display only (a confidence label, `AssessmentSurfaceScreen.tsx:223-238`); `can_prescribe` does not read state. Must carry degraded provenance through the API and UI |
 | `onboarding_service` measurement debt | Strict via assessment | refusal is swallowed to `[]` (prompts are never a gate) |
 | `dashboard_service:391`, `api/v1/history.py:45` | Permissive → **2C** | display recovery with provenance |
 | `ekf_shadow_service` ×3, `recovery_shadow_service` | Permissive → **S3** | explicit skip, no reconstruction |
-| `state_service` internal decodes of rows it just wrote (`stage_baseline_state`, post-commit `new_db_record`, tail-replay head, post-e1RM re-read) | Permissive → **2D** | canonical by construction; switched when the permissive loader is deleted |
+| `state_service` internal decodes of rows it just wrote or already decoded strictly (`stage_baseline_state`; in `process_new_workout`: the record-only head and tail-replay head, post-commit `new_db_record`, post-e1RM re-read) | Permissive → **2D** | canonical by construction; pinned per function by `test_permissive_decodes_inside_state_service_are_pinned_per_function`; switched when the permissive loader is deleted |
+| `initialize_athlete_state` race branch | **Strict by default** (C1) | only `load_or_init_current_state` (no app caller after C1; 2D) names the permissive decoder |
+| `/v1/benchmarks/strength-evidence` | Strict via benchmark (C1) | measured and estimated reports both refuse over a damaged head; the report row, its submission key and the observation commit together or not at all |
 | prescription, readiness, planning projection, week review, tail replay, forecast scoring, repair job | Strict (earlier slices) | unchanged |
 
 C1's deploy is gated on a fresh sweep (`app/scripts/audit_engine_state.py`): every head must
