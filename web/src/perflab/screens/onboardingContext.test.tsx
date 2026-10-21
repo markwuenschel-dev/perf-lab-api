@@ -250,7 +250,8 @@ it("shows a saved run without an estimate as saved, and lets the athlete continu
     run_time_trial: savedRun({
       status: "not_estimated", reason: "missing_inputs", vo2max_ml_kg_min: null,
       missing_inputs: ["body_mass", "sex"],
-      headline: "Your run is saved. Add your body mass and sex with a run to see an estimated VO₂max.",
+      headline:
+        "Your run is saved without an estimated VO₂max: the estimate needs your body mass and sex, entered with the run.",
     }),
   });
   renderOnboarding({ goal: "Running", units: "Metric (km)" });
@@ -261,9 +262,106 @@ it("shows a saved run without an estimate as saved, and lets the athlete continu
   enter();
 
   const card = await screen.findByRole("region", { name: "Your 1.5 mi run" });
-  expect(card.textContent).toContain("Your run is saved.");
+  expect(card.textContent).toContain("Your run is saved");
   expect(card.textContent).not.toContain("ml·kg⁻¹·min⁻¹");
   expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
+});
+
+it("shows a run saved while estimates are unavailable without any value or grade", async () => {
+  completeOnboarding.mockResolvedValue({
+    strength: [],
+    run_time_trial: savedRun({
+      status: "not_estimated", reason: "coefficients_unverified", vo2max_ml_kg_min: null,
+      elapsed_seconds: 599.6,
+      headline: "Your run is saved. VO₂max estimates are not available yet.",
+    }),
+  });
+  renderOnboarding({ goal: "Running", units: "Metric (km)" });
+
+  continueStep();
+  continueStep();
+  type("1.5 mi time", "9:59");
+  enter();
+
+  const card = await screen.findByRole("region", { name: "Your 1.5 mi run" });
+  expect(card.textContent).toContain("VO₂max estimates are not available yet.");
+  expect(card.textContent).not.toContain("ml·kg⁻¹·min⁻¹");
+  expect(card.textContent).not.toContain("not used for your plan");
+  // 599.6 s rounds to whole seconds before it is split: 10:00, never 9:60.
+  expect(card.textContent).toContain("1.5 mi run · 10:00");
+});
+
+it("shows the server's reason when only the run was refused, and the rest was saved", async () => {
+  completeOnboarding.mockResolvedValue({
+    strength: [],
+    run_time_trial: null,
+    run_time_trial_refused: "The 1.5 mi run was not saved: its date is in the future.",
+  });
+  renderOnboarding({ goal: "Running", units: "Metric (km)" });
+
+  continueStep();
+  continueStep();
+  type("1.5 mi time", "12:00");
+  enter();
+
+  const alert = await screen.findByRole("status");
+  expect(alert.textContent).toContain("The 1.5 mi run was not saved: its date is in the future.");
+  expect(screen.getByRole("heading", { name: "Your baseline is saved" })).toBeTruthy();
+});
+
+it("un-selecting the sex sends no sex input at all", async () => {
+  renderOnboarding({ goal: "Running", units: "Metric (km)" });
+
+  continueStep();
+  continueStep();
+  type("1.5 mi time", "12:00");
+  press("Male");
+  press("Male");
+  enter();
+
+  const body = await sentBody();
+  expect(body.run_time_trial).toEqual({ elapsed_seconds: 720 });
+  expect(screen.queryByRole("button", { name: "Male", pressed: true })).toBeNull();
+});
+
+it.each([
+  ["Metric (km)", "Bodyweight (kg)", "24", "Bodyweight: enter between 25 and 300 kg."],
+  ["Metric (km)", "Bodyweight (kg)", "301", "Bodyweight: enter between 25 and 300 kg."],
+  ["Imperial (mi)", "Bodyweight (lbs)", "700", "Bodyweight: enter between 55.2 and 661.3 lbs."],
+])("refuses an implausible bodyweight on the step (%s, %s %s)", async (units, label, value, message) => {
+  renderOnboarding({ goal: "Running", units });
+
+  continueStep();
+  continueStep();
+  type("1.5 mi time", "12:00");
+  type(label, value);
+  enter();
+
+  expect((await screen.findByRole("alert")).textContent).toContain(message);
+  expect(completeOnboarding).not.toHaveBeenCalled();
+});
+
+it("keeps a bodyweight's precision when the athlete switches units", async () => {
+  renderOnboarding({ goal: "Running", units: "Metric (km)" });
+
+  continueStep();
+  continueStep();
+  type("Bodyweight (kg)", "80");
+  press("← Back");
+  press("Imperial (mi)");
+  continueStep();
+
+  expect((screen.getByLabelText("Bodyweight (lbs)") as HTMLInputElement).value).toBe("176.4");
+});
+
+it("limits the run date to the device's local today", () => {
+  vi.setSystemTime(new Date(2026, 8, 14, 0, 30)); // just after local midnight
+  renderOnboarding({ goal: "Running", units: "Metric (km)" });
+
+  continueStep();
+  continueStep();
+
+  expect((screen.getByLabelText("Date of the run") as HTMLInputElement).max).toBe("2026-09-14");
 });
 
 it("sends the optional context fields, converted to metric when the athlete is imperial", async () => {

@@ -166,12 +166,6 @@ export type SyncResult = Schemas["SyncResult"];
 export type IngestTokenOut = Schemas["IngestTokenOut"];
 export type IngestTokenCreated = Schemas["IngestTokenCreated"];
 
-/* ---------- Legacy field test (POST /compute-metrics, no /v1 prefix) ---------- */
-// The backend schema is named `MetricsRequest`; the app calls it ComputeMetricsRequest.
-export type ComputeMetricsRequest = Schemas["MetricsRequest"];
-export type Zone = Schemas["Zone"];
-export type MetricsResponse = Schemas["MetricsResponse"];
-
 /* ========== Frontend-only types (no backend counterpart) ========== */
 
 /** Normalized client error shape thrown by `perfLabClient`. */

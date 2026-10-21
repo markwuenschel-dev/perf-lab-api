@@ -62,4 +62,16 @@ describe("parseMMSS", () => {
     expect(parseMMSS("6")).toBeNull();
     expect(parseMMSS("6:0:0")).toBeNull();
   });
+
+  it("refuses what is not a time: seconds of 60 or more, negatives, blanks, fractions of a minute", () => {
+    expect(parseMMSS("9:75")).toBeNull();
+    expect(parseMMSS("9:60")).toBeNull();
+    expect(parseMMSS("-1:30")).toBeNull();
+    expect(parseMMSS("9:-5")).toBeNull();
+    expect(parseMMSS(":30")).toBeNull();
+    expect(parseMMSS("9:")).toBeNull();
+    expect(parseMMSS("1.5:00")).toBeNull();
+    expect(parseMMSS("9:59")).toBe(599);
+    expect(parseMMSS("0:00")).toBe(0);
+  });
 });

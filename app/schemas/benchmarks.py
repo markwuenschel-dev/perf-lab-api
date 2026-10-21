@@ -286,7 +286,7 @@ class RunTimeTrialReport(BaseModel):
     body_mass: float | None = Field(
         None, gt=0, allow_inf_nan=False,
         description="Body mass as the athlete entered it, in body_mass_unit: 25-300 kg "
-        "(55.1-661.4 lb).",
+        "(55.2-661.3 lb).",
     )
     body_mass_unit: Literal["kg", "lb"] | None = None
     sex_for_estimate: Literal["female", "male"] | None = Field(
@@ -305,7 +305,7 @@ class RunTimeTrialReport(BaseModel):
             if not low <= kg <= high:
                 raise ValueError(
                     f"body_mass must be between {low:g} and {high:g} kg "
-                    f"({low / vo2.LB_TO_KG:.1f}-{high / vo2.LB_TO_KG:.1f} lb); got "
+                    f"({vo2.BODY_MASS_LB_RANGE[0]:g}-{vo2.BODY_MASS_LB_RANGE[1]:g} lb); got "
                     f"{self.body_mass:g} {self.body_mass_unit}"
                 )
         return self

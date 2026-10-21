@@ -70,9 +70,14 @@ SECONDS_PER_MINUTE = 60.0
 #: A 1.5 mi time this model can be given: 3 min - 4 h, the same envelope as the legacy calculator
 #: (app/api/v1/legacy.py TIME_1P5MI_BOUNDS). Outside it the time is refused, not saved.
 ELAPSED_TIME_BOUNDS_S: tuple[float, float] = (180.0, 14400.0)
-#: A body mass the request may carry, in kg (55.1-661.4 lb). Outside it the request is refused
-#: with the field named, so a typo never reaches the record.
+#: A body mass the request may carry, in kg. Outside it the request is refused with the field
+#: named, so a typo never reaches the record.
 BODY_MASS_KG_BOUNDS: tuple[float, float] = (25.0, 300.0)
+#: The same range in pounds, rounded INWARD to 0.1 lb so every figure it names is accepted.
+BODY_MASS_LB_RANGE: tuple[float, float] = (
+    math.ceil(BODY_MASS_KG_BOUNDS[0] / LB_TO_KG * 10) / 10,
+    math.floor(BODY_MASS_KG_BOUNDS[1] / LB_TO_KG * 10) / 10,
+)
 
 
 @dataclass(frozen=True)

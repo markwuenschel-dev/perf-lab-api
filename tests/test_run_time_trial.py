@@ -344,7 +344,7 @@ async def test_an_implausible_body_mass_is_a_422_that_names_the_field(
         "/v1/onboard", json=_payload({**FULL_RUN, "body_mass": 1630}), headers=headers
     )
     assert resp.status_code == 422
-    assert "body_mass must be between 25 and 300 kg (55.1-661.4 lb)" in resp.text
+    assert "body_mass must be between 25 and 300 kg (55.2-661.3 lb)" in resp.text
     assert "less than or equal to" not in resp.text
 
 

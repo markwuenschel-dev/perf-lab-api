@@ -10,7 +10,8 @@ export function PerfLabProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const wasNarrow = useRef(false);
 
-  // Persist {ftDone, fresh, fieldTest, twinState, readiness, settings}
+  // Persist {ftDone, fresh, twinState, readiness, settings}. Written whole, so a retired key
+  // (B2: `fieldTest`, `settings.sex`) is dropped from localStorage on the first render.
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -18,7 +19,6 @@ export function PerfLabProvider({ children }: { children: ReactNode }) {
         JSON.stringify({
           ftDone: state.ftDone,
           fresh: state.fresh,
-          fieldTest: state.fieldTest,
           twinState: state.twinState,
           readiness: state.readiness,
           settings: state.settings,
@@ -27,7 +27,7 @@ export function PerfLabProvider({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
-  }, [state.ftDone, state.fresh, state.fieldTest, state.twinState, state.readiness, state.settings]);
+  }, [state.ftDone, state.fresh, state.twinState, state.readiness, state.settings]);
 
   // Runtime accent
   useEffect(() => {

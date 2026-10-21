@@ -105,7 +105,18 @@ function GoalAnchorCard({ goal }: { goal: string }) {
   );
 }
 
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+/** Whole seconds first, so 599.6 s reads 10:00, never 9:60. */
+const mmss = (s: number) => {
+  const total = Math.round(s);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
+
+/** The device's local calendar date as YYYY-MM-DD (a date input's value), not the UTC one. */
+const localISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** The body-mass range the server accepts for the estimate (app/logic/vo2_estimate.py). */
+const BODY_MASS_KG = { min: 25, max: 300 } as const;
 
 /** The saved 1.5 mi run and its display-only VO₂max estimate (B2). No grade is shown: the old
  *  grade tables were unsourced. Outside the study population the label says so. */
@@ -155,7 +166,7 @@ export function OnboardingScreen() {
   const [lastName, setLastName] = useState("");
   const [dob, setDob] = useState(""); // ISO "YYYY-MM-DD" from <input type="date">
 
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = localISODate(new Date());
   const dobAge = dob ? Math.floor((Date.now() - new Date(`${dob}T00:00:00`).getTime()) / 3.15576e10) : null;
   const dobError: string | null =
     !dob ? null
@@ -208,7 +219,9 @@ export function OnboardingScreen() {
   // The 1.5 mi run the server saved, with its display-only estimate (B2). When there is one, the
   // athlete reads it on the saved screen before continuing.
   const [savedRun, setSavedRun] = useState<Vo2EstimateRead | null>(null);
-  const showSaved = keptReports !== null || savedRun !== null;
+  // Why the server refused the run alone (an impossible date): the rest was saved.
+  const [runRefused, setRunRefused] = useState<string | null>(null);
+  const showSaved = keptReports !== null || savedRun !== null || runRefused !== null;
   const [run5k, setRun5k] = useState("");
 
   const wUnit = weightLabel(units);
@@ -223,8 +236,9 @@ export function OnboardingScreen() {
     actions.setSetting("units", v);
     const toImperial = v === "Imperial (mi)";
     const convert = toImperial
-      ? (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : kgToLbs(n).toFixed(0); }
-      : (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : lbsToKg(n).toFixed(1); };
+      // One decimal both ways, so switching units never rounds a mass to a whole pound.
+      ? (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : String(Math.round(kgToLbs(n) * 10) / 10); }
+      : (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : String(Math.round(lbsToKg(n) * 10) / 10); };
     if (bodyweight) setBodyweight(convert(bodyweight));
     setStrength((cur) =>
       Object.fromEntries(
@@ -279,6 +293,17 @@ export function OnboardingScreen() {
       runTrial = { elapsed_seconds: s };
       if (runDate) runTrial.performed_on = runDate;
       const mass = parseFloat(bodyweight);
+      if (bodyweight.trim()) {
+        const kg = imperial ? lbsToKg(mass) : mass;
+        if (isNaN(mass) || kg < BODY_MASS_KG.min || kg > BODY_MASS_KG.max) {
+          setFinishError(
+            imperial
+              ? "Bodyweight: enter between 55.2 and 661.3 lbs."
+              : "Bodyweight: enter between 25 and 300 kg.",
+          );
+          return;
+        }
+      }
       if (!isNaN(mass) && mass > 0) {
         // Sent as entered, with its unit; the server converts pounds exactly.
         runTrial.body_mass = mass;
@@ -291,6 +316,7 @@ export function OnboardingScreen() {
     let saved = false;
     let kept: { label: string; message: string }[] = [];
     let run: Vo2EstimateRead | null = null;
+    let refused: string | null = null;
     try {
       const req: Record<string, unknown> = { goal };
 
@@ -337,6 +363,7 @@ export function OnboardingScreen() {
       saved = true;
       kept = keptReportsOf(response);
       run = response?.run_time_trial ?? null;
+      refused = response?.run_time_trial_refused ?? null;
 
       // Each picked domain becomes an Objective (drives plan emphasis + the Assess
       // filter). Best-effort + only for a signed-in user; a failure never blocks entry.
@@ -355,9 +382,10 @@ export function OnboardingScreen() {
     } finally {
       setSeeding(false);
       if (saved) {
-        if (kept.length > 0 || run !== null) {
+        if (kept.length > 0 || run !== null || refused !== null) {
           setKeptReports(kept);
           setSavedRun(run);
+          setRunRefused(refused);
         } else goOverview();
       }
     }
@@ -406,6 +434,11 @@ export function OnboardingScreen() {
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Your baseline is saved</h1>
             {savedRun !== null && <SavedRunCard run={savedRun} />}
+            {runRefused !== null && (
+              <p role="status" className="m-0 mb-6 mt-5 rounded-[11px] border border-hot/30 px-4 py-3 text-[12.5px] font-medium leading-[1.5] text-hot">
+                {runRefused} Everything else you entered is saved.
+              </p>
+            )}
             {keptReports !== null && keptReports.length > 0 && (
               <>
                 <p className="m-0 mb-6 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
@@ -542,7 +575,7 @@ export function OnboardingScreen() {
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Seed your twin</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
               {isRunningGoal(goal)
-                ? "Enter a recent 1.5 mi run, as fast as you could go — or skip and add one later."
+                ? "Enter a recent 1.5 mi run, as fast as you could go — or leave it blank."
                 : isStrengthGoal(goal)
                   ? "Enter your current lifts to seed the strength model — or skip and add after your first session."
                   : "Enter any baseline data you have — all fields are optional."}
