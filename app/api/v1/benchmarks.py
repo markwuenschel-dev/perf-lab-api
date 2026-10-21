@@ -15,11 +15,13 @@ from app.schemas.benchmarks import (
     StrengthEvidenceCreate,
     StrengthOutcome,
     UnderivedStrengthReportRead,
+    Vo2EstimateRead,
 )
 from app.services import (
     assessment_surface_service,
     benchmark_service,
     dashboard_service,
+    run_time_trial_service,
     strength_evidence_service,
 )
 
@@ -71,6 +73,17 @@ async def post_benchmark_observation(
         return await benchmark_service.create_observation(db, current_user.id, body)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/vo2-estimates", response_model=list[Vo2EstimateRead])
+async def get_vo2_estimates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[Vo2EstimateRead]:
+    """The athlete's saved 1.5 mi time trials, newest first, each with its display-only VO₂max
+    estimate (B2). Each is rebuilt from the inputs captured on its own record, never from the
+    current profile, and none is used for the plan."""
+    return await run_time_trial_service.list_estimates(db, current_user.id)
 
 
 @router.post("/strength-evidence", response_model=StrengthOutcome)

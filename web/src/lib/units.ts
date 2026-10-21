@@ -36,9 +36,12 @@ export const fmtPace = (secPerMile: number, units: string): string => {
 export const fmtDist = (km: number, units: string, decimals = 1): string =>
   `${(isImperial(units) ? kmToMi(km) : km).toFixed(decimals)} ${distLabel(units)}`;
 
-/** Parse "MM:SS" or "M:SS" → total seconds, or null if unparseable. */
+/** Parse "MM:SS" or "M:SS" → total seconds, or null if it is not a time: whole minutes,
+ *  seconds from 0 up to (not including) 60, nothing negative ("9:75" is refused). */
 export const parseMMSS = (t: string): number | null => {
-  const parts = t.split(":").map(Number);
-  if (parts.length === 2 && parts.every((n) => !isNaN(n))) return parts[0] * 60 + parts[1];
-  return null;
+  const parts = t.trim().split(":");
+  if (parts.length !== 2 || parts.some((p) => p.trim() === "")) return null;
+  const [min, sec] = parts.map(Number);
+  if (!Number.isInteger(min) || min < 0 || !Number.isFinite(sec) || sec < 0 || sec >= 60) return null;
+  return min * 60 + sec;
 };

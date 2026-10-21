@@ -2,8 +2,14 @@
 import { useState } from "react";
 import { useAuth } from "@/auth/useAuth";
 import { isImperial, kgToLbs, lbsToKg, parseMMSS, weightLabel } from "@/lib/units";
-import { computeMetrics, createObjective } from "@/api/perfLabClient";
-import type { ApiError, OnboardResponse, OnboardStrengthReport } from "@/types";
+import { createObjective } from "@/api/perfLabClient";
+import type {
+  ApiError,
+  OnboardResponse,
+  OnboardStrengthReport,
+  RunTimeTrialReport,
+  Vo2EstimateRead,
+} from "@/types";
 import { isRunningGoal, isStrengthGoal, TRAINING_GOALS, usePerfLab } from "../store";
 import { getGoalLoadDefinition } from "../goalLoadDefinitions";
 import { DOMAIN_OPTIONS, domainLabel } from "../domains";
@@ -99,6 +105,48 @@ function GoalAnchorCard({ goal }: { goal: string }) {
   );
 }
 
+/** Whole seconds first, so 599.6 s reads 10:00, never 9:60. */
+const mmss = (s: number) => {
+  const total = Math.round(s);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+};
+
+/** The device's local calendar date as YYYY-MM-DD (a date input's value), not the UTC one. */
+const localISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** The body-mass range the server accepts for the estimate (app/logic/vo2_estimate.py). */
+const BODY_MASS_KG = { min: 25, max: 300 } as const;
+
+/** The saved 1.5 mi run and its display-only VO₂max estimate (B2). No grade is shown: the old
+ *  grade tables were unsourced. Outside the study population the label says so. */
+function SavedRunCard({ run }: { run: Vo2EstimateRead }) {
+  const estimated = run.status === "estimated" && run.vo2max_ml_kg_min != null;
+  return (
+    <section aria-label="Your 1.5 mi run" className="mb-6 mt-5 rounded-[12px] border border-white/[0.08] px-4 py-4">
+      <div className="font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.14em] text-mute">
+        1.5 mi run · {mmss(run.elapsed_seconds)}
+      </div>
+      {estimated ? (
+        <>
+          <div className="mt-3 font-mono text-[26px] font-semibold leading-none text-ink">
+            {run.vo2max_ml_kg_min!.toFixed(1)} <span className="text-[13px] text-faint">ml·kg⁻¹·min⁻¹</span>
+          </div>
+          <p className="m-0 mt-2 text-[13px] font-semibold leading-[1.5] text-soft">{run.headline}</p>
+          <p className={`m-0 mt-1 text-[12px] font-medium leading-[1.5] ${run.extrapolated ? "text-hot" : "text-mute"}`}>
+            {run.population_label}
+          </p>
+          <p className="m-0 mt-1 text-[11.5px] font-medium leading-[1.5] text-faint">
+            Typical error of this estimate: ±{run.see_ml_kg_min} ml·kg⁻¹·min⁻¹ (George et al., 1993).
+          </p>
+        </>
+      ) : (
+        <p className="m-0 mt-2 text-[12.5px] font-medium leading-[1.5] text-soft">{run.headline}</p>
+      )}
+    </section>
+  );
+}
+
 export function OnboardingScreen() {
   const { state, actions } = usePerfLab();
   const { completeOnboarding, token } = useAuth();
@@ -107,7 +155,6 @@ export function OnboardingScreen() {
   const toggleDomain = (d: string) =>
     setDomains((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
 
-  const sex = state.settings.sex;
   const units = state.settings.units;
   const goal = state.settings.goal;
   const imperial = isImperial(units);
@@ -119,7 +166,7 @@ export function OnboardingScreen() {
   const [lastName, setLastName] = useState("");
   const [dob, setDob] = useState(""); // ISO "YYYY-MM-DD" from <input type="date">
 
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = localISODate(new Date());
   const dobAge = dob ? Math.floor((Date.now() - new Date(`${dob}T00:00:00`).getTime()) / 3.15576e10) : null;
   const dobError: string | null =
     !dob ? null
@@ -149,9 +196,13 @@ export function OnboardingScreen() {
   const [overhead, setOverhead] = useState("");
   const [pullups, setPullups] = useState("");
 
-  // Step 3 — running seed
-  const [t300, setT300] = useState("0:52");
-  const [t15, setT15] = useState("9:18");
+  // Step 3 — running seed: a maximal 1.5 mi run (B2). Nothing is pre-filled: a time, a date or a
+  // sex the athlete did not give must not reach the record. Body mass is the bodyweight field.
+  const [t15, setT15] = useState("");
+  const [runDate, setRunDate] = useState(""); // ISO "YYYY-MM-DD"
+  // The estimate model's sex input, asked here and sent only with the run. Unset is an answer:
+  // the run is saved without an estimate.
+  const [estimateSex, setEstimateSex] = useState<"" | "Female" | "Male">("");
 
   // Step 3 — strength / general seed
   const [bodyweight, setBodyweight] = useState("");
@@ -165,6 +216,12 @@ export function OnboardingScreen() {
   // Strength reports onboarding kept without an estimate (P4-3). When there are any, the athlete
   // reads them here, after saving, and continues when ready; otherwise this stays null.
   const [keptReports, setKeptReports] = useState<{ label: string; message: string }[] | null>(null);
+  // The 1.5 mi run the server saved, with its display-only estimate (B2). When there is one, the
+  // athlete reads it on the saved screen before continuing.
+  const [savedRun, setSavedRun] = useState<Vo2EstimateRead | null>(null);
+  // Why the server refused the run alone (an impossible date): the rest was saved.
+  const [runRefused, setRunRefused] = useState<string | null>(null);
+  const showSaved = keptReports !== null || savedRun !== null || runRefused !== null;
   const [run5k, setRun5k] = useState("");
 
   const wUnit = weightLabel(units);
@@ -179,8 +236,9 @@ export function OnboardingScreen() {
     actions.setSetting("units", v);
     const toImperial = v === "Imperial (mi)";
     const convert = toImperial
-      ? (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : kgToLbs(n).toFixed(0); }
-      : (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : lbsToKg(n).toFixed(1); };
+      // One decimal both ways, so switching units never rounds a mass to a whole pound.
+      ? (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : String(Math.round(kgToLbs(n) * 10) / 10); }
+      : (s: string) => { const n = parseFloat(s); return isNaN(n) ? s : String(Math.round(lbsToKg(n) * 10) / 10); };
     if (bodyweight) setBodyweight(convert(bodyweight));
     setStrength((cur) =>
       Object.fromEntries(
@@ -224,10 +282,41 @@ export function OnboardingScreen() {
         reports.push(built.report);
       }
     }
+    // The 1.5 mi run, checked here too: a time the server cannot hold is fixed on this step.
+    let runTrial: RunTimeTrialReport | undefined;
+    if (isRunningGoal(goal) && t15.trim()) {
+      const s = parseMMSS(t15.trim());
+      if (s === null || s < 180 || s > 14400) {
+        setFinishError("1.5 mi time: enter it as MM:SS, between 3:00 and 240:00.");
+        return;
+      }
+      runTrial = { elapsed_seconds: s };
+      if (runDate) runTrial.performed_on = runDate;
+      const mass = parseFloat(bodyweight);
+      if (bodyweight.trim()) {
+        const kg = imperial ? lbsToKg(mass) : mass;
+        if (isNaN(mass) || kg < BODY_MASS_KG.min || kg > BODY_MASS_KG.max) {
+          setFinishError(
+            imperial
+              ? "Bodyweight: enter between 55.2 and 661.3 lbs."
+              : "Bodyweight: enter between 25 and 300 kg.",
+          );
+          return;
+        }
+      }
+      if (!isNaN(mass) && mass > 0) {
+        // Sent as entered, with its unit; the server converts pounds exactly.
+        runTrial.body_mass = mass;
+        runTrial.body_mass_unit = unit;
+      }
+      if (estimateSex) runTrial.sex_for_estimate = estimateSex === "Male" ? "male" : "female";
+    }
     setFinishError(null);
     setSeeding(true);
     let saved = false;
     let kept: { label: string; message: string }[] = [];
+    let run: Vo2EstimateRead | null = null;
+    let refused: string | null = null;
     try {
       const req: Record<string, unknown> = { goal };
 
@@ -235,13 +324,9 @@ export function OnboardingScreen() {
       if (displayName) req.display_name = displayName;
       if (dob && !dobError) req.date_of_birth = dob;
 
-      if (isRunningGoal(goal) && t300 && t15) {
-        // Best-effort: compute metrics and cache them for legacy VO₂/zones display.
-        try {
-          const r = await computeMetrics({ age: dobAge ?? 28, sex, time_300m: t300, time_1p5mi: t15 });
-          actions.ftCompute(r);
-        } catch { /* non-fatal — user can run the field test later */ }
-      }
+      // B2: the run is saved by /v1/onboard as a time trial; the VO₂max estimate, when its inputs
+      // are given, is made and stored server-side. No call to the deprecated /compute-metrics.
+      if (runTrial) req.run_time_trial = runTrial;
 
       const parseWeight = (s: string) => {
         const n = parseFloat(s);
@@ -261,9 +346,8 @@ export function OnboardingScreen() {
       if (bodyweight) req.bodyweight_kg = parseWeight(bodyweight);
       if (reports.length) req.strength = reports;
       if (run5k) { const s = parseMMSS(run5k); if (s) req.run_5k_seconds = s; }
-      // The running path already asks for a 1.5 mi time for the field-test estimate; the profile
-      // has a column for it, so it is now kept instead of being thrown away with the page.
-      if (isRunningGoal(goal) && t15) { const s = parseMMSS(t15); if (s) req.run_1p5mi_seconds = s; }
+      // The profile has a column for the 1.5 mi time too, so it is kept there as well.
+      if (runTrial) req.run_1p5mi_seconds = runTrial.elapsed_seconds;
 
       // Optional context — omitted fields are left alone by the route, never cleared.
       if (experienceLevel) req.experience_level = experienceLevel;
@@ -278,6 +362,8 @@ export function OnboardingScreen() {
       const response = await completeOnboarding(req);
       saved = true;
       kept = keptReportsOf(response);
+      run = response?.run_time_trial ?? null;
+      refused = response?.run_time_trial_refused ?? null;
 
       // Each picked domain becomes an Objective (drives plan emphasis + the Assess
       // filter). Best-effort + only for a signed-in user; a failure never blocks entry.
@@ -296,8 +382,11 @@ export function OnboardingScreen() {
     } finally {
       setSeeding(false);
       if (saved) {
-        if (kept.length > 0) setKeptReports(kept);
-        else goOverview();
+        if (kept.length > 0 || run !== null || refused !== null) {
+          setKeptReports(kept);
+          setSavedRun(run);
+          setRunRefused(refused);
+        } else goOverview();
       }
     }
   }
@@ -341,20 +430,30 @@ export function OnboardingScreen() {
         </div>
 
         {/* ── Step 1: profile ── */}
-        {keptReports !== null && (
+        {showSaved && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Your baseline is saved</h1>
-            <p className="m-0 mb-6 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
-              Some of the sets you reported were recorded without a 1RM estimate.
-            </p>
-            <ul aria-label="Recorded without an estimate" className="m-0 flex list-none flex-col gap-3 p-0">
-              {keptReports.map((kept) => (
-                <li key={kept.label} className="rounded-[11px] border border-white/[0.08] px-4 py-3">
-                  <div className="text-[13px] font-semibold leading-none text-ink">{kept.label}</div>
-                  <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-soft">{kept.message}</div>
-                </li>
-              ))}
-            </ul>
+            {savedRun !== null && <SavedRunCard run={savedRun} />}
+            {runRefused !== null && (
+              <p role="status" className="m-0 mb-6 mt-5 rounded-[11px] border border-hot/30 px-4 py-3 text-[12.5px] font-medium leading-[1.5] text-hot">
+                {runRefused} Everything else you entered is saved.
+              </p>
+            )}
+            {keptReports !== null && keptReports.length > 0 && (
+              <>
+                <p className="m-0 mb-6 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
+                  Some of the sets you reported were recorded without a 1RM estimate.
+                </p>
+                <ul aria-label="Recorded without an estimate" className="m-0 flex list-none flex-col gap-3 p-0">
+                  {keptReports.map((kept) => (
+                    <li key={kept.label} className="rounded-[11px] border border-white/[0.08] px-4 py-3">
+                      <div className="text-[13px] font-semibold leading-none text-ink">{kept.label}</div>
+                      <div className="mt-2 text-[12.5px] font-medium leading-[1.5] text-soft">{kept.message}</div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
             <div className="mt-[30px] flex justify-end">
               <button onClick={goOverview} className="rounded-[11px] bg-gradient-to-r from-ac to-[#a7e36e] px-[26px] py-[13px] text-[13.5px] font-semibold leading-none text-[#0a0c10]">
                 Continue
@@ -363,7 +462,7 @@ export function OnboardingScreen() {
           </div>
         )}
 
-        {keptReports === null && ob === 1 && (
+        {!showSaved && ob === 1 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Let's set up your profile</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">Just the basics. You can change any of this later.</p>
@@ -386,7 +485,7 @@ export function OnboardingScreen() {
         )}
 
         {/* ── Step 2: training context ── */}
-        {keptReports === null && ob === 2 && (
+        {!showSaved && ob === 2 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Training context</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">So the plan speaks your language.</p>
@@ -471,12 +570,12 @@ export function OnboardingScreen() {
         )}
 
         {/* ── Step 3: seed your twin ── */}
-        {keptReports === null && ob === 3 && (
+        {!showSaved && ob === 3 && (
           <div>
             <h1 className="m-0 text-[30px] font-bold leading-[1.1] tracking-[-0.025em] text-ink">Seed your twin</h1>
             <p className="m-0 mb-7 mt-3 text-[14px] font-medium leading-[1.5] text-mute">
               {isRunningGoal(goal)
-                ? "Enter a recent field test to initialize S(t) — or skip and run one from the Field Test screen."
+                ? "Enter a recent 1.5 mi run, as fast as you could go — or leave it blank."
                 : isStrengthGoal(goal)
                   ? "Enter your current lifts to seed the strength model — or skip and add after your first session."
                   : "Enter any baseline data you have — all fields are optional."}
@@ -485,14 +584,21 @@ export function OnboardingScreen() {
             {isRunningGoal(goal) && (
               <div className="flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="300 m time"><input value={t300} onChange={(e) => setT300(e.target.value)} placeholder="M:SS" className={`${inputCls} font-mono`} /></Field>
                   <Field label="1.5 mi time"><input value={t15} onChange={(e) => setT15(e.target.value)} placeholder="MM:SS" className={`${inputCls} font-mono`} /></Field>
+                  <Field label="Date of the run">
+                    <input type="date" value={runDate} max={todayISO} onChange={(e) => setRunDate(e.target.value)}
+                      className={inputCls} style={{ colorScheme: "dark" }} />
+                  </Field>
+                  <Field label={`Bodyweight (${wUnit})`}><input value={bodyweight} onChange={(e) => setBodyweight(e.target.value)} inputMode="decimal" placeholder="—" className={`${inputCls} font-mono`} /></Field>
                 </div>
                 <div className="block">
-                  <span className={labelCls}>Sex</span>
-                  <Seg options={["Female", "Male"]} value={sex} onChange={(v) => actions.setSetting("sex", v)} />
+                  <span className={labelCls}>Sex (for the estimate)</span>
+                  <Seg options={["Female", "Male"]} value={estimateSex}
+                    onChange={(v) => setEstimateSex(v === estimateSex ? "" : (v as "Female" | "Male"))} />
                   <p className="mt-2 text-[11.5px] font-medium leading-[1.5] text-faint">
-                    Used only for the VO₂ estimate from the two times above.
+                    Bodyweight and sex are used only for an estimated VO₂max from your 1.5 mi time, and
+                    are kept with that run. Leave either out and the run is still saved, without an
+                    estimate. The estimate is not used for your plan.
                   </p>
                 </div>
               </div>

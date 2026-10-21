@@ -15,7 +15,6 @@ import type {
   BlockCreateRequest,
   BlockRead,
   BlockUpdateRequest,
-  ComputeMetricsRequest,
   ConnectionStatus,
   DrivingObjectiveRead,
   IngestTokenCreated,
@@ -24,7 +23,6 @@ import type {
   MacrocycleCreate,
   MacrocycleRead,
   MacrocycleUpdate,
-  MetricsResponse,
   ObjectiveCreate,
   ObjectiveOrderUpdate,
   ObjectiveRead,
@@ -164,24 +162,6 @@ export async function ping(): Promise<PingResponse> {
   }
   const res = await fetch(`${API_ROOT}/ping`);
   return handleResponse<PingResponse>(res);
-}
-
-/**
- * Field test: compute VO2 / fatigue / pace zones from a 300 m + 1.5 mi test.
- * Served by the legacy router (no /v1 prefix).
- */
-export async function computeMetrics(
-  req: ComputeMetricsRequest,
-): Promise<MetricsResponse> {
-  if (!IS_CONFIGURED) {
-    throw new Error("VITE_API_BASE_URL is not configured");
-  }
-  const res = await fetch(`${API_ROOT}/compute-metrics`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-  });
-  return handleResponse<MetricsResponse>(res);
 }
 
 export async function register(

@@ -1,8 +1,10 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.logic import vo2_estimate as vo2
 
 
 class BenchmarkDefinitionRead(BaseModel):
@@ -260,3 +262,85 @@ class StrengthOutcome(BaseModel):
 class RecomputeDerivedResponse(BaseModel):
     snapshots_written: int
     codes_computed: list[str]
+
+
+class RunTimeTrialReport(BaseModel):
+    """A 1.5 mi time trial the athlete ran (B2): what they did, and the model's inputs.
+
+    The time is required; it is the record. Body mass and the model's sex input are needed only
+    for the display-only VO₂max estimate, and are never defaulted or inferred: leave them out and
+    the run is still saved, without an estimate. ``performed_on`` (the athlete's calendar date)
+    with the profile's date of birth gives the age at performance, which decides only whether the
+    result is labelled as within the study's age range.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    elapsed_seconds: float = Field(
+        ..., ge=180, le=14400, allow_inf_nan=False,
+        description="The 1.5 mi time, in seconds (3 min to 4 h).",
+    )
+    performed_on: date | None = Field(
+        None, description="The athlete's calendar date of the run. Omitted means unknown."
+    )
+    body_mass: float | None = Field(
+        None, gt=0, allow_inf_nan=False,
+        description="Body mass as the athlete entered it, in body_mass_unit: 25-300 kg "
+        "(55.2-661.3 lb).",
+    )
+    body_mass_unit: Literal["kg", "lb"] | None = None
+    sex_for_estimate: Literal["female", "male"] | None = Field(
+        None,
+        description="The estimate model's sex input, used for nothing else and stored only on "
+        "this record. Omitted means no estimate.",
+    )
+
+    @model_validator(mode="after")
+    def _mass_has_a_unit_and_is_plausible(self) -> "RunTimeTrialReport":
+        if (self.body_mass is None) != (self.body_mass_unit is None):
+            raise ValueError("body_mass and body_mass_unit go together")
+        if self.body_mass is not None and self.body_mass_unit is not None:
+            low, high = vo2.BODY_MASS_KG_BOUNDS
+            kg = vo2.body_mass_kg(self.body_mass, self.body_mass_unit)
+            if not low <= kg <= high:
+                raise ValueError(
+                    f"body_mass must be between {low:g} and {high:g} kg "
+                    f"({vo2.BODY_MASS_LB_RANGE[0]:g}-{vo2.BODY_MASS_LB_RANGE[1]:g} lb); got "
+                    f"{self.body_mass:g} {self.body_mass_unit}"
+                )
+        return self
+
+
+Vo2EstimateStatus = Literal["estimated", "not_estimated"]
+Vo2NotEstimatedReason = Literal[
+    "coefficients_unverified", "missing_inputs", "non_positive_result", "unsupported_model"
+]
+Vo2PopulationStatus = Literal["within_study_age_range", "outside_study_age_range", "age_unknown"]
+
+
+class Vo2EstimateRead(BaseModel):
+    """A saved 1.5 mi time trial and its display-only VO₂max estimate (B2).
+
+    Recomputed from the inputs captured on the record itself, never from the live profile.
+    ``used_for_plan`` is always false: the record has no capacity, prescription or attainment
+    authority.
+    """
+
+    observation_id: int
+    benchmark_code: str
+    performed_on: date | None
+    recorded_at: datetime
+    elapsed_seconds: float
+    status: Vo2EstimateStatus
+    reason: Vo2NotEstimatedReason | None
+    missing_inputs: list[str]
+    vo2max_ml_kg_min: float | None
+    units: Literal["ml/kg/min"] = "ml/kg/min"
+    headline: str
+    population_status: Vo2PopulationStatus
+    extrapolated: bool
+    population_label: str
+    see_ml_kg_min: float
+    model_id: str
+    model_version: int
+    used_for_plan: Literal[False] = False

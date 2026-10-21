@@ -6,8 +6,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.logic.confidence_presentation import ConfidenceStatus
 from app.logic.onboarding_state import validate_dob
 from app.schemas.benchmarks import (
+    RunTimeTrialReport,
     StrengthOutcome,
     StrengthReport,
+    Vo2EstimateRead,
     refuse_bare_canonical_lift_numbers,
 )
 
@@ -70,6 +72,9 @@ class OnboardRequest(BaseModel):
     # through the same service Assess uses, and the profile's seed value for that lift is
     # derived from it — never written as a bare number.
     strength: list[OnboardStrengthReport] = Field(default_factory=lambda: [])
+    # A 1.5 mi time trial (B2): saved as a display-only run_1p5mi_time_trial observation, with a
+    # VO₂max estimate only when its own body mass and sex input are given. Never touches state.
+    run_time_trial: RunTimeTrialReport | None = None
     # Biometric context (optional)
     bodyweight_kg: float | None = Field(None, gt=0)
     run_5k_seconds: float | None = Field(None, gt=0)
@@ -101,6 +106,12 @@ class OnboardResponse(BaseModel):
     # One outcome per submitted strength report, in request order (P4-3). A retry of the same
     # submission reports `already_recorded` with the record the first attempt made.
     strength: list[StrengthOutcome] = Field(default_factory=lambda: [])
+    # The saved time trial and its display-only estimate (B2); null when none was submitted. A
+    # retry of the same submission returns the run the first attempt saved.
+    run_time_trial: Vo2EstimateRead | None = None
+    # Why the submitted run was NOT saved (an impossible date, or time trials unavailable). Only
+    # the run is refused: everything else in the submission was saved. Null otherwise.
+    run_time_trial_refused: str | None = None
 
 
 class OnboardingTwinSummary(BaseModel):

@@ -285,6 +285,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/benchmarks/vo2-estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Vo2 Estimates
+         * @description The athlete's saved 1.5 mi time trials, newest first, each with its display-only VO₂max
+         *     estimate (B2). Each is rebuilt from the inputs captured on its own record, never from the
+         *     current profile, and none is used for the plan.
+         */
+        get: operations["get_vo2_estimates_v1_benchmarks_vo2_estimates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/dashboard/domain-summary": {
         parameters: {
             query?: never;
@@ -3144,6 +3166,7 @@ export interface components {
             run_1p5mi_seconds?: number | null;
             /** Run 5K Seconds */
             run_5k_seconds?: number | null;
+            run_time_trial?: components["schemas"]["RunTimeTrialReport"] | null;
             /** Self Reported Weak Points */
             self_reported_weak_points?: string[];
             /** Session Duration Minutes */
@@ -3162,6 +3185,9 @@ export interface components {
             next_step: string;
             /** Profile Id */
             profile_id: number;
+            run_time_trial?: components["schemas"]["Vo2EstimateRead"] | null;
+            /** Run Time Trial Refused */
+            run_time_trial_refused?: string | null;
             /** Strength */
             strength?: components["schemas"]["StrengthOutcome"][];
             /** User Id */
@@ -3950,6 +3976,40 @@ export interface components {
             zone: string;
         };
         /**
+         * RunTimeTrialReport
+         * @description A 1.5 mi time trial the athlete ran (B2): what they did, and the model's inputs.
+         *
+         *     The time is required; it is the record. Body mass and the model's sex input are needed only
+         *     for the display-only VO₂max estimate, and are never defaulted or inferred: leave them out and
+         *     the run is still saved, without an estimate. ``performed_on`` (the athlete's calendar date)
+         *     with the profile's date of birth gives the age at performance, which decides only whether the
+         *     result is labelled as within the study's age range.
+         */
+        RunTimeTrialReport: {
+            /**
+             * Body Mass
+             * @description Body mass as the athlete entered it, in body_mass_unit: 25-300 kg (55.2-661.3 lb).
+             */
+            body_mass?: number | null;
+            /** Body Mass Unit */
+            body_mass_unit?: ("kg" | "lb") | null;
+            /**
+             * Elapsed Seconds
+             * @description The 1.5 mi time, in seconds (3 min to 4 h).
+             */
+            elapsed_seconds: number;
+            /**
+             * Performed On
+             * @description The athlete's calendar date of the run. Omitted means unknown.
+             */
+            performed_on?: string | null;
+            /**
+             * Sex For Estimate
+             * @description The estimate model's sex input, used for nothing else and stored only on this record. Omitted means no estimate.
+             */
+            sex_for_estimate?: ("female" | "male") | null;
+        };
+        /**
          * SessionFeedbackIn
          * @description Athlete-reported outcome for one planned session.
          *
@@ -4735,6 +4795,69 @@ export interface components {
              * @description Hard safety constraints that could not be evaluated (unregistered or crashed). Non-empty means the session was replaced by complete rest.
              */
             unevaluated_hard?: string[];
+        };
+        /**
+         * Vo2EstimateRead
+         * @description A saved 1.5 mi time trial and its display-only VO₂max estimate (B2).
+         *
+         *     Recomputed from the inputs captured on the record itself, never from the live profile.
+         *     ``used_for_plan`` is always false: the record has no capacity, prescription or attainment
+         *     authority.
+         */
+        Vo2EstimateRead: {
+            /** Benchmark Code */
+            benchmark_code: string;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Extrapolated */
+            extrapolated: boolean;
+            /** Headline */
+            headline: string;
+            /** Missing Inputs */
+            missing_inputs: string[];
+            /** Model Id */
+            model_id: string;
+            /** Model Version */
+            model_version: number;
+            /** Observation Id */
+            observation_id: number;
+            /** Performed On */
+            performed_on: string | null;
+            /** Population Label */
+            population_label: string;
+            /**
+             * Population Status
+             * @enum {string}
+             */
+            population_status: "within_study_age_range" | "outside_study_age_range" | "age_unknown";
+            /** Reason */
+            reason: ("coefficients_unverified" | "missing_inputs" | "non_positive_result" | "unsupported_model") | null;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** See Ml Kg Min */
+            see_ml_kg_min: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "estimated" | "not_estimated";
+            /**
+             * Units
+             * @default ml/kg/min
+             * @constant
+             */
+            units: "ml/kg/min";
+            /**
+             * Used For Plan
+             * @default false
+             * @constant
+             */
+            used_for_plan: false;
+            /** Vo2Max Ml Kg Min */
+            vo2max_ml_kg_min: number | null;
         };
         /**
          * WarmupBlock
@@ -5909,6 +6032,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vo2_estimates_v1_benchmarks_vo2_estimates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Vo2EstimateRead"][];
                 };
             };
         };

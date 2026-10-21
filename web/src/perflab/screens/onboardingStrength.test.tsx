@@ -27,7 +27,6 @@ vi.mock("@/auth/useAuth", () => ({
 }));
 
 vi.mock("@/api/perfLabClient", () => ({
-  computeMetrics: vi.fn(),
   createObjective: (...args: unknown[]) => createObjective(...args),
 }));
 
@@ -159,20 +158,22 @@ describe("switching units converts what is already typed", () => {
     back();
     fireEvent.click(screen.getByRole("button", { name: "Imperial (mi)" }));
     continueStep();
-    expect(valueOf("Squat: Weight in lb")).toBe("309");
-    expect(valueOf("Deadlift: Load in lb")).toBe("220");
+    // One decimal, never a whole pound (B2 review): 140 kg = 308.6 lb, 100 kg = 220.5 lb.
+    expect(valueOf("Squat: Weight in lb")).toBe("308.6");
+    expect(valueOf("Deadlift: Load in lb")).toBe("220.5");
     expect(valueOf("Deadlift: Reps")).toBe("3");
     expect(valueOf("Bench press: Weight in lb")).toBe("");
 
     back();
     fireEvent.click(screen.getByRole("button", { name: "Imperial (mi)" }));
     continueStep();
-    expect(valueOf("Squat: Weight in lb")).toBe("309");
+    expect(valueOf("Squat: Weight in lb")).toBe("308.6");
 
     back();
     fireEvent.click(screen.getByRole("button", { name: "Metric (km)" }));
     continueStep();
-    expect(valueOf("Squat: Weight in kg")).toBe("140.2");
+    // The round trip comes back to the figure typed (308.6 lb = 139.98 kg).
+    expect(valueOf("Squat: Weight in kg")).toBe("140");
   });
 });
 

@@ -11,10 +11,15 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analysis.feature_builders.display_only_exclusion import (
+    DISPLAY_ONLY_FILTER,
+    bind_display_only_codes,
+)
+
 
 async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
     """Benchmark observations with validity status and same-day wellness for Q5."""
-    query = text("""
+    query = bind_display_only_codes(text(f"""
         SELECT
             bo.id                       AS observation_id,
             bo.user_id                  AS athlete_id,
@@ -32,8 +37,9 @@ async def build_dataset(session: AsyncSession) -> list[dict[str, Any]]:
         LEFT JOIN wellness_samples ws
             ON ws.user_id = bo.user_id
             AND ws.date = DATE(bo.observed_at)
+        WHERE {DISPLAY_ONLY_FILTER}
         ORDER BY bo.user_id, bd.code, bo.observed_at
         LIMIT 50000
-    """)
+    """))
     result = await session.execute(query)
     return [dict(row) for row in result.mappings()]

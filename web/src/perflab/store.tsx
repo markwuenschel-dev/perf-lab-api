@@ -13,7 +13,7 @@ import type { Dispatch } from "react";
 // The phase durations now arrive with the openSession action, so the session state
 // machine is generic and the fixture stays with the surface that renders it.
 import type { CheckinState, SimParams } from "./sim";
-import type { MetricsResponse, ReadinessScore, SessionStatus, UnifiedStateVector } from "../types";
+import type { ReadinessScore, SessionStatus, UnifiedStateVector } from "../types";
 import { PREVIEW_TOOLS } from "./previewTools";
 
 export type Screen =
@@ -29,7 +29,6 @@ export type Screen =
   | "onboarding";
 
 export interface Settings {
-  sex: string;
   units: string;
   accent: string;
   /** Training goal — feeds the prescriber (GET /v1/next-session?goal=…). Values
@@ -88,8 +87,6 @@ export type Feel = "easy" | "controlled" | "hard" | "maxed";
 export interface PerfLabState {
   screen: Screen;
   ftDone: boolean;
-  /** Last field-test result (cached so VO₂/Profile survive navigation and feed the Twin). */
-  fieldTest: MetricsResponse | null;
   /** Last state vector returned by log-workout (cached: backend has no GET /v1/state). */
   twinState: UnifiedStateVector | null;
   /** Last backend-owned readiness (GET /v1/readiness), cached after a check-in. */
@@ -176,7 +173,6 @@ export interface PerfLabState {
 interface Persisted {
   ftDone: boolean;
   fresh: boolean;
-  fieldTest: MetricsResponse | null;
   twinState: UnifiedStateVector | null;
   readiness: ReadinessScore | null;
   /** Client-only UI preferences (units, accent, notifications…). The athlete's
@@ -186,6 +182,17 @@ interface Persisted {
 
 export const STORAGE_KEY = "perflab_v1";
 
+/** Stored settings without the keys B2 retired: `sex` was a device-wide default ("Female")
+ *  that the VO₂ estimate must never read; the model's sex input is given with each run. */
+function storedSettings(stored: Partial<Settings> | undefined): Partial<Settings> {
+  const { sex: _retired, ...rest } = (stored ?? {}) as Partial<Settings> & { sex?: unknown };
+  void _retired;
+  return rest;
+}
+
+/** What was persisted. `fieldTest` (a cached /compute-metrics result, miscalculated) is no
+ *  longer read, and the persist effect rewrites the key without it on the first render, so an
+ *  old value leaves localStorage (B2). */
 function loadPersisted(): Partial<Persisted> {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -203,7 +210,6 @@ export function initialState(previewTools: boolean = PREVIEW_TOOLS): PerfLabStat
   return {
     screen: "overview",
     ftDone: typeof sv.ftDone === "boolean" ? sv.ftDone : false,
-    fieldTest: sv.fieldTest ?? null,
     twinState: sv.twinState ?? null,
     readiness: sv.readiness ?? null,
     obStep: 1,
@@ -226,14 +232,13 @@ export function initialState(previewTools: boolean = PREVIEW_TOOLS): PerfLabStat
     sessRunning: false,
     sessDone: false,
     settings: {
-      sex: "Female",
       units: "Metric (km)",
       accent: "#c6f135",
       goal: DEFAULT_GOAL,
       notifReadiness: true,
       notifTissue: true,
       notifWeekly: false,
-      ...(sv.settings ?? {}),
+      ...storedSettings(sv.settings),
     },
     explainOpen: false,
     explainKey: null,
@@ -333,8 +338,6 @@ export interface PerfLabActions {
   setScreen: (s: Screen) => void;
   openAuth: () => void;
   closeAuth: () => void;
-  ftCompute: (result: MetricsResponse) => void;
-  ftRecompute: () => void;
   cacheTwinState: (sv: UnifiedStateVector) => void;
   cacheReadiness: (r: ReadinessScore | null) => void;
   seedTwin: () => void;
@@ -412,8 +415,6 @@ export function buildActions(dispatch: Dispatch<Action>, previewTools: boolean =
     setScreen: (s) => merge({ screen: s }),
     openAuth: () => merge({ authOpen: true }),
     closeAuth: () => merge({ authOpen: false }),
-    ftCompute: (result) => merge({ ftDone: true, fieldTest: result }),
-    ftRecompute: () => merge({ ftDone: false, fieldTest: null }),
     cacheTwinState: (sv) => merge({ twinState: sv }),
     cacheReadiness: (r) => merge({ readiness: r }),
     seedTwin: () => merge({ ftDone: true, fresh: false, screen: "twin" }),

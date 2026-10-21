@@ -1233,17 +1233,6 @@ export function SettingsScreen() {
       <PerformanceProfileCard />
 
       <Card className="p-[22px]">
-        <SectionLabel className="mb-4">Profile</SectionLabel>
-        <label className="block max-w-[280px]">
-          <span className="text-[12px] font-medium leading-none text-mute">Sex</span>
-          <Seg options={["Female", "Male"]} value={s.sex} onChange={(v) => actions.setSetting("sex", v)} />
-        </label>
-        <div className="mt-[14px] flex items-center gap-[9px] rounded-[11px] border border-info/[0.18] bg-info/[0.06] px-3 py-[10px]">
-          <span className="text-[13px] text-info">ⓘ</span><span className="text-[11.5px] font-medium leading-[1.45] text-mute">VO₂ doesn't use age &amp; sex in v0.3 — stored on this device for upcoming model versions.</span>
-        </div>
-      </Card>
-
-      <Card className="p-[22px]">
         <SectionLabel className="mb-4">Preferences</SectionLabel>
         <div className="flex flex-col gap-4">
           <label className="block">

@@ -10,8 +10,10 @@
 // no longer carries a fixture render tree at all, and the boundary between
 // "sampled" and "live" is a file boundary rather than a comment banner.
 //
-// Nothing here is authoritative. Every number is sim-derived except the VO₂ /
-// Profile tiles when viewing today, which read the athlete's cached field test.
+// Nothing here is authoritative, and every number is sim-derived sample data. The VO₂ /
+// Profile tiles used to read a cached /compute-metrics result on "today", mixing a real
+// (and miscalculated) figure into the sample athlete; B2 removed that, so the tiles are sample
+// values and say so.
 
 import { usePerfLab } from "../../store";
 import { Card, MetricBar, ReadinessRing, SectionLabel } from "../../ui";
@@ -38,7 +40,6 @@ export function GuestTwinPreview() {
   if (di == null || di > N - 1) di = N - 1;
   if (di < 0) di = 0;
   const D = DAYS[di];
-  const isToday = di === N - 1;
   const tDate = dayMonthLabel(D.date);
   const daysAgo = N - 1 - di;
   const tWhen = daysAgo === 0 ? "Today" : daysAgo === 1 ? "Yesterday" : `${daysAgo} days ago`;
@@ -46,12 +47,9 @@ export function GuestTwinPreview() {
 
   const clampDay = (i: number) => Math.max(0, Math.min(N - 1, i));
 
-  // VO₂ / Profile tiles read the cached field test when viewing today; the sim
-  // backs the historical days (and the case where no field test has been run).
-  const ft = isToday ? state.fieldTest : null;
-  const tVo2 = ft ? ft.vo2_max : D.vo2;
-  const tProfileVal = ft ? ft.fatigue_percent : D.profile;
-  const tProfileFoot = ft ? ft.fatigue_profile : "endurance-biased";
+  // Sample values only, on every day (B2): the sample athlete's sim, never a cached result.
+  const tVo2 = D.vo2;
+  const tProfileVal = D.profile;
 
   const sparkData = DAYS.map((d, i) => [i, d.readiness] as [number, number]);
 
@@ -132,23 +130,23 @@ export function GuestTwinPreview() {
         <Card className="flex items-center gap-[18px]">
           <ReadinessRing value={D.readiness} color={rc} onClick={() => actions.openExplain("readiness")} />
           <div>
-            <SectionLabel className="text-faint">Readiness</SectionLabel>
+            <SectionLabel className="text-faint">Readiness <Sample /></SectionLabel>
             <div className="mt-2 text-[18px] font-bold leading-none" style={{ color: rc }}>{readinessWord(D.readiness)}</div>
             <div className="mt-[9px] text-[11.5px] font-medium leading-[1.5] text-mute">{readinessNote(D.readiness)}</div>
           </div>
         </Card>
         <div className="grid grid-cols-2 gap-[14px] lg:grid-cols-4">
-          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — sample data." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="field test" footColor="text-teal" />
-          <MiniTile tip="Speed↔endurance bias — sample data." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot={tProfileFoot} footColor="text-info" />
-          <MiniTile label="Habit" value={<>{D.habit}<span className="text-[16px] text-faint">%</span></>} sub="adherence" bar={D.habit} />
-          <MiniTile tip="Structural adaptation drive — sample data." label="Struct. signal" value={D.signal.toFixed(1)} sub="adaptation drive" foot={tSignalTrend} footColor="text-teal" />
+          <MiniTile tip="Estimated maximal oxygen uptake (ml·kg⁻¹·min⁻¹) — sample data." label="VO₂max" value={tVo2.toFixed(1)} sub="ml·kg⁻¹·min⁻¹" foot="sample data" footColor="text-teal" />
+          <MiniTile tip="Speed↔endurance bias — sample data." label="Profile" value={tProfileVal.toFixed(1)} sub="speed ↔ endurance" foot="sample data" footColor="text-info" />
+          <MiniTile label="Habit" value={<>{D.habit}<span className="text-[16px] text-faint">%</span></>} sub="adherence · sample data" bar={D.habit} />
+          <MiniTile tip="Structural adaptation drive — sample data." label="Struct. signal" value={D.signal.toFixed(1)} sub="adaptation drive" foot={`${tSignalTrend} · sample data`} footColor="text-teal" />
         </div>
       </div>
 
       {/* capacities (sim) */}
       <Card className="px-[22px] py-5">
         <div className="mb-[18px] flex items-center justify-between">
-          <SectionLabel>Capacities · X(t)</SectionLabel>
+          <SectionLabel>Capacities · X(t) <Sample /></SectionLabel>
           <div className="flex gap-[3px] rounded-[8px] border border-white/[0.08] p-[2px]">
             <button onClick={() => actions.setCapView("bars")} className={segBtn(bars)}>Bars</button>
             <button onClick={() => actions.setCapView("radar")} className={segBtn(!bars)}>Radar</button>
@@ -189,7 +187,7 @@ export function GuestTwinPreview() {
             </div>
             <div className="flex flex-col justify-center gap-[14px] self-stretch rounded-[14px] border border-white/[0.06] bg-white/[0.02] p-[18px]">
               <div>
-                <SectionLabel className="text-faint">Profile shape</SectionLabel>
+                <SectionLabel className="text-faint">Profile shape <Sample /></SectionLabel>
                 <div className="mt-[9px] text-[19px] font-bold leading-[1.1] text-ac">{typeNames[domIdx]}</div>
               </div>
               <div className="flex flex-col gap-[9px]">
@@ -207,7 +205,7 @@ export function GuestTwinPreview() {
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
         <Card>
           <div className="mb-4 flex items-center justify-between">
-            <SectionLabel>Fatigue · F(t)</SectionLabel>
+            <SectionLabel>Fatigue · F(t) <Sample /></SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">0 fresh → 100 maxed</div>
           </div>
           <div className="flex flex-col gap-[13px]">
@@ -218,7 +216,7 @@ export function GuestTwinPreview() {
         </Card>
         <Card>
           <div className="mb-4 flex items-center justify-between">
-            <SectionLabel>Tissue load · T(t)</SectionLabel>
+            <SectionLabel>Tissue load · T(t) <Sample /></SectionLabel>
             <div className="font-mono text-[10px] leading-none text-dim">local stress, not injury</div>
           </div>
           <TissueBodyMap getT={(k) => D.T[k]} onRegionClick={(k) => actions.openExplain(`T:${k}`)} />
@@ -228,7 +226,7 @@ export function GuestTwinPreview() {
       {/* skills (sim) */}
       <Card className="px-[22px] py-5">
         <div className="mb-4 flex items-center justify-between">
-          <SectionLabel>Skill state</SectionLabel>
+          <SectionLabel>Skill state <Sample /></SectionLabel>
           <div data-tip="Skill ratings 0–1 (shown as %) — sample data." className="font-mono text-[10px] leading-none text-dim">0–1 · proficiency</div>
         </div>
         <div className="grid grid-cols-1 gap-x-7 gap-y-[13px] md:grid-cols-2">
@@ -241,6 +239,16 @@ export function GuestTwinPreview() {
         </div>
       </Card>
     </>
+  );
+}
+
+/** The visible mark on every sample value block (B2, D6): the page banner alone is not enough,
+ *  because a tile or card is read on its own. */
+function Sample() {
+  return (
+    <span className="ml-[6px] rounded-[5px] border border-white/10 px-[5px] py-[2px] align-middle font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-dim">
+      sample
+    </span>
   );
 }
 
