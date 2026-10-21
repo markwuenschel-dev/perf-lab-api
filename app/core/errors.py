@@ -53,7 +53,10 @@ from app.engine.engine_state_codec import (
 
 # An authority-bearing capability. Named by what it *does*, not by the module it lives in:
 # readiness gates prescription, and benchmark reaches canonical mutation.
-Capability = Literal["prescription", "readiness", "benchmark", "onboarding", "assessment"]
+Capability = Literal[
+    "prescription", "readiness", "benchmark", "onboarding", "assessment", "projection",
+    "workout",
+]
 
 # The external body's per-capability availability field. Only the error code and the 409
 # status are shared — forcing `prescription_available` onto a readiness endpoint would be
@@ -64,6 +67,8 @@ _AVAILABILITY_FIELD: dict[str, str] = {
     "benchmark": "benchmark_update_applied",
     "onboarding": "onboarding_state_available",
     "assessment": "assessment_available",
+    "projection": "projection_available",
+    "workout": "workout_logged",
 }
 
 ERROR_CODE = "canonical_state_invalid"

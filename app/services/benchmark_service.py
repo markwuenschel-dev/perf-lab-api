@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.core.errors import CanonicalStateInvalid, normalize_decode_error
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.state_bridge import athlete_state_kwargs_from_unified
 from app.logic import observation_authority as oa
 from app.logic import strength_evidence as se
@@ -343,15 +345,27 @@ async def _verify_log_fk_ownership(
 
 
 async def _current_or_staged_baseline(db: AsyncSession, user_id: int) -> UnifiedStateVector:
-    """The athlete's current state, or a baseline staged in this transaction when none exists.
+    """The athlete's canonical state, or a baseline staged in this transaction when none exists.
 
-    ``state_service.load_or_init_current_state``'s policy for a missing row, without its
-    commit, so an observation and the baseline it seeds commit together. Composed here from
-    the reviewed loaders rather than added as a new public current-state loader (AUD-C17,
-    tests/test_state_loader_policies.py).
+    ``state_service.load_or_init_current_state_strict``'s policy for a missing row, without
+    its commit, so an observation and the baseline it seeds commit together. Composed here
+    from the reviewed loaders rather than added as a new public current-state loader
+    (AUD-C17, tests/test_state_loader_policies.py).
+
+    INT-15 2B3: strict. This feeds the benchmark operator, which appends canonical state (and
+    the floor-shadow candidate), so a row that exists but cannot be decoded refuses the whole
+    command (409, capability ``benchmark``) instead of computing from a legacy
+    reconstruction. Nothing is committed before this point, so the refusal leaves no
+    observation and no state row behind. A damaged row is a row: it is never re-seeded as a
+    fresh baseline (initialization keys off the absence of a row, never off a decode failure).
     """
     await lock_athlete_chain(db, user_id)  # F2; re-entrant — stage_observation holds it already
-    current = await state_service.load_current_state(db, user_id)
+    try:
+        current = await state_service.load_current_state_strict(db, user_id)
+    except EngineStateDecodeError as exc:
+        raise CanonicalStateInvalid(
+            capability="benchmark", normalized_reason=normalize_decode_error(exc)
+        ) from exc
     if current is None:
         current = await state_service.stage_baseline_state(db, user_id)
     return current
@@ -542,8 +556,10 @@ async def stage_observation(
     # path, so it graduates behind a shadow old-vs-new comparison (ADR-0058 deferred).
     apply_state = is_valid and effect in (oa.CE_BIDIRECTIONAL_UPDATE, oa.CE_INITIALIZE_PRIOR)
     if apply_state and effect == oa.CE_INITIALIZE_PRIOR:
-        # A prior seeds an uncertain twin; it may not overwrite an established one.
-        if await state_service.load_current_state(db, user_id) is not None:
+        # A prior seeds an uncertain twin; it may not overwrite an established one. Whether a
+        # row EXISTS is the question, so nothing is decoded (2B3): a damaged row is still an
+        # established athlete, never a fresh one to seed.
+        if await state_service.has_state(db, user_id):
             apply_state = False
     # Set by the deferred floor-ratchet branch below. The shadow row is written only
     # AFTER the commit, so a capture failure cannot abort the observation it describes.
@@ -561,7 +577,7 @@ async def stage_observation(
     decline: dict[str, Any] | None = None
     state_row_written = False
     if apply_state:
-        fresh_athlete = await state_service.load_current_state(db, user_id) is None
+        fresh_athlete = not await state_service.has_state(db, user_id)
         current = await _current_or_staged_baseline(db, user_id)
         head_row = await AthleteContextRepository(db).get_latest_state(user_id)
         assert head_row is not None  # either it existed, or the baseline was just staged

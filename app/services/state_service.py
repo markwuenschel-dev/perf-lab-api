@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.config import settings
+from app.core.errors import CanonicalStateInvalid, normalize_decode_error
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
@@ -443,7 +445,9 @@ def preview_baseline_state(user_id: int) -> UnifiedStateVector:
     _, transient = _build_baseline_vector(
         user_id, "intermediate", None, None, None, None, None, 0.0, goal=None
     )
-    return unified_from_athlete_row(transient)
+    # Strict: the transient row was just built from a canonical vector, so it always decodes;
+    # a failure here is a defect, never a reason to fall back to the legacy scalars.
+    return unified_from_athlete_row_strict(transient)
 
 
 async def has_state(db: AsyncSession, user_id: int) -> bool:
@@ -1170,7 +1174,17 @@ async def process_new_workout(
         current_state, initial_baseline = _build_baseline_vector(user_id)
         db.add(initial_baseline)
     else:
-        current_state = unified_from_athlete_row(last_record)
+        # INT-15 (C1): strict. The workout transition is built from this state and appended
+        # as the next canonical row, so a head that exists but cannot be decoded refuses the
+        # whole command (409, capability ``workout``): a legacy reconstruction must never be
+        # promoted into canonical state by the next write. Nothing has been staged yet (only
+        # the chain lock and the head read precede this), so the refusal writes nothing.
+        try:
+            current_state = unified_from_athlete_row_strict(last_record)
+        except EngineStateDecodeError as exc:
+            raise CanonicalStateInvalid(
+                capability="workout", normalized_reason=normalize_decode_error(exc)
+            ) from exc
         # S0 is stamped at the wall-clock time the account was created, which is
         # unrelated to the athlete's training timeline. If it is still the only
         # state row, it is the initial baseline and gets re-anchored below.

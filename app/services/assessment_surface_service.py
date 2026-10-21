@@ -15,7 +15,9 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import CanonicalStateInvalid, normalize_decode_error
 from app.domain.vectors import CapacityState
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.logic import confidence_presentation as cp
 from app.logic import domain_vocab as dv
 from app.models.benchmark_definition import BenchmarkDefinition
@@ -139,8 +141,16 @@ async def build_assessment_surface(
     active = active_domain_lenses(objective_domains, primary_goal)
     show_all = not active
 
-    # Live per-axis variance (the sole provisionality authority, ADR-0059).
-    state = await state_service.load_current_state(db, user_id)
+    # Live per-axis variance (the sole provisionality authority, ADR-0059). INT-15 2B4: strict.
+    # The variance ranks which benchmark to take next (benchmark_utility below), so it is
+    # recommendation authority, not display: a row that cannot be decoded refuses the surface
+    # (409, capability ``assessment``) instead of ranking from a legacy reconstruction.
+    try:
+        state = await state_service.load_current_state_strict(db, user_id)
+    except EngineStateDecodeError as exc:
+        raise CanonicalStateInvalid(
+            capability="assessment", normalized_reason=normalize_decode_error(exc)
+        ) from exc
     variance_by_axis: dict[str, float] | None = (
         {axis: float(getattr(state.capacity_confidence, axis)) for axis in CapacityState.KEYS}
         if state is not None

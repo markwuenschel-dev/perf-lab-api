@@ -110,17 +110,43 @@ behaviour, so every intermediate commit is independently verified and reviewable
 ```
 2A1  strict loader, additive          ← DONE (c4af4e0), ungated
 2A2  display loader, additive         ← DONE (c4af4e0), ungated
-GATE 1  production sweep              ← CLEAR 2026-07-15 (1 athlete, 1 row, valid_current)
+GATE 1  production sweep              ← CLEAR 2026-07-15 (1 athlete, 1 row, valid_current);
+                                         RE-RUN REQUIRED before C1 deploys (see C1 below)
 2B1  prescription                     ← DONE — first behaviour change on this branch
-2B2  readiness                        ← unblocked
-2B3  benchmark                        ← unblocked (e1RM gate CLOSED, false alarm)
-2B4  onboarding / assessment          ← unblocked
-2C   dashboard / history
+2B2  readiness                        ← DONE (readiness_service.py strict)
+2B3  benchmark                        ← C1 (2026-10-21)
+2B4  assessment                       ← C1 (2026-10-21); onboarding's twin summary → 2C
+C1+  workout ingestion, projection    ← C1 (2026-10-21) — not in the original table
+2C   dashboard / history / onboarding twin summary
 S3   shadows (separate slice)
 S4   repair_capacity_corruption -> strict   ← DONE, ungated (canonical mutation path)
 2D   retire the temporary generic compatibility loader
 2E   connected-flow proof
 ```
+
+### C1 caller inventory (2026-10-21, AST scan of every loader call at 365f91e + C1)
+
+Classified by what each caller can DO. "Decodes nothing" means it reads `has_state` (row
+existence) only.
+
+| Caller | Policy after C1 | Capability / reason |
+|---|---|---|
+| `benchmark_service._current_or_staged_baseline` | **Strict** (C1) | `benchmark`: the operator appends canonical state and the floor-shadow candidate |
+| `benchmark_service` prior and fresh-athlete checks | Decodes nothing (C1) | existence only; a damaged row is an established athlete, never a fresh one |
+| `state_service.process_new_workout` head read | **Strict** (C1) | `workout`: the transition is the next canonical row. Missing from the original table; it promoted legacy reconstructions into canonical state |
+| `api/v1/simulate.py` (`/simulate/projection`) | **Strict** (C1) | `projection`: the athlete's own forecast is not display-only. It reached `load_or_init_current_state`, which the old guard did not match |
+| `assessment_surface_service` | **Strict** (C1) | `assessment`: variance ranks the next benchmark |
+| `api/v1/onboard.py` | Decodes nothing | stages a baseline only when no row exists; the B2 run reads no state |
+| `onboarding_service._twin_summary` | Permissive → **2C** | display only (a confidence label, `AssessmentSurfaceScreen.tsx:223-238`); `can_prescribe` does not read state. Must carry degraded provenance through the API and UI |
+| `onboarding_service` measurement debt | Strict via assessment | refusal is swallowed to `[]` (prompts are never a gate) |
+| `dashboard_service:391`, `api/v1/history.py:45` | Permissive → **2C** | display recovery with provenance |
+| `ekf_shadow_service` ×3, `recovery_shadow_service` | Permissive → **S3** | explicit skip, no reconstruction |
+| `state_service` internal decodes of rows it just wrote (`stage_baseline_state`, post-commit `new_db_record`, tail-replay head, post-e1RM re-read) | Permissive → **2D** | canonical by construction; switched when the permissive loader is deleted |
+| prescription, readiness, planning projection, week review, tail replay, forecast scoring, repair job | Strict (earlier slices) | unchanged |
+
+C1's deploy is gated on a fresh sweep (`app/scripts/audit_engine_state.py`): every head must
+decode, because each non-canonical head is refused at the four C1 capabilities. The sweep never
+recommends backfilling canonical state from the legacy scalars — see its docstring.
 
 **S4 is not a GATE 1 hedge.** It closes a laundering path in the ADR-0055 capacity job
 (reconstruction copied, restamped v2, committed as canonical) and shrinks the allowlist by
