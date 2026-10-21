@@ -33,8 +33,11 @@ UNKNOWN_ZONE_GRACE_DAYS = 1
 KNOWN_ZONE_GRACE_DAYS = 0
 
 _MAX_NAME = 64
-#: Listed by zoneinfo but not a place anyone lives: "Factory" is tzdata's placeholder zone.
-_NOT_A_PLACE = frozenset({"Factory"})
+#: Can be listed by zoneinfo but are not places anyone lives: "Factory" is tzdata's placeholder
+#: zone, and on a system tz database (Linux, the production image) ``available_timezones()`` also
+#: lists ``localtime`` (the host's own zone, a symlink) and ``posixrules``. Refused by name, so the
+#: answer does not depend on which tz database the platform has.
+_NOT_A_PLACE = frozenset({"Factory", "localtime", "posixrules"})
 
 
 class InvalidTimezone(ValueError):

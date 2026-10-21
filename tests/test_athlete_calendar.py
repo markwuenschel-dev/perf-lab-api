@@ -131,3 +131,24 @@ def test_iana_names_are_accepted(name: str) -> None:
 def test_non_zones_are_refused(name: str) -> None:
     with pytest.raises(InvalidTimezone):
         validate_timezone(name)
+
+
+@pytest.mark.parametrize("name", ["localtime", "posixrules", "Factory"])
+def test_pseudo_zones_are_refused_even_when_the_platform_lists_them(monkeypatch, name):
+    """A system tz database (Linux CI and the production image) lists ``localtime`` among
+    ``available_timezones()``; the tzdata package on Windows does not. The refusal must not
+    depend on which one this machine has."""
+    from app.logic import athlete_calendar
+
+    athlete_calendar._known_names.cache_clear()
+    listed = set(athlete_calendar.available_timezones()) | {"localtime", "posixrules", "Factory"}
+    monkeypatch.setattr(athlete_calendar, "available_timezones", lambda: listed)
+    # On Linux these also LOAD (localtime is the host's zone file), so only the name check can
+    # refuse them; on Windows ZoneInfo("localtime") raises, which would hide a missing check.
+    monkeypatch.setattr(athlete_calendar, "ZoneInfo", lambda key: object())
+    try:
+        with pytest.raises(athlete_calendar.InvalidTimezone):
+            athlete_calendar.validate_timezone(name)
+        assert athlete_calendar.validate_timezone("Europe/London") == "Europe/London"
+    finally:
+        athlete_calendar._known_names.cache_clear()
