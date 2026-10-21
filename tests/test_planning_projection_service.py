@@ -326,3 +326,20 @@ def test_sessions_sit_at_the_local_session_hour() -> None:
     winter, summer = date(2026, 3, 7), date(2026, 3, 9)
     assert ny.at_utc(winter, pps.time(pps.SESSION_HOUR, 0)) == datetime(2026, 3, 7, 17, 0)
     assert ny.at_utc(summer, pps.time(pps.SESSION_HOUR, 0)) == datetime(2026, 3, 9, 16, 0)
+
+
+def test_a_zone_at_utc_plus_13_starts_its_first_day_at_its_own_midnight() -> None:
+    """Auckland in summer (NZDT, UTC+13): its local noon is the previous UTC day. The first day
+    must start at Auckland's midnight (Jan 11 11:00Z); starting it at the UTC midnight would put
+    the noon session before the day began and clamp its decay (28.76 instead of 28.67)."""
+    from app.logic.athlete_calendar import UNKNOWN, AthleteCalendar
+    auckland = AthleteCalendar("Pacific/Auckland")
+    day = date(2026, 1, 12)
+    block = _block(start_date=day)
+    plan = {day: [(_session(1, day, block_day=1), block)]}
+    start = auckland.day_start_utc(day)
+    assert start == datetime(2026, 1, 11, 11, 0)
+    local, _ = project_planned_days(_fatigued(start), day, day + timedelta(days=1), plan, auckland)
+    shifted, _ = project_planned_days(
+        _fatigued(datetime(2026, 1, 12, 0, 0)), day, day + timedelta(days=1), plan, UNKNOWN)
+    assert [d.mean_fatigue for d in local] == [d.mean_fatigue for d in shifted] == [28.67, 23.19]
