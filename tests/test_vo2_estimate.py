@@ -71,9 +71,9 @@ def test_assess_converts_lb_and_records_every_input_explicitly() -> None:
         elapsed_time_s=720, body_mass_value=163, body_mass_unit="lb", sex="male",
         age_at_performance=26, performed_on=date(2026, 10, 1),
     )
-    assert meta["outcome"]["status"] == "estimated"
-    assert meta["outcome"]["vo2max"] == pytest.approx(MALE_163LB_1200, abs=1e-9)
-    assert meta["outcome"]["units"] == "ml/kg/min"
+    assert meta["outcome_at_write"]["status"] == "estimated"
+    assert meta["outcome_at_write"]["vo2max"] == pytest.approx(MALE_163LB_1200, abs=1e-9)
+    assert meta["outcome_at_write"]["units"] == "ml/kg/min"
     assert meta["inputs"] == {
         "elapsed_time_s": 720.0,
         "body_mass_kg": pytest.approx(73.93555631, abs=1e-12),
@@ -95,8 +95,8 @@ def test_the_same_mass_in_kg_and_lb_gives_the_same_estimate() -> None:
                        sex="female")
     in_kg = vo2.assess(elapsed_time_s=810, body_mass_value=60.0, body_mass_unit="kg",
                        sex="female")
-    assert in_kg["outcome"]["vo2max"] == pytest.approx(FEMALE_60KG_1330, abs=1e-9)
-    assert in_lb["outcome"]["vo2max"] == pytest.approx(FEMALE_60KG_1330, abs=1e-6)
+    assert in_kg["outcome_at_write"]["vo2max"] == pytest.approx(FEMALE_60KG_1330, abs=1e-9)
+    assert in_lb["outcome_at_write"]["vo2max"] == pytest.approx(FEMALE_60KG_1330, abs=1e-6)
 
 
 # --- missing inputs, and the verification gate ---------------------------------------------------
@@ -106,20 +106,20 @@ def test_the_same_mass_in_kg_and_lb_gives_the_same_estimate() -> None:
 def test_missing_inputs_save_the_time_and_give_no_estimate() -> None:
     meta = vo2.assess(elapsed_time_s=744)
     assert meta["inputs"]["elapsed_time_s"] == 744.0
-    assert meta["outcome"] == {"status": "not_estimated", "reason": "missing_inputs",
+    assert meta["outcome_at_write"] == {"status": "not_estimated", "reason": "missing_inputs",
                                "missing_inputs": ["body_mass", "sex"], "vo2max": None,
                                "units": "ml/kg/min"}
     only_mass = vo2.assess(elapsed_time_s=744, body_mass_value=70, body_mass_unit="kg")
-    assert only_mass["outcome"]["missing_inputs"] == ["sex"]
+    assert only_mass["outcome_at_write"]["missing_inputs"] == ["sex"]
 
 
 @pytest.mark.usefixtures("unverified")
 def test_a_closed_gate_computes_and_shows_nothing() -> None:
     meta = vo2.assess(elapsed_time_s=720, body_mass_value=163, body_mass_unit="lb", sex="male",
                       age_at_performance=26)
-    assert meta["outcome"]["status"] == "not_estimated"
-    assert meta["outcome"]["reason"] == "coefficients_unverified"
-    assert meta["outcome"]["vo2max"] is None
+    assert meta["outcome_at_write"]["status"] == "not_estimated"
+    assert meta["outcome_at_write"]["reason"] == "coefficients_unverified"
+    assert meta["outcome_at_write"]["vo2max"] is None
     assert meta["inputs"]["body_mass_kg"] is not None  # the inputs are still captured
     view = vo2.estimate_view(meta)
     assert view.vo2max is None and view.reason == "coefficients_unverified"
@@ -188,7 +188,7 @@ def test_the_view_recomputes_from_the_captured_inputs_only() -> None:
     meta = vo2.assess(elapsed_time_s=720, body_mass_value=163, body_mass_unit="lb", sex="male",
                       age_at_performance=26)
     view = vo2.estimate_view(meta)
-    assert view.vo2max == pytest.approx(meta["outcome"]["vo2max"], abs=1e-12)
+    assert view.vo2max == pytest.approx(meta["outcome_at_write"]["vo2max"], abs=1e-12)
     # The captured kg mass is what counts, not the entered figure: edit the entered value and
     # nothing moves; edit the captured kg and the recomputation follows it.
     meta["inputs"]["body_mass_entered"] = {"value": 999.0, "unit": "lb"}

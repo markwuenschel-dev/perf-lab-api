@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,6 +27,7 @@ from app.services import (
 from app.services.state_chain_lock import lock_athlete_chain
 
 router = APIRouter(prefix="/v1", tags=["onboarding"])
+logger = logging.getLogger(__name__)
 
 # Defaults for an athlete who has never answered — deliberately the SAME values the
 # AthleteProfile columns default to (app/models/user.py), so a profile created by onboarding
@@ -96,15 +98,15 @@ async def onboard_athlete(
         profile.display_name = request.display_name
     profile.primary_goal = _resolved(request.goal, profile.primary_goal, DEFAULT_GOAL)
     profile.date_of_birth = _resolved(request.date_of_birth, profile.date_of_birth)
-    # B2: a time trial dated after today or before birth refuses the request before any write
-    # commits (nothing below has committed; the session is discarded on the exception).
-    if request.run_time_trial is not None:
-        try:
-            await run_time_trial_service.check_time_trial(
-                db, user_id, request.run_time_trial, date_of_birth=profile.date_of_birth
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+    # B2: a time trial dated after today or before birth is refused on its own; the rest of the
+    # submission is still saved, and the response says why the run was not.
+    run_refusal = (
+        await run_time_trial_service.run_date_refusal(
+            db, user_id, request.run_time_trial, date_of_birth=profile.date_of_birth
+        )
+        if request.run_time_trial is not None
+        else None
+    )
     experience_years = _resolved(request.experience_years, profile.experience_years, 0.0)
     profile.experience_years = experience_years
     experience_level = _resolved(
@@ -194,16 +196,22 @@ async def onboard_athlete(
     # B2: the 1.5 mi run, display-only. Its estimate reads the date of birth resolved above —
     # once, now — and captures the age it gives on the record; a later profile change cannot
     # move it. Missing estimate inputs save the run without an estimate; they never refuse it.
-    time_trial = (
-        await run_time_trial_service.stage_time_trial(
-            db, user_id, request.run_time_trial,
-            date_of_birth=profile.date_of_birth,
-            collection_mode=oa.CM_ONBOARDING_ONRAMP,
-            skip_if_recorded=True,
-        )
-        if request.run_time_trial is not None
-        else None
-    )
+    time_trial = None
+    if request.run_time_trial is not None and run_refusal is None:
+        try:
+            time_trial = await run_time_trial_service.stage_time_trial(
+                db, user_id, request.run_time_trial,
+                date_of_birth=profile.date_of_birth,
+                collection_mode=oa.CM_ONBOARDING_ONRAMP,
+                skip_if_recorded=True,
+            )
+        except ValueError:
+            # The definition is missing (the boot seed failed; the Dockerfile tolerates that) —
+            # raised before the run writes anything. Onboarding still saves; the run is refused
+            # with a reason, and the operator sees why.
+            logger.error("onboarding: 1.5 mi time trial not recorded for user %s", user_id,
+                         exc_info=True)
+            run_refusal = "The 1.5 mi run was not saved: time trials are unavailable right now."
 
     await db.commit()
 
@@ -225,6 +233,7 @@ async def onboard_athlete(
             if time_trial is not None
             else None
         ),
+        run_time_trial_refused=run_refusal,
     )
 
 

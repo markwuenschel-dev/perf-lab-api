@@ -11,7 +11,7 @@ captured inputs only (:func:`estimate_read`), so a profile edit never moves it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logic import observation_authority as oa
 from app.logic import vo2_estimate as vo2
+from app.logic.athlete_calendar import AthleteCalendar
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
 from app.schemas.benchmarks import (
@@ -29,27 +30,43 @@ from app.schemas.benchmarks import (
 from app.services import benchmark_service
 from app.services.athlete_calendar_service import calendar_for
 
+# What the athlete is told for a run saved without an estimate. Each says only what is true in
+# this release: there is no later way to add inputs to a saved run, or to enter another run.
 NOT_ESTIMATED_MESSAGES: dict[str, str] = {
     "coefficients_unverified": "Your run is saved. VO₂max estimates are not available yet.",
-    "missing_inputs": "Your run is saved. Add your body mass and sex with a run to see an "
-                      "estimated VO₂max.",
+    "missing_inputs": "Your run is saved without an estimated VO₂max: the estimate needs your "
+                      "body mass and sex, entered with the run.",
     "non_positive_result": "Your run is saved. This time is outside what the estimate can use.",
     "unsupported_model": "Your run is saved. This record's estimate model is no longer shown.",
 }
 
+#: The furthest ahead of UTC any calendar runs (UTC+14, Line Islands). With the athlete's zone
+#: unknown, "today" may be any date up to UTC+14's, so a run dated then is not in the future.
+LATEST_UTC_OFFSET = timedelta(hours=14)
 
-async def check_time_trial(
+
+def latest_possible_today(calendar: AthleteCalendar, now: datetime) -> date:
+    """The athlete's today in a known zone; with the zone unknown, the latest date anywhere."""
+    if calendar.known:
+        return calendar.today(now)
+    return (now.astimezone(UTC) + LATEST_UTC_OFFSET).date()
+
+
+async def run_date_refusal(
     db: AsyncSession, user_id: int, trial: RunTimeTrialReport, *, date_of_birth: date | None
-) -> None:
-    """Refuse an impossible run before anything is written: a date after the athlete's today, or
-    before their date of birth."""
+) -> str | None:
+    """Why this run's date is impossible, or None. A date after the athlete's today (with an
+    unknown zone, after the latest date anywhere), or before their date of birth.
+
+    The caller refuses ONLY the run for it: the rest of the submission is still saved."""
     if trial.performed_on is None:
-        return
-    today = (await calendar_for(db, user_id)).today()
-    if trial.performed_on > today:
-        raise ValueError("the 1.5 mi run's date is in the future")
+        return None
+    calendar = await calendar_for(db, user_id)
+    if trial.performed_on > latest_possible_today(calendar, datetime.now(UTC)):
+        return "The 1.5 mi run was not saved: its date is in the future."
     if date_of_birth is not None and trial.performed_on < date_of_birth:
-        raise ValueError("the 1.5 mi run's date is before your date of birth")
+        return "The 1.5 mi run was not saved: its date is before your date of birth."
+    return None
 
 
 def protocol_metadata(trial: RunTimeTrialReport, *, date_of_birth: date | None) -> dict[str, Any]:
@@ -78,6 +95,14 @@ class StagedTimeTrial:
 async def _already_recorded(
     db: AsyncSession, user_id: int, *, collection_mode: str, metadata: dict[str, Any]
 ) -> BenchmarkObservation | None:
+    """An onboarding run already recorded with exactly these inputs (time, date, mass, sex, age).
+
+    Onboarding cannot tell a retry whose response was lost from the same answers sent twice
+    (onboard.py's docstring; strength reports follow the same rule), so both record once. Two
+    genuinely separate undated runs with identical inputs therefore collapse into one through
+    onboarding. That loses nothing the athlete could see — the records would be identical — and
+    the only writer without this guard, ``POST /v1/benchmarks/observations``, records every
+    submission. Telling them apart would need an idempotency key onboarding does not carry."""
     rows = (await db.execute(
         select(BenchmarkObservation)
         .join(BenchmarkDefinition)
@@ -179,6 +204,12 @@ async def list_estimates(db: AsyncSession, user_id: int) -> list[Vo2EstimateRead
             BenchmarkObservation.user_id == user_id,
             BenchmarkDefinition.code == vo2.PROTOCOL_CODE,
         )
-        .order_by(BenchmarkObservation.observed_at.desc(), BenchmarkObservation.id.desc())
+        # By when the run happened; a run with no date sorts after the dated ones, newest
+        # submission first among them.
+        .order_by(
+            BenchmarkObservation.performed_at.desc().nulls_last(),
+            BenchmarkObservation.observed_at.desc(),
+            BenchmarkObservation.id.desc(),
+        )
     )).scalars().all()
     return [estimate_read(row) for row in rows]

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.logic import vo2_estimate as vo2
+
 
 class BenchmarkDefinitionRead(BaseModel):
     id: int
@@ -282,8 +284,9 @@ class RunTimeTrialReport(BaseModel):
         None, description="The athlete's calendar date of the run. Omitted means unknown."
     )
     body_mass: float | None = Field(
-        None, gt=0, le=700, allow_inf_nan=False,
-        description="Body mass as the athlete entered it, in body_mass_unit.",
+        None, gt=0, allow_inf_nan=False,
+        description="Body mass as the athlete entered it, in body_mass_unit: 25-300 kg "
+        "(55.1-661.4 lb).",
     )
     body_mass_unit: Literal["kg", "lb"] | None = None
     sex_for_estimate: Literal["female", "male"] | None = Field(
@@ -293,9 +296,18 @@ class RunTimeTrialReport(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _mass_has_a_unit(self) -> "RunTimeTrialReport":
+    def _mass_has_a_unit_and_is_plausible(self) -> "RunTimeTrialReport":
         if (self.body_mass is None) != (self.body_mass_unit is None):
             raise ValueError("body_mass and body_mass_unit go together")
+        if self.body_mass is not None and self.body_mass_unit is not None:
+            low, high = vo2.BODY_MASS_KG_BOUNDS
+            kg = vo2.body_mass_kg(self.body_mass, self.body_mass_unit)
+            if not low <= kg <= high:
+                raise ValueError(
+                    f"body_mass must be between {low:g} and {high:g} kg "
+                    f"({low / vo2.LB_TO_KG:.1f}-{high / vo2.LB_TO_KG:.1f} lb); got "
+                    f"{self.body_mass:g} {self.body_mass_unit}"
+                )
         return self
 
 

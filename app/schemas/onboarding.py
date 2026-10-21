@@ -109,6 +109,9 @@ class OnboardResponse(BaseModel):
     # The saved time trial and its display-only estimate (B2); null when none was submitted. A
     # retry of the same submission returns the run the first attempt saved.
     run_time_trial: Vo2EstimateRead | None = None
+    # Why the submitted run was NOT saved (an impossible date, or time trials unavailable). Only
+    # the run is refused: everything else in the submission was saved. Null otherwise.
+    run_time_trial_refused: str | None = None
 
 
 class OnboardingTwinSummary(BaseModel):

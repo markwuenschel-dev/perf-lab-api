@@ -70,6 +70,9 @@ SECONDS_PER_MINUTE = 60.0
 #: A 1.5 mi time this model can be given: 3 min - 4 h, the same envelope as the legacy calculator
 #: (app/api/v1/legacy.py TIME_1P5MI_BOUNDS). Outside it the time is refused, not saved.
 ELAPSED_TIME_BOUNDS_S: tuple[float, float] = (180.0, 14400.0)
+#: A body mass the request may carry, in kg (55.1-661.4 lb). Outside it the request is refused
+#: with the field named, so a typo never reaches the record.
+BODY_MASS_KG_BOUNDS: tuple[float, float] = (25.0, 300.0)
 
 
 @dataclass(frozen=True)
@@ -236,7 +239,11 @@ def assess(
             "age_at_performance_years": age_at_performance,
             "performed_on": performed_on.isoformat() if performed_on is not None else None,
         },
-        "outcome": _outcome(sex_model_input=sex_input, mass_kg=mass_kg, elapsed_time_s=elapsed),
+        # What the model gave when the run was saved: an audit record only. Every read
+        # recomputes from "inputs" (estimate_view), so the gate and the model version apply live.
+        "outcome_at_write": _outcome(
+            sex_model_input=sex_input, mass_kg=mass_kg, elapsed_time_s=elapsed
+        ),
         "population": {
             "status": status,
             "study_age_range": list(STUDY_AGE_RANGE),

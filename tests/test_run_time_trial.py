@@ -174,7 +174,7 @@ async def test_onboarding_saves_the_run_with_its_inputs_and_a_display_only_estim
     assert meta["inputs"]["body_mass_entered"] == {"value": 163.0, "unit": "lb"}
     assert meta["inputs"]["sex_model_input"] == 1
     assert meta["inputs"]["age_at_performance_years"] == 26
-    assert meta["outcome"]["vo2max"] == pytest.approx(MALE_163LB_1200, abs=1e-9)
+    assert meta["outcome_at_write"]["vo2max"] == pytest.approx(MALE_163LB_1200, abs=1e-9)
     assert meta["uncertainty"]["see"] == 3.9
 
     # Kept in history, readable through the generic list as well.
@@ -280,7 +280,7 @@ async def test_a_retried_submission_records_the_run_once(
         ("1999-12-31", "before your date of birth"),
     ],
 )
-async def test_an_impossible_run_date_refuses_the_submission_before_any_write(
+async def test_an_impossible_run_date_refuses_only_the_run(
     http_client: AsyncClient, async_db: AsyncSession, performed_on: str, message: str,
 ) -> None:
     await _seed_catalog(async_db)
@@ -288,9 +288,94 @@ async def test_an_impossible_run_date_refuses_the_submission_before_any_write(
     resp = await http_client.post(
         "/v1/onboard", json=_payload({**FULL_RUN, "performed_on": performed_on}), headers=headers
     )
-    assert resp.status_code == 400 and message in resp.text
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["run_time_trial"] is None
+    assert body["run_time_trial_refused"].startswith("The 1.5 mi run was not saved")
+    assert message in body["run_time_trial_refused"]
     total = (await async_db.execute(select(func.count()).select_from(BenchmarkObservation)))
     assert total.scalar_one() == 0
+    # Everything else in the submission was saved, and onboarding goes on.
+    profile = (await http_client.get("/v1/profile", headers=headers)).json()
+    assert (profile["date_of_birth"], profile["equipment"]) == (DOB, ["bodyweight"])
+    assert (await http_client.get("/v1/onboarding/state", headers=headers)).json()[
+        "can_prescribe"
+    ] is True
+
+
+def test_an_unknown_zone_allows_the_latest_date_anywhere() -> None:
+    from app.logic.athlete_calendar import UNKNOWN, AthleteCalendar
+    from app.services.run_time_trial_service import latest_possible_today
+
+    now = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)  # already 22 Oct at UTC+14
+    assert latest_possible_today(UNKNOWN, now) == date(2026, 10, 22)
+    assert latest_possible_today(UNKNOWN, datetime(2026, 10, 21, 9, 59, tzinfo=UTC)) == date(
+        2026, 10, 21
+    )
+    # A known zone is held to its own today: in Honolulu (UTC-10) it is still 21 Oct.
+    assert latest_possible_today(AthleteCalendar("Pacific/Honolulu"), now) == date(2026, 10, 21)
+    assert latest_possible_today(AthleteCalendar("Pacific/Kiritimati"), now) == date(2026, 10, 22)
+
+
+@pytest.mark.parametrize(
+    ("mass", "unit", "ok"),
+    [(25, "kg", True), (300, "kg", True), (24.9, "kg", False), (301, "kg", False),
+     (55.2, "lb", True), (661, "lb", True), (55, "lb", False), (700, "lb", False)],
+)
+def test_body_mass_bounds_are_in_kg_whatever_the_unit(mass: float, unit: str, ok: bool) -> None:
+    from pydantic import ValidationError
+
+    from app.schemas.benchmarks import RunTimeTrialReport
+
+    body = {"elapsed_seconds": 720, "body_mass": mass, "body_mass_unit": unit}
+    if ok:
+        RunTimeTrialReport.model_validate(body)
+        return
+    with pytest.raises(ValidationError, match="body_mass must be between 25 and 300 kg"):
+        RunTimeTrialReport.model_validate(body)
+
+
+async def test_an_implausible_body_mass_is_a_422_that_names_the_field(
+    http_client: AsyncClient, async_db: AsyncSession,
+) -> None:
+    await _seed_catalog(async_db)
+    headers = await _token(http_client, "tt_mass@test.com")
+    resp = await http_client.post(
+        "/v1/onboard", json=_payload({**FULL_RUN, "body_mass": 1630}), headers=headers
+    )
+    assert resp.status_code == 422
+    assert "body_mass must be between 25 and 300 kg (55.1-661.4 lb)" in resp.text
+    assert "less than or equal to" not in resp.text
+
+
+async def test_a_missing_definition_refuses_the_run_and_saves_onboarding(
+    http_client: AsyncClient, async_db: AsyncSession,
+) -> None:
+    # The boot seed failed before the new definition was inserted (Dockerfile tolerates it).
+    async_db.add(BenchmarkDefinition(**{row["code"]: row for row in BENCHMARKS}[OLD]))
+    await async_db.commit()
+    headers, body = await _onboard(http_client, "tt_nodef@test.com", _payload(FULL_RUN))
+    assert body["run_time_trial"] is None
+    assert body["run_time_trial_refused"] == (
+        "The 1.5 mi run was not saved: time trials are unavailable right now."
+    )
+    assert (await http_client.get("/v1/profile", headers=headers)).json()["date_of_birth"] == DOB
+
+
+@pytest.mark.usefixtures("verified")
+async def test_estimates_are_listed_by_when_the_run_happened(
+    http_client: AsyncClient, async_db: AsyncSession,
+) -> None:
+    await _seed_catalog(async_db)
+    headers, _ = await _onboard(
+        http_client, "tt_order@test.com", _payload({**FULL_RUN, "performed_on": "2026-09-20"})
+    )
+    # Submitted later, but run earlier; then one with no date at all.
+    for run in ({**FULL_RUN, "performed_on": "2026-08-01"}, {"elapsed_seconds": 800}):
+        resp = await http_client.post("/v1/onboard", json=_payload(run), headers=headers)
+        assert resp.status_code == 200, resp.text
+    listed = (await http_client.get("/v1/benchmarks/vo2-estimates", headers=headers)).json()
+    assert [e["performed_on"] for e in listed] == ["2026-09-20", "2026-08-01", None]
 
 
 # --- 4. no capacity, prescription or attainment authority ----------------------------------------
@@ -349,7 +434,7 @@ async def test_a_hostile_writer_and_catalog_still_get_no_authority(
         "evidence_type": se.EV_DIRECT_MEASUREMENT, "value_semantics": se.VS_MEASURED,
         "requested_capacity_effect": oa.CE_BIDIRECTIONAL_UPDATE, "affects_prescription": True,
         "normalized_value": 10.0, "observation_model": "benchmark_protocol",
-        "protocol_metadata": {"outcome": {"status": "estimated", "vo2max": 99.0}},
+        "protocol_metadata": {"outcome_at_write": {"status": "estimated", "vo2max": 99.0}},
     })
     assert hostile.status_code == 200, hostile.text
 
@@ -368,7 +453,7 @@ async def test_a_hostile_writer_and_catalog_still_get_no_authority(
     assert row.observation_model == "george1993_1p5mi_run"
     assert row.normalized_value is None
     # The client's metadata is discarded: no forged estimate is stored or shown.
-    assert row.protocol_metadata["outcome"]["status"] == "not_estimated"
+    assert row.protocol_metadata["outcome_at_write"]["status"] == "not_estimated"
     shown = (await http_client.get("/v1/benchmarks/vo2-estimates", headers=headers)).json()
     assert [e["vo2max_ml_kg_min"] for e in shown] == [None]
 
