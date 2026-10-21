@@ -6,6 +6,7 @@
 // profile) are hidden; "unknown today" sends `null` (an honest gap, never imputed).
 import type { CheckinState } from "./sim";
 import type { WellnessSampleIn } from "@/types";
+import { athleteTodayIso } from "./athleteTimezone";
 
 export type WellnessSignalKey = "sleep" | "hrv" | "rhr" | "soreness" | "mood" | "stress";
 export type SignalMode = "provided" | "unknown"; // untracked is tracked separately (profile)
@@ -75,9 +76,12 @@ export function buildWellnessSample(
   modes: Record<WellnessSignalKey, SignalMode>,
   untracked: ReadonlySet<WellnessSignalKey>,
   deviceCovered: ReadonlySet<WellnessSignalKey> = new Set(),
+  // The athlete's calendar day (B1: `athleteTodayIso(profile.timezone)`), the day readiness
+  // counts as fresh. The default is the UTC day, the backend's reading of an unknown zone.
+  day: string = athleteTodayIso(null),
 ): WellnessSampleIn {
   const out: Partial<WellnessSampleIn> = {
-    date: new Date().toISOString().slice(0, 10),
+    date: day,
     source: "manual",
   };
   for (const { key } of WELLNESS_SIGNALS) {

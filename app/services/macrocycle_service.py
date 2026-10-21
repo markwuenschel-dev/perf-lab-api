@@ -15,6 +15,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.athlete_calendar import UNKNOWN
 from app.logic.planning import block_taper_week
 from app.models.macrocycle import Macrocycle, MacrocycleStatus
 from app.models.mesocycle import MesocycleBlock, PlannedSession
@@ -26,6 +27,7 @@ from app.schemas.macrocycle import (
     MacrocycleUpdate,
     WeekProgress,
 )
+from app.services.athlete_calendar_service import calendar_for, calendars_for
 
 # ---------------------------------------------------------------------------
 # Pure schedule math (non-DB, unit-testable)
@@ -45,7 +47,7 @@ def compute_week_progress(
     the start. ``pct`` is schedule position (elapsed/total), not benchmark
     progress. ``weeks_to_go`` never goes negative.
     """
-    today = today or date.today()
+    today = today or UNKNOWN.today()  # callers pass the athlete's today (B1)
 
     current_week = (today - start_date).days // 7 + 1
     if current_week < 1:
@@ -77,7 +79,7 @@ def block_phase(
 ) -> Literal["completed", "current", "upcoming"]:
     """Where a block sits relative to today, from its dates alone (a block's ``status``
     only changes by manual PATCH, so it cannot say this)."""
-    today = today or date.today()
+    today = today or UNKNOWN.today()  # callers pass the athlete's today (B1)
     if end_date < today:
         return "completed"
     if start_date > today:
@@ -169,7 +171,10 @@ async def to_read_schemas(
         )
     ).all()
 
-    today = date.today()
+    # B1: each athlete's own today (one query for every owner in the list).
+    calendars = await calendars_for(db, (m.user_id for m in macrocycles))
+    today_by_user = {uid: cal.today() for uid, cal in calendars.items()}
+    owner_by_macrocycle = {m.id: m.user_id for m in macrocycles}
     blocks_by_macrocycle: dict[int, list[MacrocycleBlockSummary]] = {}
     summary_by_block: dict[int, MacrocycleBlockSummary] = {}
     for row in block_rows:
@@ -183,7 +188,9 @@ async def to_read_schemas(
                 end_date=end,
                 duration_weeks=row.duration_weeks,
                 status=row.status,
-                phase=block_phase(row.start_date, end, today),
+                phase=block_phase(
+                    row.start_date, end, today_by_user[owner_by_macrocycle[row.macrocycle_id]]
+                ),
                 deload_weeks=[],
                 benchmark_weeks=[],
                 block_taper_week=block_taper_week(row.duration_weeks),
@@ -215,7 +222,9 @@ async def to_read_schemas(
                 objective_label=objective_label,
                 target_date=target_date,
                 block_count=len(blocks),
-                week_progress=compute_week_progress(macrocycle.start_date, target_date),
+                week_progress=compute_week_progress(
+                    macrocycle.start_date, target_date, today_by_user[macrocycle.user_id]
+                ),
                 blocks=blocks,
                 unplanned_weeks=compute_unplanned_weeks(
                     macrocycle.start_date, last_block_end, target_date
@@ -252,7 +261,7 @@ async def create_macrocycle(
     macrocycle = Macrocycle(
         user_id=user_id,
         objective_id=payload.objective_id,
-        start_date=payload.start_date or date.today(),
+        start_date=payload.start_date or (await calendar_for(db, user_id)).today(),
     )
     db.add(macrocycle)
     await db.commit()

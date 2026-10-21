@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.logic.constraint_engine.types import ConstraintContext, ConstraintResult, Severity
@@ -45,6 +45,19 @@ def _parse_ts(row: dict[str, Any]) -> datetime | None:
         except ValueError:
             return None
     return None
+
+
+def _session_day(row: dict[str, Any]) -> date | None:
+    """The calendar day a recent session fell on: the athlete's (``athlete_day``, B1) when the
+    caller supplied it, else the date of its timestamp as written (callers with no calendar)."""
+    day = row.get("athlete_day")
+    if isinstance(day, str):
+        try:
+            return date.fromisoformat(day)
+        except ValueError:
+            pass
+    ts = _parse_ts(row)
+    return ts.date() if ts is not None else None  # as before B1: the timestamp's own date
 
 
 def _within_hours(ts: datetime | None, hours: float) -> bool:
@@ -299,10 +312,11 @@ def run_no_back_to_back_threshold_and_vo2_days(
     ):
         return _ok("run_no_back_to_back_threshold_and_vo2_days")
 
-    s0 = _parse_ts(ctx.recent_sessions[0])
-    s1 = _parse_ts(ctx.recent_sessions[1])
-    if s0 and s1:
-        d0, d1 = s0.date(), s1.date()
+    # Days are the athlete's (B1): a 07:00 Monday and an 18:00 Tuesday session west of UTC are
+    # back to back even when their UTC dates are two days apart.
+    d0 = _session_day(ctx.recent_sessions[0])
+    d1 = _session_day(ctx.recent_sessions[1])
+    if d0 and d1:
         if abs((d0 - d1).days) == 1:
             t0 = set(ctx.recent_sessions[0].get("tags") or [])
             t1 = set(ctx.recent_sessions[1].get("tags") or [])

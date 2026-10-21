@@ -11,10 +11,12 @@ only through ``POST /v1/benchmarks/strength-evidence``.
 """
 
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
+from app.logic.athlete_calendar import InvalidTimezone, validate_timezone
 from app.logic.exercise_slot import EQUIPMENT_PREFERENCE_LOAD_TYPES
 from app.logic.onboarding_state import validate_dob
 from app.logic.wellness_registry import coverage_signals
@@ -48,6 +50,37 @@ class ProfileRead(BaseModel):
     # Wellness signals the athlete explicitly marked "I don't track this" (ADR-0049);
     # hidden from the check-in and never expected. Missing-but-tracked stays an honest gap.
     untracked_wellness_signals: list[str] = Field(default_factory=list)
+    # B1: the athlete's IANA timezone; null = unknown (the app uses UTC and keeps a day of grace
+    # before calling a session missed). 'UTC' is a known zone like any other.
+    timezone: str | None = Field(
+        default=None,
+        description="IANA timezone the athlete's days are counted in. Null: unknown (UTC is used).",
+    )
+    timezone_source: Literal["browser", "athlete"] | None = Field(
+        default=None,
+        description="How the timezone was set: captured once from the browser, or chosen.",
+    )
+
+
+class TimezoneCapture(BaseModel):
+    """The browser's zone (``Intl.DateTimeFormat().resolvedOptions().timeZone``). Stored only
+    while the athlete's zone is unknown: a later login, device or trip never replaces it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    timezone: str = Field(min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def _check_timezone(cls, v: str) -> str:
+        return _valid_zone(v)
+
+
+def _valid_zone(v: str) -> str:
+    try:
+        return validate_timezone(v)
+    except InvalidTimezone as exc:
+        raise ValueError(str(exc)) from exc
 
 
 class ProfileUpdate(BaseModel):
@@ -76,6 +109,12 @@ class ProfileUpdate(BaseModel):
     height_cm: float | None = Field(None, gt=0)
     # Full replacement of the explicit "don't track" opt-out list when present.
     untracked_wellness_signals: list[str] | None = None
+    # B1: the athlete's choice of timezone (an IANA name, validated). It replaces any zone,
+    # including one captured from the browser. Omit it to leave the zone as it is; it is never
+    # null (a zone cannot be cleared back to unknown: choose "UTC" explicitly).
+    # `SkipJsonSchema[None]`: the contract says string (never null); None is only the "omitted"
+    # default, and an explicit null is refused by the validator below.
+    timezone: str | SkipJsonSchema[None] = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
@@ -88,8 +127,23 @@ class ProfileUpdate(BaseModel):
     @classmethod
     def _check_dob(cls, v: date | None) -> date | None:
         if v is not None:
+            # B1: the server date on purpose: a validator has no athlete, and a plausibility
+            # bound of 5-100 years is not moved by a one-day difference between calendars.
             validate_dob(v, date.today())
         return v
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def _refuse_null_timezone(cls, v: Any) -> Any:
+        # Before the length constraints, which cannot judge a null.
+        if v is None:
+            raise ValueError("timezone cannot be null; choose a zone (UTC is one)")
+        return v
+
+    @field_validator("timezone")
+    @classmethod
+    def _check_timezone(cls, v: str) -> str:
+        return _valid_zone(v)
 
     @field_validator("equipment_preference")
     @classmethod

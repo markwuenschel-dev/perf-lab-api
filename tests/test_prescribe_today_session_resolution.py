@@ -20,9 +20,9 @@ lowest-id session and leaves the active-block session untouched.
 Async DB integration test (session-scoped test schema); skips only when no DB.
 """
 
-from datetime import date
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -47,7 +47,7 @@ async def _mk_block(db, user_id: int, status: BlockStatus) -> MesocycleBlock:
         goal=BlockGoal.STRENGTH,
         duration_weeks=8,
         sessions_per_week=3,
-        start_date=date.today(),
+        start_date=backend_today(),
         deload_every_n_weeks=4,
         status=status,
     )
@@ -61,10 +61,10 @@ async def _mk_pending_today(db, user_id: int, block_id: int) -> PlannedSession:
     session = PlannedSession(
         block_id=block_id,
         user_id=user_id,
-        scheduled_date=date.today(),
+        scheduled_date=backend_today(),
         week_number=1,
         block_day=1,
-        day_of_week=date.today().isoweekday(),
+        day_of_week=backend_today().isoweekday(),
         category="Heavy Lower",
         modality="Strength",
     )

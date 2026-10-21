@@ -565,6 +565,103 @@ they count. What the rollback costs: only the manual route feeds the shadows unt
 redeployed, and on redeploy P7b's next linked row for an athlete retires the unlinked rows
 written before it.
 
+## Athlete timezone (B1): schema first, behaviour second
+
+Before B1 every "today" was the server's: `date.today()` in planning, week review, projection,
+dashboard, macrocycles, objectives and onboarding, and `datetime.now(UTC).date()` in readiness,
+the wearable sync and the recovery shadow. The production container runs in UTC, so both were
+the UTC day. B1 counts each athlete's days in their own IANA timezone.
+
+**B1a (schema only)** ships migration `a063_athlete_timezone`: `athlete_profiles.timezone`
+(an IANA name, NULL = unknown) and `timezone_source` (`browser` | `athlete`), with a CHECK that
+keeps the two set together. Nothing reads or writes them. **B1b (behaviour, no migration)**
+resolves every "today" through `app/services/athlete_calendar_service.py` and
+`app/logic/athlete_calendar.py`, exposes the zone on `GET/PATCH /v1/profile`, and adds
+`POST /v1/profile/timezone/detected`.
+
+**Deploy order.** B1a first, with the same pre-deploy steps as P5a (a recorded `pg_dump` with
+the B1a SHA in its name, and the check that a one-off container runs Alembic alone). Then B1b.
+
+**B1b's rollback target: `2725839aeccab6d935706ed56bd5880fa7d44eae`** (B1a, merged as PR #313; deployed first).
+
+**Rolling B1b back: deploy `2725839aeccab6d935706ed56bd5880fa7d44eae`** (heads match, so it boots; no database step). Stored
+zones stay in the columns and are ignored: every athlete is counted in UTC again, with the
+missed-session grace day. Nothing B1b wrote is a date that needs undoing: it writes only the
+two zone columns, and every date it stores (a check-in's day, a pushed day, a matched session)
+is an ordinary calendar date B1a reads the same way.
+
+Two things B1b leaves behind, both harmless:
+
+* **MISSED statuses.** With a known zone B1b gives no grace day, so it can mark a session MISSED
+  up to a day before B1a would have. Those statuses stay after the rollback. A miss is not
+  final: a workout logged on that day still matches a MISSED session and completes it (the
+  same-day match takes PENDING or MISSED, `state_service.py:670-671`,
+  `planned_session_protocol.py:72`), and the athlete can reopen it by moving it.
+* **Check-in days from a stale bundle.** The web ships inside the API image
+  (`Dockerfile:70-72`), so a deploy or rollback moves both together. A tab opened before the
+  switch keeps the bundle it loaded until it reloads. A B1a-era bundle against the B1b API posts
+  a check-in on the UTC day while the server counts a known-zone athlete's own day (and phone
+  pushes without a `date` land on the athlete's day, `wellness_ingest_service.py:104-107`), so
+  near midnight that check-in can read as another day's. After either switch, reload open tabs;
+  nothing on the server needs fixing.
+
+**Rolling B1a back** (only while B1b has never run). The pre-B1 image will not boot on an `a063`
+database (the boot guard refuses a revision that is not its head: the comparison is at
+`app/main.py:385-390`, fatal in production at `:307-308`). Stop
+the API, downgrade with a one-off on the B1a image, then deploy the pre-B1 SHA:
+
+```bash
+cd /opt/stack/infra && sudo docker compose stop perf-lab-api
+sudo docker compose run --rm --no-deps --entrypoint alembic perf-lab-api downgrade a062_shadow_log_provenance
+./scripts/deploy.sh fb43aa4
+```
+
+The downgrade **refuses, changing nothing**, while any athlete has a zone: dropping the columns
+would discard a choice the athlete made. Under B1a alone nothing writes a zone, so the refusal
+means B1b ran; deploy `2725839aeccab6d935706ed56bd5880fa7d44eae` instead. Clearing the zones (`UPDATE athlete_profiles SET
+timezone = NULL, timezone_source = NULL`) is a deliberate, separate act, never part of a
+rollback.
+
+**What an athlete sees while their zone is unknown** (every athlete right after B1b, and anyone
+whose browser reports no zone). Exactly what they saw before B1: their days are UTC days, and a
+pending session gets one day of grace before it reads as missed (`GRACE_DAYS = 1`), because the
+UTC day can run a day ahead of theirs. Settings → Timezone says "Unknown — your days are counted
+in UTC". On their next sign-in or app load the web offers the browser's zone; the server stores
+it only while the zone is unknown, so a later login from another device or a trip never
+replaces it. From then on their days are their own and the grace is 0. Only Settings changes a
+known zone. An athlete who chooses UTC is a known-UTC athlete (grace 0), not an unknown one.
+
+**Which calendar each reader uses (B1b).**
+
+| Reader | Before | After | Why |
+| --- | --- | --- | --- |
+| `api/v1/planning.py` `/sessions`, `/week-review`, `/today` reconciliation | `date.today()`, grace 1 | athlete today, grace 0 known / 1 unknown | `scheduled_date` is a day in the athlete's calendar |
+| `missed_session_service` `GRACE_DAYS`, `missed_cutoff`, `is_missed` | grace 1 always | grace per calendar (`reconcile_missed_for_athlete`) | the grace only covered the server-vs-athlete day gap |
+| `planning_service.update_session` (`check_patch` reopen floor) | `date.today()` | athlete today | the same "today" reconciliation uses |
+| `planning_service.get_today_session` default | `date.today()` | athlete today | today's session is the athlete's day |
+| `prescription_service` context (`get_today_session`, readiness, objective taper) | server date / UTC date | one athlete today, read once: `/planning/today` passes the day it resolved through `prescribe_and_issue(today=)`, and the context passes it to readiness and `active_objective_signals(today=)` | the session, the fresh wellness day and the taper are the same day |
+| `constraint_engine` back-to-back threshold/VO2 rule | the timestamps' UTC dates | each recent session's `athlete_day` (stamped by `recent_workout_summaries(calendar=)`); the timestamp's own date when a caller has no calendar | it feeds prescription: 07:00 Mon and 18:00 Tue in LA are back to back |
+| `prescription_service` `evaluation_date=resolved_for` | session's `scheduled_date` | unchanged | already the session's own calendar date |
+| `readiness_service.compute_readiness` default | UTC date | athlete today | a wellness `date` is a day in the athlete's calendar |
+| `wearable_service` sync window | UTC today; watermark's UTC date − 1 | end = later of UTC and athlete today; start = earlier reading of the watermark − 1 | only ever widens: Oura's `day` meaning is not documented in this code (`app/integrations/oura.py:10-14`), so it is stored as given and the old window is kept as a floor |
+| `wearable_service.connect_pat` probe | UTC today | unchanged | a credential probe, not anyone's day |
+| `wearable_service` Oura `day` → `WellnessSampleIn.date` | as given | unchanged | provider-supplied daily date keeps its own calendar |
+| `recovery_shadow_service` / `wellness_shadow_chain.is_as_of_day` | as-of instant's UTC day | athlete's day of the as-of instant (the wearable sync passes the calendar it resolved once; otherwise read in the telemetry session) | the shadow pairs the day with the current state |
+| `wellness_ingest_service.ingest` omitted `date` | UTC date of `measured_at`/now | athlete's day of `measured_at`/now | a pushed `date` is kept as sent |
+| `state_service._match_planned_session` | client wall-clock date of the timestamp | known zone + aware timestamp: athlete's day of the instant; else unchanged | the web sends UTC `Z` instants; an evening session west of UTC kept its UTC date |
+| `dashboard_service.overview_metrics` | `date.today()`; UTC day of each workout | athlete today; athlete day of each workout instant; window starts at local midnight | streak and load are per athlete day |
+| `week_review_service`, `planning_projection_service` default today | `date.today()` | athlete today | week membership is by `scheduled_date` |
+| `macrocycle_service` phase, week progress, default start | `date.today()` | each owner's today (one query) | block and program dates are calendar dates |
+| `objective_service` `days_to_go`, taper signals | `date.today()` | each owner's today | target dates are calendar dates |
+| `onboarding_service` `is_minor` | `date.today()` | athlete today | a birthday turns over on the athlete's day |
+| `schemas/onboarding.py`, `schemas/profile.py` DOB validators | `date.today()` | unchanged | a validator has no athlete; a 5–100-year bound does not move by a day |
+| `personalization_shadow_service` fit, `strength_decline_service` occurrence key | UTC day of an instant | unchanged | a shadow-only fit, and an idempotency key that must not change across the rollout |
+
+Stored instants stay UTC, and no stored date is rewritten: not on deploy, and not when an
+athlete changes zone. A zone change moves which day is "today" from then on; a workout's day is
+derived from its instant in the current zone, so the dashboard may regroup a workout logged near
+midnight, while every `scheduled_date` and wellness `date` keeps its value.
+
 ## Auth rate limits (P9): the proxy network first, the limits second
 
 P9 has no migration. It needs one thing from the box before its image runs: uvicorn must

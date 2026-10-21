@@ -13,9 +13,9 @@ test schema whenever a database is available, and skips only when none is (a har
 failure under REQUIRE_DB in CI).
 """
 
-from datetime import date
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -49,7 +49,7 @@ async def test_today_path_applies_periodization_envelope(async_db):
         goal=BlockGoal.STRENGTH,
         duration_weeks=8,
         sessions_per_week=3,
-        start_date=date.today(),
+        start_date=backend_today(),
         deload_every_n_weeks=4,
     )
     async_db.add(block)
@@ -59,10 +59,10 @@ async def test_today_path_applies_periodization_envelope(async_db):
     session = PlannedSession(
         block_id=block.id,
         user_id=user.id,
-        scheduled_date=date.today(),
+        scheduled_date=backend_today(),
         week_number=7,
         block_day=1,
-        day_of_week=date.today().isoweekday(),
+        day_of_week=backend_today().isoweekday(),
         category="Heavy Lower",
         modality="Strength",
     )

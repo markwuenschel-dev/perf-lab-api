@@ -25,9 +25,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.vectors import FatigueState
 from app.engine.parameter_overrides import apply_parameter_overrides, load_namespace_override
 from app.engine.parameters import default_parameters
+from app.logic.athlete_calendar import AthleteCalendar
 from app.logic.recovery_telemetry import multipliers_by_axis, wellness_snapshot
 from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.recovery_shadow import RecoveryShadowLog
+from app.services.athlete_calendar_service import calendar_for
 from app.services.shadow_evidence import RECORDED, SKIPPED_NOT_AS_OF_DAY
 from app.services.state_service import load_current_state
 from app.services.telemetry_common import best_effort_write
@@ -47,6 +49,7 @@ _NAMESPACE = "q2_recovery"
 async def _append(
     tdb: AsyncSession, ref: WellnessSampleRef, snapshot: WellnessTelemetrySnapshot,
     as_of: datetime,
+    calendar: AthleteCalendar | None,
 ) -> str:
     digest = await lock_current_inputs(tdb, ref, snapshot)
     if digest is None:
@@ -59,7 +62,13 @@ async def _append(
     else:
         learned = params
         model_version = "none"
-    kind = RECORDED if is_as_of_day(ref, as_of) else SKIPPED_NOT_AS_OF_DAY
+    # B1: the as-of day is the athlete's calendar day of the as-of instant (UTC while their zone
+    # is unknown): the caller's calendar when it has one, else read in this telemetry session
+    # so the caller's session is never touched (F1).
+    if calendar is None:
+        calendar = await calendar_for(tdb, ref.user_id)
+    as_of_day = calendar.day_of(as_of)
+    kind = RECORDED if is_as_of_day(ref, as_of, as_of_day) else SKIPPED_NOT_AS_OF_DAY
     if await head_holds(tdb, RecoveryShadowLog, ref, model_version, digest, kind):
         return "unchanged"
 
@@ -79,7 +88,7 @@ async def _append(
         )
         if appended != "appended":  # satisfied meanwhile, or the sample changed
             return appended
-        logger.info("recovery shadow skipped for sample %s: %s is not the as-of UTC day of %s",
+        logger.info("recovery shadow skipped for sample %s: %s is not the as-of day of %s",
                     ref.sample_id, ref.sample_date, as_of.isoformat())
         return SKIPPED_NOT_AS_OF_DAY
 
@@ -111,6 +120,7 @@ async def record_recovery_shadow(
     snapshot: WellnessTelemetrySnapshot,
     *,
     as_of: datetime,
+    calendar: AthleteCalendar | None = None,
 ) -> str:
     """Append this sample's recovery shadow row to its chain when its inputs changed. Never
     raises to the caller.
@@ -120,5 +130,5 @@ async def record_recovery_shadow(
     """
     outcome = "failed"
     async with best_effort_write(db, f"recovery shadow log for user {ref.user_id}") as tx:
-        outcome = await _append(tx.db, ref, snapshot, as_of)  # F1: the telemetry session
+        outcome = await _append(tx.db, ref, snapshot, as_of, calendar)  # F1: the telemetry session
     return "failed" if tx.failed else outcome

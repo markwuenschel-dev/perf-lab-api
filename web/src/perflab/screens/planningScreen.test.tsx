@@ -11,7 +11,7 @@
 //   - Mark skipped PATCHes the missed session's status
 //   - logged cells read done / missed / pending (today) / upcoming / rest off the
 //     real session status and date
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlannedSessionRead, PlannedWeekProjection } from "@/types";
 
@@ -20,11 +20,20 @@ const openLog = vi.fn();
 const openCheckin = vi.fn();
 const openFeedback = vi.fn();
 
+let authProfile: { timezone: string | null } | null = null;
+let calendarKeyOverride: string | null = null;
 vi.mock("@/auth/useAuth", () => ({
-  useAuth: () => ({ token, user: null, profile: null, email: null, isGuest: token == null }),
+  useAuth: () => ({
+    token,
+    user: null,
+    profile: authProfile,
+    calendarKey: calendarKeyOverride ?? (authProfile?.timezone ? `zone:${authProfile.timezone}` : "unknown"),
+    email: null,
+    isGuest: token == null,
+  }),
 }));
 
-const storeState = {
+const storeState: { planningWeekAnchor: string | null } & Record<string, unknown> = {
   settings: { goal: "strength", units: "Metric (km)" },
   planningWeekAnchor: null,
   planningRefreshKey: 0,
@@ -158,6 +167,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 8, 30, 12, 0, 0));
   token = "real-token";
+  authProfile = null;
+  calendarKeyOverride = null;
+  storeState.planningWeekAnchor = null;
   projection = AVAILABLE;
   weekSessions = WEEK;
   workoutsFixture = WORKOUTS;
@@ -191,6 +203,52 @@ describe("forward projection", () => {
     expect(getPlannedWeekProjection).toHaveBeenCalledWith("real-token", "2026-10-04");
   });
 
+  it("defaults to the week of the athlete's today, not the browser's", async () => {
+    // Sun 4 Oct 14:30Z: still Sunday (week of 28 Sep) for a browser west of UTC, already
+    // Mon 5 Oct in Brisbane. The default week is Brisbane's, projected through its Sunday.
+    vi.setSystemTime(new Date("2026-10-04T14:30:00Z"));
+    authProfile = { timezone: "Australia/Brisbane" };
+    listedWeeks.length = 0;
+    render(<PlanningScreen />);
+    await waitFor(() => expect(getPlannedWeekProjection).toHaveBeenCalled());
+    expect(listedWeeks).toContain("2026-10-05");
+    expect(listedWeeks).not.toContain("2026-09-28");
+    expect(getPlannedWeekProjection).toHaveBeenLastCalledWith("real-token", "2026-10-11");
+  });
+
+  it("keeps an explicitly selected week, and never asks for a `through` already past there", async () => {
+    // The week of 28 Sep is selected while it is already Mon 5 Oct in Brisbane: its Sunday is
+    // in the athlete's past, which the server would refuse (422), so no `through` is sent.
+    vi.setSystemTime(new Date("2026-10-04T14:30:00Z"));
+    authProfile = { timezone: "Australia/Brisbane" };
+    storeState.planningWeekAnchor = WEEK_START;
+    listedWeeks.length = 0;
+    render(<PlanningScreen />);
+    await waitFor(() => expect(getPlannedWeekProjection).toHaveBeenCalled());
+    expect(listedWeeks).toContain(WEEK_START);
+    expect(getPlannedWeekProjection).toHaveBeenLastCalledWith("real-token", undefined);
+  });
+
+  it("groups logged workouts on the athlete's day of the server's UTC instant", async () => {
+    // A 30-minute workout at Mon 5 Oct 02:00 UTC (naive, as the API sends it) is Sunday 4 Oct
+    // 22:00 in New York: inside this week for a New York athlete, even on a browser set to UTC.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      authProfile = { timezone: "America/New_York" };
+      workoutsFixture = [
+        WORKOUTS[0], // 44 min on Mon 28 Sep, in the week either way
+        { ...WORKOUTS[0], id: 777, duration_minutes: 30, session_timestamp: "2026-10-05T02:00:00" },
+      ];
+      render(<PlanningScreen />);
+      const minutes = await screen.findByText("Minutes");
+      await waitFor(() => expect(minutes.parentElement?.textContent).toContain("74"));
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
+  });
+
   it("explains an unavailable projection and never draws a chart", async () => {
     // Days are present on purpose: `available: false` alone must suppress the
     // chart, whatever else the payload happens to carry.
@@ -218,6 +276,25 @@ describe("rescheduling", () => {
     fireEvent.drop(cell(container, "2026-10-03", "planned"));
     expect(updatePlannedSession).toHaveBeenCalledTimes(1);
     expect(updatePlannedSession).toHaveBeenCalledWith(14, { scheduled_date: "2026-10-03" }, "real-token");
+  });
+
+  it("does not even read the week while the calendar is pending", async () => {
+    calendarKeyOverride = "pending";
+    listedWeeks.length = 0;
+    render(<PlanningScreen />);
+    expect(await screen.findByText("Loading your plan…")).toBeTruthy();
+    expect(listedWeeks).toEqual([]);
+    expect(updatePlannedSession).not.toHaveBeenCalled();
+  });
+
+  it("offers no move while the calendar is unavailable (the floor is the athlete's today, B1)", async () => {
+    calendarKeyOverride = "unavailable";
+    const { container } = render(<PlanningScreen />);
+    await screen.findByText("Tempo");
+    fireEvent.dragStart(cell(container, "2026-10-02", "planned"));
+    fireEvent.dragOver(cell(container, "2026-10-03", "planned"));
+    fireEvent.drop(cell(container, "2026-10-03", "planned"));
+    expect(updatePlannedSession).not.toHaveBeenCalled();
   });
 
   it("writes nothing when the drop day already has a session", async () => {
@@ -374,6 +451,28 @@ describe("the week grid", () => {
     // missed: the skip action lives only on the missed cell
     expect(within(cell(container, "2026-09-29", "logged")).getByRole("button", { name: "Mark skipped" })).toBeTruthy();
     expect(within(cell(container, "2026-10-02", "logged")).queryByRole("button")).toBeNull();
+  });
+
+  it("while the zone is unknown, a New York evening keeps its own today (the server's grace day)", async () => {
+    // Wed 30 Sep 21:00 in New York is already Thu 1 Oct in UTC. The server counts an unknown
+    // zone's day in UTC but gives it a day of grace, so Wednesday's session is not missed yet:
+    // the grid must not call it missed, nor move "today" to Thursday.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      vi.setSystemTime(new Date("2026-10-01T01:00:00Z"));
+      authProfile = null;
+      const { container } = render(<PlanningScreen />);
+      await waitFor(() => expect(cell(container, "2026-09-30", "planned")).toBeTruthy());
+      expect(within(cell(container, "2026-09-30", "planned")).getByText("TODAY")).toBeTruthy();
+      expect(within(cell(container, "2026-10-01", "planned")).queryByText("TODAY")).toBeNull();
+      const wednesday = within(cell(container, "2026-09-30", "logged"));
+      expect(wednesday.getByRole("button", { name: "Log workout" })).toBeTruthy();
+      expect(wednesday.queryByRole("button", { name: "Mark skipped" })).toBeNull();
+    } finally {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    }
   });
 
   it("shows the block cadence from the sessions' own deload/benchmark flags", async () => {

@@ -971,6 +971,30 @@ export interface paths {
         patch: operations["update_profile_v1_profile_patch"];
         trace?: never;
     };
+    "/v1/profile/timezone/detected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Capture Detected Timezone
+         * @description The browser's timezone, stored only while the athlete's is unknown (B1).
+         *
+         *     Validated against the server's zoneinfo (422 otherwise). A known zone — captured earlier or
+         *     chosen in Settings — is never replaced: the response is the stored profile either way, so
+         *     the client can tell whether its zone was taken by comparing.
+         */
+        post: operations["capture_detected_timezone_v1_profile_timezone_detected_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/readiness": {
         parameters: {
             query?: never;
@@ -3626,6 +3650,16 @@ export interface components {
             session_duration_minutes: number;
             /** Squat 1Rm Kg */
             squat_1rm_kg: number | null;
+            /**
+             * Timezone
+             * @description IANA timezone the athlete's days are counted in. Null: unknown (UTC is used).
+             */
+            timezone?: string | null;
+            /**
+             * Timezone Source
+             * @description How the timezone was set: captured once from the browser, or chosen.
+             */
+            timezone_source?: ("browser" | "athlete") | null;
             /** Untracked Wellness Signals */
             untracked_wellness_signals?: string[];
         };
@@ -3668,6 +3702,8 @@ export interface components {
             run_5k_seconds?: number | null;
             /** Session Duration Minutes */
             session_duration_minutes?: number | null;
+            /** Timezone */
+            timezone?: string;
             /** Untracked Wellness Signals */
             untracked_wellness_signals?: string[] | null;
         };
@@ -4423,6 +4459,15 @@ export interface components {
             rows_written: number;
         };
         /**
+         * TimezoneCapture
+         * @description The browser's zone (``Intl.DateTimeFormat().resolvedOptions().timeZone``). Stored only
+         *     while the athlete's zone is unknown: a later login, device or trip never replaces it.
+         */
+        TimezoneCapture: {
+            /** Timezone */
+            timezone: string;
+        };
+        /**
          * TissueState
          * @description T_t — accumulated tissue / structural stress (0–100).
          */
@@ -5048,7 +5093,7 @@ export interface components {
         WellnessIngestIn: {
             /**
              * Date
-             * @description The day the readings belong to. Omitted: today (UTC), as readiness counts days.
+             * @description The day the readings belong to, in the athlete's calendar. Omitted: the athlete's day of measured_at (or of now), in their timezone (UTC while it is unknown), as readiness counts days.
              */
             date?: string | null;
             /**
@@ -7086,6 +7131,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_detected_timezone_v1_profile_timezone_detected_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimezoneCapture"];
             };
         };
         responses: {

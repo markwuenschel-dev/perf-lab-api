@@ -1,5 +1,5 @@
 // src/perflab/screens/SettingsScreen.tsx
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { isImperial, kgToLbs } from "@/lib/units";
@@ -45,6 +45,7 @@ import {
   type WeightUnit,
 } from "./strengthEvidenceBody";
 import { Card, SectionLabel } from "../ui";
+import { knownTimezones } from "../athleteTimezone";
 
 const ACCENTS = ["#c6f135", "#45d6c4", "#86b8ff", "#f5c451", "#ff8a5c"];
 const EXPERIENCE_LEVELS = ["beginner", "intermediate", "advanced"];
@@ -78,6 +79,7 @@ function GoalChips() {
   const objectivesRes = useAuthedResource<ObjectiveRead[]>(
     (t) => api.listObjectives(t),
     [state.objectivesRefreshKey],
+    { calendar: true },
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1072,6 +1074,122 @@ function EquipmentCard() {
   );
 }
 
+/** What the server answered: an old API ignores `timezone` and returns 200 without storing it. */
+export const TIMEZONE_UNSUPPORTED = "This server can't store a timezone yet.";
+
+/**
+ * The athlete's timezone (B1): which calendar their days — "today", missed sessions, a
+ * check-in's day — are counted in. Captured once from the browser while unknown; changing it
+ * here is the only way it changes afterwards. Planned sessions and check-ins keep their dates;
+ * logged workouts are grouped by the day they happened in the current zone.
+ */
+export function TimezoneCard() {
+  const auth = useAuth();
+  const profile = auth.profile;
+  const stored = profile?.timezone ?? null;
+  const source = profile?.timezone_source ?? null;
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const zones = knownTimezones(stored);
+  const value = draft ?? stored ?? "";
+
+  async function save() {
+    if (!auth.token || !draft || draft === stored) return;
+    setSaving(true);
+    setError(null);
+    setSaved(null);
+    try {
+      const next = await api.updateProfile({ timezone: draft }, auth.token);
+      // Trust what the server stored, not that it answered 200: an API from before B1 ignores
+      // the field and returns the profile without it.
+      if (next.timezone !== draft) {
+        setError(TIMEZONE_UNSUPPORTED);
+        return;
+      }
+      setDraft(null);
+      setSaved(draft);
+      await auth.refreshProfile();
+    } catch {
+      setError("Couldn't save your timezone. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!auth.token) return null;
+
+  let body: ReactNode;
+  if (profile === null) {
+    // A failed (or not yet finished) profile load is not an unknown zone: say what we know.
+    body = (
+      <span data-testid="timezone-status" role="status" className="text-[12.5px] font-medium leading-[1.45] text-mute">
+        Your profile hasn't loaded, so your timezone can't be shown. Reload to try again.
+      </span>
+    );
+  } else if (!("timezone" in profile)) {
+    body = (
+      <span data-testid="timezone-status" className="text-[12.5px] font-medium leading-[1.45] text-mute">
+        {TIMEZONE_UNSUPPORTED}
+      </span>
+    );
+  } else {
+    body = (
+      <>
+        <span data-testid="timezone-status" className="text-[12.5px] font-medium leading-[1.45] text-mute">
+          {stored === null
+            ? "Unknown — your days are counted in UTC, and a session gets an extra day before it counts as missed."
+            : `Your days are counted in ${stored}${source === "browser" ? " (detected from your browser)" : ""}.`}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Timezone"
+            value={value}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setSaved(null);
+            }}
+            className="rounded-[9px] border border-white/10 bg-panel px-3 py-[7px] text-[12.5px] font-medium text-ink"
+          >
+            {stored === null && draft === null && <option value="">Choose a timezone</option>}
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || !draft || draft === stored}
+            className={chipCls(Boolean(draft && draft !== stored))}
+          >
+            {saving ? "Saving…" : "Save timezone"}
+          </button>
+        </div>
+        <span className="text-[11px] font-medium leading-[1.4] text-faint">
+          Changing it moves which day counts as today from now on. Planned sessions and check-ins keep their dates;
+          logged workouts are shown on the day they happened in your new timezone.
+        </span>
+        {saved && (
+          <div role="status" data-testid="timezone-saved" className="text-[11.5px] font-medium leading-none text-ac">
+            Saved — your days are now counted in {saved}.
+          </div>
+        )}
+        {error && <div role="alert" className="text-[11.5px] font-medium leading-none text-hot">{error}</div>}
+      </>
+    );
+  }
+
+  return (
+    <Card className="p-[22px]">
+      <SectionLabel className="mb-4">Timezone</SectionLabel>
+      <div className="flex flex-col gap-3">{body}</div>
+    </Card>
+  );
+}
+
 export function SettingsScreen() {
   const { state, actions } = usePerfLab();
   const { resolvedTheme, setTheme } = useTheme();
@@ -1151,6 +1269,8 @@ export function SettingsScreen() {
       </Card>
 
       <EquipmentCard />
+
+      <TimezoneCard />
 
       <Card className="p-[22px]">
         <SectionLabel className="mb-[6px]">Theme</SectionLabel>

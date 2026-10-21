@@ -34,36 +34,57 @@ acts on from those reads.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.logic.athlete_calendar import UNKNOWN_ZONE_GRACE_DAYS
 from app.models.mesocycle import PlannedSession, SessionStatus
+from app.services.athlete_calendar_service import calendar_for
 from app.services.planned_session_protocol import lock_planned_session, supersede_feedback
 
-#: Days after ``scheduled_date`` before an unlogged session counts as missed.
-GRACE_DAYS = 1
+#: Days after ``scheduled_date`` before an unlogged session counts as missed, while the
+#: athlete's zone is UNKNOWN: "today" is then the UTC day, which can run a day ahead of the
+#: athlete's own (B1). A known zone's "today" is the athlete's, so its grace is 0
+#: (``AthleteCalendar.missed_grace_days``).
+GRACE_DAYS = UNKNOWN_ZONE_GRACE_DAYS
 
 
-def missed_cutoff(as_of: date) -> date:
+def missed_cutoff(as_of: date, grace_days: int = GRACE_DAYS) -> date:
     """Sessions dated strictly before this are missed when still pending."""
-    return as_of - timedelta(days=GRACE_DAYS)
+    return as_of - timedelta(days=grace_days)
 
 
-def is_missed(scheduled_date: date, as_of: date) -> bool:
-    return scheduled_date < missed_cutoff(as_of)
+def is_missed(scheduled_date: date, as_of: date, grace_days: int = GRACE_DAYS) -> bool:
+    return scheduled_date < missed_cutoff(as_of, grace_days)
 
 
-async def reconcile_missed(db: AsyncSession, user_id: int, as_of: date) -> int:
+async def reconcile_missed_for_athlete(
+    db: AsyncSession, user_id: int, now: datetime | None = None
+) -> int:
+    """:func:`reconcile_missed` as of the athlete's own today, with their zone's grace.
+
+    The entry point for every reader (B1): "today" and the grace both come from the athlete's
+    calendar, never from the server's clock.
+    """
+    calendar = await calendar_for(db, user_id)
+    return await reconcile_missed(
+        db, user_id, calendar.today(now), grace_days=calendar.missed_grace_days
+    )
+
+
+async def reconcile_missed(
+    db: AsyncSession, user_id: int, as_of: date, *, grace_days: int = GRACE_DAYS
+) -> int:
     """Mark ``user_id``'s past PENDING sessions MISSED as of ``as_of``; returns how many.
 
     Commits its own transaction when it changed anything. A no-op (0) when the flag is off.
     """
     if not settings.RECONCILE_MISSED_SESSIONS:
         return 0
-    cutoff = missed_cutoff(as_of)
+    cutoff = missed_cutoff(as_of, grace_days)
     candidate_ids = (
         await db.scalars(
             select(PlannedSession.id)
@@ -85,7 +106,7 @@ async def reconcile_missed(db: AsyncSession, user_id: int, as_of: date) -> int:
         if (
             session is None
             or session.status != SessionStatus.PENDING
-            or not is_missed(session.scheduled_date, as_of)
+            or not is_missed(session.scheduled_date, as_of, grace_days)
         ):
             continue
         await supersede_feedback(db, session, SessionStatus.MISSED)

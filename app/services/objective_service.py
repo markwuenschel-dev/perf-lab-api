@@ -14,6 +14,7 @@ from typing import TypedDict, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.athlete_calendar import UNKNOWN
 from app.logic.domain_vocab import normalize_domain_at_boundary
 from app.models.benchmark_definition import BenchmarkDefinition
 from app.models.benchmark_observation import BenchmarkObservation
@@ -27,6 +28,7 @@ from app.schemas.objective import (
     ProgressBlock,
 )
 from app.services import macrocycle_service
+from app.services.athlete_calendar_service import calendar_for, calendars_for
 
 # Prescriber taper window (Phase 4a). The nearest upcoming active objective's
 # target_date within this many days triggers taper in the prescriber
@@ -74,10 +76,10 @@ def compute_progress_pct(
     return max(0.0, min(100.0, pct))
 
 
-def days_to_go(target_date: date | None) -> int | None:
+def days_to_go(target_date: date | None, today: date | None = None) -> int | None:
     if target_date is None:
         return None
-    return (target_date - date.today()).days
+    return (target_date - (today or UNKNOWN.today())).days
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +179,8 @@ async def to_read_schemas(db: AsyncSession, objectives: list[Objective]) -> list
     """Assemble ``ObjectiveRead`` for many objectives in a bounded number of queries,
     including the computed ``progress`` block and ``days_to_go`` countdown for each."""
     progress_by_id = await _compute_progress_batch(db, objectives)
+    # B1: the countdown runs to each athlete's own today.
+    calendars = await calendars_for(db, (o.user_id for o in objectives))
     return [
         ObjectiveRead(
             id=objective.id,
@@ -192,7 +196,9 @@ async def to_read_schemas(db: AsyncSession, objectives: list[Objective]) -> list
             status=objective.status,
             created_at=objective.created_at,
             progress=progress_by_id[objective.id],
-            days_to_go=days_to_go(objective.target_date),
+            days_to_go=days_to_go(
+                objective.target_date, calendars[objective.user_id].today()
+            ),
         )
         for objective in objectives
     ]
@@ -352,7 +358,7 @@ def signals_from_anchor(anchor: Objective, today: date | None = None) -> Objecti
     """Signals driven by a macrocycle's anchor objective (the program's goal):
     taper off the anchor's ``target_date`` within the window, domain = the
     anchor's ``domain``. Used when the user has an active macrocycle."""
-    today = today or date.today()
+    today = today or UNKNOWN.today()  # resolve_driving_objective passes the athlete's (B1)
     return ObjectiveSignals(
         taper=_target_within_taper_window(anchor.target_date, today),
         domain=anchor.domain,
@@ -364,7 +370,7 @@ def signals_from_scan(objectives: list[Objective], today: date | None = None) ->
     fallback): taper off the nearest *upcoming* objective's ``target_date``;
     domain = the highest-priority objective's ``domain`` (priority 1 = highest,
     ties broken by lowest ``id`` = earliest created)."""
-    today = today or date.today()
+    today = today or UNKNOWN.today()  # resolve_driving_objective passes the athlete's (B1)
     if not objectives:
         return ObjectiveSignals(taper=False, domain=None)
 
@@ -397,14 +403,18 @@ class DrivingObjective:
     signals: ObjectiveSignals
 
 
-async def active_objective_signals(db: AsyncSession, user_id: int) -> ObjectiveSignals:
+async def active_objective_signals(
+    db: AsyncSession, user_id: int, *, today: date | None = None
+) -> ObjectiveSignals:
     """``{ taper, domain }`` for the prescriber — the signals half of
     :func:`resolve_driving_objective`, so ``GET /v1/objectives/driving`` can never
     disagree with what prescription receives."""
-    return (await resolve_driving_objective(db, user_id)).signals
+    return (await resolve_driving_objective(db, user_id, today=today)).signals
 
 
-async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingObjective:
+async def resolve_driving_objective(
+    db: AsyncSession, user_id: int, *, today: date | None = None
+) -> DrivingObjective:
     """The objective that drives prescription, the lever that chose it, and the
     ``{ taper, domain }`` signals for the prescriber (both entry points — see
     app.services.prescription_service and app.api.v1.planning's ``/today``). This is the
@@ -419,6 +429,8 @@ async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingOb
     With no active macrocycle (or a dangling anchor) we fall back to the legacy
     all-objectives scan, preserving the exact pre-macrocycle behavior.
     """
+    # B1: taper is judged on the athlete's day; prescription passes the one it resolved.
+    today = today or (await calendar_for(db, user_id)).today()
     macrocycles = await macrocycle_service.list_macrocycles(db, user_id)
     if macrocycles:
         anchor = (
@@ -431,7 +443,7 @@ async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingOb
         ).scalars().first()
         if anchor is not None:
             return DrivingObjective(
-                objective=anchor, source="macrocycle_anchor", signals=signals_from_anchor(anchor)
+                objective=anchor, source="macrocycle_anchor", signals=signals_from_anchor(anchor, today)
             )
 
     result = await db.execute(
@@ -445,5 +457,5 @@ async def resolve_driving_objective(db: AsyncSession, user_id: int) -> DrivingOb
     return DrivingObjective(
         objective=top,
         source="priority" if top is not None else None,
-        signals=signals_from_scan(objectives),
+        signals=signals_from_scan(objectives, today),
     )

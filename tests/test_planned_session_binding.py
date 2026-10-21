@@ -7,9 +7,10 @@ outrank the plan: readiness redirects, safety overrides and hard constraints.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from test_prescriber_candidates import _state
 
 from app.logic.prescriber import recommend_next_session
@@ -122,7 +123,7 @@ async def test_planning_today_prescribes_the_planned_session(http_client, async_
         goal=BlockGoal.HYPERTROPHY,
         duration_weeks=4,
         sessions_per_week=3,
-        start_date=date.today() - timedelta(days=1),
+        start_date=backend_today() - timedelta(days=1),
         deload_every_n_weeks=4,
     )
     async_db.add(block)
@@ -132,10 +133,10 @@ async def test_planning_today_prescribes_the_planned_session(http_client, async_
         PlannedSession(
             block_id=block.id,
             user_id=user.id,
-            scheduled_date=date.today(),
+            scheduled_date=backend_today(),
             week_number=1,
             block_day=2,  # the block started yesterday
-            day_of_week=date.today().isoweekday(),
+            day_of_week=backend_today().isoweekday(),
             category="High Volume Upper",
             modality="Hypertrophy",
         )

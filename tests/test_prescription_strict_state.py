@@ -23,9 +23,10 @@ every forgotten translation in 2B2/2B3/2B4 would look like a working refusal.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 
 from app.core.errors import CanonicalStateInvalid, normalize_decode_error
 from app.engine.engine_state_codec import (
@@ -275,17 +276,17 @@ async def test_planning_route_refuses_without_persistence_side_effects(
         goal=BlockGoal.STRENGTH,
         duration_weeks=4,
         sessions_per_week=3,
-        start_date=date.today() - timedelta(days=7),
+        start_date=backend_today() - timedelta(days=7),
     )
     async_db.add(block)
     await async_db.flush()
     session = PlannedSession(
         block_id=block.id,
         user_id=uid,
-        scheduled_date=date.today(),
+        scheduled_date=backend_today(),
         week_number=2,
         block_day=1,
-        day_of_week=date.today().isoweekday(),
+        day_of_week=backend_today().isoweekday(),
         category="Heavy Lower",
         modality="Strength",
         status=SessionStatus.PENDING,

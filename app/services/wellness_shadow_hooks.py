@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.logic.athlete_calendar import AthleteCalendar
 from app.logic.ekf.wellness_input import build_wellness_shadow_input
 from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.wellness import WellnessSample
@@ -57,11 +58,15 @@ async def run_wellness_shadows(
     *,
     as_of: datetime | None = None,
     assimilate_soreness: bool,
+    calendar: AthleteCalendar | None = None,
 ) -> WellnessShadowOutcomes:
     """Run every wellness shadow for one committed sample. Never raises to the caller.
 
     ``as_of`` is the instant the shadows are evaluated at (now, unless a seeder replays history);
-    the recovery shadow records only for a sample of its UTC day. ``assimilate_soreness`` is
+    the recovery shadow records only for a sample of the athlete's calendar day of that instant
+    (B1; the UTC day while their zone is unknown). A caller that already holds the athlete's
+    ``calendar`` (the wearable sync, once per sync) passes it; otherwise the recovery shadow
+    reads it in its own session. ``assimilate_soreness`` is
     False for wearable sources, which supply no soreness: the EKF records an explicit skip.
     """
     when = (as_of or _now()).astimezone(UTC)
@@ -73,7 +78,9 @@ async def run_wellness_shadows(
         if assimilate_soreness else None
     )
 
-    recovery = await recovery_shadow_service.record_recovery_shadow(db, ref, snapshot, as_of=when)
+    recovery = await recovery_shadow_service.record_recovery_shadow(
+        db, ref, snapshot, as_of=when, calendar=calendar
+    )
     personalization = await personalization_shadow_service.record_personalization_shadow(
         db, ref, snapshot
     )

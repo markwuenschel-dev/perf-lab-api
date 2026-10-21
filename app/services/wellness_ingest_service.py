@@ -19,6 +19,7 @@ from app.logic.prescription_evidence import utc_naive
 from app.models.wellness_ingest_token import WellnessIngestToken
 from app.schemas.wellness import WellnessIngestIn, WellnessSampleIn, WellnessSampleOut
 from app.services import readiness_service
+from app.services.athlete_calendar_service import calendar_for
 from app.services.wellness_shadow_hooks import run_wellness_shadows
 
 #: Distinguishes an ingest token from a login JWT at a glance (and in a leaked-secret scan).
@@ -100,8 +101,10 @@ async def ingest(
 ) -> WellnessSampleOut:
     """Write one day's pushed readings for the token's athlete, then mark the token used."""
     measured_at = utc_naive(body.measured_at) if body.measured_at is not None else None
-    day = body.date or (measured_at or _now()).date()
     user_id, token_id = token.user_id, token.id
+    # B1: a pushed ``date`` is the athlete's calendar date and is kept as sent. Omitted, the day
+    # is the athlete's calendar day of the measurement (or of now): UTC while the zone is unknown.
+    day = body.date or (await calendar_for(db, user_id)).day_of(measured_at or _now())
     sample = await readiness_service.upsert_wellness_sample(
         db,
         user_id,

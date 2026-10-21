@@ -14,8 +14,8 @@ real data** (ADR-0026); they live here so calibration is a localized edit.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from datetime import date as date_cls
+from datetime import timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -49,6 +49,7 @@ from app.schemas.wellness import (
     WellnessSampleIn,
     WellnessSampleOut,
 )
+from app.services.athlete_calendar_service import calendar_for
 from app.services.state_service import load_current_state_strict
 
 # --- Confidence tuning (P8; ADR-0052; provisional, calibrate) --------------------
@@ -509,7 +510,9 @@ async def compute_readiness(
     used as if current (ADR-0049: no silent carry-forward); it lowers freshness confidence
     and is surfaced in ``signal_summary.stale`` instead.
     """
-    today = today or datetime.now(UTC).date()
+    # B1: fresh means of the athlete's own today (a wellness ``date`` is a calendar date in the
+    # athlete's calendar: a check-in's day, a device's daily date); UTC while the zone is unknown.
+    today = today or (await calendar_for(db, user_id)).today()
     # 2B2: readiness is not display — it gates prescription, so it must refuse rather than
     # score an athlete from a legacy reconstruction. Classified by what it can do, not by
     # the fact that a number ends up on a screen.

@@ -15,6 +15,8 @@ from app.schemas.benchmarks import (
 def _validate_optional_dob(v: date | None) -> date | None:
     """Shared field validator: a present DOB must not be future / implausible (PDR-0010)."""
     if v is not None:
+        # B1: the server date on purpose: a validator has no athlete, and a plausibility
+        # bound of 5-100 years is not moved by a one-day difference between calendars.
         validate_dob(v, date.today())
     return v
 

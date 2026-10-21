@@ -18,9 +18,9 @@ import {
   deviceReadingsForDay,
   sourceLabel,
   syncWearableIfStale,
-  utcDay,
   type DeviceReadings,
 } from "../wearableSync";
+import { athleteTodayIso, calendarEstablished } from "../athleteTimezone";
 import { ReadinessRing } from "../ui";
 import { CloseBtn } from "./LogWorkoutModal";
 
@@ -177,6 +177,7 @@ export function CheckinModal() {
   const [device, setDevice] = useState<DeviceReadings | null>(null);
   const open = state.checkinOpen;
   const token = auth.token;
+  const athleteZone = auth.profile?.timezone ?? null;
   useEffect(() => {
     if (!open || !token) return;
     let live = true;
@@ -184,7 +185,7 @@ export function CheckinModal() {
       await syncWearableIfStale(token);
       try {
         const rows = await listWellness(token, 8);
-        if (live) setDevice(deviceReadingsForDay(rows, utcDay(new Date())));
+        if (live) setDevice(deviceReadingsForDay(rows, athleteTodayIso(athleteZone, new Date())));
       } catch {
         /* the check-in still works by hand */
       }
@@ -192,13 +193,19 @@ export function CheckinModal() {
     return () => {
       live = false;
     };
-  }, [open, token]);
+  }, [open, token, athleteZone]);
 
   if (!state.checkinOpen) return null;
   const ci = state.checkin;
   const covered = deviceCoveredSignals(device);
   const sim = buildCheckin(ci);
   const signedIn = !!auth.token;
+  // B1: the check-in is saved on the athlete's day, so a signed-in save waits until the profile
+  // has established the calendar (a stored zone, or a profile that positively says unknown).
+  // Loading or failed is not "unknown": guessing UTC could file a New York evening's check-in
+  // under tomorrow while readiness reads today.
+  const calendarBlocked = signedIn && !calendarEstablished(auth.calendarKey);
+  const calendarFailed = auth.calendarKey === "unavailable";
 
   const shown = WELLNESS_SIGNALS.filter((s) => !untracked.has(s.key));
   const hidden = WELLNESS_SIGNALS.filter((s) => untracked.has(s.key));
@@ -236,10 +243,11 @@ export function CheckinModal() {
       actions.applyCheckin();
       return;
     }
+    // The button is disabled while the calendar is pending or unavailable (calendarBlocked).
     setSaving(true);
     setSaveError(null);
     try {
-      await ingestWellness(buildWellnessSample(ci, modes, untracked, covered), auth.token);
+      await ingestWellness(buildWellnessSample(ci, modes, untracked, covered, athleteTodayIso(athleteZone)), auth.token);
       const r = await getReadiness(auth.token);
       setSaved(r);
       actions.cacheReadiness(r);
@@ -377,14 +385,27 @@ export function CheckinModal() {
 
         <div className="flex items-center justify-between gap-[9px] border-t border-white/[0.06] px-6 py-4">
           <span className={cn("max-w-[360px] text-[11px] font-medium leading-[1.4]", saveError ? "text-hot" : "text-dim")}>
-            {saveError ??
+            {calendarBlocked ? (
+              <span data-testid="checkin-calendar" role="status">
+                {calendarFailed
+                  ? "Your profile didn't load, so today's date can't be confirmed. "
+                  : "Loading your profile to confirm today's date… "}
+                {calendarFailed && (
+                  <button type="button" onClick={() => void auth.retrySession()} className="font-semibold text-ac underline">
+                    Retry
+                  </button>
+                )}
+              </span>
+            ) : (
+              saveError ??
               (signedIn
                 ? "Missing a signal is fine — readiness works without it, and untracked signals never count against you."
-                : "Readiness seeds today's recommended session and your twin's starting state.")}
+                : "Readiness seeds today's recommended session and your twin's starting state.")
+            )}
           </span>
           <div className="flex flex-none gap-[9px]">
             <button onClick={actions.closeCheckin} className="rounded-[9px] border border-white/10 bg-white/[0.04] px-4 py-[11px] text-[12.5px] font-semibold leading-none text-soft">Close</button>
-            <button onClick={save} disabled={saving} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">
+            <button onClick={save} disabled={saving || calendarBlocked} className="rounded-[9px] bg-gradient-to-r from-ac to-[#a7e36e] px-[18px] py-[11px] text-[12.5px] font-semibold leading-none text-[#0a0c10] disabled:opacity-60">
               {saving ? "Saving…" : "Set today's readiness →"}
             </button>
           </div>

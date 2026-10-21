@@ -24,6 +24,7 @@ from app.schemas.dashboard import (
     TrainingLoadMetrics,
 )
 from app.schemas.state import UnifiedStateVector
+from app.services.athlete_calendar_service import calendar_for
 from app.services.state_service import load_current_state
 
 # --- Overview / dashboard-tile constants -----------------------------------
@@ -503,8 +504,12 @@ async def overview_metrics(db: AsyncSession, user_id: int) -> OverviewMetrics:
     Degrades gracefully for new users (nulls / ``insufficient`` / empty streak),
     never raising on thin history.
     """
-    today = date.today()
-    chronic_cutoff = datetime.combine(today - timedelta(days=CHRONIC_DAYS - 1), datetime.min.time())
+    # B1: days are the athlete's: "today", the window's first instant (local midnight, as naive
+    # UTC like the column) and the day each workout instant falls on. UTC while the zone is
+    # unknown, which is what the server-local clock was on the UTC production box.
+    calendar = await calendar_for(db, user_id)
+    today = calendar.today()
+    chronic_cutoff = calendar.day_start_utc(today - timedelta(days=CHRONIC_DAYS - 1))
 
     # --- Training load: daily load proxy from logged workouts in the window ---
     wo_rows = (
@@ -519,7 +524,7 @@ async def overview_metrics(db: AsyncSession, user_id: int) -> OverviewMetrics:
     loads_by_day: dict[date, float] = {}
     workout_days: set[date] = set()
     for w in wo_rows:
-        d = w.session_timestamp.date()
+        d = calendar.day_of(w.session_timestamp)
         loads_by_day[d] = loads_by_day.get(d, 0.0) + daily_load(w.session_rpe, w.duration_minutes)
         workout_days.add(d)
     training_load = compute_training_load(loads_by_day, today)

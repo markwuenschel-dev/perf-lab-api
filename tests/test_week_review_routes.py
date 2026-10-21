@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -37,7 +38,7 @@ async def _user(db, email: str) -> User:
 
 
 async def _state(db, user_id: int, *, decodable: bool = True) -> None:
-    at = datetime.combine(date.today() - timedelta(days=1), datetime.min.time())
+    at = datetime.combine(backend_today() - timedelta(days=1), datetime.min.time())
     vec = UnifiedStateVector(
         timestamp=at, c_met_aerobic=500.0, c_nm_force=50.0, c_struct=50.0, b_met_anaerobic=50.0
     )
@@ -50,7 +51,7 @@ async def _state(db, user_id: int, *, decodable: bool = True) -> None:
 
 
 async def _block_with_session(db, user_id: int) -> MesocycleBlock:
-    today = date.today()
+    today = backend_today()
     block = MesocycleBlock(
         user_id=user_id,
         goal=BlockGoal.STRENGTH,

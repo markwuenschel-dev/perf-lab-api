@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import * as api from "../api/perfLabClient";
+import { browserTimezone, calendarKeyOf, shouldCaptureTimezone } from "../perflab/athleteTimezone";
 import type { OnboardRequest, OnboardResponse, ProfileRead, UserResponse } from "../types";
 import {
   classifyAuthFailure,
@@ -29,10 +30,47 @@ import {
   setStoredToken,
 } from "./tokenStorage";
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+/** How long the session check (/auth/me) and the profile load may each take before they count as
+ *  failed (B1): a hung request must not leave every day-dependent screen loading with no way to
+ *  retry. */
+export const PROFILE_LOAD_TIMEOUT_MS = 8000;
+
+/**
+ * `run`'s result, or a rejection once `ms` pass; the request is aborted too. The rejection is a
+ * `TypeError`, what `fetch` throws when no response arrives, so the session-failure policy reads
+ * a timeout as a network failure: the session is kept and the check is retryable.
+ */
+async function within<T>(ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const abort = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      reject(new TypeError("request timed out"));
+    }, ms);
+  });
+  try {
+    return await Promise.race([run(abort.signal), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const loadProfileWithin = (token: string, ms: number) =>
+  within(ms, (signal) => api.getProfile(token, signal));
+
+export function AuthProvider({
+  children,
+  profileTimeoutMs = PROFILE_LOAD_TIMEOUT_MS,
+}: {
+  children: ReactNode;
+  profileTimeoutMs?: number;
+}) {
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [user, setUser] = useState<UserResponse | null>(null);
   const [profile, setProfile] = useState<ProfileRead | null>(null);
+  // B1: false while the profile load and any zone capture are in flight (see calendarKeyOf).
+  const [calendarSettled, setCalendarSettled] = useState(false);
   const [email, setEmail] = useState(() => getStoredEmail() ?? "");
   const [isLoading, setIsLoading] = useState(false);
   const [onboardingPending, setOnboardingPending] = useState(false);
@@ -50,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     setProfile(null);
+    setCalendarSettled(false);
     setIsGuest(false);
     setSessionUnavailable(null);
   }, []);
@@ -62,12 +101,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
+    // Bound to the session it started in: after a logout or another athlete's login, this
+    // answer is about someone else and must not touch the state.
+    const stale = () => getStoredToken() !== t;
     try {
-      setProfile(await api.getProfile(t));
+      const p = await loadProfileWithin(t, profileTimeoutMs);
+      if (stale()) return;
+      setProfile(p);
     } catch {
-      setProfile(null);
+      // A failed refresh is not news about the zone: keep the last confirmed profile (and with
+      // it the calendar). With none confirmed yet, the calendar stays "unavailable".
+      if (stale()) return;
     }
-  }, []);
+    setCalendarSettled(true);
+  }, [profileTimeoutMs]);
 
   const enterGuest = useCallback(() => {
     // Drop straight into onboarding (App routes on onboardingPending), exactly
@@ -81,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearStoredSession();
       setToken(null);
       setUser(null);
+      setCalendarSettled(false);
     });
     return () => setUnauthorizedHandler(null);
   }, []);
@@ -104,12 +152,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const loadSession = useCallback(
     async (activeToken: string, isCancelled: () => boolean) => {
+      setCalendarSettled(false);
+      // Whatever happens below, the calendar is settled once this load is done with it.
+      const settle = () => {
+        if (!isCancelled()) setCalendarSettled(true);
+      };
       try {
-        const u = await api.fetchMe(activeToken);
+        const u = await within(profileTimeoutMs, (signal) => api.fetchMe(activeToken, signal));
         if (isCancelled()) return;
         if (!isSessionUser(u)) {
           // A 200 that is not a session (proxy interstitial, HTML error page).
           setSessionUnavailable(toUnavailable(MALFORMED_SESSION_RESPONSE));
+          settle();
           return;
         }
         setUser(u);
@@ -122,25 +176,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         setSessionUnavailable(toUnavailable(failure));
+        settle();
         return;
       }
       // Profile is best-effort — a missing/failed load just leaves it null and
       // consumers fall back (e.g. sidebar → email local-part).
+      let p: ProfileRead;
       try {
-        const p = await api.getProfile(activeToken);
-        if (!isCancelled()) setProfile(p);
+        p = await loadProfileWithin(activeToken, profileTimeoutMs);
+        if (isCancelled()) return;
+        setProfile(p);
       } catch {
         if (!isCancelled()) setProfile(null);
+        settle();
+        return;
+      }
+      // The profile is the server's word on the zone ("unknown" included): the calendar is
+      // settled now, and day-dependent data loads. The capture below is optional and never
+      // blocks it; when it succeeds, the confirmed zone changes the key and the data refetches.
+      settle();
+      // B1: the athlete's timezone is captured from this browser only while it is unknown. A
+      // known zone (captured before, or chosen in Settings) is never offered again, and the
+      // server refuses to replace it anyway. Best-effort: a failure leaves it unknown (UTC).
+      const zone = browserTimezone();
+      if (zone && shouldCaptureTimezone(p)) {
+        try {
+          const captured = await api.captureDetectedTimezone({ timezone: zone }, activeToken);
+          if (!isCancelled()) setProfile(captured);
+        } catch {
+          /* stays unknown; the next session load offers it again */
+        }
       }
     },
-    [logout, toUnavailable],
+    [logout, toUnavailable, profileTimeoutMs],
   );
 
   /** Retry a session check that failed transiently, from a UI affordance. */
   const retrySession = useCallback(async () => {
     const t = getStoredToken();
     if (!t) return;
-    await loadSession(t, () => false);
+    // Cancelled the moment the session changes: a retry's late answers belong to the session
+    // it was started for, never to the next one.
+    await loadSession(t, () => getStoredToken() !== t);
   }, [loadSession]);
 
   useEffect(() => {
@@ -165,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStoredEmail(emailIn);
       setEmail(emailIn);
       setIsGuest(false); // a real session supersedes any guest session
+      setCalendarSettled(false); // the new session's calendar is not known until its profile is
       setToken(tr.access_token);
       const u = await api.fetchMe(tr.access_token);
       setUser(u);
@@ -216,6 +294,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       token,
       user,
       profile,
+      calendarKey: calendarKeyOf(calendarSettled, profile),
       email,
       setEmail,
       isAuthenticated: Boolean(token),
@@ -231,7 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       enterGuest,
       logout,
     }),
-    [token, user, profile, email, isGuest, isLoading, sessionUnavailable, retrySession, onboardingPending, login, register, completeOnboarding, refreshProfile, enterGuest, logout],
+    [token, user, profile, calendarSettled, email, isGuest, isLoading, sessionUnavailable, retrySession, onboardingPending, login, register, completeOnboarding, refreshProfile, enterGuest, logout],
   );
 
   return (

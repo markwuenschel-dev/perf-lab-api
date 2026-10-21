@@ -301,6 +301,66 @@ async def test_moved_brackets_the_week_and_excludes_insufficient_axes(async_db) 
     assert (aerobic.start, aerobic.end, aerobic.delta) == (None, None, None)
 
 
+@_asyncio
+@pytest.mark.parametrize(("zone", "start_at", "end_at", "fatigue"), [
+    # LA (PDT, UTC-7): week 2 is Mon Sep 14 07:00Z .. Mon Sep 21 07:00Z. The 05:00Z Monday state
+    # is still Sunday evening there (start snapshot), and the 06:00Z state on Sep 21 is Sunday
+    # 23:00, inside the week (end snapshot).
+    ("America/Los_Angeles", datetime(2026, 9, 14, 5), datetime(2026, 9, 21, 6), (3.0, 4.0)),
+    # Unknown zone: UTC midnights, as before B1.
+    (None, datetime(2026, 9, 13, 12), datetime(2026, 9, 14, 5), (2.0, 3.0)),
+])
+async def test_moved_snapshots_at_the_athletes_midnights(
+    async_db, zone, start_at, end_at, fatigue,
+) -> None:
+    from sqlalchemy import text
+    u = await _user(async_db, f"wr-tz-{zone or 'unknown'}@test.com".lower())
+    if zone is not None:
+        await async_db.execute(text(
+            "INSERT INTO athlete_profiles (user_id, created_at, updated_at, experience_years, "
+            "experience_level, available_days_per_week, session_duration_minutes, equipment, "
+            "equipment_preference, onboarding_status, initial_seed_status, "
+            "untracked_wellness_signals, timezone, timezone_source) VALUES (:u, now(), now(), 0, "
+            "'beginner', 3, 60, '{}', '{}', 'completed', 'none', '{}', :z, 'athlete')"),
+            {"u": u.id, "z": zone})
+        await async_db.commit()
+    await _block(async_db, u.id)
+    await _state(async_db, u.id, datetime(2026, 9, 13, 12), cns=12.0)
+    await _state(async_db, u.id, datetime(2026, 9, 14, 5), cns=18.0)
+    await _state(async_db, u.id, datetime(2026, 9, 21, 6), cns=24.0)
+    await _state(async_db, u.id, datetime(2026, 9, 22, 12), cns=60.0)  # after the week anywhere
+
+    review = await build_week_review(async_db, u.id, week_number=2, today=_TODAY)
+    m = review.moved
+    assert m is not None
+    assert (m.start_snapshot_at, m.end_snapshot_at) == (start_at, end_at), zone
+    assert (m.mean_fatigue_start, m.mean_fatigue_end) == fatigue, zone
+
+
+@_asyncio
+async def test_a_state_at_the_next_local_midnight_is_not_the_weeks_end(async_db) -> None:
+    """The end bound is inclusive up to the athlete's next midnight and no further: a state at
+    exactly Mon Sep 21 00:00 in LA (07:00Z) belongs to the following week."""
+    from sqlalchemy import text
+    u = await _user(async_db, "wr-tz-edge@test.com")
+    await async_db.execute(text(
+        "INSERT INTO athlete_profiles (user_id, created_at, updated_at, experience_years, "
+        "experience_level, available_days_per_week, session_duration_minutes, equipment, "
+        "equipment_preference, onboarding_status, initial_seed_status, "
+        "untracked_wellness_signals, timezone, timezone_source) VALUES (:u, now(), now(), 0, "
+        "'beginner', 3, 60, '{}', '{}', 'completed', 'none', '{}', 'America/Los_Angeles', "
+        "'athlete')"), {"u": u.id})
+    await async_db.commit()
+    await _block(async_db, u.id)
+    await _state(async_db, u.id, datetime(2026, 9, 13, 12), cns=12.0)
+    await _state(async_db, u.id, datetime(2026, 9, 21, 6, 59, 59, 999999), cns=24.0)
+    await _state(async_db, u.id, datetime(2026, 9, 21, 7, 0), cns=36.0)  # LA's next midnight
+    review = await build_week_review(async_db, u.id, week_number=2, today=_TODAY)
+    assert review.moved is not None
+    assert review.moved.end_snapshot_at == datetime(2026, 9, 21, 6, 59, 59, 999999)
+    assert review.moved.mean_fatigue_end == 4.0
+
+
 # --- next week -----------------------------------------------------------------------------
 
 

@@ -11,10 +11,10 @@ pick up template exercises and the block's target duration after finalize.
 from __future__ import annotations
 
 import sys
-from datetime import date
 from pathlib import Path
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -169,14 +169,14 @@ async def test_rest_is_persisted_then_reevaluated_once_the_rule_runs(async_db, m
     await initialize_athlete_state(async_db, user.id)
     block = MesocycleBlock(
         user_id=user.id, goal=BlockGoal.STRENGTH, duration_weeks=8, sessions_per_week=3,
-        start_date=date.today(), deload_every_n_weeks=4, status=BlockStatus.ACTIVE,
+        start_date=backend_today(), deload_every_n_weeks=4, status=BlockStatus.ACTIVE,
     )
     async_db.add(block)
     await async_db.commit()
     await async_db.refresh(block)
     session = PlannedSession(
-        block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        block_day=1, day_of_week=date.today().isoweekday(), category="Heavy Lower", modality="Strength",
+        block_id=block.id, user_id=user.id, scheduled_date=backend_today(), week_number=1,
+        block_day=1, day_of_week=backend_today().isoweekday(), category="Heavy Lower", modality="Strength",
     )
     async_db.add(session)
     await async_db.commit()

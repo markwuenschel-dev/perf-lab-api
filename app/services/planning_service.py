@@ -25,6 +25,7 @@ from app.schemas.planning import (
     WeeklyTemplateSlotPreview,
 )
 from app.services import macrocycle_service
+from app.services.athlete_calendar_service import calendar_for
 from app.services.planned_session_protocol import (
     check_patch,
     lock_planned_session,
@@ -528,9 +529,9 @@ async def update_session(
     session = await lock_planned_session(db, session_id, user_id)
     if not session:
         return None
-    check_patch(
-        session, new_status=payload.status, new_date=payload.scheduled_date, today=date.today()
-    )
+    # B1: "today" for the reopen floor is the athlete's own, as reconciliation uses.
+    today = (await calendar_for(db, user_id)).today()
+    check_patch(session, new_status=payload.status, new_date=payload.scheduled_date, today=today)
     # P2: the outcome and the feedback that described it change in one transaction.
     await supersede_feedback(db, session, payload.status)
 
@@ -559,7 +560,8 @@ async def get_today_session(
 ) -> PlannedSession | None:
     """The canonical "today's target session" for prescription.
 
-    User-wide pending session on ``for_date`` (default today), lowest ``id`` wins.
+    User-wide pending session on ``for_date`` (default: the athlete's today, B1), lowest
+    ``id`` wins.
     Both prescribe entry points resolve through this: ``/planning/today`` passes the
     result straight into ``prescribe_for_athlete``; ``/next-session`` lets the
     prescriber call it. Sharing one resolver is what makes them target the same row
@@ -567,7 +569,7 @@ async def get_today_session(
     ``state_service._match_planned_session`` so the prescribed session equals the one
     a later log fulfills.
     """
-    d = for_date or date.today()
+    d = for_date or (await calendar_for(db, user_id)).today()
     result = await db.execute(
         select(PlannedSession)
         .where(

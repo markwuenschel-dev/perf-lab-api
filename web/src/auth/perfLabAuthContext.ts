@@ -1,6 +1,7 @@
 import { createContext } from "react";
 
 import type { OnboardRequest, OnboardResponse, ProfileRead, UserResponse } from "../types";
+import type { CalendarKey } from "../perflab/athleteTimezone";
 import type { SessionUnavailableReason } from "./authFailure";
 
 /**
@@ -22,6 +23,10 @@ export type AuthContextValue = {
   /** Backend athlete profile (GET /v1/profile), loaded once per session and
    *  refreshed on demand via `refreshProfile()` (e.g. after a Settings save). */
   profile: ProfileRead | null;
+  /** B1: the calendar identity day-dependent resources are keyed on (see `calendarKeyOf`). It
+   *  changes only when the server confirms a profile: after the load and any zone capture
+   *  settle, and on every refresh. */
+  calendarKey: CalendarKey;
   email: string;
   setEmail: (e: string) => void;
   isAuthenticated: boolean;

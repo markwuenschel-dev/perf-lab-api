@@ -24,7 +24,8 @@ from app.schemas.planning import (
 )
 from app.schemas.training_goals import TRAINING_GOAL_DEFAULT, TrainingGoal
 from app.services import planning_projection_service, planning_service, week_review_service
-from app.services.missed_session_service import reconcile_missed
+from app.services.athlete_calendar_service import calendar_for
+from app.services.missed_session_service import reconcile_missed, reconcile_missed_for_athlete
 from app.services.planning_service import create_block_with_sessions, get_today_session
 from app.services.prescription_service import prescribe_and_issue
 
@@ -86,7 +87,7 @@ async def list_sessions(
 ) -> list[PlannedSession]:
     # P2: past sessions nobody logged read as missed, not pending. Its own transaction,
     # committed before the read below.
-    await reconcile_missed(db, current_user.id, date.today())
+    await reconcile_missed_for_athlete(db, current_user.id)
     return await planning_service.list_sessions(db, current_user.id, start_date, end_date)
 
 
@@ -144,7 +145,7 @@ async def get_week_review(
     P2: missed-session reconciliation runs first, in its own committed transaction, so the
     counts tell missed from pending.
     """
-    await reconcile_missed(db, current_user.id, date.today())
+    await reconcile_missed_for_athlete(db, current_user.id)
     try:
         return await week_review_service.build_week_review(
             db, current_user.id, block_id=block_id, week_number=week_number
@@ -180,8 +181,11 @@ async def recheck_today(
 async def _today(
     db: AsyncSession, user_id: int, goal: str, *, allow_relax: bool
 ) -> TodaySessionResponse:
-    await reconcile_missed(db, user_id, date.today())
-    session = await get_today_session(db, user_id)
+    # B1: the athlete's own today, for the reconciliation and the session alike.
+    calendar = await calendar_for(db, user_id)
+    today = calendar.today()
+    await reconcile_missed(db, user_id, today, grace_days=calendar.missed_grace_days)
+    session = await get_today_session(db, user_id, for_date=today)
     if not session:
         return TodaySessionResponse(session=None, prescription=None)
 
@@ -189,7 +193,8 @@ async def _today(
     # one, by the fork-4 rule — so every actionable surface reading /today gets the same
     # revision and identical content until safety requires a replacement.
     result = await prescribe_and_issue(
-        db, user_id, cast(TrainingGoal, goal), planned_session=session, allow_relax=allow_relax
+        db, user_id, cast(TrainingGoal, goal), planned_session=session, allow_relax=allow_relax,
+        today=today,
     )
     rx = result.prescription
     await db.refresh(session)

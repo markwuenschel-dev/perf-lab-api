@@ -60,6 +60,7 @@ from app.schemas.workouts import (
     WorkoutLog,
     WorkoutSetEntry,
 )
+from app.services.athlete_calendar_service import calendar_for
 from app.services.e1rm_estimation import estimate_set_e1rm
 from app.services.late_event_service import fold_late_events
 from app.services.planned_session_protocol import (
@@ -679,12 +680,19 @@ async def _match_planned_session(
                 "it cannot be linked to another workout"
             )
         return session
-    # Deliberately the client's WALL-CLOCK day, not the UTC date: `scheduled_date` is a
-    # calendar day, and converting an evening session to UTC could move it onto the next
-    # day. (The instant-based times — log_ts and the evidence performed_at — use UTC.)
-    session_day = (
-        log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
-    ).date()
+    # `scheduled_date` is a calendar day in the athlete's calendar, so the log is matched on the
+    # day it happened THERE (B1). With a known zone, an instant (any offset, including the web's
+    # UTC `Z`) is converted to that zone's day: an evening session west of UTC stays on its own
+    # day. While the zone is unknown, and for a naive timestamp (no instant to convert), it is
+    # the client's WALL-CLOCK day as sent, as before B1. (The instant-based times — log_ts and
+    # the evidence performed_at — use UTC.)
+    calendar = await calendar_for(db, user_id)
+    if calendar.known and log.timestamp.tzinfo is not None:
+        session_day = calendar.day_of(log.timestamp)
+    else:
+        session_day = (
+            log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+        ).date()
     res = await db.execute(
         select(PlannedSession)
         .where(

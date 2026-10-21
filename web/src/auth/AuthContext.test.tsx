@@ -202,7 +202,7 @@ describe("retry", () => {
     });
 
     expect(fetchMe).toHaveBeenCalledTimes(2);
-    expect(fetchMe).toHaveBeenLastCalledWith(TOKEN);
+    expect(fetchMe).toHaveBeenLastCalledWith(TOKEN, expect.any(AbortSignal)); // B1: the check can time out
     expect(screen.getByTestId("reason").textContent).toBe("-");
     expect(screen.getByTestId("user").textContent).toBe("athlete@example.com");
     expect(storedToken()).toBe(TOKEN);

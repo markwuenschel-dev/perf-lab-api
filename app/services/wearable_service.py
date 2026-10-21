@@ -35,10 +35,12 @@ from app.core import crypto
 from app.core.db import quarantine_reason, quarantine_session
 from app.integrations.base import TokenBundle, WearableAdapter
 from app.integrations.registry import adapter_for
+from app.logic.athlete_calendar import UNKNOWN
 from app.logic.prescription_evidence import utc_naive
 from app.models.wearable_connection import WearableConnection
 from app.schemas.wellness import WellnessSampleIn
 from app.services import readiness_service, wearable_sync_lock
+from app.services.athlete_calendar_service import calendar_from_stored
 from app.services.wearable_sync_lock import (
     PROTECTED_STATEMENT_TIMEOUT_MS,
     SyncLock,
@@ -138,6 +140,7 @@ async def connect_pat(
 ) -> WearableConnection:
     """Validate a Personal Access Token with a live probe, then store it."""
     adapter = _adapter(provider)
+    # A credential probe, not a read of anyone's day: the UTC day is fine (B1).
     today = _utc_today()
     # A cheap probe that also confirms the token has the right scope.
     await adapter.fetch_daily_wellness(token, today - timedelta(days=1), today)
@@ -219,6 +222,9 @@ class _Snapshot:
     expires_at: datetime | None
     generation: int
     last_sync_at: datetime | None
+    # B1: the athlete's stored zone, read with the snapshot so the sync opens no transaction of
+    # its own before the provider calls.
+    timezone: str | None = None
 
 
 async def _end_read_only_transaction(db: AsyncSession) -> None:
@@ -301,8 +307,10 @@ async def _bounded_rollback(db: AsyncSession) -> None:
 
 async def _read_snapshot(conn: AsyncConnection, connection_id: int) -> _Snapshot | None:
     row = (await conn.execute(text(
-        "SELECT id, user_id, provider, auth_type, access_token_enc, refresh_token_enc, "
-        "expires_at, generation, last_sync_at FROM wearable_connections WHERE id = :i"
+        "SELECT c.id, c.user_id, c.provider, c.auth_type, c.access_token_enc, "
+        "c.refresh_token_enc, c.expires_at, c.generation, c.last_sync_at, p.timezone "
+        "FROM wearable_connections c LEFT JOIN athlete_profiles p ON p.user_id = c.user_id "
+        "WHERE c.id = :i"
     ), {"i": connection_id})).mappings().one_or_none()
     await conn.commit()
     return None if row is None else _Snapshot(**row)
@@ -387,11 +395,19 @@ async def _sync_locked(
         raise ConnectionReplaced(f"connection {connection_id} was removed before its sync")
     access = await _access_token(lock, snap)
 
-    end = _utc_today()
+    # B1: the window is a range of the provider's daily dates (an Oura ``day``), stored as given:
+    # Oura's daily date is not documented in this code beyond "the documented v2 schema"
+    # (app/integrations/oura.py:10-14), so it is never converted. The window only WIDENS to
+    # cover the athlete's own calendar: it ends on the later of the UTC day and the athlete's
+    # (UTC+10 is a day ahead of UTC each evening) and starts from the earlier reading of the
+    # watermark, so no day the old UTC window fetched is ever dropped.
+    calendar = calendar_from_stored(snap.user_id, snap.timezone)
+    end = max(_utc_today(), calendar.today())
     # Start from the day before the last sync (to catch late-arriving data), else a trailing
     # window on first run. A watermark always wins over ``days``: this is catch-up, not backfill.
     if snap.last_sync_at is not None:
-        start = _aware(snap.last_sync_at).date() - timedelta(days=1)
+        watermark = _aware(snap.last_sync_at)
+        start = min(watermark.date(), calendar.day_of(watermark)) - timedelta(days=1)
     else:
         start = end - timedelta(days=days)
     if start > end:
@@ -421,7 +437,7 @@ async def _sync_locked(
             db, snap.user_id, payload, on_committed=progress.acknowledge)
         # That day is committed: run its shadows now, before the next day's write (P7). Oura
         # supplies no soreness, so the EKF records an explicit skip.
-        await run_wellness_shadows(db, sample, assimilate_soreness=False)
+        await run_wellness_shadows(db, sample, assimilate_soreness=False, calendar=calendar)
 
     stamped = (await lock.conn.execute(text(
         "UPDATE wearable_connections SET last_sync_at = :now "
@@ -489,7 +505,7 @@ async def sync_all(db: AsyncSession, *, days: int = DEFAULT_SYNC_DAYS) -> list[C
 
 
 def _utc_today() -> date_cls:
-    return datetime.now(UTC).date()
+    return UNKNOWN.today()  # the UTC day, on the one clock every "today" reads (B1)
 
 
 def stored_expiry(expires_at: datetime | None) -> datetime | None:

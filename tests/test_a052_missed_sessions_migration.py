@@ -7,6 +7,7 @@ import os
 
 import pytest
 from alembic.config import Config
+from calendar_helpers import backend_today
 from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.engine import make_url
 
@@ -200,7 +201,6 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
     holds its row lock while the downgrade starts — the downgrade must wait for it, then see
     its commit and refuse."""
     import asyncio
-    from datetime import date
 
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -225,6 +225,9 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
             # The writer below is today's ORM, which selects every column the model maps, including
             # ones added after a052 (a060's block_day). a052's downgrade never touches them.
             conn.execute(text("ALTER TABLE planned_sessions ADD COLUMN block_day SMALLINT"))
+            # And it reads the athlete's zone (a063, B1) to know which day is "today".
+            conn.execute(text("ALTER TABLE athlete_profiles ADD COLUMN timezone VARCHAR(64), "
+                              "ADD COLUMN timezone_source VARCHAR(16)"))
             uid = conn.execute(
                 text(
                     "INSERT INTO users (email, hashed_password, is_active, created_at) "
@@ -254,7 +257,7 @@ async def test_a052_downgrade_waits_out_a_concurrent_writer(_migrated_schema: No
                 assert not task.done(), "downgrade did not wait for the in-flight writer"
                 await planning_service.update_session(
                     writer, uid, sid,
-                    PlannedSessionUpdateRequest(status=SessionStatus.PENDING, scheduled_date=date.today()),
+                    PlannedSessionUpdateRequest(status=SessionStatus.PENDING, scheduled_date=backend_today()),
                 )
             with pytest.raises(RuntimeError, match="Refusing to downgrade a052"):
                 await asyncio.wait_for(task, timeout=20)

@@ -77,7 +77,7 @@ function RecommendationRow({
 export function MeasurementRecommendations({ surface }: { surface: AssessmentSurfaceRead | null }) {
   const { state } = usePerfLab();
   const goal = state.settings.goal;
-  const rxRes = useAuthedResource<WorkoutPrescription>((t) => api.getNextSession(goal, t), [goal]);
+  const rxRes = useAuthedResource<WorkoutPrescription>((t) => api.getNextSession(goal, t), [goal], { calendar: true });
 
   // Exhaustive on purpose rather than <ResourceState>: every non-success arm renders
   // nothing, so a notice would be noise on a screen that already has its own twin banner.

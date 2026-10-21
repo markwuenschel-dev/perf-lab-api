@@ -15,10 +15,11 @@ test drives the real ``/v1/planning/today`` route and reads the stored JSONB bac
 Evidence rows are inserted directly: this file is about what the prescription says about
 evidence, not about how evidence is written.
 """
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, get_args
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -221,14 +222,14 @@ async def test_the_served_prescription_carries_the_explanation_and_persists_it(a
     await _record(async_db, user.id, definition_id, _tested_max(now - timedelta(days=2)))
     block = MesocycleBlock(
         user_id=user.id, goal=BlockGoal.STRENGTH, duration_weeks=4, sessions_per_week=3,
-        start_date=date.today(), deload_every_n_weeks=4,
+        start_date=backend_today(), deload_every_n_weeks=4,
     )
     async_db.add(block)
     await async_db.commit()
     await async_db.refresh(block)
     session = PlannedSession(
-        block_id=block.id, user_id=user.id, scheduled_date=date.today(), week_number=1,
-        block_day=1, day_of_week=date.today().isoweekday(), category="Heavy Lower", modality="Strength",
+        block_id=block.id, user_id=user.id, scheduled_date=backend_today(), week_number=1,
+        block_day=1, day_of_week=backend_today().isoweekday(), category="Heavy Lower", modality="Strength",
     )
     async_db.add(session)
     await async_db.commit()

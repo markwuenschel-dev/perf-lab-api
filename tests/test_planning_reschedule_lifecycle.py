@@ -16,6 +16,7 @@ explicit status still wins, and `original_scheduled_date` provenance is unchange
 from datetime import date, timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import get_current_user
@@ -94,7 +95,7 @@ async def test_moving_a_session_to_today_keeps_it_discoverable_and_pending(async
     user = await _mk_user(async_db, "reschedule-today@test.com")
     _override(async_db, user)
 
-    today = date.today()
+    today = backend_today()
     start = today + timedelta(days=7)
     try:
         async with AsyncClient(
@@ -146,7 +147,7 @@ async def test_explicit_status_still_wins_when_the_date_also_moves(async_db):
     user = await _mk_user(async_db, "reschedule-explicit@test.com")
     _override(async_db, user)
 
-    today = date.today()
+    today = backend_today()
     start = today + timedelta(days=7)
     try:
         async with AsyncClient(
@@ -184,7 +185,7 @@ async def test_original_scheduled_date_provenance_is_unchanged(async_db):
     user = await _mk_user(async_db, "reschedule-provenance@test.com")
     _override(async_db, user)
 
-    today = date.today()
+    today = backend_today()
     start = today + timedelta(days=7)
     try:
         async with AsyncClient(

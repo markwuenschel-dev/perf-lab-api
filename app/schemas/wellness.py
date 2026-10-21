@@ -198,7 +198,11 @@ class WellnessIngestIn(BaseModel):
     )
     date: date_cls | None = Field(
         default=None,
-        description="The day the readings belong to. Omitted: today (UTC), as readiness counts days.",
+        description=(
+            "The day the readings belong to, in the athlete's calendar. Omitted: the athlete's "
+            "day of measured_at (or of now), in their timezone (UTC while it is unknown), as "
+            "readiness counts days."
+        ),
     )
     measured_at: datetime | None = Field(
         default=None, description="When the readings were taken. Any offset is converted to UTC."

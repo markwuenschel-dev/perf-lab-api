@@ -15,9 +15,10 @@ What is pinned here:
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from calendar_helpers import backend_today
 from test_running_prescriptions import _healthy
 
 from app.logic.candidate_library import (
@@ -341,7 +342,7 @@ async def test_a_blocks_planned_day_is_prescribed_its_session(
     await initialize_athlete_state(async_db, user.id)
     goal = BlockGoal[goal_name]
     await create_block_with_sessions(async_db, user.id, BlockCreateRequest(
-        goal=goal, start_date=date.today() - timedelta(days=days_ago), sessions_per_week=3,
+        goal=goal, start_date=backend_today() - timedelta(days=days_ago), sessions_per_week=3,
     ))
     today = await get_today_session(async_db, user.id)
     assert today is not None and today.category == category

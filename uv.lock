@@ -1843,6 +1843,7 @@ dependencies = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1923,6 +1924,7 @@ requires-dist = [
     { name = "structlog", marker = "extra == 'observability'", specifier = ">=24.4.0" },
     { name = "tenacity", marker = "extra == 'llm'", specifier = ">=8.4.0" },
     { name = "tiktoken", marker = "extra == 'llm'", specifier = ">=0.7.0" },
+    { name = "tzdata", specifier = ">=2024.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
 provides-extras = ["dev", "llm", "tasks", "observability"]
