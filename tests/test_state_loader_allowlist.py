@@ -255,7 +255,9 @@ def _permissive_reference_counts(path: Path, names: frozenset[str]) -> dict[str,
 
     Counts code references only (names, attributes, import aliases, getattr strings), and every
     scope including class bodies and module-level statements, so an alias like
-    `_dec = unified_from_athlete_row` at module level is seen too.
+    `_dec = unified_from_athlete_row` or `import ... as _d` at module level is seen too.
+    Known limits of counting: a count-neutral swap of one permissive name for another, and a
+    computed `getattr` string, are not seen.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     counts: dict[str, int] = {}
@@ -284,7 +286,11 @@ def _permissive_reference_counts(path: Path, names: frozenset[str]) -> dict[str,
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             key, n = stmt.name, hits(stmt, stmt.name)
         elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
-            continue  # importing the name is not a use; every use is counted where it occurs
+            # A plain import is not a use: every use is counted where it occurs. A RENAMED
+            # import is different — its uses are under the new name, which nothing counts — so
+            # the rename itself is the counted (and therefore failing) reference.
+            key = "<module>"
+            n = sum(1 for a in stmt.names if a.asname and a.name in names)
         else:
             key, n = "<module>", hits(stmt, None)
         if n:
@@ -307,9 +313,12 @@ def test_permissive_decodes_inside_state_service_are_pinned_per_reference() -> N
         ("_dec = unified_from_athlete_row\n", {"<module>": 1}),
         ("class C:\n    def m(self, r):\n        return load_current_state(r)\n", {"<module>": 1}),
         ("from app.engine.state_bridge import unified_from_athlete_row\n", {}),
+        ("from app.engine.state_bridge import unified_from_athlete_row as _d\n",
+         {"<module>": 1}),
         ("async def load_current_state(db, uid):\n    return None\n", {}),
     ],
-    ids=["function", "module-alias", "class-method", "import-only", "definition"],
+    ids=["function", "module-alias", "class-method", "import-only", "renamed-import",
+         "definition"],
 )
 def test_the_reference_counter_sees_every_scope(
     tmp_path: Path, source: str, expected: dict[str, int]
