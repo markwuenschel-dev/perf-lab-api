@@ -358,13 +358,14 @@ async def test_benchmark_vs_workout_reads_the_workout_as_its_predecessor(factory
 
     uid = await _user(factory, "f2-bw@test.com")
     seen: list[int] = []
-    real = state_service.load_current_state
+    # C1: the predecessor read is strict, so the recording wraps the loader actually called.
+    real = state_service.load_current_state_strict
 
     async def recording(db, user_id):
         seen.append(await _state_rows(factory, user_id))
         return await real(db, user_id)
 
-    monkeypatch.setattr(benchmark_service.state_service, "load_current_state", recording)
+    monkeypatch.setattr(benchmark_service.state_service, "load_current_state_strict", recording)
 
     async def contender():
         async with factory() as db:

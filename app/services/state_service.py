@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.config import settings
+from app.core.errors import CanonicalStateInvalid, normalize_decode_error
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
@@ -291,15 +293,16 @@ async def initialize_athlete_state(
     run_5k_seconds: float | None = None,
     experience_years: float = 0.0,
     goal: str | None = None,
-    decode: Callable[[AthleteState], UnifiedStateVector] = unified_from_athlete_row,
+    decode: Callable[[AthleteState], UnifiedStateVector] = unified_from_athlete_row_strict,
 ) -> UnifiedStateVector:
     """Creates baseline S0 for a new user and commits it — exactly once (F2).
 
     Double-checked under the state-chain lock: callers decide "no state yet" from a read that
     another writer can overtake (a concurrent first workout or observation). If a row exists
     once the lock is held, nothing is inserted and that state is returned through ``decode``
-    (the caller's policy: strict callers pass the strict decoder). Either way this commits,
-    as its contract always has, which also releases the lock.
+    — strict by default (C1): only a caller that names the permissive decoder itself gets a
+    legacy reconstruction, so a new caller cannot inherit one. Either way this commits, as
+    its contract always has, which also releases the lock.
     """
     await lock_athlete_chain(db, user_id)
     existing = await AthleteContextRepository(db).get_latest_state(user_id)
@@ -428,7 +431,8 @@ async def load_or_init_current_state(
     """
     row = await AthleteContextRepository(db).get_latest_state(user_id)
     if row is None:
-        return await initialize_athlete_state(db, user_id)
+        # Permissive on purpose, and named: this wrapper's policy until 2D deletes it.
+        return await initialize_athlete_state(db, user_id, decode=unified_from_athlete_row)
     return unified_from_athlete_row(row)
 
 
@@ -443,7 +447,9 @@ def preview_baseline_state(user_id: int) -> UnifiedStateVector:
     _, transient = _build_baseline_vector(
         user_id, "intermediate", None, None, None, None, None, 0.0, goal=None
     )
-    return unified_from_athlete_row(transient)
+    # Strict: the transient row was just built from a canonical vector, so it always decodes;
+    # a failure here is a defect, never a reason to fall back to the legacy scalars.
+    return unified_from_athlete_row_strict(transient)
 
 
 async def has_state(db: AsyncSession, user_id: int) -> bool:
@@ -1109,6 +1115,11 @@ async def _extract_e1rm_observations(
             )
             written += 1
         except Exception:
+            # Each successful spec committed inside create_observation, so this discards only
+            # the failed spec's flushed-but-uncommitted rows. Without it they stay in the
+            # session and ride along on the next commit (a shadow write below), a partial
+            # observation no one decided to keep.
+            await db.rollback()
             logger.warning(
                 "e1RM extraction failed for user %s code %s",
                 user_id, spec.get("code"), exc_info=True,
@@ -1170,7 +1181,17 @@ async def process_new_workout(
         current_state, initial_baseline = _build_baseline_vector(user_id)
         db.add(initial_baseline)
     else:
-        current_state = unified_from_athlete_row(last_record)
+        # INT-15 (C1): strict. The workout transition is built from this state and appended
+        # as the next canonical row, so a head that exists but cannot be decoded refuses the
+        # whole command (409, capability ``workout``): a legacy reconstruction must never be
+        # promoted into canonical state by the next write. Nothing has been staged yet (only
+        # the chain lock and the head read precede this), so the refusal writes nothing.
+        try:
+            current_state = unified_from_athlete_row_strict(last_record)
+        except EngineStateDecodeError as exc:
+            raise CanonicalStateInvalid(
+                capability="workout", normalized_reason=normalize_decode_error(exc)
+            ) from exc
         # S0 is stamped at the wall-clock time the account was created, which is
         # unrelated to the athlete's training timeline. If it is still the only
         # state row, it is the initial baseline and gets re-anchored below.

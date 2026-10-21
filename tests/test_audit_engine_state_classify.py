@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.engine.state_bridge import default_engine_state_dict
-from app.scripts.audit_engine_state import BLOCKING, DEPLOYMENT, MIGRATION, classify
+from app.scripts.audit_engine_state import BLOCKING, DEPLOYMENT, MIGRATION, classify, hazards
 
 TS = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
 
@@ -83,11 +83,17 @@ def test_future_version_is_a_deployment_fault_not_corruption() -> None:
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_nonfinite_legacy_scalars_block(bad: float) -> None:
-    """A NaN capacity is not a number to fall back on — `nan > x` is False everywhere."""
-    v = classify(_row(default_engine_state_dict(), c_nm_force=bad))
-    assert v.classification == "nonfinite_value"
-    assert v.classification in BLOCKING
+def test_nonfinite_legacy_scalars_beside_a_canonical_payload_warn_but_do_not_block(
+    bad: float,
+) -> None:
+    """C1: clearance is exactly what the strict loader accepts, and the strict loader never
+    reads the legacy columns. A NaN there is still reported — display recovery and the
+    mirror's readers do read it — as a hazard, not a C1 block. (It used to block: a false
+    'refused' for a row every C1 path would load.)"""
+    row = _row(default_engine_state_dict(), c_nm_force=bad)
+    v = classify(row)
+    assert v.classification == "valid_current"
+    assert "legacy_scalars_nonfinite" in hazards(row)
 
 
 def test_nonfinite_inside_payload_reports_the_specific_cause() -> None:
@@ -142,3 +148,50 @@ def test_classification_sets_are_disjoint() -> None:
     assert not (BLOCKING & MIGRATION)
     assert not (BLOCKING & DEPLOYMENT)
     assert not (MIGRATION & DEPLOYMENT)
+
+
+# --- C1: clearance agrees with the strict loader's complete conversion -------------------
+
+_NAN = float("nan")
+_AGREEMENT_ROWS = {
+    "canonical": _row(default_engine_state_dict()),
+    "null": _row(None),
+    "empty": _row({"version": 2, "x": {}, "f": {}, "t": {}}),
+    "partial": _row({"version": 2, "x": {"aerobic": 1.0}}),
+    "malformed": _row({"version": 2, "x": "nope", "f": {}, "t": {}}),
+    "future": _row(default_engine_state_dict() | {"version": 99}),
+    "nan-legacy-scalar": _row(default_engine_state_dict(), c_nm_force=_NAN),
+    # Decode fine, then fail the rest of the conversion — the false CLEAR this pins.
+    "skill-state-not-a-mapping": _row(default_engine_state_dict(), skill_state=5),
+    "habit-not-a-number": _row(default_engine_state_dict(), habit_strength="high"),
+    "s-struct-not-a-number": _row(default_engine_state_dict(), s_struct_signal="x"),
+    "no-timestamp": _row(default_engine_state_dict(), timestamp=None),
+}
+
+
+def _strict_accepts(row: object) -> bool:
+    from app.engine.state_loading import unified_from_athlete_row_strict
+
+    try:
+        unified_from_athlete_row_strict(row)
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+@pytest.mark.parametrize("name", sorted(_AGREEMENT_ROWS))
+def test_the_sweep_clears_a_row_exactly_when_the_strict_loader_accepts_it(name: str) -> None:
+    row = _AGREEMENT_ROWS[name]
+    assert (classify(row).classification == "valid_current") == _strict_accepts(row), name
+
+
+@pytest.mark.parametrize(
+    "name", ["skill-state-not-a-mapping", "habit-not-a-number", "s-struct-not-a-number",
+             "no-timestamp"],
+)
+def test_a_conversion_failure_after_a_clean_decode_blocks(name: str) -> None:
+    v = classify(_AGREEMENT_ROWS[name])
+    assert v.classification == "conversion_failed"
+    assert v.classification in BLOCKING
+    # The exception type only — never its message, which can carry field values.
+    assert v.detail.isidentifier()

@@ -20,8 +20,9 @@ def _install(monkeypatch, *, row, init_vector=None):
         async def get_latest_state(self, user_id):
             return row
 
-    async def _fake_init(db, user_id):
+    async def _fake_init(db, user_id, decode=None):
         calls["init"] += 1
+        calls["decode"] = decode  # the permissive wrapper names its decoder (C1)
         return init_vector
 
     monkeypatch.setattr(state_service, "AthleteContextRepository", _FakeRepo)
