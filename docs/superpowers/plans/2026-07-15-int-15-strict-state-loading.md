@@ -117,11 +117,11 @@ GATE 1  production sweep              ← CLEAR 2026-07-15 (1 athlete, 1 row, va
 2B3  benchmark                        ← C1 (2026-10-21)
 2B4  assessment                       ← C1 (2026-10-21); onboarding's twin summary → 2C
 C1+  workout ingestion, projection    ← C1 (2026-10-21) — not in the original table
-2C   dashboard / history / onboarding twin summary
-S3   shadows (separate slice)
+2C   dashboard / history / onboarding twin summary   ← C2 train (2026-10-21)
+S3   shadows (separate slice)          ← C2 train (2026-10-21)
 S4   repair_capacity_corruption -> strict   ← DONE, ungated (canonical mutation path)
-2D   retire the temporary generic compatibility loader
-2E   connected-flow proof
+2D   retire the temporary generic compatibility loader   ← C2 train (2026-10-21)
+2E   connected-flow proof               ← C2 train (2026-10-21)
 ```
 
 ### C1 caller inventory (2026-10-21, AST scan of every loader call at 365f91e + C1)
@@ -192,6 +192,29 @@ an expected invalid-state condition must never surface as an accidental 500.
   explicit initialization → initialization factory. Existing malformed state → strict
   refusal. Display-only assessment history → recovery allowed. Benchmark recommendation,
   eligibility, or progress authority → strict.
+
+### C2 train (2026-10-21): owner decisions and what landed
+
+Owner answers: **1B 2A 3A** (history refuses the window; onboarding strict; keep `_strict`).
+
+| Surface | Policy after C2 | Behaviour on a damaged head |
+|---|---|---|
+| `/v1/state-history` (`load_recent_state_snapshots`) | Display recovery | Each row carries `state_source` / `degraded` / `degradation_reason` / `codec_version`. A row unshowable even degraded (future version, unusable scalars) refuses the WHOLE window: 409 `display_state_unavailable`, `history_available=false`. Never omitted — Overview and Twin read the last row as current. No history stays 200 `[]`. |
+| `/v1/dashboard/readiness` | Display recovery | Same provenance fields; 409 `dashboard_state_available=false` when unshowable. |
+| Onboarding twin summary | **Strict** (2A) | `seeded=true`, `state_available=false`, `overall_confidence=null`; absent state is `seeded=false`; nothing initialized; still 200. A recovery has no measured confidence, so it is never shown as a band. |
+| EKF and recovery shadows (S3) | `try_load_current_state_for_shadow` | Typed skip (`skipped_missing/incomplete/malformed/future_version`). Recovery classifies state BEFORE its unchanged-input shortcut and writes a skip row that supersedes an earlier computation; the evidence reader never presents that earlier computation as current. EKF writes no row (its newest row is the chain head) and logs the skip. |
+| `state_service` internal decodes (2D) | Strict | Pre-commit decodes are of rows this request built or already decoded strictly. Post-commit, `_materialize_committed` keeps the valid result when a CONCURRENT writer's head is unreadable: never a failed save, a reconstruction or a reseed (pinned on ordinary, record-only and replay-corrected workouts). |
+| Retired (2D) | Deleted | `unified_from_athlete_row`, `load_current_state`, `load_or_init_current_state`, `load_recent_states`, `_migrate_engine_state`. The permissive allowlist and per-scope pins are empty; a guard refuses any module that defines or re-exports them again. |
+
+2E (`tests/test_int15_connected_flow.py`): one legacy row → display 200 degraded; onboarding
+unavailable; six decision routes 409 with their own availability fields; the wellness
+check-in saved with a recovery skip; reconstruction reached only by the two display
+surfaces; the stored payload unchanged.
+
+INT-05 C4 rides the same train: decision readers (prescriber, drivers, constraints) read the
+canonical vectors; rule ids and `StateEvidence.axis` strings unchanged; the web strength
+fallback to `c_nm_force` (a different scale) is removed. The scalars remain in API responses;
+the drop migration still needs the reader audit and its own recheck.
 
 **2C — switch dashboard/history to explicit display recovery.** Wire ONLY
 `dashboard_service` and `history.py`. Add another surface only after proving it cannot
