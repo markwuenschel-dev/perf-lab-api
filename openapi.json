@@ -4764,6 +4764,16 @@
             ],
             "title": "Run 5K Seconds"
           },
+          "run_time_trial": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunTimeTrialReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "self_reported_weak_points": {
             "items": {
               "type": "string"
@@ -4808,6 +4818,16 @@
           "profile_id": {
             "title": "Profile Id",
             "type": "integer"
+          },
+          "run_time_trial": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Vo2EstimateRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "strength": {
             "items": {
@@ -6754,6 +6774,82 @@
         "title": "RunSession",
         "type": "object"
       },
+      "RunTimeTrialReport": {
+        "additionalProperties": false,
+        "description": "A 1.5 mi time trial the athlete ran (B2): what they did, and the model's inputs.\n\nThe time is required; it is the record. Body mass and the model's sex input are needed only\nfor the display-only VO\u2082max estimate, and are never defaulted or inferred: leave them out and\nthe run is still saved, without an estimate. ``performed_on`` (the athlete's calendar date)\nwith the profile's date of birth gives the age at performance, which decides only whether the\nresult is labelled as within the study's age range.",
+        "properties": {
+          "body_mass": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 700.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Body mass as the athlete entered it, in body_mass_unit.",
+            "title": "Body Mass"
+          },
+          "body_mass_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kg",
+                  "lb"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Mass Unit"
+          },
+          "elapsed_seconds": {
+            "description": "The 1.5 mi time, in seconds (3 min to 4 h).",
+            "maximum": 14400.0,
+            "minimum": 180.0,
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "performed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The athlete's calendar date of the run. Omitted means unknown.",
+            "title": "Performed On"
+          },
+          "sex_for_estimate": {
+            "anyOf": [
+              {
+                "enum": [
+                  "female",
+                  "male"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The estimate model's sex input, used for nothing else and stored only on this record. Omitted means no estimate.",
+            "title": "Sex For Estimate"
+          }
+        },
+        "required": [
+          "elapsed_seconds"
+        ],
+        "title": "RunTimeTrialReport",
+        "type": "object"
+      },
       "SessionFeedbackIn": {
         "description": "Athlete-reported outcome for one planned session.\n\n``planned_session_id`` must belong to the caller; ``completed_workout_log_id``\n(when given) must too \u2014 both are validated server-side to prevent IDOR.",
         "properties": {
@@ -8394,6 +8490,148 @@
           "passed"
         ],
         "title": "ValidationSummary",
+        "type": "object"
+      },
+      "Vo2EstimateRead": {
+        "description": "A saved 1.5 mi time trial and its display-only VO\u2082max estimate (B2).\n\nRecomputed from the inputs captured on the record itself, never from the live profile.\n``used_for_plan`` is always false: the record has no capacity, prescription or attainment\nauthority.",
+        "properties": {
+          "benchmark_code": {
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "elapsed_seconds": {
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "extrapolated": {
+            "title": "Extrapolated",
+            "type": "boolean"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "missing_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Inputs",
+            "type": "array"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "integer"
+          },
+          "observation_id": {
+            "title": "Observation Id",
+            "type": "integer"
+          },
+          "performed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performed On"
+          },
+          "population_label": {
+            "title": "Population Label",
+            "type": "string"
+          },
+          "population_status": {
+            "enum": [
+              "within_study_age_range",
+              "outside_study_age_range",
+              "age_unknown"
+            ],
+            "title": "Population Status",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "coefficients_unverified",
+                  "missing_inputs",
+                  "non_positive_result",
+                  "unsupported_model"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "see_ml_kg_min": {
+            "title": "See Ml Kg Min",
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "estimated",
+              "not_estimated"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "units": {
+            "const": "ml/kg/min",
+            "default": "ml/kg/min",
+            "title": "Units",
+            "type": "string"
+          },
+          "used_for_plan": {
+            "const": false,
+            "default": false,
+            "title": "Used For Plan",
+            "type": "boolean"
+          },
+          "vo2max_ml_kg_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vo2Max Ml Kg Min"
+          }
+        },
+        "required": [
+          "observation_id",
+          "benchmark_code",
+          "performed_on",
+          "recorded_at",
+          "elapsed_seconds",
+          "status",
+          "reason",
+          "missing_inputs",
+          "vo2max_ml_kg_min",
+          "headline",
+          "population_status",
+          "extrapolated",
+          "population_label",
+          "see_ml_kg_min",
+          "model_id",
+          "model_version"
+        ],
+        "title": "Vo2EstimateRead",
         "type": "object"
       },
       "WarmupBlock": {
@@ -11013,6 +11251,37 @@
           }
         ],
         "summary": "Get Strength Report",
+        "tags": [
+          "Benchmarks"
+        ]
+      }
+    },
+    "/v1/benchmarks/vo2-estimates": {
+      "get": {
+        "description": "The athlete's saved 1.5 mi time trials, newest first, each with its display-only VO\u2082max\nestimate (B2). Each is rebuilt from the inputs captured on its own record, never from the\ncurrent profile, and none is used for the plan.",
+        "operationId": "get_vo2_estimates_v1_benchmarks_vo2_estimates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Vo2EstimateRead"
+                  },
+                  "title": "Response Get Vo2 Estimates V1 Benchmarks Vo2 Estimates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Vo2 Estimates",
         "tags": [
           "Benchmarks"
         ]
