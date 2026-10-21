@@ -243,10 +243,10 @@ async def test_benchmark_test_still_updates_capacity_bidirectionally(async_db):
 # ── end-to-end: easy training does not lower max_strength ─────────────────────
 
 async def _max_strength(db, user_id: int) -> float:
-    from app.engine.state_bridge import unified_from_athlete_row
+    from app.engine.state_loading import unified_from_athlete_row_strict
     from app.repositories.athlete_context_repository import AthleteContextRepository
     row = await AthleteContextRepository(db).get_latest_state(user_id)
-    return float(unified_from_athlete_row(row).capacity_x.max_strength)
+    return float(unified_from_athlete_row_strict(row).capacity_x.max_strength)
 
 
 async def test_easy_training_does_not_lower_max_strength(async_db):
@@ -284,8 +284,8 @@ async def test_repair_restores_regressed_max_strength(async_db):
     """The conservative repair floors max_strength back to its historical watermark."""
     from app.engine.state_bridge import (
         athlete_state_kwargs_from_unified,
-        unified_from_athlete_row,
     )
+    from app.engine.state_loading import unified_from_athlete_row_strict
     from app.repositories.athlete_context_repository import AthleteContextRepository
     from app.scripts.repair_capacity_corruption import repair_with_db
 
@@ -301,7 +301,7 @@ async def test_repair_restores_regressed_max_strength(async_db):
         ),
     )
     high = await _max_strength(async_db, user.id)
-    corrupted = unified_from_athlete_row(
+    corrupted = unified_from_athlete_row_strict(
         await AthleteContextRepository(async_db).get_latest_state(user.id)
     ).model_copy(deep=True)
     corrupted.capacity_x.max_strength = high - 40.0

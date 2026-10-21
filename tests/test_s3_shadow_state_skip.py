@@ -86,14 +86,12 @@ def legacy_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
         monkeypatch.setattr(module, name, wrapped)
 
-    for name in ("capacity_from_legacy", "fatigue_from_legacy", "tissue_from_legacy",
-                 "unified_from_athlete_row"):
+    for name in ("capacity_from_legacy", "fatigue_from_legacy", "tissue_from_legacy"):
         spy(state_bridge, name)
     for name in ("capacity_from_legacy", "fatigue_from_legacy", "tissue_from_legacy",
                  "reconstruct_legacy_state_for_display"):
         spy(state_loading, name)
-    for name in ("unified_from_athlete_row", "reconstruct_legacy_state_for_display"):
-        spy(state_service, name)
+    spy(state_service, "reconstruct_legacy_state_for_display")
     return calls
 
 

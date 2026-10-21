@@ -34,7 +34,8 @@ PERMISSIVE_LOADER_ALLOWLIST: frozenset[str] = frozenset(
         # `state_service.load_recent_states` behind the AthleteContextRepository seam, so the
         # route no longer imports a permissive loader directly. The permissive conversion is
         # consolidated in `state_service.py` (below), which INT-15 retires in 2D.
-        "services/state_service.py",  # defines the wrappers; retired in 2D
+        # 2D REMOVED `services/state_service.py` — the permissive wrappers are deleted and every
+        # internal decode is strict. The list is EMPTY; it must stay empty.
         # C1 REMOVED `services/assessment_surface_service.py` (2B4) — strict: its variance ranks
         # the next benchmark, so it is recommendation authority, not display.
         # C1 REMOVED `services/benchmark_service.py` (2B3) — strict at the state-application
@@ -256,16 +257,9 @@ def test_c1_decision_paths_reference_no_permissive_loader(module: str) -> None:
 # that is how process_new_workout's head read went unnoticed. A per-function set is not enough
 # either: process_new_workout legitimately decodes rows it wrote itself, so reverting its head
 # read would add a reference without adding a function. So the number of permissive references
-# is pinned per scope. ONLY DECREASE THESE. 2D empties the map.
-STATE_SERVICE_PERMISSIVE_REFERENCES: dict[str, int] = {
-    "stage_baseline_state": 1,  # decodes the row it just built
-    "load_current_state": 1,  # the permissive wrappers themselves (2C/2D)
-    "load_recent_states": 1,
-    "load_or_init_current_state": 2,  # its own decode, and the decoder it names for init
-    # Rows it wrote itself or already decoded strictly — the record-only head, the tail-replay
-    # head, the committed new row, the post-e1RM re-read. The head READ is strict as of C1.
-    "process_new_workout": 4,
-}
+# is pinned per scope. 2D emptied the map: every decode in state_service is strict, and the
+# post-commit reads go through `_materialize_committed` (strict, or keep the valid result).
+STATE_SERVICE_PERMISSIVE_REFERENCES: dict[str, int] = {}
 
 
 def _permissive_reference_counts(path: Path, names: frozenset[str]) -> dict[str, int]:
@@ -379,3 +373,62 @@ def test_the_counter_does_not_excuse_an_attribute_named_like_its_function(tmp_pa
         encoding="utf-8",
     )
     assert _permissive_reference_counts(path, _PERMISSIVE_NAMES) == {"load_current_state": 1}
+
+
+# --- 2D: the retired entry points stay retired ---------------------------------------------
+# An empty allowlist alone cannot catch a RESTORED definition: `_modules_referencing` skips the
+# module that defines a name, so a revived `def load_current_state` with no caller yet would
+# read green. These pin the deletion itself.
+
+_RETIRED = _PERMISSIVE_NAMES | {"_migrate_engine_state"}
+
+
+def _definitions(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            found.add(node.name)
+        elif isinstance(node, ast.Assign):
+            found |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name):
+            found.add(node.target.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            found |= {a.asname or a.name for a in node.names}
+    return found
+
+
+def test_no_module_defines_or_reexports_a_retired_permissive_entry_point() -> None:
+    offenders = {
+        path.relative_to(APP).as_posix(): sorted(_definitions(path) & _RETIRED)
+        for path in APP.rglob("*.py")
+        if _definitions(path) & _RETIRED
+    }
+    assert not offenders, (
+        f"Retired permissive entry points are back: {offenders}. INT-15 2D deleted them; read "
+        "strictly (`*_strict`) or, for an approved display surface, through display recovery."
+    )
+
+
+@pytest.mark.parametrize("module", ["app.services.state_service", "app.engine.state_bridge"])
+def test_retired_names_are_not_attributes_at_runtime(module: str) -> None:
+    import importlib
+
+    mod = importlib.import_module(module)
+    assert not [n for n in sorted(_RETIRED) if hasattr(mod, n)]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def load_current_state(db, uid):\n    return None\n",
+        "unified_from_athlete_row = object()\n",
+        "from app.engine.state_loading import unified_from_athlete_row_strict as "
+        "unified_from_athlete_row\n",
+    ],
+    ids=["def", "assign", "import-alias"],
+)
+def test_the_retirement_guard_sees_each_form_of_restoration(source: str, tmp_path: Path) -> None:
+    f = tmp_path / "m.py"
+    f.write_text(source, encoding="utf-8")
+    assert _definitions(f) & _RETIRED

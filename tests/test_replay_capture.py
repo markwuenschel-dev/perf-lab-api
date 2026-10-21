@@ -32,7 +32,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.engine import transition_identity as ti
 from app.engine.parameters import EngineParameters
-from app.engine.state_bridge import unified_from_athlete_row
+from app.engine.state_loading import unified_from_athlete_row_strict
 from app.logic.replay_inputs import (
     MappingSnapshot,
     benchmark_replay_input,
@@ -354,7 +354,7 @@ def _rebuild_workout(pred: AthleteState, state: AthleteState, w: WorkoutLogORM, 
         sleep_quality=ri["sleep_quality"], life_stress_inverse=ri["life_stress_inverse"],
     )
     return update_athlete_state(
-        unified_from_athlete_row(pred), StressDose(**ri["dose"]),
+        unified_from_athlete_row_strict(pred), StressDose(**ri["dose"]),
         state.timestamp - pred.timestamp, log,
     )
 
@@ -396,7 +396,7 @@ async def test_rebuilding_the_workout_call_from_the_capture_reproduces_the_store
 
     rebuilt = _vec(_rebuild_workout(pred, state, w))
 
-    assert rebuilt == _vec(unified_from_athlete_row(state))
+    assert rebuilt == _vec(unified_from_athlete_row_strict(state))
     # …and each captured field is needed: dropping it changes the result.
     assert _vec(_rebuild_workout(pred, state, w, dominant_movement_pattern=None)) != rebuilt
     assert _vec(_rebuild_workout(pred, state, w, sleep_quality=None)) != rebuilt
@@ -459,14 +459,14 @@ async def test_an_applied_benchmark_records_inputs_and_is_reproducible_from_them
 
     def rebuild(weight: float):
         return apply_benchmark_observation(
-            unified_from_athlete_row(pred), raw_value=ri["raw_value"],
+            unified_from_athlete_row_strict(pred), raw_value=ri["raw_value"],
             normalized_value=ri["normalized_value"], better_direction=ri["better_direction"],
             observation_weight=weight,
             mappings=[MappingSnapshot.from_dict(m) for m in ri["mappings"]],
             observed_at=datetime.fromisoformat(ri["observed_at"]), score01=ri["score01"],
         )
 
-    stored = _vec(unified_from_athlete_row(state))
+    stored = _vec(unified_from_athlete_row_strict(state))
     assert _vec(rebuild(ri["observation_weight_used"])) == stored
     assert _vec(rebuild(obs.observation_weight)) != stored  # the wrong weight does not
 
@@ -485,13 +485,13 @@ async def test_a_lower_is_better_benchmark_is_reproducible_too(async_db):
     assert ri["better_direction"] == "lower"
     pred = await async_db.get(AthleteState, head_id)
     rebuilt = apply_benchmark_observation(
-        unified_from_athlete_row(pred), raw_value=ri["raw_value"],
+        unified_from_athlete_row_strict(pred), raw_value=ri["raw_value"],
         normalized_value=ri["normalized_value"], better_direction=ri["better_direction"],
         observation_weight=ri["observation_weight_used"],
         mappings=[MappingSnapshot.from_dict(m) for m in ri["mappings"]],
         observed_at=datetime.fromisoformat(ri["observed_at"]), score01=ri["score01"],
     )
-    assert _vec(rebuilt) == _vec(unified_from_athlete_row((await _states(async_db, user.id))[-1]))
+    assert _vec(rebuilt) == _vec(unified_from_athlete_row_strict((await _states(async_db, user.id))[-1]))
 
 
 async def test_a_late_benchmark_is_captured_as_record_only_with_the_head_it_was_judged_against(async_db):

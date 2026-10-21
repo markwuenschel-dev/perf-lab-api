@@ -46,7 +46,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
-from app.engine.state_bridge import unified_from_athlete_row
+from app.engine.state_loading import unified_from_athlete_row_strict
 from app.logic.constraint_engine.constraints_impl import (
     CONSTRAINT_REGISTRY,
     UNIVERSAL_HARD_CONSTRAINTS,
@@ -164,7 +164,7 @@ async def test_a_late_workout_is_folded_in_and_the_head_matches_chronological_lo
     w = await _workout(async_db, resp.workout_log_id)
     assert (w.state_disposition, w.state_disposition_reason, w.replay_refusal) == ("applied", None, None)
     # The response reports the corrected state, not the stale head.
-    assert resp.model_dump()["capacity_x"] == unified_from_athlete_row(head).capacity_x.model_dump()
+    assert resp.model_dump()["capacity_x"] == unified_from_athlete_row_strict(head).capacity_x.model_dump()
 
 
 async def test_a_late_benchmark_is_folded_in_the_same_way(async_db, flag):
@@ -467,7 +467,7 @@ async def test_a_refusal_mid_sequence_leaves_a_head_equal_to_the_events_actually
 # ----- real safety decisions -------------------------------------------------------------------- #
 
 def _decisions(row: AthleteState) -> dict[str, tuple[bool, str]]:
-    ctx = build_constraint_context(unified_from_athlete_row(row), [], "Strength")
+    ctx = build_constraint_context(unified_from_athlete_row_strict(row), [], "Strength")
     out: dict[str, tuple[bool, str]] = {}
     for code in UNIVERSAL_HARD_CONSTRAINTS:
         result = CONSTRAINT_REGISTRY[code]({}, ctx)

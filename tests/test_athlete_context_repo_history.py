@@ -1,4 +1,4 @@
-"""AUD-C15: repository history reads + the ``state_service.load_recent_states`` loader.
+"""AUD-C15: repository history reads + the ``state_service.load_recent_state_snapshots`` loader.
 
 Locks the contracts the ``/v1/state-history`` and ``/v1/workouts`` routes now delegate to,
 behind the repository seam instead of inline in the route (CONTEXT.md): ordering, limit,
@@ -79,10 +79,10 @@ async def test_list_states_ascending_returns_full_history_oldest_first(async_db)
     assert ts == sorted(ts)  # oldest first
 
 
-async def test_load_recent_states_returns_oldest_to_newest_vectors(async_db):
+async def test_load_recent_state_snapshots_returns_oldest_to_newest(async_db):
     user = await _mk_user(async_db, "hist_loader@test.com")
     await _seed_states(async_db, user.id, [0, 1, 2, 3])
-    vectors = await state_service.load_recent_states(async_db, user.id, limit=2)
+    vectors = await state_service.load_recent_state_snapshots(async_db, user.id, limit=2)
 
     # limit=2 -> the two most recent rows, returned oldest->newest (chart order)
     assert len(vectors) == 2
@@ -109,7 +109,7 @@ async def test_list_recent_states_breaks_timestamp_ties_by_id_desc(async_db):
     assert tie_ids == [r2.id, r1.id]  # id DESC on the tie
 
     # The loader reverses to chart order → the tie comes out id ASC, stably.
-    vectors = await state_service.load_recent_states(async_db, user.id, limit=10)
+    vectors = await state_service.load_recent_state_snapshots(async_db, user.id, limit=10)
     tie_aerobic = [v.capacity_x.aerobic for v in vectors if v.timestamp == same]
     assert tie_aerobic == [301.0, 302.0]  # r1 (smaller id) first
 
@@ -137,7 +137,7 @@ async def test_history_reads_are_user_scoped_and_empty_is_empty(async_db):
 
     assert len(await repo.list_recent_states(b.id, limit=10)) == 0
     assert len(await repo.list_states_ascending(b.id)) == 0
-    assert await state_service.load_recent_states(async_db, b.id, 10) == []
+    assert await state_service.load_recent_state_snapshots(async_db, b.id, 10) == []
 
 
 async def test_list_recent_workouts_newest_first_limited_and_scoped(async_db):

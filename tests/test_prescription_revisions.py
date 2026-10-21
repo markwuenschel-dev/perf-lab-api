@@ -259,7 +259,7 @@ async def test_a_safety_restriction_appearing_replaces_and_preserves_the_previou
     uid, sid = await _athlete(factory, "p1-appear@test.com")
     first = (await _call(factory, uid)).json()
     async with factory() as db:
-        state = await state_service.load_current_state(db, uid)
+        state = await state_service.load_current_state_strict(db, uid)
         assert state is not None
         state.f_met_systemic = 95.0
         state.fatigue_f.metabolic = 95.0

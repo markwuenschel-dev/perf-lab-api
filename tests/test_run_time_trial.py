@@ -121,7 +121,7 @@ async def _count(db: AsyncSession, model: Any, user_id: int) -> int:
 
 
 async def _capacity(db: AsyncSession, user_id: int) -> dict[str, float]:
-    state = await state_service.load_current_state(db, user_id)
+    state = await state_service.load_current_state_strict(db, user_id)
     assert state is not None
     return {k: float(getattr(state.capacity_x, k)) for k in CapacityState.KEYS}
 

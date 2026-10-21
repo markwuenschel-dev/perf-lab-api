@@ -1,15 +1,18 @@
-"""engine_state schema versioning + lazy migrate-on-read (§1.2)."""
+"""engine_state schema versioning: writers stamp the current version, rows round-trip strictly.
+
+Version upgrades on read are the codec's job (tests/test_engine_state_codec.py); the old
+permissive migrate-on-read helper was deleted with the permissive row converter (INT-15 2D).
+"""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.engine.state_bridge import (
     ENGINE_STATE_SCHEMA_VERSION,
-    _migrate_engine_state,
     athlete_state_kwargs_from_unified,
     default_engine_state_dict,
-    unified_from_athlete_row,
 )
+from app.engine.state_loading import unified_from_athlete_row_strict
 from app.schemas.state import UnifiedStateVector
 
 
@@ -36,21 +39,10 @@ def test_default_and_written_payload_carry_current_version():
     assert kwargs["engine_state"]["version"] == ENGINE_STATE_SCHEMA_VERSION
 
 
-def test_migrate_stamps_unversioned_payload():
-    legacy = {"x": {}, "f": {}, "t": {}}  # written before the version stamp existed
-    migrated = _migrate_engine_state(legacy)
-    assert migrated is not None
-    assert migrated["version"] == ENGINE_STATE_SCHEMA_VERSION
-
-
-def test_migrate_rejects_payload_without_vectors():
-    assert _migrate_engine_state({"version": 1}) is None
-
-
 def test_round_trip_through_engine_state():
     kwargs = athlete_state_kwargs_from_unified(_state())
     row = SimpleNamespace(**kwargs)
-    rebuilt = unified_from_athlete_row(row)
+    rebuilt = unified_from_athlete_row_strict(row)
     # Vectors survive the round trip via engine_state (not the legacy fallback).
     assert rebuilt.skill_state == {"squat": 0.7}
     assert rebuilt.habit_strength == 0.6

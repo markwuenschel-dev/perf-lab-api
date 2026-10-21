@@ -18,7 +18,7 @@ from app.engine.engine_state_codec import (
     MissingEngineState,
     UnsupportedFutureEngineStateVersion,
 )
-from app.engine.state_bridge import default_engine_state_dict, unified_from_athlete_row
+from app.engine.state_bridge import default_engine_state_dict
 from app.engine.state_loading import (
     DisplayStateUnavailable,
     ReadOnlyStateView,
@@ -55,20 +55,6 @@ def _row(engine_state: object, **overrides: object) -> SimpleNamespace:
 # --------------------------------------------------------------------------------------
 
 
-def test_valid_current_payload_matches_the_permissive_loader() -> None:
-    """2A is additive: on a healthy row, strict must agree with what ships today."""
-    row = _row(default_engine_state_dict())
-
-    strict = unified_from_athlete_row_strict(row)
-    legacy_path = unified_from_athlete_row(row)
-
-    assert strict.capacity_x == legacy_path.capacity_x
-    assert strict.fatigue_f == legacy_path.fatigue_f
-    assert strict.tissue_t == legacy_path.tissue_t
-    assert strict.c_nm_force == legacy_path.c_nm_force
-    assert strict.timestamp == legacy_path.timestamp
-
-
 def test_empty_vectors_are_not_a_maxed_athlete() -> None:
     """The defect this slice exists to kill.
 
@@ -77,7 +63,7 @@ def test_empty_vectors_are_not_a_maxed_athlete() -> None:
     prescriber sized loads off it. Empty data read as peak capability, in the direction
     that loads the athlete hardest.
 
-    The permissive loader still does this today, which is why it is being retired.
+    The permissive loader did this; INT-15 2D deleted it.
     """
     row = _row({"version": 2, "x": {}, "f": {}, "t": {}})
 
@@ -85,8 +71,6 @@ def test_empty_vectors_are_not_a_maxed_athlete() -> None:
         unified_from_athlete_row_strict(row)
     assert exc.value.error_code == "vector_empty"
 
-    # The behaviour being replaced, pinned so the contrast is not theoretical:
-    assert unified_from_athlete_row(row).capacity_x.max_strength == 100.0
 
 
 def test_partial_vectors_fail_closed() -> None:

@@ -1,31 +1,30 @@
 """Design guard: state_service exposes exactly the reviewed current-state load policies (AUD-C17).
 
-``state_service`` intentionally offers six *purpose-named* current-state loaders rather than
+``state_service`` intentionally offers four *purpose-named* current-state loaders rather than
 a single ``load_state(mode=...)``. Each encodes a load-bearing (strictness × on-missing)
 decision the design deliberately keeps out of a caller-selectable argument — collapsing them
 into a mode flag would make permissiveness caller-selectable and recreate the
 authority-selection problem the split removed.
 
 This guard doesn't force a refactor; it makes changing that surface an explicit architecture
-decision. A SEVENTH current-state loading policy (a new ``load_*current_state*`` or
+decision. A FIFTH current-state loading policy (a new ``load_*current_state*`` or
 ``try_load_*current_state*`` entry point)
-fails CI until reviewed into ``CURRENT_STATE_LOADERS`` here, and collapsing/removing the six
+fails CI until reviewed into ``CURRENT_STATE_LOADERS`` here, and collapsing/removing the four
 (e.g. into a mega-loader) fails too. Mechanical internals may still be shared privately.
 
 Scope: only the current-state *policy* family (names containing ``current_state``). Multi-row
-history loaders (e.g. ``load_recent_states``) are a different capability and out of scope.
+history loaders (e.g. ``load_recent_state_snapshots``) are a different capability and out of scope.
 """
 import ast
 from pathlib import Path
 
 STATE_SERVICE = Path(__file__).resolve().parents[1] / "app" / "services" / "state_service.py"
 
-# The reviewed set of public current-state load policies. Adding a seventh is an explicit
+# The reviewed set of public current-state load policies. Adding a fifth is an explicit
 # architecture decision (update this set with review); do NOT collapse into load_state(mode=).
 CURRENT_STATE_LOADERS = frozenset(
     {
-        "load_current_state",
-        "load_or_init_current_state",
+        # INT-15 2D DELETED `load_current_state` and `load_or_init_current_state` (permissive).
         "load_current_state_strict",
         "load_or_init_current_state_strict",
         "load_current_state_for_display",
@@ -53,7 +52,7 @@ def test_current_state_load_policies_are_the_reviewed_set() -> None:
 
     added = actual - CURRENT_STATE_LOADERS
     assert not added, (
-        f"new public current-state load policy in state_service: {sorted(added)}. A seventh "
+        f"new public current-state load policy in state_service: {sorted(added)}. A fifth "
         "current-state loader is an explicit architecture decision — do not collapse policy "
         "selection into a load_state(mode=...) argument; review it and add it to "
         "CURRENT_STATE_LOADERS here (AUD-C17)."
