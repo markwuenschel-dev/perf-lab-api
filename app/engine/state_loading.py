@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
@@ -134,9 +134,12 @@ def _passthrough_kwargs(row: Any) -> dict[str, Any]:
         bad.append("skill_state")
     if bad:
         raise MalformedCurrentEngineState(INVALID_ROW_FIELDS, ",".join(bad))
+    skills: dict[str, Any] = (
+        dict(cast("dict[str, Any]", skill_state)) if isinstance(skill_state, dict) else {}
+    )
     return {
         **{name: float(v or 0.0) for name, v in scalars.items()},
-        "skill_state": dict(skill_state or {}),
+        "skill_state": skills,
     }
 
 
