@@ -39,6 +39,9 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from pydantic import ValidationError
+
+from app.domain.vectors import CapacityConfidence
 from app.engine.engine_state_codec import (
     MAX_READ_VERSION,
     EngineStateDecodeError,
@@ -114,13 +117,54 @@ def _legacy_scalars_usable(row: Any) -> bool:
     return all(_finite(getattr(row, name, None)) for name in _REQUIRED_LEGACY_SCALARS)
 
 
+# The error_code for a row whose payload decodes but whose own columns cannot form a state.
+INVALID_ROW_FIELDS = "invalid_row_fields"
+
+
 def _passthrough_kwargs(row: Any) -> dict[str, Any]:
-    """Row fields that live outside the engine_state payload."""
+    """Row fields that live outside the engine_state payload.
+
+    Raises:
+        MalformedCurrentEngineState: a field of the wrong kind (``INVALID_ROW_FIELDS``).
+    """
+    scalars = {name: getattr(row, name, None) for name in ("s_struct_signal", "habit_strength")}
+    skill_state = getattr(row, "skill_state", None)
+    bad = [name for name, v in scalars.items() if v is not None and not _finite(v)]
+    if skill_state is not None and not isinstance(skill_state, dict):
+        bad.append("skill_state")
+    if bad:
+        raise MalformedCurrentEngineState(INVALID_ROW_FIELDS, ",".join(bad))
     return {
-        "s_struct_signal": float(getattr(row, "s_struct_signal", 0.0) or 0.0),
-        "habit_strength": float(getattr(row, "habit_strength", 0.0) or 0.0),
-        "skill_state": dict(getattr(row, "skill_state", None) or {}),
+        **{name: float(v or 0.0) for name, v in scalars.items()},
+        "skill_state": dict(skill_state or {}),
     }
+
+
+def _state_from_row(
+    row: Any,
+    *,
+    x: Any,
+    f: Any,
+    t: Any,
+    capacity_confidence: CapacityConfidence | None = None,
+) -> UnifiedStateVector:
+    """Assemble the vector from decoded (or reconstructed) x/f/t plus the row's own fields.
+
+    A row's columns are data too: out-of-range or wrongly typed values are a damaged row,
+    reported as a decode error so that every loading policy handles them like a damaged
+    payload. Only validation failures are converted; anything else is a bug and propagates.
+
+    Raises:
+        MalformedCurrentEngineState: ``INVALID_ROW_FIELDS``.
+    """
+    extra = {} if capacity_confidence is None else {"capacity_confidence": capacity_confidence}
+    try:
+        return build_unified_state_vector(
+            timestamp=row.timestamp, x=x, f=f, t=t, **extra, **_passthrough_kwargs(row)
+        )
+    except ValidationError as exc:
+        fields = ",".join(str(e["loc"][0]) for e in exc.errors() if e.get("loc"))
+        raise MalformedCurrentEngineState(INVALID_ROW_FIELDS, fields) from exc
 
 
 def unified_from_athlete_row_strict(row: Any) -> UnifiedStateVector:
@@ -128,20 +172,20 @@ def unified_from_athlete_row_strict(row: Any) -> UnifiedStateVector:
 
     Raises:
         MissingEngineState: the row carries no payload (a legacy row).
-        MalformedCurrentEngineState: a payload this reader should understand, but cannot.
+        MalformedCurrentEngineState: a payload this reader should understand, but cannot,
+            or row fields that cannot form a state (``INVALID_ROW_FIELDS``).
         UnsupportedFutureEngineStateVersion: written by a newer node; deploy readers first.
 
     Never falls back to the legacy scalars. A caller that cannot proceed without state
     must fail closed — that is the point.
     """
     decoded = decode_engine_state(getattr(row, "engine_state", None))
-    return build_unified_state_vector(
-        timestamp=row.timestamp,
+    return _state_from_row(
+        row,
         x=decoded.capacity,
         f=decoded.fatigue,
         t=decoded.tissue,
         capacity_confidence=decoded.capacity_confidence,
-        **_passthrough_kwargs(row),
     )
 
 
@@ -153,6 +197,8 @@ def reconstruct_legacy_state_for_display(row: Any) -> ReadOnlyStateView:
     Malformed payload            -> source="legacy_recovery", degraded=True (if scalars usable)
     Future-version payload       -> DisplayStateUnavailable (never reconstructed)
     Unusable legacy scalars      -> DisplayStateUnavailable
+    Invalid row fields           -> DisplayStateUnavailable (habit, signal, skills: there is
+                                    no lossy mirror to recover them from)
 
     A future-version payload is not damaged data — it is data this reader is too old to
     read. Reconstructing it from the lossy mirror would show the athlete a worse answer
@@ -173,15 +219,19 @@ def reconstruct_legacy_state_for_display(row: Any) -> ReadOnlyStateView:
     except EngineStateDecodeError as exc:  # defensive: a new subclass must not silently recover
         raise DisplayStateUnavailable(f"undecodable:{type(exc).__name__}") from exc
 
-    return ReadOnlyStateView(
-        state=build_unified_state_vector(
-            timestamp=row.timestamp,
+    try:
+        state = _state_from_row(
+            row,
             x=decoded.capacity,
             f=decoded.fatigue,
             t=decoded.tissue,
             capacity_confidence=decoded.capacity_confidence,
-            **_passthrough_kwargs(row),
-        ),
+        )
+    except MalformedCurrentEngineState as exc:
+        raise DisplayStateUnavailable(exc.error_code) from exc
+
+    return ReadOnlyStateView(
+        state=state,
         source="canonical",
         degraded=False,
         degradation_reason=None,
@@ -216,16 +266,15 @@ def _legacy_recovery_view(row: Any, reason: str) -> ReadOnlyStateView:
     )
     t = tissue_from_legacy(row.f_struct_damage)
 
+    try:
+        # A reconstructed row has no observed confidence — weak prior, never the decoded
+        # value, because there is no decoded value.
+        state = _state_from_row(row, x=x, f=f, t=t)
+    except MalformedCurrentEngineState as exc:
+        raise DisplayStateUnavailable(f"{reason}+{exc.error_code}") from exc
+
     return ReadOnlyStateView(
-        state=build_unified_state_vector(
-            timestamp=row.timestamp,
-            x=x,
-            f=f,
-            t=t,
-            # A reconstructed row has no observed confidence — weak prior, never the
-            # decoded value, because there is no decoded value.
-            **_passthrough_kwargs(row),
-        ),
+        state=state,
         source="legacy_recovery",
         degraded=True,
         degradation_reason=reason,

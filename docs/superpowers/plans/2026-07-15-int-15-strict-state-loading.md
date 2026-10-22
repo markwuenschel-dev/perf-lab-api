@@ -216,6 +216,27 @@ canonical vectors; rule ids and `StateEvidence.axis` strings unchanged; the web 
 fallback to `c_nm_force` (a different scale) is removed. The scalars remain in API responses;
 the drop migration still needs the reader audit and its own recheck.
 
+Review round (2026-10-22), keeping 1B 2A 3A:
+
+- **Damaged row columns are damaged state.** A payload that decodes on a row whose own
+  `habit_strength` / `s_struct_signal` / `skill_state` cannot form a state (out of range, wrong
+  type) raised a raw `ValidationError`/`ValueError` past every policy. `state_loading` now
+  converts validation failures at the conversion boundary into
+  `MalformedCurrentEngineState("invalid_row_fields")`: decisions 409, history refuses the
+  window, onboarding is unavailable, shadows skip `skipped_malformed`, and the post-commit
+  fallback keeps its result. Other exceptions are bugs and still propagate.
+- **A recovery computation behind another sample's state skip is recomputed.** A state skip is
+  athlete-wide in the evidence reader, so an unchanged sample's computed head that is older
+  than it no longer satisfies a computed request (`wellness_shadow_chain._satisfies`); once
+  state is readable again, evidence resumes.
+- **Transition identity changes with this deploy.** The train edits `app/engine/state_bridge.py`
+  and `app/schemas/state.py`, both in `transition_identity.TRANSITION_MODULES`, so
+  `current_identity()` differs from the identity stamped on rows written before it. Under the
+  existing policy a late event whose replay tail holds such a row is refused with
+  `identity_mismatch` (`tail_replay_service`) and stays **record-only**: kept, not applied, and
+  nothing corrupted. Backfills whose tail spans the deployment are therefore record-only. This
+  is the accepted v1 behaviour for any edit to those modules.
+
 **2C — switch dashboard/history to explicit display recovery.** Wire ONLY
 `dashboard_service` and `history.py`. Add another surface only after proving it cannot
 affect prescription, readiness, eligibility, benchmark selection, state mutation, or

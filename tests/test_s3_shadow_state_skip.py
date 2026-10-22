@@ -65,6 +65,13 @@ DAMAGED = [
                  id="future-version"),
 ]
 
+# A payload that decodes, on a row whose own columns cannot form a state (review P1).
+ROW_FIELD_DAMAGE = [
+    pytest.param({"habit_strength": 2.0}, id="habit-above-one"),
+    pytest.param({"s_struct_signal": -1.0}, id="negative-signal"),
+    pytest.param({"skill_state": "oops"}, id="skill-state-not-an-object"),
+]
+
 
 @pytest.fixture(autouse=True)
 def _pinned_clock(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,6 +162,33 @@ async def test_every_damaged_head_becomes_its_skip_and_nothing_is_reconstructed(
     assert (loaded.outcome, loaded.state) == (skip, None)
     assert legacy_calls == []
     assert await _payload_hash(async_db, head) == before
+
+
+@pytest.mark.parametrize("damage", ROW_FIELD_DAMAGE)
+async def test_a_head_with_damaged_row_fields_is_a_malformed_skip(
+    async_db: AsyncSession, legacy_calls: list[str], damage: dict[str, Any]
+) -> None:
+    """The computation it would replace is superseded by the skip, as for a damaged payload."""
+    uid = await _user(async_db, f"s3-fields-{next(iter(damage))}@t.io")
+    await _head(async_db, uid, default_engine_state_dict())
+    sample = await _sample(async_db, uid)
+    ref, snap = sample_ref(sample), WellnessTelemetrySnapshot.from_sample(sample)
+    assert await recovery_shadow_service.record_recovery_shadow(
+        async_db, ref, snap, as_of=AS_OF) == "recorded"
+    head = AthleteState(
+        user_id=uid, timestamp=datetime(2026, 7, 2, 12, 0), engine_state=default_engine_state_dict(),
+        c_met_aerobic=300.0, c_nm_force=1400.0, c_struct=100.0, b_met_anaerobic=15000.0,
+        **{"s_struct_signal": 0.0, "habit_strength": 0.5, "skill_state": {}, **damage},
+    )
+    async_db.add(head)
+    await async_db.commit()
+
+    loaded = await try_load_current_state_for_shadow(async_db, uid)
+    assert loaded is not None and (loaded.outcome, loaded.state) == ("skipped_malformed", None)
+    assert await recovery_shadow_service.record_recovery_shadow(
+        async_db, ref, snap, as_of=AS_OF) == "skipped_malformed"
+    assert await latest_current_evidence(async_db, RecoveryShadowLog, uid) is None
+    assert legacy_calls == []
 
 
 async def test_no_state_row_is_none_not_a_skip(async_db: AsyncSession) -> None:
@@ -400,6 +434,50 @@ async def test_a_state_skip_hides_an_earlier_days_computation_too(async_db: Asyn
 
     assert await latest_current_evidence(async_db, RecoveryShadowLog, uid) is None
     assert (await athlete_shadow_summary(async_db, uid))["recovery"] is None
+
+
+async def test_another_samples_state_skip_does_not_leave_an_unchanged_sample_suppressed(
+    async_db: AsyncSession, legacy_calls: list[str],
+) -> None:
+    """Same day, two sources. Manual A computes -> state damaged, Oura B skips (an athlete-wide
+    barrier) -> state repaired -> unchanged A again. A's own head still has A's hash, but the
+    summary no longer counts it behind B's skip, so it must be recomputed, not "unchanged"."""
+    uid = await _user(async_db, "s3-two-sources@t.io")
+    await _head(async_db, uid, default_engine_state_dict(), ts=datetime(2026, 7, 1, 12, 0))
+    manual = await _sample(async_db, uid)
+    oura = WellnessSample(user_id=uid, date=TODAY, source="oura", soreness=3.0,
+                          sleep_hours=8.0, hrv_ms=70.0, resting_hr=50.0, mood=7.0)
+    async_db.add(oura)
+    await async_db.commit()
+    await async_db.refresh(oura)
+    a_ref, a_snap = sample_ref(manual), WellnessTelemetrySnapshot.from_sample(manual)
+    b_ref, b_snap = sample_ref(oura), WellnessTelemetrySnapshot.from_sample(oura)
+    manual_id, oura_id = manual.id, oura.id
+
+    assert await recovery_shadow_service.record_recovery_shadow(
+        async_db, a_ref, a_snap, as_of=AS_OF) == "recorded"
+    await _head(async_db, uid, None, ts=datetime(2026, 7, 2, 12, 0))
+    assert await recovery_shadow_service.record_recovery_shadow(
+        async_db, b_ref, b_snap, as_of=AS_OF) == "skipped_missing"
+    assert (await athlete_shadow_summary(async_db, uid))["recovery"] is None
+
+    await _head(async_db, uid, default_engine_state_dict(), ts=datetime(2026, 7, 3, 12, 0))
+    assert await recovery_shadow_service.record_recovery_shadow(
+        async_db, a_ref, a_snap, as_of=AS_OF) == "recorded"
+
+    rows = await _rows(async_db, RecoveryShadowLog, uid)
+    assert [(r.source_wellness_sample_id, r.decision_impact) for r in rows] == [
+        (manual_id, RECORDED), (oura_id, "skipped_missing"), (manual_id, RECORDED),
+    ]
+    assert rows[2].supersedes_id == rows[0].id
+    current = await latest_current_evidence(async_db, RecoveryShadowLog, uid)
+    assert current is not None and current.id == rows[2].id
+    assert (await athlete_shadow_summary(async_db, uid))["recovery"] is not None
+    # Now current again, A is genuinely unchanged: nothing more is written.
+    assert await recovery_shadow_service.record_recovery_shadow(
+        async_db, a_ref, a_snap, as_of=AS_OF) == "unchanged"
+    assert len(await _rows(async_db, RecoveryShadowLog, uid)) == 3
+    assert legacy_calls == []
 
 
 async def test_the_ekf_exact_retry_over_a_since_damaged_head_writes_nothing(

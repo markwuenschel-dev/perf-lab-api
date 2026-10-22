@@ -10,9 +10,11 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
+from app.engine import state_loading
 from app.engine.engine_state_codec import (
     MalformedCurrentEngineState,
     MissingEngineState,
@@ -190,3 +192,25 @@ def test_display_view_exposes_no_mutation_surface() -> None:
 
     public = {n for n in dir(view) if not n.startswith("_")}
     assert public == {"state", "source", "degraded", "degradation_reason", "codec_version"}
+
+
+def test_only_validation_failures_become_damaged_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review P1: damaged row columns are a typed decode error, but a programming error inside
+    the conversion is not data damage and must still raise as itself."""
+    row = SimpleNamespace(
+        id=1, timestamp=datetime(2026, 7, 1, 12, 0), engine_state=default_engine_state_dict(),
+        s_struct_signal=0.0, habit_strength=2.0, skill_state={},
+    )
+    with pytest.raises(MalformedCurrentEngineState) as damaged:
+        state_loading.unified_from_athlete_row_strict(row)
+    assert damaged.value.error_code == state_loading.INVALID_ROW_FIELDS
+
+    def _bug(**_k: Any) -> Any:
+        raise TypeError("a bug, not data")
+
+    monkeypatch.setattr(state_loading, "build_unified_state_vector", _bug)
+    row.habit_strength = 0.5
+    with pytest.raises(TypeError):
+        state_loading.unified_from_athlete_row_strict(row)
+    with pytest.raises(TypeError):
+        state_loading.reconstruct_legacy_state_for_display(row)

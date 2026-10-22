@@ -5,7 +5,8 @@ commit released the chain lock, so that head may be a CONCURRENT writer's row. I
 decoded strictly, the request keeps the valid result it had already materialized for its own
 workout. Pinned on every branch that reaches the re-read — ordinary, record-only, and
 replay-corrected — together with what must NOT happen: no failed save, no legacy
-reconstruction, no reseeding, no extra row.
+reconstruction, no reseeding, no extra row. "Unreadable" covers both a row with no payload and
+a row whose payload decodes but whose own columns cannot form a state (review P1).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.engine import state_bridge, state_loading
+from app.engine.state_bridge import default_engine_state_dict
 from app.engine.state_loading import unified_from_athlete_row_strict
 from app.models.athlete_state import AthleteState
 from app.models.workout_log import WorkoutLog as WorkoutLogORM
@@ -33,26 +35,38 @@ pytestmark = pytest.mark.asyncio
 
 FAR_FUTURE = datetime(2099, 1, 1, 12, 0)
 
+# Each way the concurrent head can be unreadable: (engine_state, row-field overrides).
+UNREADABLE = [
+    pytest.param((None, {}), id="no-payload"),
+    pytest.param((default_engine_state_dict(), {"habit_strength": 2.0}), id="habit-above-one"),
+    pytest.param((default_engine_state_dict(), {"s_struct_signal": -1.0}), id="negative-signal"),
+    pytest.param((default_engine_state_dict(), {"skill_state": "oops"}), id="skill-state-string"),
+]
 
-async def _insert_unreadable_head_concurrently(user_id: int) -> None:
+
+async def _insert_unreadable_head_concurrently(
+    user_id: int, payload: Any, fields: dict[str, Any]
+) -> None:
     """Another writer's row, committed on its own connection: newest by (timestamp, id), and
-    unreadable (a legacy row with no payload)."""
+    unreadable."""
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     try:
         async with AsyncSession(engine) as other:
             other.add(AthleteState(
-                user_id=user_id, timestamp=FAR_FUTURE, engine_state=None,
+                user_id=user_id, timestamp=FAR_FUTURE, engine_state=payload,
                 c_met_aerobic=300.0, c_nm_force=1400.0, c_struct=100.0, b_met_anaerobic=15000.0,
                 f_met_systemic=5.0, f_nm_peripheral=5.0, f_nm_central=5.0, f_struct_damage=5.0,
-                s_struct_signal=0.0, habit_strength=0.5, skill_state={},
+                **{"s_struct_signal": 0.0, "habit_strength": 0.5, "skill_state": {}, **fields},
             ))
             await other.commit()
     finally:
         await engine.dispose()
 
 
-@pytest.fixture
-def concurrent_unreadable_head(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(params=UNREADABLE)
+def concurrent_unreadable_head(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Make the post-commit e1RM path run, and land a concurrent unreadable head inside it.
 
     The set materialization is replaced so the workout carries one e1RM spec without needing a
@@ -64,7 +78,7 @@ def concurrent_unreadable_head(monkeypatch: pytest.MonkeyPatch) -> None:
         return log.model_copy(update={"sets": []}), [], [{"code": "x", "raw_value": 1.0}], None
 
     async def _extract(db: Any, user_id: int, *_a: Any, **_k: Any) -> int:
-        await _insert_unreadable_head_concurrently(user_id)
+        await _insert_unreadable_head_concurrently(user_id, *request.param)
         return 1
 
     monkeypatch.setattr(state_service, "_apply_sets_to_log", _sets)
@@ -183,9 +197,18 @@ async def test_replay_corrected_workout_keeps_the_correction_head(
     assert await _rows(async_db, uid) == rows_before + 2
 
 
-def test_materialize_committed_never_raises_and_never_reconstructs() -> None:
+@pytest.mark.parametrize(
+    "fields",
+    [{"engine_state": {"version": 99}},
+     {"habit_strength": 2.0}, {"s_struct_signal": -1.0}, {"skill_state": "oops"}],
+    ids=["future-version", "habit-above-one", "negative-signal", "skill-state-string"],
+)
+def test_materialize_committed_never_raises_and_never_reconstructs(fields: dict[str, Any]) -> None:
     from types import SimpleNamespace
 
     fallback = object()
-    row = SimpleNamespace(id=1, timestamp=FAR_FUTURE, engine_state={"version": 99})
+    row = SimpleNamespace(**{
+        "id": 1, "timestamp": FAR_FUTURE, "engine_state": default_engine_state_dict(),
+        "s_struct_signal": 0.0, "habit_strength": 0.5, "skill_state": {}, **fields,
+    })
     assert state_service._materialize_committed(row, fallback=fallback, site="t") is fallback  # type: ignore[arg-type]

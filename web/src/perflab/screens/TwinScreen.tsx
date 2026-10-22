@@ -89,7 +89,8 @@ function twinSyncLabel(resource: AuthedResource<StateHistorySnapshotRead[]>): st
     case "loading":
       return "Syncing…";
     case "error":
-      return "No recorded state";
+      // INT-15 2C: stored state that cannot be shown is not the absence of state.
+      return isStateUnavailable(resource.error) ? "State unavailable" : "No recorded state";
     case "success": {
       const rows = resource.data;
       const newest = rows.length ? rows[rows.length - 1] : null;

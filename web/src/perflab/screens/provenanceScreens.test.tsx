@@ -118,6 +118,17 @@ describe("Twin", () => {
     expect(screen.getByText(MESSAGE)).toBeTruthy();
     expect(screen.queryByText(/Reload to try again/)).toBeNull();
     expect(screen.queryByText("No twin state yet")).toBeNull();
+    // The header says so too: unreadable stored state is not "no recorded state".
+    expect(screen.getByText("State unavailable")).toBeTruthy();
+    expect(screen.queryByText("No recorded state")).toBeNull();
+  });
+
+  it("an ordinary failure keeps the header's 'No recorded state'", async () => {
+    history = () => Promise.reject({ message: "Network down", status: 0 });
+    render(<TwinScreen />);
+    expect(await screen.findByText("Couldn't load your twin")).toBeTruthy();
+    expect(screen.getByText("No recorded state")).toBeTruthy();
+    expect(screen.queryByText("State unavailable")).toBeNull();
   });
 
   it("a recovered head is viewed with the warning and no confidence band", async () => {

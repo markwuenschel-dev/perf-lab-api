@@ -59,15 +59,16 @@ async def _athlete(client: AsyncClient, email: str) -> tuple[dict[str, str], int
 
 
 async def _row(
-    db: AsyncSession, user_id: int, payload: Any, *, day: int, aerobic: float = 300.0
+    db: AsyncSession, user_id: int, payload: Any, *, day: int, aerobic: float = 300.0,
+    fields: dict[str, Any] | None = None,
 ) -> AthleteState:
     row = AthleteState(
         user_id=user_id,
         timestamp=datetime(2026, 7, day, 12, 0),
         c_met_aerobic=aerobic, c_nm_force=1400.0, c_struct=100.0, b_met_anaerobic=15000.0,
         f_met_systemic=5.0, f_nm_peripheral=5.0, f_nm_central=5.0, f_struct_damage=5.0,
-        s_struct_signal=0.0, habit_strength=0.5, skill_state={},
         engine_state=payload,
+        **{"s_struct_signal": 0.0, "habit_strength": 0.5, "skill_state": {}, **(fields or {})},
     )
     db.add(row)
     await db.commit()
@@ -251,3 +252,86 @@ async def test_onboarding_canonical_state_is_available(
     twin = (await http_client.get("/v1/onboarding/state", headers=hdr)).json()["twin"]
     assert (twin["seeded"], twin["state_available"]) == (True, True)
     assert twin["overall_confidence"] is not None
+
+
+# --- review P1: a row whose own columns cannot form a state ---------------------------------
+# The payload decodes (or the legacy mirror is usable), but habit/signal/skills are damaged:
+# these have no lossy mirror to recover from, so every policy treats the row as damaged.
+
+ROW_FIELD_DAMAGE = [
+    pytest.param({"habit_strength": 2.0}, id="habit-above-one"),
+    pytest.param({"s_struct_signal": -1.0}, id="negative-signal"),
+    pytest.param({"skill_state": "oops"}, id="skill-state-not-an-object"),
+]
+
+
+def _tag(fields: dict[str, Any]) -> str:
+    return next(iter(fields)).replace("_", "")
+
+
+@pytest.mark.parametrize("fields", ROW_FIELD_DAMAGE)
+@pytest.mark.parametrize("payload", [CANONICAL, None], ids=["canonical", "legacy-row"])
+@pytest.mark.parametrize("position", ["head", "middle"])
+async def test_damaged_row_fields_refuse_the_whole_history_window(
+    http_client: AsyncClient, async_db: AsyncSession, fields: dict[str, Any], payload: Any,
+    position: str,
+) -> None:
+    hdr, uid = await _athlete(
+        http_client, f"c2-fields-hist-{_tag(fields)}-{payload is None}-{position}@t.io"
+    )
+    await _row(async_db, uid, CANONICAL, day=1)
+    await _row(async_db, uid, payload, day=2, fields=fields)
+    if position == "middle":
+        await _row(async_db, uid, CANONICAL, day=3)
+    before = await _payloads(uid)
+
+    res = await http_client.get("/v1/state-history", headers=hdr)
+
+    assert res.status_code == 409, res.text
+    assert res.json()["error"] == "display_state_unavailable"
+    assert await _payloads(uid) == before
+
+
+@pytest.mark.parametrize("fields", ROW_FIELD_DAMAGE)
+async def test_damaged_row_fields_refuse_dashboard_readiness(
+    http_client: AsyncClient, async_db: AsyncSession, fields: dict[str, Any]
+) -> None:
+    hdr, uid = await _athlete(http_client, f"c2-fields-dash-{_tag(fields)}@t.io")
+    await _row(async_db, uid, CANONICAL, day=1, fields=fields)
+
+    res = await http_client.get("/v1/dashboard/readiness", headers=hdr)
+
+    assert res.status_code == 409, res.text
+    assert res.json()["dashboard_state_available"] is False
+
+
+@pytest.mark.parametrize("fields", ROW_FIELD_DAMAGE)
+async def test_damaged_row_fields_make_onboarding_unavailable_not_blocked(
+    http_client: AsyncClient, async_db: AsyncSession, fields: dict[str, Any]
+) -> None:
+    hdr, uid = await _athlete(http_client, f"c2-fields-onb-{_tag(fields)}@t.io")
+    await _row(async_db, uid, CANONICAL, day=1, fields=fields)
+    before = await _payloads(uid)
+
+    res = await http_client.get("/v1/onboarding/state", headers=hdr)
+
+    assert res.status_code == 200, res.text
+    twin = res.json()["twin"]
+    assert (twin["seeded"], twin["state_available"], twin["overall_confidence"]) == (
+        True, False, None,
+    )
+    assert await _payloads(uid) == before
+
+
+@pytest.mark.parametrize("fields", ROW_FIELD_DAMAGE)
+async def test_damaged_row_fields_refuse_a_decision(
+    http_client: AsyncClient, async_db: AsyncSession, fields: dict[str, Any]
+) -> None:
+    """A decision route refuses with the typed 409, never a 500 from a validation error."""
+    hdr, uid = await _athlete(http_client, f"c2-fields-dec-{_tag(fields)}@t.io")
+    await _row(async_db, uid, CANONICAL, day=1, fields=fields)
+
+    res = await http_client.get("/v1/readiness", headers=hdr)
+
+    assert res.status_code == 409, res.text
+    assert res.json()["error"] == "canonical_state_invalid"
