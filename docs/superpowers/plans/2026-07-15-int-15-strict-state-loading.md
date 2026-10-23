@@ -225,6 +225,11 @@ Review round (2026-10-22), keeping 1B 2A 3A:
   `MalformedCurrentEngineState("invalid_row_fields")`: decisions 409, history refuses the
   window, onboarding is unavailable, shadows skip `skipped_malformed`, and the post-commit
   fallback keeps its result. Other exceptions are bugs and still propagate.
+  Round 2: a NaN/±Infinity anywhere in the assembled state (validation accepts them from JSON
+  strings such as `"NaN"`, in `skill_state` or in a payload vector) is
+  `MalformedCurrentEngineState("non_finite_values")`, so no response carries one into
+  serialization; and finite out-of-range legacy values (a negative capacity, fatigue or damage)
+  make a recovery attempt `DisplayStateUnavailable(...+invalid_legacy_values)`, not a 500.
 - **A recovery computation behind another sample's state skip is recomputed.** A state skip is
   athlete-wide in the evidence reader, so an unchanged sample's computed head that is older
   than it no longer satisfies a computed request (`wellness_shadow_chain._satisfies`); once

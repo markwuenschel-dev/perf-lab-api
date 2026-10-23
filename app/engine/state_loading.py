@@ -119,6 +119,10 @@ def _legacy_scalars_usable(row: Any) -> bool:
 
 # The error_code for a row whose payload decodes but whose own columns cannot form a state.
 INVALID_ROW_FIELDS = "invalid_row_fields"
+# The error_code for an assembled state holding NaN or +/-Infinity anywhere. Validation accepts
+# these from JSON strings ("NaN", "Infinity"), but they are not data: every comparison with them
+# is silently false, and a response carrying one cannot be serialized.
+NON_FINITE_VALUES = "non_finite_values"
 
 
 def _passthrough_kwargs(row: Any) -> dict[str, Any]:
@@ -155,19 +159,37 @@ def _state_from_row(
 
     A row's columns are data too: out-of-range or wrongly typed values are a damaged row,
     reported as a decode error so that every loading policy handles them like a damaged
-    payload. Only validation failures are converted; anything else is a bug and propagates.
+    payload. Only validation failures and non-finite values are converted; anything else is a
+    bug and propagates.
 
     Raises:
-        MalformedCurrentEngineState: ``INVALID_ROW_FIELDS``.
+        MalformedCurrentEngineState: ``INVALID_ROW_FIELDS`` or ``NON_FINITE_VALUES``.
     """
     extra = {} if capacity_confidence is None else {"capacity_confidence": capacity_confidence}
     try:
-        return build_unified_state_vector(
+        state = build_unified_state_vector(
             timestamp=row.timestamp, x=x, f=f, t=t, **extra, **_passthrough_kwargs(row)
         )
     except ValidationError as exc:
         fields = ",".join(str(e["loc"][0]) for e in exc.errors() if e.get("loc"))
         raise MalformedCurrentEngineState(INVALID_ROW_FIELDS, fields) from exc
+    non_finite = _non_finite_paths(state.model_dump())
+    if non_finite:
+        raise MalformedCurrentEngineState(NON_FINITE_VALUES, ",".join(non_finite))
+    return state
+
+
+def _non_finite_paths(value: Any, path: str = "") -> list[str]:
+    """Dotted paths of every NaN/Infinity float in a dumped model."""
+    if isinstance(value, float):
+        return [] if math.isfinite(value) else [path]
+    if isinstance(value, dict):
+        items = cast("dict[str, Any]", value).items()
+        return [p for k, v in items for p in _non_finite_paths(v, f"{path}.{k}" if path else k)]
+    if isinstance(value, (list, tuple)):
+        seq = cast("list[Any]", value)
+        return [p for i, v in enumerate(seq) for p in _non_finite_paths(v, f"{path}[{i}]")]
+    return []
 
 
 def unified_from_athlete_row_strict(row: Any) -> UnifiedStateVector:
@@ -202,6 +224,8 @@ def reconstruct_legacy_state_for_display(row: Any) -> ReadOnlyStateView:
     Unusable legacy scalars      -> DisplayStateUnavailable
     Invalid row fields           -> DisplayStateUnavailable (habit, signal, skills: there is
                                     no lossy mirror to recover them from)
+    Non-finite value anywhere    -> DisplayStateUnavailable
+    Out-of-range legacy values   -> DisplayStateUnavailable (when recovery is attempted)
 
     A future-version payload is not damaged data — it is data this reader is too old to
     read. Reconstructing it from the lossy mirror would show the athlete a worse answer
@@ -255,19 +279,24 @@ def _legacy_recovery_view(row: Any, reason: str) -> ReadOnlyStateView:
     if not all(_finite(getattr(row, name, None)) for name in _LEGACY_FATIGUE_SCALARS):
         raise DisplayStateUnavailable(f"{reason}+unusable_legacy_fatigue")
 
-    x = capacity_from_legacy(
-        row.c_met_aerobic,
-        row.c_nm_force,
-        row.c_struct,
-        row.b_met_anaerobic,
-    )
-    f = fatigue_from_legacy(
-        row.f_met_systemic,
-        row.f_nm_peripheral,
-        row.f_nm_central,
-        row.f_struct_damage,
-    )
-    t = tissue_from_legacy(row.f_struct_damage)
+    try:
+        # Finite but out-of-range legacy values (a negative capacity or fatigue) fail the
+        # vector constructors' validation: nothing honest can be reconstructed from them.
+        x = capacity_from_legacy(
+            row.c_met_aerobic,
+            row.c_nm_force,
+            row.c_struct,
+            row.b_met_anaerobic,
+        )
+        f = fatigue_from_legacy(
+            row.f_met_systemic,
+            row.f_nm_peripheral,
+            row.f_nm_central,
+            row.f_struct_damage,
+        )
+        t = tissue_from_legacy(row.f_struct_damage)
+    except ValidationError as exc:
+        raise DisplayStateUnavailable(f"{reason}+invalid_legacy_values") from exc
 
     try:
         # A reconstructed row has no observed confidence — weak prior, never the decoded

@@ -214,3 +214,66 @@ def test_only_validation_failures_become_damaged_state(monkeypatch: pytest.Monke
         state_loading.unified_from_athlete_row_strict(row)
     with pytest.raises(TypeError):
         state_loading.reconstruct_legacy_state_for_display(row)
+
+
+def _healthy_row(**fields: Any) -> SimpleNamespace:
+    return SimpleNamespace(**{
+        "id": 1, "timestamp": datetime(2026, 7, 1, 12, 0),
+        "engine_state": default_engine_state_dict(),
+        "c_met_aerobic": 300.0, "c_nm_force": 1400.0, "c_struct": 100.0,
+        "b_met_anaerobic": 15000.0, "f_met_systemic": 5.0, "f_nm_peripheral": 5.0,
+        "f_nm_central": 5.0, "f_struct_damage": 5.0,
+        "s_struct_signal": 0.0, "habit_strength": 0.5, "skill_state": {}, **fields,
+    })
+
+
+def _infinite_payload() -> dict[str, Any]:
+    payload = default_engine_state_dict()
+    payload["x"]["aerobic"] = "Infinity"  # a JSON string the vector validator coerces to inf
+    return payload
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"skill_state": {"squat": "NaN"}}, {"skill_state": {"squat": "Infinity"}},
+     {"skill_state": {"squat": "-Infinity"}}, {"engine_state": _infinite_payload()}],
+    ids=["skill-nan", "skill-inf", "skill-neg-inf", "payload-inf"],
+)
+def test_a_non_finite_value_anywhere_is_damaged_state(fields: dict[str, Any]) -> None:
+    """Review round 2: these pass validation as floats, then break JSON serialization."""
+    row = _healthy_row(**fields)
+    with pytest.raises(MalformedCurrentEngineState) as damaged:
+        unified_from_athlete_row_strict(row)
+    assert damaged.value.error_code == state_loading.NON_FINITE_VALUES
+    with pytest.raises(DisplayStateUnavailable):
+        reconstruct_legacy_state_for_display(row)
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [{"c_met_aerobic": -1.0}, {"f_met_systemic": -1.0}, {"f_struct_damage": -1.0}],
+    ids=["negative-capacity", "negative-fatigue", "negative-tissue-damage"],
+)
+@pytest.mark.parametrize(
+    "payload", [None, {"version": 2, "x": "not-an-object", "f": {}, "t": {}}],
+    ids=["missing-payload", "malformed-payload"],
+)
+def test_invalid_legacy_values_are_unavailable_for_display(
+    legacy: dict[str, Any], payload: Any
+) -> None:
+    """Finite, out-of-range legacy values fail inside the vector constructors, before the
+    row's own conversion: still typed, never a raw ValidationError (a 500 on history)."""
+    with pytest.raises(DisplayStateUnavailable) as unavailable:
+        reconstruct_legacy_state_for_display(_healthy_row(engine_state=payload, **legacy))
+    assert unavailable.value.reason.endswith("+invalid_legacy_values")
+
+
+def test_a_programming_error_in_legacy_reconstruction_still_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _bug(*_a: Any, **_k: Any) -> Any:
+        raise TypeError("a bug, not data")
+
+    monkeypatch.setattr(state_loading, "capacity_from_legacy", _bug)
+    with pytest.raises(TypeError):
+        reconstruct_legacy_state_for_display(_healthy_row(engine_state=None))

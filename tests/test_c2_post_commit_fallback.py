@@ -11,12 +11,14 @@ a row whose payload decodes but whose own columns cannot form a state (review P1
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from conftest import TEST_DATABASE_URL
+from fastapi.encoders import jsonable_encoder
 from replay_support import W, arrive_event, head_row, seed_definitions, seeded_athlete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -41,7 +43,18 @@ UNREADABLE = [
     pytest.param((default_engine_state_dict(), {"habit_strength": 2.0}), id="habit-above-one"),
     pytest.param((default_engine_state_dict(), {"s_struct_signal": -1.0}), id="negative-signal"),
     pytest.param((default_engine_state_dict(), {"skill_state": "oops"}), id="skill-state-string"),
+    pytest.param((default_engine_state_dict(), {"skill_state": {"squat": "NaN"}}), id="skill-nan"),
+    pytest.param((default_engine_state_dict(), {"skill_state": {"squat": "Infinity"}}),
+                 id="skill-inf"),
+    pytest.param((default_engine_state_dict(), {"skill_state": {"squat": "-Infinity"}}),
+                 id="skill-neg-inf"),
 ]
+
+
+def _serializes(resp: Any) -> None:
+    """What the route does with the result: JSON with no NaN/Infinity (Starlette's
+    JSONResponse uses allow_nan=False, so a non-finite value is a 500 after the commit)."""
+    json.dumps(jsonable_encoder(resp), allow_nan=False)
 
 
 async def _insert_unreadable_head_concurrently(
@@ -119,6 +132,7 @@ async def _log_and_check(
 
     # Not a failed save: the workout is durable and the response is this workout's result.
     assert await db.get(WorkoutLogORM, resp.workout_log_id) is not None
+    _serializes(resp)
     assert resp.capacity_x == expected_state.capacity_x
     assert resp.fatigue_f == expected_state.fatigue_f
     # Reported loudly, not swallowed.
@@ -143,6 +157,7 @@ async def test_ordinary_workout_keeps_its_own_new_row(
         select(AthleteState).where(AthleteState.source_workout_log_id == resp.workout_log_id)
     )).scalar_one()
     assert resp.state_disposition == "applied"
+    _serializes(resp)
     assert resp.capacity_x == unified_from_athlete_row_strict(own).capacity_x
     assert resp.fatigue_f == unified_from_athlete_row_strict(own).fatigue_f
     assert "post_commit_state_unreadable site=post_e1rm_reread" in caplog.text
@@ -190,6 +205,7 @@ async def test_replay_corrected_workout_keeps_the_correction_head(
         )
     )).scalar_one()
     assert resp.state_disposition == "applied"
+    _serializes(resp)
     assert resp.capacity_x == unified_from_athlete_row_strict(correction).capacity_x
     assert resp.fatigue_f == unified_from_athlete_row_strict(correction).fatigue_f
     assert "post_commit_state_unreadable site=post_e1rm_reread" in caplog.text
@@ -200,8 +216,11 @@ async def test_replay_corrected_workout_keeps_the_correction_head(
 @pytest.mark.parametrize(
     "fields",
     [{"engine_state": {"version": 99}},
-     {"habit_strength": 2.0}, {"s_struct_signal": -1.0}, {"skill_state": "oops"}],
-    ids=["future-version", "habit-above-one", "negative-signal", "skill-state-string"],
+     {"habit_strength": 2.0}, {"s_struct_signal": -1.0}, {"skill_state": "oops"},
+     {"skill_state": {"squat": "NaN"}}, {"skill_state": {"squat": "Infinity"}},
+     {"skill_state": {"squat": "-Infinity"}}],
+    ids=["future-version", "habit-above-one", "negative-signal", "skill-state-string",
+         "skill-nan", "skill-inf", "skill-neg-inf"],
 )
 def test_materialize_committed_never_raises_and_never_reconstructs(fields: dict[str, Any]) -> None:
     from types import SimpleNamespace

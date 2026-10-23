@@ -70,6 +70,8 @@ ROW_FIELD_DAMAGE = [
     pytest.param({"habit_strength": 2.0}, id="habit-above-one"),
     pytest.param({"s_struct_signal": -1.0}, id="negative-signal"),
     pytest.param({"skill_state": "oops"}, id="skill-state-not-an-object"),
+    pytest.param({"skill_state": {"squat": "NaN"}}, id="skill-nan"),
+    pytest.param({"skill_state": {"squat": "Infinity"}}, id="skill-inf"),
 ]
 
 
@@ -169,7 +171,8 @@ async def test_a_head_with_damaged_row_fields_is_a_malformed_skip(
     async_db: AsyncSession, legacy_calls: list[str], damage: dict[str, Any]
 ) -> None:
     """The computation it would replace is superseded by the skip, as for a damaged payload."""
-    uid = await _user(async_db, f"s3-fields-{next(iter(damage))}@t.io")
+    tag = "".join(ch for ch in str(damage) if ch.isalnum()).lower()
+    uid = await _user(async_db, f"s3-fields-{tag}@t.io")
     await _head(async_db, uid, default_engine_state_dict())
     sample = await _sample(async_db, uid)
     ref, snap = sample_ref(sample), WellnessTelemetrySnapshot.from_sample(sample)

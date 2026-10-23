@@ -262,11 +262,53 @@ ROW_FIELD_DAMAGE = [
     pytest.param({"habit_strength": 2.0}, id="habit-above-one"),
     pytest.param({"s_struct_signal": -1.0}, id="negative-signal"),
     pytest.param({"skill_state": "oops"}, id="skill-state-not-an-object"),
+    # Valid JSON strings that validation coerces to non-finite floats (review round 2).
+    pytest.param({"skill_state": {"squat": "NaN"}}, id="skill-nan"),
+    pytest.param({"skill_state": {"squat": "Infinity"}}, id="skill-inf"),
+    pytest.param({"skill_state": {"squat": "-Infinity"}}, id="skill-neg-inf"),
 ]
 
 
 def _tag(fields: dict[str, Any]) -> str:
-    return next(iter(fields)).replace("_", "")
+    key = next(iter(fields))
+    value = fields[key]
+    suffix = "".join(ch for ch in str(value) if ch.isalnum()) if isinstance(value, dict) else ""
+    return key.replace("_", "") + suffix.lower()
+
+
+# Finite but out-of-range legacy values, on rows whose payload forces a recovery attempt.
+INVALID_LEGACY = [
+    pytest.param({"c_met_aerobic": -1.0}, id="negative-capacity"),
+    pytest.param({"f_met_systemic": -1.0}, id="negative-fatigue"),
+    pytest.param({"f_struct_damage": -1.0}, id="negative-tissue-damage"),
+]
+RECOVERY_PAYLOADS = [
+    pytest.param(None, id="missing-payload"),
+    pytest.param({"version": 2, "x": "not-an-object", "f": {}, "t": {}}, id="malformed-payload"),
+]
+
+
+@pytest.mark.parametrize("legacy", INVALID_LEGACY)
+@pytest.mark.parametrize("payload", RECOVERY_PAYLOADS)
+async def test_invalid_legacy_values_make_display_unavailable_not_a_500(
+    http_client: AsyncClient, async_db: AsyncSession, legacy: dict[str, Any], payload: Any
+) -> None:
+    hdr, uid = await _athlete(
+        http_client, f"c2-legacy-{next(iter(legacy))}-{payload is None}@t.io"
+    )
+    await _row(async_db, uid, CANONICAL, day=1)
+    row = await _row(async_db, uid, payload, day=2)
+    for name, value in legacy.items():
+        setattr(row, name, value)
+    await async_db.commit()
+    before = await _payloads(uid)
+
+    history = await http_client.get("/v1/state-history", headers=hdr)
+    dash = await http_client.get("/v1/dashboard/readiness", headers=hdr)
+
+    assert (history.status_code, history.json()["error"]) == (409, "display_state_unavailable")
+    assert (dash.status_code, dash.json()["error"]) == (409, "display_state_unavailable")
+    assert await _payloads(uid) == before
 
 
 @pytest.mark.parametrize("fields", ROW_FIELD_DAMAGE)
