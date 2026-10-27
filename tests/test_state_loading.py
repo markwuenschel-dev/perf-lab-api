@@ -10,15 +10,17 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
+from app.engine import state_loading
 from app.engine.engine_state_codec import (
     MalformedCurrentEngineState,
     MissingEngineState,
     UnsupportedFutureEngineStateVersion,
 )
-from app.engine.state_bridge import default_engine_state_dict, unified_from_athlete_row
+from app.engine.state_bridge import default_engine_state_dict
 from app.engine.state_loading import (
     DisplayStateUnavailable,
     ReadOnlyStateView,
@@ -55,20 +57,6 @@ def _row(engine_state: object, **overrides: object) -> SimpleNamespace:
 # --------------------------------------------------------------------------------------
 
 
-def test_valid_current_payload_matches_the_permissive_loader() -> None:
-    """2A is additive: on a healthy row, strict must agree with what ships today."""
-    row = _row(default_engine_state_dict())
-
-    strict = unified_from_athlete_row_strict(row)
-    legacy_path = unified_from_athlete_row(row)
-
-    assert strict.capacity_x == legacy_path.capacity_x
-    assert strict.fatigue_f == legacy_path.fatigue_f
-    assert strict.tissue_t == legacy_path.tissue_t
-    assert strict.c_nm_force == legacy_path.c_nm_force
-    assert strict.timestamp == legacy_path.timestamp
-
-
 def test_empty_vectors_are_not_a_maxed_athlete() -> None:
     """The defect this slice exists to kill.
 
@@ -77,7 +65,7 @@ def test_empty_vectors_are_not_a_maxed_athlete() -> None:
     prescriber sized loads off it. Empty data read as peak capability, in the direction
     that loads the athlete hardest.
 
-    The permissive loader still does this today, which is why it is being retired.
+    The permissive loader did this; INT-15 2D deleted it.
     """
     row = _row({"version": 2, "x": {}, "f": {}, "t": {}})
 
@@ -85,8 +73,6 @@ def test_empty_vectors_are_not_a_maxed_athlete() -> None:
         unified_from_athlete_row_strict(row)
     assert exc.value.error_code == "vector_empty"
 
-    # The behaviour being replaced, pinned so the contrast is not theoretical:
-    assert unified_from_athlete_row(row).capacity_x.max_strength == 100.0
 
 
 def test_partial_vectors_fail_closed() -> None:
@@ -206,3 +192,88 @@ def test_display_view_exposes_no_mutation_surface() -> None:
 
     public = {n for n in dir(view) if not n.startswith("_")}
     assert public == {"state", "source", "degraded", "degradation_reason", "codec_version"}
+
+
+def test_only_validation_failures_become_damaged_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review P1: damaged row columns are a typed decode error, but a programming error inside
+    the conversion is not data damage and must still raise as itself."""
+    row = SimpleNamespace(
+        id=1, timestamp=datetime(2026, 7, 1, 12, 0), engine_state=default_engine_state_dict(),
+        s_struct_signal=0.0, habit_strength=2.0, skill_state={},
+    )
+    with pytest.raises(MalformedCurrentEngineState) as damaged:
+        state_loading.unified_from_athlete_row_strict(row)
+    assert damaged.value.error_code == state_loading.INVALID_ROW_FIELDS
+
+    def _bug(**_k: Any) -> Any:
+        raise TypeError("a bug, not data")
+
+    monkeypatch.setattr(state_loading, "build_unified_state_vector", _bug)
+    row.habit_strength = 0.5
+    with pytest.raises(TypeError):
+        state_loading.unified_from_athlete_row_strict(row)
+    with pytest.raises(TypeError):
+        state_loading.reconstruct_legacy_state_for_display(row)
+
+
+def _healthy_row(**fields: Any) -> SimpleNamespace:
+    return SimpleNamespace(**{
+        "id": 1, "timestamp": datetime(2026, 7, 1, 12, 0),
+        "engine_state": default_engine_state_dict(),
+        "c_met_aerobic": 300.0, "c_nm_force": 1400.0, "c_struct": 100.0,
+        "b_met_anaerobic": 15000.0, "f_met_systemic": 5.0, "f_nm_peripheral": 5.0,
+        "f_nm_central": 5.0, "f_struct_damage": 5.0,
+        "s_struct_signal": 0.0, "habit_strength": 0.5, "skill_state": {}, **fields,
+    })
+
+
+def _infinite_payload() -> dict[str, Any]:
+    payload = default_engine_state_dict()
+    payload["x"]["aerobic"] = "Infinity"  # a JSON string the vector validator coerces to inf
+    return payload
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"skill_state": {"squat": "NaN"}}, {"skill_state": {"squat": "Infinity"}},
+     {"skill_state": {"squat": "-Infinity"}}, {"engine_state": _infinite_payload()}],
+    ids=["skill-nan", "skill-inf", "skill-neg-inf", "payload-inf"],
+)
+def test_a_non_finite_value_anywhere_is_damaged_state(fields: dict[str, Any]) -> None:
+    """Review round 2: these pass validation as floats, then break JSON serialization."""
+    row = _healthy_row(**fields)
+    with pytest.raises(MalformedCurrentEngineState) as damaged:
+        unified_from_athlete_row_strict(row)
+    assert damaged.value.error_code == state_loading.NON_FINITE_VALUES
+    with pytest.raises(DisplayStateUnavailable):
+        reconstruct_legacy_state_for_display(row)
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [{"c_met_aerobic": -1.0}, {"f_met_systemic": -1.0}, {"f_struct_damage": -1.0}],
+    ids=["negative-capacity", "negative-fatigue", "negative-tissue-damage"],
+)
+@pytest.mark.parametrize(
+    "payload", [None, {"version": 2, "x": "not-an-object", "f": {}, "t": {}}],
+    ids=["missing-payload", "malformed-payload"],
+)
+def test_invalid_legacy_values_are_unavailable_for_display(
+    legacy: dict[str, Any], payload: Any
+) -> None:
+    """Finite, out-of-range legacy values fail inside the vector constructors, before the
+    row's own conversion: still typed, never a raw ValidationError (a 500 on history)."""
+    with pytest.raises(DisplayStateUnavailable) as unavailable:
+        reconstruct_legacy_state_for_display(_healthy_row(engine_state=payload, **legacy))
+    assert unavailable.value.reason.endswith("+invalid_legacy_values")
+
+
+def test_a_programming_error_in_legacy_reconstruction_still_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _bug(*_a: Any, **_k: Any) -> Any:
+        raise TypeError("a bug, not data")
+
+    monkeypatch.setattr(state_loading, "capacity_from_legacy", _bug)
+    with pytest.raises(TypeError):
+        reconstruct_legacy_state_for_display(_healthy_row(engine_state=None))

@@ -71,10 +71,10 @@ class _DriverRule:
     #: threshold watch, and measurement_recommendations already covers it.
     unpopulated: Callable[[float], bool] | None = None
     #: Which ``capacity_confidence`` axis carries this rule's uncertainty, when one does.
-    #: Declared rather than inferred from ``axis``: the rule reads the legacy scalar
-    #: mirror (``c_met_aerobic``) while the variance lives under the decomposed name
-    #: (``aerobic``), so name-matching would silently report "no uncertainty modelled"
-    #: for the one driver that actually has some.
+    #: Declared rather than inferred from ``axis``: the rule's public axis id keeps the
+    #: legacy name (``c_met_aerobic``, an API contract) while it reads and its variance
+    #: live under the decomposed name (``aerobic``), so name-matching would silently
+    #: report "no uncertainty modelled" for the one driver that actually has some.
     confidence_axis: str | None = None
 
 
@@ -83,11 +83,11 @@ def _above(threshold: float) -> Callable[[float], bool]:
 
 
 _DRIVER_RULES: tuple[_DriverRule, ...] = (
-    _DriverRule("f_nm_central", lambda s: s.f_nm_central, 55.0, "above",
+    _DriverRule("f_nm_central", lambda s: s.fatigue_f.cns, 55.0, "above",
                 "elevated CNS / central fatigue", _above(55.0)),
-    _DriverRule("f_nm_peripheral", lambda s: s.f_nm_peripheral, 55.0, "above",
+    _DriverRule("f_nm_peripheral", lambda s: s.fatigue_f.muscular, 55.0, "above",
                 "elevated peripheral / muscular fatigue", _above(55.0)),
-    _DriverRule("f_met_systemic", lambda s: s.f_met_systemic, 60.0, "above",
+    _DriverRule("f_met_systemic", lambda s: s.fatigue_f.metabolic, 60.0, "above",
                 "elevated systemic metabolic fatigue", _above(60.0)),
     _DriverRule("tissue_t.lumbar", lambda s: s.tissue_t.lumbar, 50.0, "above",
                 "lumbar tissue stress", _above(50.0)),
@@ -98,7 +98,7 @@ _DRIVER_RULES: tuple[_DriverRule, ...] = (
     _DriverRule("fatigue_f.tendon", lambda s: s.fatigue_f.tendon, 45.0, "above",
                 "tendon fatigue", _above(45.0)),
     # Two-sided on purpose: 0.0 means "no aerobic signal yet", not "no aerobic capacity".
-    _DriverRule("c_met_aerobic", lambda s: s.c_met_aerobic, 30.0, "below",
+    _DriverRule("c_met_aerobic", lambda s: s.capacity_x.aerobic, 30.0, "below",
                 "low aerobic capacity signal", lambda v: 0.0 < v < 30.0,
                 unpopulated=lambda v: v <= 0.0,
                 confidence_axis="aerobic"),

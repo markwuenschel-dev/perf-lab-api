@@ -136,7 +136,6 @@ def no_permissive_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("permissive legacy reconstruction was invoked by a strict path")
 
-    monkeypatch.setattr("app.engine.state_bridge.unified_from_athlete_row", _boom)
     monkeypatch.setattr("app.engine.state_bridge.capacity_from_legacy", _boom)
     monkeypatch.setattr("app.engine.state_loading.capacity_from_legacy", _boom)
 

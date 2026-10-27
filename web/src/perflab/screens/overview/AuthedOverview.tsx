@@ -34,6 +34,8 @@ import { COLORS, readinessColor, readinessNote, readinessWord } from "../../read
 import { RevisionNotice } from "../../prescription/RevisionNotice";
 import { assertNever, resourceData, type AuthedResource } from "../../resource";
 import { relativeTime } from "../../stateVector";
+import { mixedWindowNote, STATE_UNAVAILABLE_MESSAGE } from "../../provenance";
+import { RecoveredNote } from "../../RecoveredNote";
 import { usePerfLab } from "../../store";
 import { Card, ReadinessRing, SectionLabel, SyncChip, Track } from "../../ui";
 import { useAuthedResource } from "../../useAuthedResource";
@@ -202,6 +204,10 @@ export function AuthedOverview() {
               {twin.aerobic.kind === "empty" && (
                 <EmptyLine>No twin state yet — log a workout or run a field test to seed it.</EmptyLine>
               )}
+              {twin.aerobic.kind === "unavailable" && twin.aerobic.reason === "state_unavailable" && (
+                <EmptyLine>{STATE_UNAVAILABLE_MESSAGE}</EmptyLine>
+              )}
+              {twin.recovered && <RecoveredNote className="mt-3" />}
             </Card>
           </div>
         </div>
@@ -265,6 +271,12 @@ function ReadinessBlock({ readiness }: { readiness: ReturnType<typeof readinessS
 // ---- Fatigue-derived trend (#186) -----------------------------------------------
 
 function TrendBlock({ trend }: { trend: ReturnType<typeof trendSection> }) {
+  // The sparkline cannot mark individual points, so the note counts them instead.
+  const trendNote = mixedWindowNote(
+    trend.recoveredPoints.filter(Boolean).length,
+    trend.recoveredPoints.length,
+    { marked: false },
+  );
   // Rendered as its own block BELOW the readiness group, with its own label and a
   // separating rule. #186: the delta used to sit between the readiness word and the
   // backend confidence band while being computed from the fatigue proxy, so it read
@@ -282,6 +294,7 @@ function TrendBlock({ trend }: { trend: ReturnType<typeof trendSection> }) {
             </div>
           )}
           <Sparkline values={trend.series.value} min={20} max={100} width={300} height={70} className="mt-2 block h-[58px] w-full" />
+          {trendNote && <RecoveredNote className="mt-2">{trendNote}</RecoveredNote>}
         </>
       ) : (
         <div className="mt-2 flex h-[56px] items-center text-[11px] font-medium text-dim">
@@ -291,7 +304,9 @@ function TrendBlock({ trend }: { trend: ReturnType<typeof trendSection> }) {
               ? trend.series.reason === "no_data"
                 ? "No training history yet — your trend appears once state is recorded."
                 : "Not enough history yet — trend appears after a few days."
-              : "Couldn't load your history."}
+              : trend.series.reason === "state_unavailable"
+                ? STATE_UNAVAILABLE_MESSAGE
+                : "Couldn't load your history."}
         </div>
       )}
     </div>

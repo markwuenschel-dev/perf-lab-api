@@ -95,10 +95,10 @@ async def _seed(db) -> None:
 
 
 async def _max_strength(db, user_id: int) -> float:
-    from app.engine.state_bridge import unified_from_athlete_row
+    from app.engine.state_loading import unified_from_athlete_row_strict
     from app.repositories.athlete_context_repository import AthleteContextRepository
     row = await AthleteContextRepository(db).get_latest_state(user_id)
-    return float(unified_from_athlete_row(row).capacity_x.max_strength)
+    return float(unified_from_athlete_row_strict(row).capacity_x.max_strength)
 
 
 async def _candidates(db, user_id: int) -> list[StrengthDeclineCandidate]:

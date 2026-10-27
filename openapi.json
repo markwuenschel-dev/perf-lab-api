@@ -4975,13 +4975,18 @@
           "seeded": {
             "title": "Seeded",
             "type": "boolean"
+          },
+          "state_available": {
+            "title": "State Available",
+            "type": "boolean"
           }
         },
         "required": [
           "seeded",
           "seed_status",
           "provisional",
-          "overall_confidence"
+          "overall_confidence",
+          "state_available"
         ],
         "title": "OnboardingTwinSummary",
         "type": "object"
@@ -6464,6 +6469,39 @@
       },
       "ReadinessOut": {
         "properties": {
+          "codec_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codec Version"
+          },
+          "degradation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degradation Reason"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
           "kpi_flags": {
             "additionalProperties": true,
             "description": "Soft signals from KPIs (e.g. elevated run fatigue factor)",
@@ -6479,6 +6517,22 @@
                 "type": "null"
               }
             ]
+          },
+          "state_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "canonical",
+                  "legacy_recovery"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`legacy_recovery`: reconstructed from the lossy legacy mirror because the canonical payload could not be decoded \u2014 show with a recovered-state warning.",
+            "title": "State Source"
           }
         },
         "required": [
@@ -7240,10 +7294,32 @@
           "capacity_x": {
             "$ref": "#/components/schemas/CapacityState"
           },
+          "codec_version": {
+            "description": "Engine-state codec version of the reader.",
+            "title": "Codec Version",
+            "type": "string"
+          },
           "confidence_presentation_policy_version": {
             "description": "Version of the confidence-presentation policy that produced the statuses.",
             "title": "Confidence Presentation Policy Version",
             "type": "string"
+          },
+          "degradation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the canonical payload could not be used; null when canonical.",
+            "title": "Degradation Reason"
+          },
+          "degraded": {
+            "description": "True exactly when state_source is legacy_recovery.",
+            "title": "Degraded",
+            "type": "boolean"
           },
           "f_met_systemic": {
             "default": 0.0,
@@ -7307,6 +7383,15 @@
             "title": "Snapshot Id",
             "type": "integer"
           },
+          "state_source": {
+            "description": "Where this snapshot's values came from. `legacy_recovery` means they were reconstructed from the lossy legacy scalar mirror because the canonical payload could not be decoded: show them with a recovered-state warning, and do not present capacity_confidence / capacity_confidence_status as measured (a recovered row has no observed confidence; those are the weak prior).",
+            "enum": [
+              "canonical",
+              "legacy_recovery"
+            ],
+            "title": "State Source",
+            "type": "string"
+          },
           "timestamp": {
             "format": "date-time",
             "title": "Timestamp",
@@ -7324,7 +7409,11 @@
           "b_met_anaerobic",
           "snapshot_id",
           "capacity_confidence_status",
-          "confidence_presentation_policy_version"
+          "confidence_presentation_policy_version",
+          "state_source",
+          "degraded",
+          "degradation_reason",
+          "codec_version"
         ],
         "title": "StateHistorySnapshotRead",
         "type": "object"

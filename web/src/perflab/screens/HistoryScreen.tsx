@@ -11,6 +11,8 @@ import { resourceData, type AuthedResource } from "../resource";
 import { Card, ScreenHeader, SectionLabel, Track } from "../ui";
 import { Chart, Area, Axis, Bars, TableView, useChart, useVizTheme } from "../viz";
 import { aerobicValue, fatigueDisplayProxy } from "../stateVector";
+import { isRecovered, mixedWindowNote, RECOVERED_WARNING } from "../provenance";
+import { RecoveredNote } from "../RecoveredNote";
 import { dispositionTag } from "../workoutDisposition";
 import { AEROBIC_CEILING, RANGES, RANGE_WEEKS, filterHistoryWindow, weeklyLoad, type Range } from "./historyData";
 
@@ -96,14 +98,39 @@ function LoadBalanceCard({ acwr, acute, chronic }: { acwr: number | null; acute:
 }
 
 /** Clickable day dots over the readiness chart — each time-travels the twin. */
-function DayMarkers({ readiness, onPick, color }: { readiness: number[]; onPick: (i: number) => void; color: string }) {
+function DayMarkers({
+  readiness,
+  recovered,
+  onPick,
+  color,
+}: {
+  readiness: number[];
+  /** Per point: a recovered estimate (INT-15 2C), drawn as a hollow warn-coloured ring. */
+  recovered: boolean[];
+  onPick: (i: number) => void;
+  color: string;
+}) {
   const { xScale, yScale } = useChart();
   if (!xScale || !yScale) return null;
   return (
     <g>
       {readiness.map((r, i) => (
         <g key={i}>
-          <circle cx={xScale(i)} cy={yScale(r)} r={2.5} fill={color} style={{ pointerEvents: "none" }} />
+          {recovered[i] ? (
+            <circle
+              data-testid="recovered-point"
+              cx={xScale(i)}
+              cy={yScale(r)}
+              r={3.5}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              className="text-warn"
+              style={{ pointerEvents: "none" }}
+            />
+          ) : (
+            <circle cx={xScale(i)} cy={yScale(r)} r={2.5} fill={color} style={{ pointerEvents: "none" }} />
+          )}
           <circle cx={xScale(i)} cy={yScale(r)} r={10} fill="transparent" onClick={() => onPick(i)} className="cursor-pointer" />
         </g>
       ))}
@@ -218,7 +245,11 @@ function AerobicCapacityCard({ resource, latest, windowStart }: {
         // guard is only what TypeScript needs to narrow the prop.
         if (!latest) return null;
         const val = aerobicValue(latest);
-        const delta = windowStart ? val - aerobicValue(windowStart) : null;
+        if (val == null) {
+          return <div className="mt-3 text-[12px] leading-snug text-dim">Not recorded on your latest state.</div>;
+        }
+        const start = windowStart ? aerobicValue(windowStart) : null;
+        const delta = start != null ? val - start : null;
         const pct = Math.max(0, Math.min(100, (val / AEROBIC_CEILING) * 100));
         return (
           <>
@@ -232,6 +263,10 @@ function AerobicCapacityCard({ resource, latest, windowStart }: {
             </div>
             <Track pct={pct} background="linear-gradient(90deg,var(--ac),#a7e36e)" className="mt-3 h-[6px]" />
             <div className="mt-2 font-mono text-[10px] leading-none text-dim">of {AEROBIC_CEILING} axis ceiling</div>
+            {isRecovered(latest) && <RecoveredNote className="mt-3" />}
+            {!isRecovered(latest) && windowStart != null && isRecovered(windowStart) && delta != null && (
+              <RecoveredNote className="mt-3">The window-start value is a recovered estimate, so this change is approximate.</RecoveredNote>
+            )}
           </>
         );
       }}
@@ -363,13 +398,19 @@ export function HistoryScreen() {
   // from a null payload here.
   const historyRows = resourceData(historyRes);
   const visibleHistory = historyRows ? filterHistoryWindow(historyRows, weeks) : [];
-  const readinessSeries = visibleHistory.map(fatigueDisplayProxy);
+  // Rows without a decomposed fatigue vector have no point to plot (INT-05 C4: never filled
+  // from the legacy scalars). `plottedHistory` keeps each point's own row for time travel.
+  const plottedHistory = visibleHistory.filter((r) => fatigueDisplayProxy(r) != null);
+  const readinessSeries = plottedHistory.map((r) => fatigueDisplayProxy(r) as number);
+  const recoveredSeries = plottedHistory.map(isRecovered);
+  const trendNote = mixedWindowNote(recoveredSeries.filter(Boolean).length, recoveredSeries.length, { marked: true });
+  const latestRecovered = recoveredSeries.length > 0 && recoveredSeries[recoveredSeries.length - 1];
   const N = readinessSeries.length;
   const latestReadiness = N > 0 ? readinessSeries[N - 1] : null;
   const hDiff = N >= 2 ? readinessSeries[N - 1] - readinessSeries[0] : null;
   const hDelta = hDiff == null ? "" : `${hDiff >= 0 ? "+" : "−"}${Math.abs(hDiff)} vs window start`;
-  const latestSnap = N > 0 ? visibleHistory[N - 1] : null;
-  const windowStartSnap = N > 0 ? visibleHistory[0] : null;
+  const latestSnap = visibleHistory.length > 0 ? visibleHistory[visibleHistory.length - 1] : null;
+  const windowStartSnap = visibleHistory.length > 0 ? visibleHistory[0] : null;
 
   // Weekly load over the same window (real workouts only; null → empty state).
   const realLoad = weeklyLoad(resourceData(workoutsRes), weeks);
@@ -394,7 +435,7 @@ export function HistoryScreen() {
   // Time-travel the twin from a clicked readiness dot — hand it the CLICKED ROW's
   // snapshot_id (its durable identity), never the chart index.
   const goDay = (i: number) => {
-    const picked = visibleHistory[i];
+    const picked = plottedHistory[i];
     if (picked) {
       actions.setSelectedTwinSnapshot(picked.snapshot_id);
       actions.setScreen("twin");
@@ -445,6 +486,9 @@ export function HistoryScreen() {
               </div>
               <div className="text-right font-mono text-[10px] leading-none text-dim">click a point to time-travel</div>
             </div>
+            {historyRes.status === "success" && N >= 2 && trendNote && (
+              <RecoveredNote className="mb-2">{latestRecovered ? `Latest point: ${RECOVERED_WARNING} ${trendNote}` : trendNote}</RecoveredNote>
+            )}
             <ResourceState
               resource={historyRes}
               // A single point cannot draw a trend, so it reads as "not enough
@@ -472,7 +516,7 @@ export function HistoryScreen() {
                 >
                   <Axis y yTicks={3} />
                   <Area data={readinessSeries.map((r, i) => [i, r] as [number, number])} color={accent} fillOpacity={0.14} />
-                  <DayMarkers readiness={readinessSeries} onPick={goDay} color={accent} />
+                  <DayMarkers readiness={readinessSeries} recovered={recoveredSeries} onPick={goDay} color={accent} />
                 </Chart>
               )}
             </ResourceState>

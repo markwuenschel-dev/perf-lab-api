@@ -47,15 +47,17 @@ def _state(
     habit: float = 0.5,
 ) -> UnifiedStateVector:
     cx = CapacityState(aerobic=aerobic, max_strength=max_strength)
+    # ``f_met_systemic`` is the legacy name of the metabolic axis (an exact mirror); setting it
+    # sets the axis, so the state stays one the engine could hold.
     f = FatigueState(
-        cns=cns, muscular=muscular, metabolic=metabolic,
+        cns=cns, muscular=muscular, metabolic=f_met_systemic or metabolic,
         structural=structural, tendon=tendon,
     )
     t = TissueState(lumbar=lumbar, knee=knee)
     leg = sync_legacy_from_vectors(cx, f, t)
-    # Override legacy mirrors to match requested safety trigger values
+    # The f_struct_damage blend has no authority (prescriber.py); kept only for tests that
+    # pin that it does not drive anything.
     leg["f_struct_damage"] = f_struct_damage
-    leg["f_met_systemic"] = f_met_systemic
     return UnifiedStateVector(
         timestamp=datetime.now(UTC),
         capacity_x=cx,

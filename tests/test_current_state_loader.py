@@ -22,42 +22,42 @@ def _install(monkeypatch, *, row, init_vector=None):
 
     async def _fake_init(db, user_id, decode=None):
         calls["init"] += 1
-        calls["decode"] = decode  # the permissive wrapper names its decoder (C1)
+        calls["decode"] = decode
         return init_vector
 
     monkeypatch.setattr(state_service, "AthleteContextRepository", _FakeRepo)
     monkeypatch.setattr(
-        state_service, "unified_from_athlete_row", lambda r: ("converted", r)
+        state_service, "unified_from_athlete_row_strict", lambda r: ("converted", r)
     )
     monkeypatch.setattr(state_service, "initialize_athlete_state", _fake_init)
     return calls
 
 
-# --- load_current_state: read-or-None -------------------------------------------
+# --- load_current_state_strict: read-or-None -------------------------------------------
 
 
 async def test_load_current_state_present_converts_row(monkeypatch):
     row = object()
     calls = _install(monkeypatch, row=row)
-    result = await state_service.load_current_state(object(), user_id=1)
+    result = await state_service.load_current_state_strict(object(), user_id=1)
     assert result == ("converted", row)
     assert calls["init"] == 0  # never auto-inits
 
 
 async def test_load_current_state_absent_returns_none(monkeypatch):
     calls = _install(monkeypatch, row=None)
-    result = await state_service.load_current_state(object(), user_id=1)
+    result = await state_service.load_current_state_strict(object(), user_id=1)
     assert result is None
     assert calls["init"] == 0  # never auto-inits on the read path
 
 
-# --- load_or_init_current_state: read-or-init -----------------------------------
+# --- load_or_init_current_state_strict: read-or-init -----------------------------------
 
 
 async def test_load_or_init_present_converts_row(monkeypatch):
     row = object()
     calls = _install(monkeypatch, row=row, init_vector=("init", None))
-    result = await state_service.load_or_init_current_state(object(), user_id=1)
+    result = await state_service.load_or_init_current_state_strict(object(), user_id=1)
     assert result == ("converted", row)
     assert calls["init"] == 0  # existing state -> no init
 
@@ -65,7 +65,7 @@ async def test_load_or_init_present_converts_row(monkeypatch):
 async def test_load_or_init_absent_initializes_once(monkeypatch):
     sentinel = ("init", None)
     calls = _install(monkeypatch, row=None, init_vector=sentinel)
-    result = await state_service.load_or_init_current_state(object(), user_id=1)
+    result = await state_service.load_or_init_current_state_strict(object(), user_id=1)
     assert result is sentinel  # returns init's vector directly (no redundant re-fetch)
     assert calls["init"] == 1
 
@@ -81,7 +81,7 @@ async def test_dashboard_readiness_payload_no_state_branch(monkeypatch):
     async def _none(db, user_id):
         return None
 
-    monkeypatch.setattr(dashboard_service, "load_current_state", _none)
+    monkeypatch.setattr(dashboard_service, "load_current_state_for_display", _none)
     state, payload = await dashboard_service.readiness_payload(object(), user_id=1)
     assert state is None
     assert payload == {"note": "no_athlete_state"}

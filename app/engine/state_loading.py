@@ -37,8 +37,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
+from pydantic import ValidationError
+
+from app.domain.vectors import CapacityConfidence
 from app.engine.engine_state_codec import (
     MAX_READ_VERSION,
     EngineStateDecodeError,
@@ -114,13 +117,79 @@ def _legacy_scalars_usable(row: Any) -> bool:
     return all(_finite(getattr(row, name, None)) for name in _REQUIRED_LEGACY_SCALARS)
 
 
+# The error_code for a row whose payload decodes but whose own columns cannot form a state.
+INVALID_ROW_FIELDS = "invalid_row_fields"
+# The error_code for an assembled state holding NaN or +/-Infinity anywhere. Validation accepts
+# these from JSON strings ("NaN", "Infinity"), but they are not data: every comparison with them
+# is silently false, and a response carrying one cannot be serialized.
+NON_FINITE_VALUES = "non_finite_values"
+
+
 def _passthrough_kwargs(row: Any) -> dict[str, Any]:
-    """Row fields that live outside the engine_state payload."""
+    """Row fields that live outside the engine_state payload.
+
+    Raises:
+        MalformedCurrentEngineState: a field of the wrong kind (``INVALID_ROW_FIELDS``).
+    """
+    scalars = {name: getattr(row, name, None) for name in ("s_struct_signal", "habit_strength")}
+    skill_state = getattr(row, "skill_state", None)
+    bad = [name for name, v in scalars.items() if v is not None and not _finite(v)]
+    if skill_state is not None and not isinstance(skill_state, dict):
+        bad.append("skill_state")
+    if bad:
+        raise MalformedCurrentEngineState(INVALID_ROW_FIELDS, ",".join(bad))
+    skills: dict[str, Any] = (
+        dict(cast("dict[str, Any]", skill_state)) if isinstance(skill_state, dict) else {}
+    )
     return {
-        "s_struct_signal": float(getattr(row, "s_struct_signal", 0.0) or 0.0),
-        "habit_strength": float(getattr(row, "habit_strength", 0.0) or 0.0),
-        "skill_state": dict(getattr(row, "skill_state", None) or {}),
+        **{name: float(v or 0.0) for name, v in scalars.items()},
+        "skill_state": skills,
     }
+
+
+def _state_from_row(
+    row: Any,
+    *,
+    x: Any,
+    f: Any,
+    t: Any,
+    capacity_confidence: CapacityConfidence | None = None,
+) -> UnifiedStateVector:
+    """Assemble the vector from decoded (or reconstructed) x/f/t plus the row's own fields.
+
+    A row's columns are data too: out-of-range or wrongly typed values are a damaged row,
+    reported as a decode error so that every loading policy handles them like a damaged
+    payload. Only validation failures and non-finite values are converted; anything else is a
+    bug and propagates.
+
+    Raises:
+        MalformedCurrentEngineState: ``INVALID_ROW_FIELDS`` or ``NON_FINITE_VALUES``.
+    """
+    extra = {} if capacity_confidence is None else {"capacity_confidence": capacity_confidence}
+    try:
+        state = build_unified_state_vector(
+            timestamp=row.timestamp, x=x, f=f, t=t, **extra, **_passthrough_kwargs(row)
+        )
+    except ValidationError as exc:
+        fields = ",".join(str(e["loc"][0]) for e in exc.errors() if e.get("loc"))
+        raise MalformedCurrentEngineState(INVALID_ROW_FIELDS, fields) from exc
+    non_finite = _non_finite_paths(state.model_dump())
+    if non_finite:
+        raise MalformedCurrentEngineState(NON_FINITE_VALUES, ",".join(non_finite))
+    return state
+
+
+def _non_finite_paths(value: Any, path: str = "") -> list[str]:
+    """Dotted paths of every NaN/Infinity float in a dumped model."""
+    if isinstance(value, float):
+        return [] if math.isfinite(value) else [path]
+    if isinstance(value, dict):
+        items = cast("dict[str, Any]", value).items()
+        return [p for k, v in items for p in _non_finite_paths(v, f"{path}.{k}" if path else k)]
+    if isinstance(value, (list, tuple)):
+        seq = cast("list[Any]", value)
+        return [p for i, v in enumerate(seq) for p in _non_finite_paths(v, f"{path}[{i}]")]
+    return []
 
 
 def unified_from_athlete_row_strict(row: Any) -> UnifiedStateVector:
@@ -128,20 +197,20 @@ def unified_from_athlete_row_strict(row: Any) -> UnifiedStateVector:
 
     Raises:
         MissingEngineState: the row carries no payload (a legacy row).
-        MalformedCurrentEngineState: a payload this reader should understand, but cannot.
+        MalformedCurrentEngineState: a payload this reader should understand, but cannot,
+            or row fields that cannot form a state (``INVALID_ROW_FIELDS``).
         UnsupportedFutureEngineStateVersion: written by a newer node; deploy readers first.
 
     Never falls back to the legacy scalars. A caller that cannot proceed without state
     must fail closed — that is the point.
     """
     decoded = decode_engine_state(getattr(row, "engine_state", None))
-    return build_unified_state_vector(
-        timestamp=row.timestamp,
+    return _state_from_row(
+        row,
         x=decoded.capacity,
         f=decoded.fatigue,
         t=decoded.tissue,
         capacity_confidence=decoded.capacity_confidence,
-        **_passthrough_kwargs(row),
     )
 
 
@@ -153,6 +222,10 @@ def reconstruct_legacy_state_for_display(row: Any) -> ReadOnlyStateView:
     Malformed payload            -> source="legacy_recovery", degraded=True (if scalars usable)
     Future-version payload       -> DisplayStateUnavailable (never reconstructed)
     Unusable legacy scalars      -> DisplayStateUnavailable
+    Invalid row fields           -> DisplayStateUnavailable (habit, signal, skills: there is
+                                    no lossy mirror to recover them from)
+    Non-finite value anywhere    -> DisplayStateUnavailable
+    Out-of-range legacy values   -> DisplayStateUnavailable (when recovery is attempted)
 
     A future-version payload is not damaged data — it is data this reader is too old to
     read. Reconstructing it from the lossy mirror would show the athlete a worse answer
@@ -173,15 +246,19 @@ def reconstruct_legacy_state_for_display(row: Any) -> ReadOnlyStateView:
     except EngineStateDecodeError as exc:  # defensive: a new subclass must not silently recover
         raise DisplayStateUnavailable(f"undecodable:{type(exc).__name__}") from exc
 
-    return ReadOnlyStateView(
-        state=build_unified_state_vector(
-            timestamp=row.timestamp,
+    try:
+        state = _state_from_row(
+            row,
             x=decoded.capacity,
             f=decoded.fatigue,
             t=decoded.tissue,
             capacity_confidence=decoded.capacity_confidence,
-            **_passthrough_kwargs(row),
-        ),
+        )
+    except MalformedCurrentEngineState as exc:
+        raise DisplayStateUnavailable(exc.error_code) from exc
+
+    return ReadOnlyStateView(
+        state=state,
         source="canonical",
         degraded=False,
         degradation_reason=None,
@@ -202,30 +279,34 @@ def _legacy_recovery_view(row: Any, reason: str) -> ReadOnlyStateView:
     if not all(_finite(getattr(row, name, None)) for name in _LEGACY_FATIGUE_SCALARS):
         raise DisplayStateUnavailable(f"{reason}+unusable_legacy_fatigue")
 
-    x = capacity_from_legacy(
-        row.c_met_aerobic,
-        row.c_nm_force,
-        row.c_struct,
-        row.b_met_anaerobic,
-    )
-    f = fatigue_from_legacy(
-        row.f_met_systemic,
-        row.f_nm_peripheral,
-        row.f_nm_central,
-        row.f_struct_damage,
-    )
-    t = tissue_from_legacy(row.f_struct_damage)
+    try:
+        # Finite but out-of-range legacy values (a negative capacity or fatigue) fail the
+        # vector constructors' validation: nothing honest can be reconstructed from them.
+        x = capacity_from_legacy(
+            row.c_met_aerobic,
+            row.c_nm_force,
+            row.c_struct,
+            row.b_met_anaerobic,
+        )
+        f = fatigue_from_legacy(
+            row.f_met_systemic,
+            row.f_nm_peripheral,
+            row.f_nm_central,
+            row.f_struct_damage,
+        )
+        t = tissue_from_legacy(row.f_struct_damage)
+    except ValidationError as exc:
+        raise DisplayStateUnavailable(f"{reason}+invalid_legacy_values") from exc
+
+    try:
+        # A reconstructed row has no observed confidence — weak prior, never the decoded
+        # value, because there is no decoded value.
+        state = _state_from_row(row, x=x, f=f, t=t)
+    except MalformedCurrentEngineState as exc:
+        raise DisplayStateUnavailable(f"{reason}+{exc.error_code}") from exc
 
     return ReadOnlyStateView(
-        state=build_unified_state_vector(
-            timestamp=row.timestamp,
-            x=x,
-            f=f,
-            t=t,
-            # A reconstructed row has no observed confidence — weak prior, never the
-            # decoded value, because there is no decoded value.
-            **_passthrough_kwargs(row),
-        ),
+        state=state,
         source="legacy_recovery",
         degraded=True,
         degradation_reason=reason,

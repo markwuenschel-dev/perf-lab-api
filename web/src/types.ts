@@ -173,6 +173,9 @@ export interface ApiError {
   message: string;
   status?: number;
   details?: unknown;
+  /** A machine-readable refusal code from the body's `error`, when the API sends one
+   *  (e.g. `display_state_unavailable`, INT-15 2C). */
+  code?: string;
 }
 
 /**

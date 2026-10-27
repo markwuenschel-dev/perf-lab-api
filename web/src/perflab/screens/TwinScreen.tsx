@@ -28,6 +28,8 @@ import { WhyThisSession } from "../prescription/WhyThisSession";
 import { LoadExplanation } from "../prescription/LoadExplanation";
 import { Chart, Line, Marker, Ring, useVizTheme } from "../viz";
 import { meanFatigue, relativeTime } from "../stateVector";
+import { isRecovered, isStateUnavailable, mixedWindowNote, RECOVERED_WARNING, recoveredCount } from "../provenance";
+import { RecoveredNote } from "../RecoveredNote";
 import { CapacityView } from "./twin/CapacityView";
 import { GuestTwinPreview } from "./twin/GuestTwinPreview";
 import { MiniTile } from "./twin/MiniTile";
@@ -87,7 +89,8 @@ function twinSyncLabel(resource: AuthedResource<StateHistorySnapshotRead[]>): st
     case "loading":
       return "Syncing…";
     case "error":
-      return "No recorded state";
+      // INT-15 2C: stored state that cannot be shown is not the absence of state.
+      return isStateUnavailable(resource.error) ? "State unavailable" : "No recorded state";
     case "success": {
       const rows = resource.data;
       const newest = rows.length ? rows[rows.length - 1] : null;
@@ -124,6 +127,16 @@ function AuthedTwinBody({
       return <TwinSkeleton />;
     // ---- ERROR: honest retry, distinct from empty (no sim, no manufactured 50s) ----
     case "error":
+      // INT-15 2C: a coded "state cannot be shown" refusal is not a transient failure — no
+      // retry prompt, and never an older snapshot standing in for the current one.
+      if (isStateUnavailable(historyRes.error)) {
+        return (
+          <Card className="px-[22px] py-8 text-center">
+            <div className="text-[14px] font-semibold text-ink">Twin state unavailable</div>
+            <div className="mx-auto mt-2 max-w-[440px] text-[12.5px] font-medium leading-[1.5] text-mute">{historyRes.error.message}</div>
+          </Card>
+        );
+      }
       return (
         <Card className="px-[22px] py-8 text-center">
           <div className="text-[14px] font-semibold text-ink">Couldn&apos;t load your twin</div>
@@ -177,7 +190,14 @@ function AuthedTwinBody({
   };
 
   const { date: vDate, when: vWhen } = viewingLabel(row.timestamp);
-  const sparkData = rows.map((r, i) => [i, meanFatigue(r)] as [number, number]);
+  // A row without a decomposed fatigue vector has no point (never the legacy scalars).
+  const sparkData = rows.flatMap((r, i) => {
+    const m = meanFatigue(r);
+    return m == null ? [] : [[i, m] as [number, number]];
+  });
+  const rowMeanF = meanFatigue(row);
+  const rowRecovered = isRecovered(row);
+  const windowNote = mixedWindowNote(recoveredCount(rows), len, { marked: false });
 
   // Canonical readiness for the LATEST snapshot only (PDR-0005: never recompute).
   const canonicalScore = resourceData(readinessRes)?.score ?? null;
@@ -216,7 +236,7 @@ function AuthedTwinBody({
             className="h-[38px] w-full"
           >
             {!thin && <Line data={sparkData} color={accent} opacity={0.7} label="Mean fatigue" />}
-            <Marker x={di} y={meanFatigue(row)} color={accent} />
+            {rowMeanF != null && <Marker x={di} y={rowMeanF} color={accent} />}
           </Chart>
           <input
             type="range"
@@ -239,9 +259,13 @@ function AuthedTwinBody({
         </div>
       </Card>
 
+      {/* INT-15 2C: every value below comes from this snapshot; say so when it is a recovery */}
+      {rowRecovered && <RecoveredNote>{`Viewing a recovered snapshot. ${RECOVERED_WARNING}`}</RecoveredNote>}
+      {!rowRecovered && windowNote && <RecoveredNote>{windowNote}</RecoveredNote>}
+
       {/* readiness + two live tiles */}
       <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[300px_1fr]">
-        <ReadinessCard isLatest={isLatest} canonicalScore={canonicalScore} readinessRes={readinessRes} meanF={Math.round(meanFatigue(row))} />
+        <ReadinessCard isLatest={isLatest} canonicalScore={canonicalScore} readinessRes={readinessRes} meanF={rowMeanF == null ? null : Math.round(rowMeanF)} />
         <div className="grid grid-cols-2 gap-[14px]">
           <MiniTile
             tip="Consistency of training vs plan — habit strength on a 0–100 scale."
@@ -307,7 +331,7 @@ function ReadinessCard({
   isLatest: boolean;
   canonicalScore: number | null;
   readinessRes: AuthedResource<ReadinessScore>;
-  meanF: number;
+  meanF: number | null;
 }) {
   // HISTORICAL snapshot: a neutral, non-scored ring + an honest message and a
   // SEPARATE labeled mean-fatigue metric. Never fill the ring from 100−meanF or
@@ -322,7 +346,7 @@ function ReadinessCard({
             Wellness-adjusted readiness was not recorded for this snapshot.
           </div>
           <div className="mt-[11px] font-mono text-[13px] font-semibold leading-none text-soft">
-            Mean fatigue · {meanF} / 100
+            Mean fatigue · {meanF == null ? "not recorded" : `${meanF} / 100`}
           </div>
         </div>
       </Card>

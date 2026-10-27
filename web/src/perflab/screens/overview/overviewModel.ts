@@ -16,6 +16,7 @@
 // structural rather than a thing reviewers have to keep noticing.
 import { assertNever, type AuthedResource } from "../../resource";
 import { meanFatigue, peakTissue, snapshotCapacity, fatigueDisplayProxy } from "../../stateVector";
+import { isRecovered, isStateUnavailable } from "../../provenance";
 import type {
   OverviewMetrics,
   ReadinessScore,
@@ -42,7 +43,11 @@ export type EmptyReason =
   | "not_recorded";
 
 /** Why a metric could not be produced at all. */
-export type UnavailableReason = "load_failed" | "not_authenticated";
+export type UnavailableReason =
+  | "load_failed"
+  | "not_authenticated"
+  /** INT-15 2C: a stored snapshot cannot be shown at all (coded 409); not transient. */
+  | "state_unavailable";
 
 export type AuthenticatedMetric<T> =
   | { kind: "value"; value: T }
@@ -62,6 +67,7 @@ export type MetricState<T> = AuthenticatedMetric<T> | { kind: "loading" };
 const LOADING: MetricState<never> = { kind: "loading" };
 const NOT_AUTHED: MetricState<never> = { kind: "unavailable", reason: "not_authenticated" };
 const LOAD_FAILED: MetricState<never> = { kind: "unavailable", reason: "load_failed" };
+const STATE_UNAVAILABLE: MetricState<never> = { kind: "unavailable", reason: "state_unavailable" };
 
 /**
  * Fold a canonical resource into a metric state, delegating only the success arm.
@@ -82,7 +88,7 @@ function fold<T, R>(
     case "loading":
       return LOADING;
     case "error":
-      return LOAD_FAILED;
+      return isStateUnavailable(resource.error) ? STATE_UNAVAILABLE : LOAD_FAILED;
     case "success":
       return project(resource.data);
     default:
@@ -139,6 +145,8 @@ export interface TrendView {
   series: MetricState<number[]>;
   /** Newest minus oldest, only when a real series exists. */
   delta: MetricState<number>;
+  /** Per plotted point, whether it is a recovered estimate (INT-15 2C); [] off the value arm. */
+  recoveredPoints: boolean[];
 }
 
 /**
@@ -153,14 +161,22 @@ export interface TrendView {
 export function trendSection(resource: AuthedResource<StateHistorySnapshotRead[]>): TrendView {
   const series = fold<StateHistorySnapshotRead[], number[]>(resource, (rows) => {
     if (rows.length === 0) return { kind: "empty", reason: "no_data" };
-    if (rows.length < 2) return { kind: "empty", reason: "insufficient_history" };
-    return { kind: "value", value: rows.map(fatigueDisplayProxy) };
+    // A row without a decomposed fatigue vector has no point to plot; it is dropped, never
+    // filled from the legacy scalars (INT-05 C4).
+    const points = rows.map(fatigueDisplayProxy).filter((v): v is number => v != null);
+    if (points.length < 2) return { kind: "empty", reason: "insufficient_history" };
+    return { kind: "value", value: points };
   });
   const delta: MetricState<number> =
     series.kind === "value"
       ? { kind: "value", value: series.value[series.value.length - 1] - series.value[0] }
       : series;
-  return { label: TREND_LABEL, series, delta };
+  // The same rows the series plotted, in the same order, so point i and flag i agree.
+  const recoveredPoints =
+    series.kind === "value" && resource.status === "success"
+      ? resource.data.filter((r) => fatigueDisplayProxy(r) != null).map(isRecovered)
+      : [];
+  return { label: TREND_LABEL, series, delta, recoveredPoints };
 }
 
 // ---- "This morning" wellness ---------------------------------------------------
@@ -271,6 +287,8 @@ export interface TwinSnapshotView {
   strength: MetricState<number>;
   meanFatigue: MetricState<number>;
   peakTissue: MetricState<{ region: string; value: number }>;
+  /** The newest snapshot is a recovered estimate (INT-15 2C): every value above carries the caveat. */
+  recovered: boolean;
 }
 
 /**
@@ -303,8 +321,12 @@ export function twinSnapshotSection(
       const v = snapshotCapacity(s, "max_strength");
       return v == null ? null : Math.round(v);
     }),
-    meanFatigue: derive((s) => Math.round(meanFatigue(s))),
+    meanFatigue: derive((s) => {
+      const v = meanFatigue(s);
+      return v == null ? null : Math.round(v);
+    }),
     peakTissue: derive((s) => peakTissue(s)),
+    recovered: latest.kind === "value" && isRecovered(latest.value),
   };
 }
 

@@ -13,8 +13,8 @@ from app.engine.parameters import default_parameters
 from app.engine.simulate import baseline_state, make_log, rest_dose
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
-    unified_from_athlete_row,
 )
+from app.engine.state_loading import unified_from_athlete_row_strict
 from app.logic.state_update_v0 import kalman_gain, update_athlete_state
 
 
@@ -54,7 +54,7 @@ def test_confidence_roundtrips_through_engine_state():
     s.capacity_confidence.aerobic = 0.33
     s.capacity_confidence.max_strength = 0.12
     row = SimpleNamespace(**athlete_state_kwargs_from_unified(s))
-    restored = unified_from_athlete_row(row)
+    restored = unified_from_athlete_row_strict(row)
     assert restored.capacity_confidence.aerobic == 0.33
     assert restored.capacity_confidence.max_strength == 0.12
 
@@ -67,6 +67,6 @@ def test_legacy_v1_payload_migrates_to_weak_confidence():
     eng.pop("c")        # simulate a pre-confidence (v1) payload
     eng["version"] = 1
     kwargs["engine_state"] = eng
-    restored = unified_from_athlete_row(SimpleNamespace(**kwargs))
+    restored = unified_from_athlete_row_strict(SimpleNamespace(**kwargs))
     for key in CapacityConfidence.KEYS:
         assert getattr(restored.capacity_confidence, key) == SEED_CAPACITY_VARIANCE

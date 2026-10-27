@@ -52,6 +52,17 @@ class DomainSummaryOut(BaseModel):
 
 class ReadinessOut(BaseModel):
     state: UnifiedStateVector | None
+    # Provenance of `state` (INT-15 2C); all null exactly when `state` is null.
+    state_source: Literal["canonical", "legacy_recovery"] | None = Field(
+        default=None,
+        description=(
+            "`legacy_recovery`: reconstructed from the lossy legacy mirror because the "
+            "canonical payload could not be decoded — show with a recovered-state warning."
+        ),
+    )
+    degraded: bool | None = None
+    degradation_reason: str | None = None
+    codec_version: str | None = None
     kpi_flags: dict[str, Any] = Field(
         default_factory=dict,
         description="Soft signals from KPIs (e.g. elevated run fatigue factor)",

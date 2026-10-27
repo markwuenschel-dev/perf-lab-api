@@ -5,8 +5,8 @@ stream and writing belief snapshots to ``ekf_shadow_log``. It applies NOTHING to
 production state or prescriptions (``decision_impact="none_shadow_only"``) and is
 best-effort: a failure here must never break workout ingest or benchmark assimilation.
 
-Ordering: both entry points run *after* the production commit, so ``load_current_state``
-returns the already-advanced state. On the first call for an athlete we seed the belief
+Ordering: both entry points run *after* the production commit, so the state they read
+(``try_load_current_state_for_shadow``) is the already-advanced state. On the first call for an athlete we seed the belief
 from it (no propagation); thereafter we load the prior belief and advance it exactly once
 via ``predict`` — a proper filter chain, no double-applied workout.
 
@@ -55,8 +55,9 @@ from app.logic.ekf.wellness_input import (
 )
 from app.models.ekf_shadow import EkfShadowLog
 from app.models.wellness import WellnessSample
+from app.schemas.state import UnifiedStateVector
 from app.schemas.workouts import StressDose, WorkoutLog
-from app.services.state_service import load_current_state
+from app.services.state_service import try_load_current_state_for_shadow
 from app.services.telemetry_common import best_effort_write
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,27 @@ async def _load_latest_belief(db: AsyncSession, user_id: int) -> EkfShadowLog | 
     return res.scalars().first()
 
 
+async def _current_state_or_skip(
+    db: AsyncSession, user_id: int, entry: str
+) -> UnifiedStateVector | None:
+    """The canonical current state, or None when there is none to compute from.
+
+    None covers both "no state row yet" and a damaged row (INT-15 S3). A damaged row is skipped,
+    never reconstructed, and leaves NO ekf row behind: the newest row is the chain head
+    (``_load_latest_belief``), so a placeholder would become the prior of the next step. The
+    reason is logged instead.
+    """
+    loaded = await try_load_current_state_for_shadow(db, user_id)
+    if loaded is None:
+        return None
+    if loaded.state is None:
+        logger.info(
+            "ekf_shadow_skipped entry=%s outcome=%s user_id=%s", entry, loaded.outcome, user_id
+        )
+        return None
+    return loaded.state
+
+
 def _belief_from_row(row: EkfShadowLog) -> EkfBelief:
     return EkfBelief.from_row(
         mean_map=dict(row.mean_json),
@@ -144,9 +166,9 @@ async def record_ekf_predict(
         tdb = tx.db  # F1: the telemetry transaction's own session
         await _acquire_ekf_chain_lock(tdb, user_id)  # serialize the per-user belief chain
         params = default_parameters()
-        template = await load_current_state(tdb, user_id)
+        template = await _current_state_or_skip(tdb, user_id, "predict")
         if template is None:
-            return  # nothing to seed from yet
+            return  # nothing to seed from yet, or damaged state (skipped, logged)
 
         prior_row = await _load_latest_belief(tdb, user_id)
         if prior_row is None:
@@ -190,9 +212,9 @@ async def record_ekf_update(
         tdb = tx.db  # F1: the telemetry transaction's own session
         await _acquire_ekf_chain_lock(tdb, user_id)  # serialize the per-user belief chain
         params = default_parameters()
-        state = await load_current_state(tdb, user_id)
+        state = await _current_state_or_skip(tdb, user_id, "update")
         if state is None:
-            return
+            return  # no state yet, or damaged state (skipped, logged)
 
         prior_row = await _load_latest_belief(tdb, user_id)
         prior = _belief_from_row(prior_row) if prior_row is not None else EkfBelief.seed_from_unified(state, params)
@@ -342,9 +364,9 @@ async def _assimilate_or_classify(
     if obs is None:
         return "skipped"  # no EKF-consumed value and no prior assimilation to retract
 
-    state = await load_current_state(db, user_id)
+    state = await _current_state_or_skip(db, user_id, "wellness")
     if state is None:
-        return "skipped"
+        return "skipped"  # no state yet, or damaged state (skipped, logged)
     prior = (
         _belief_from_row(prior_row)
         if prior_row is not None

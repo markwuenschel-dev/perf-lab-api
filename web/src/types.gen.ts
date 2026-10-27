@@ -3240,6 +3240,8 @@ export interface components {
             seed_status: string;
             /** Seeded */
             seeded: boolean;
+            /** State Available */
+            state_available: boolean;
         };
         /**
          * OverviewMetrics
@@ -3837,6 +3839,12 @@ export interface components {
         };
         /** ReadinessOut */
         ReadinessOut: {
+            /** Codec Version */
+            codec_version?: string | null;
+            /** Degradation Reason */
+            degradation_reason?: string | null;
+            /** Degraded */
+            degraded?: boolean | null;
             /**
              * Kpi Flags
              * @description Soft signals from KPIs (e.g. elevated run fatigue factor)
@@ -3845,6 +3853,11 @@ export interface components {
                 [key: string]: unknown;
             };
             state: components["schemas"]["UnifiedStateVector"] | null;
+            /**
+             * State Source
+             * @description `legacy_recovery`: reconstructed from the lossy legacy mirror because the canonical payload could not be decoded — show with a recovered-state warning.
+             */
+            state_source?: ("canonical" | "legacy_recovery") | null;
         };
         /**
          * ReadinessScore
@@ -4198,10 +4211,25 @@ export interface components {
             };
             capacity_x?: components["schemas"]["CapacityState"];
             /**
+             * Codec Version
+             * @description Engine-state codec version of the reader.
+             */
+            codec_version: string;
+            /**
              * Confidence Presentation Policy Version
              * @description Version of the confidence-presentation policy that produced the statuses.
              */
             confidence_presentation_policy_version: string;
+            /**
+             * Degradation Reason
+             * @description Why the canonical payload could not be used; null when canonical.
+             */
+            degradation_reason: string | null;
+            /**
+             * Degraded
+             * @description True exactly when state_source is legacy_recovery.
+             */
+            degraded: boolean;
             /**
              * F Met Systemic
              * @default 0
@@ -4248,6 +4276,12 @@ export interface components {
              * @description Persisted AthleteState row id — the stable identity of this recorded snapshot. Cross-screen navigation (History→Twin deep-link) and the time-travel scrub must key on this, never on list position: the endpoint is a bounded window (default 60, max 365) that shifts as rows accrue, so index N is not a durable reference to a snapshot.
              */
             snapshot_id: number;
+            /**
+             * State Source
+             * @description Where this snapshot's values came from. `legacy_recovery` means they were reconstructed from the lossy legacy scalar mirror because the canonical payload could not be decoded: show them with a recovered-state warning, and do not present capacity_confidence / capacity_confidence_status as measured (a recovered row has no observed confidence; those are the weak prior).
+             * @enum {string}
+             */
+            state_source: "canonical" | "legacy_recovery";
             /**
              * Timestamp
              * Format: date-time

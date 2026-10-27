@@ -314,12 +314,12 @@ def _safety_candidates(state: UnifiedStateVector) -> list[SessionCandidate]:
             is_safety_override=True,
         ))
 
-    if state.f_met_systemic > 80.0:
+    if state.fatigue_f.metabolic > 80.0:
         overrides.append(SessionCandidate(
             type="Recovery",
             focus="Passive Rest / Sleep / Nutrition",
             rationale=(
-                f"Systemic fatigue very high ({state.f_met_systemic:.1f}%). "
+                f"Systemic fatigue very high ({state.fatigue_f.metabolic:.1f}%). "
                 "Autonomic recovery required before loading again."
             ),
             duration_min=0,
@@ -344,13 +344,13 @@ def _readiness_redirect(
     """
     redirects: list[SessionCandidate] = []
 
-    if state.f_nm_central > 60.0:
-        if state.c_met_aerobic > 0:
+    if state.fatigue_f.cns > 60.0:
+        if state.capacity_x.aerobic > 0:
             redirects.append(SessionCandidate(
                 type="Metabolic Conditioning",
                 focus="Zone 2 Cardio (Bike / Row) @ RPE 4–5",
                 rationale=(
-                    f"CNS fatigue high ({state.f_nm_central:.1f}%). "
+                    f"CNS fatigue high ({state.fatigue_f.cns:.1f}%). "
                     "Shifting stress toward aerobic system with low neural load."
                 ),
                 duration_min=45,
@@ -365,7 +365,7 @@ def _readiness_redirect(
                 type="Technique / Flow",
                 focus="Movement Drills <50% Intensity",
                 rationale=(
-                    f"CNS fatigue high ({state.f_nm_central:.1f}%). "
+                    f"CNS fatigue high ({state.fatigue_f.cns:.1f}%). "
                     "Motor patterns without heavy loading."
                 ),
                 duration_min=30,
@@ -376,13 +376,13 @@ def _readiness_redirect(
                 tissue_penalty=0.0,
             ))
 
-    if state.f_nm_peripheral > 60.0:
+    if state.fatigue_f.muscular > 60.0:
         if goal in ("Power", "OlympicLifts", "Sprinting"):
             redirects.append(SessionCandidate(
                 type="Neural Priming",
                 focus="Jumps / Throws (Low Volume, Long Rest)",
                 rationale=(
-                    f"Peripheral fatigue elevated ({state.f_nm_peripheral:.1f}%), "
+                    f"Peripheral fatigue elevated ({state.fatigue_f.muscular:.1f}%), "
                     "but CNS available — brief neural exposures only."
                 ),
                 duration_min=30,
@@ -397,7 +397,7 @@ def _readiness_redirect(
                 type="Active Recovery",
                 focus="Walking / Light Sled Drag",
                 rationale=(
-                    f"Local muscular fatigue high ({state.f_nm_peripheral:.1f}%). "
+                    f"Local muscular fatigue high ({state.fatigue_f.muscular:.1f}%). "
                     "Low-intensity movement to promote clearance."
                 ),
                 duration_min=30,

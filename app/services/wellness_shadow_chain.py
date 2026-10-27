@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+from sqlalchemy import false as sa_false
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,7 @@ from app.logic.wellness_shadow_snapshot import WellnessTelemetrySnapshot
 from app.models.personalization_shadow import PersonalizationShadowLog
 from app.models.recovery_shadow import RecoveryShadowLog
 from app.repositories.athlete_context_repository import AthleteContextRepository, WellnessInputs
-from app.services.shadow_evidence import RECORDED, inputs_hash, snapshot_of
+from app.services.shadow_evidence import RECORDED, STATE_SKIPS, inputs_hash, snapshot_of
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,9 @@ class _Head:
     id: int
     content_hash: str
     decision_impact: str
+    # Recovery only: a damaged-state skip of the athlete (any sample) is newer than this head,
+    # so the summary does not count it (``shadow_evidence``), however current its inputs are.
+    behind_state_skip: bool = False
 
 
 def is_as_of_day(ref: WellnessSampleRef, as_of: datetime, as_of_day: date | None = None) -> bool:
@@ -100,8 +104,16 @@ async def _head(
     parameter: str | None,
 ) -> _Head | None:
     successor = aliased(model)
+    skip = aliased(model)
+    behind_state_skip = (
+        select(skip.id).where(skip.user_id == ref.user_id,
+                              skip.decision_impact.in_(STATE_SKIPS), skip.id > model.id).exists()
+        if model is RecoveryShadowLog
+        else sa_false()
+    )
     query = (
-        select(model.id, model.content_hash, model.decision_impact)
+        select(model.id, model.content_hash, model.decision_impact,
+               behind_state_skip.label("behind_state_skip"))
         .where(model.source_wellness_sample_id == ref.sample_id,
                model.model_version == model_version,
                ~select(successor.id).where(successor.supersedes_id == model.id).exists())
@@ -112,15 +124,25 @@ async def _head(
     if found is None:
         return None
     return _Head(id=found.id, content_hash=str(found.content_hash),
-                 decision_impact=found.decision_impact)
+                 decision_impact=found.decision_impact,
+                 behind_state_skip=bool(found.behind_state_skip))
 
 
 def _satisfies(head: _Head | None, digest: str, kind: str) -> bool:
     """A head with this hash satisfies any request, except that a computed request needs a
-    computed head (a skip whose day has come gets its computation)."""
+    computed head (a skip whose day has come gets its computation), and a damaged-state skip
+    needs that same skip (INT-15 S3: state that became damaged under unchanged inputs must
+    supersede the computation, which no longer describes the athlete's current state). A
+    computed head behind a newer state skip of the athlete does not satisfy a computed request
+    either: the summary no longer counts it, so once state is readable again it is recomputed
+    and evidence resumes."""
     if head is None or head.content_hash != digest:
         return False
-    return kind != RECORDED or head.decision_impact == RECORDED
+    if kind in STATE_SKIPS:
+        return head.decision_impact == kind
+    if kind == RECORDED:
+        return head.decision_impact == RECORDED and not head.behind_state_skip
+    return True
 
 
 async def head_holds(

@@ -8,9 +8,13 @@ hard gate.
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import normalize_decode_error
 from app.domain.vectors import CapacityState
+from app.engine.engine_state_codec import EngineStateDecodeError
 from app.logic import confidence_presentation as cp
 from app.logic import onboarding_state as ob
 from app.models.user import AthleteProfile
@@ -22,6 +26,8 @@ from app.schemas.onboarding import (
 from app.services import assessment_surface_service, state_service
 from app.services.athlete_calendar_service import calendar_for
 
+logger = logging.getLogger(__name__)
+
 # How many measurement-debt prompts to surface at once (progressive, not a wall).
 _DEBT_PROMPT_LIMIT = 5
 
@@ -32,10 +38,32 @@ async def _profile(db: AsyncSession, user_id: int) -> AthleteProfile | None:
 
 async def _twin_summary(db: AsyncSession, user_id: int, profile: AthleteProfile | None) -> OnboardingTwinSummary:
     seed_status = getattr(profile, "initial_seed_status", "none") if profile else "none"
-    state = await state_service.load_current_state(db, user_id)
+    # Strict, never recovered (INT-15 2C): this summary reads only live confidence, and a
+    # reconstruction from the legacy mirror has none — it would present the weak prior as a
+    # measured "insufficient". A damaged row is reported as unavailable instead, and nothing
+    # is initialized over it. Onboarding stays non-blocking either way.
+    try:
+        state = await state_service.load_current_state_strict(db, user_id)
+    except EngineStateDecodeError as exc:
+        logger.warning(
+            "onboarding twin summary: state unavailable for user %s (%s)",
+            user_id,
+            normalize_decode_error(exc),
+        )
+        return OnboardingTwinSummary(
+            seeded=True,
+            seed_status=seed_status,
+            provisional=True,
+            overall_confidence=None,
+            state_available=False,
+        )
     if state is None:
         return OnboardingTwinSummary(
-            seeded=False, seed_status=seed_status, provisional=True, overall_confidence=None
+            seeded=False,
+            seed_status=seed_status,
+            provisional=True,
+            overall_confidence=None,
+            state_available=False,
         )
     # Worst-axis live variance → the overall certainty band (ADR-0059: live variance is
     # the sole provisionality authority; the seed snapshot is never read for this).
@@ -43,7 +71,11 @@ async def _twin_summary(db: AsyncSession, user_id: int, profile: AthleteProfile 
     band = cp.confidence_status(worst_var)
     provisional = band != cp.STATUS_ESTABLISHED or seed_status != "benchmark_seeded"
     return OnboardingTwinSummary(
-        seeded=True, seed_status=seed_status, provisional=provisional, overall_confidence=band
+        seeded=True,
+        seed_status=seed_status,
+        provisional=provisional,
+        overall_confidence=band,
+        state_available=True,
     )
 
 

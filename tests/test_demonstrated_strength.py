@@ -337,12 +337,12 @@ async def test_the_decline_prior_excludes_the_observation_being_judged(async_db)
 # ----- both directions through the real decline machine ------------------------------------------ #
 
 async def _max_strength(db, uid: int) -> float:
-    from app.engine.state_bridge import unified_from_athlete_row
+    from app.engine.state_loading import unified_from_athlete_row_strict
     from app.repositories.athlete_context_repository import AthleteContextRepository
 
     row = await AthleteContextRepository(db).get_latest_state(uid)
     assert row is not None
-    return float(unified_from_athlete_row(row).capacity_x.max_strength)
+    return float(unified_from_athlete_row_strict(row).capacity_x.max_strength)
 
 
 async def _last_observation(db, uid: int) -> BenchmarkObservation:

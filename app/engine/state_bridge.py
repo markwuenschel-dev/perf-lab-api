@@ -8,15 +8,19 @@ Each persisted ``engine_state`` payload carries a ``version`` key
 bump that constant and add an upgrade branch in ``_migrate_engine_state`` keyed
 on the stored version. Historical rows then migrate **lazily on read** — the
 version lives inside the JSONB column, so evolving the schema needs no Alembic
-migration. Payloads without the x/f/t vectors fall back to the legacy scalar
-columns.
+migration.
+
+Reading a row is NOT done here (INT-15 2D). The permissive ``unified_from_athlete_row``,
+which silently rebuilt state from the legacy scalar columns when the payload was missing or
+damaged, is deleted. Rows are read strictly by ``state_loading.unified_from_athlete_row_strict``
+(through ``engine_state_codec``, which owns versioning), or — for approved display surfaces
+only — by the provenance-marked ``state_loading.reconstruct_legacy_state_for_display``.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from app.domain.vectors import (
     CapacityConfidence,
@@ -40,45 +44,6 @@ def default_engine_state_dict() -> dict[str, Any]:
         "t": TissueState().model_dump(),
         "c": CapacityConfidence().model_dump(),
     }
-
-
-def _migrate_engine_state(eng: dict[str, Any]) -> dict[str, Any] | None:
-    """
-    Upgrade a persisted engine_state payload to the current schema version.
-
-    Historical rows migrate lazily on read. Unversioned payloads (written before
-    this stamp existed) are treated as v1. When the vector schema changes, bump
-    ``ENGINE_STATE_SCHEMA_VERSION`` and add an upgrade branch here, e.g.::
-
-        if version < 2:
-            eng = _upgrade_v1_to_v2(eng)
-
-    Returns None when the payload lacks the x/f/t vectors, so the caller falls
-    back to the legacy scalar columns.
-    """
-    if not ("x" in eng and "f" in eng and "t" in eng):
-        return None
-    migrated = dict(eng)
-    # v1 → v2: seed a weak-prior capacity confidence when absent (ADR-0036).
-    if "c" not in migrated:
-        migrated["c"] = CapacityConfidence().model_dump()
-    # Ensure the (possibly legacy/unversioned) payload carries a current stamp.
-    migrated["version"] = ENGINE_STATE_SCHEMA_VERSION
-    return migrated
-
-
-def _parse_engine_state(raw: Any) -> dict[str, Any] | None:
-    if raw is None:
-        return None
-    if isinstance(raw, dict):
-        return cast("dict[str, Any]", raw)
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return None
-        return cast("dict[str, Any]", parsed) if isinstance(parsed, dict) else None
-    return None
 
 
 class IncompleteLegacyState(ValueError):
@@ -222,55 +187,6 @@ def build_unified_state_vector(
         f_nm_central=leg["f_nm_central"],
         f_struct_damage=leg["f_struct_damage"],
         **kwargs,
-    )
-
-
-def unified_from_athlete_row(row: Any) -> UnifiedStateVector:
-    """Build UnifiedStateVector from SQLAlchemy AthleteState row."""
-    raw_eng = _parse_engine_state(getattr(row, "engine_state", None))
-    eng = _migrate_engine_state(raw_eng) if raw_eng is not None else None
-
-    if eng is not None:
-        x = CapacityState.model_validate(eng["x"])
-        f = FatigueState.model_validate(eng["f"])
-        t = TissueState.model_validate(eng["t"])
-        c = CapacityConfidence.model_validate(eng.get("c") or CapacityConfidence().model_dump())
-    else:
-        x = capacity_from_legacy(
-            row.c_met_aerobic,
-            row.c_nm_force,
-            row.c_struct,
-            row.b_met_anaerobic,
-        )
-        f = fatigue_from_legacy(
-            row.f_met_systemic,
-            row.f_nm_peripheral,
-            row.f_nm_central,
-            row.f_struct_damage,
-        )
-        t = tissue_from_legacy(row.f_struct_damage)
-        c = CapacityConfidence()  # legacy scalar rows → weak prior
-
-    legacy = sync_legacy_from_vectors(x, f, t)
-
-    ts: datetime = row.timestamp
-    return UnifiedStateVector(
-        timestamp=ts,
-        capacity_x=x,
-        fatigue_f=f,
-        tissue_t=t,
-        capacity_confidence=c,
-        c_met_aerobic=legacy["c_met_aerobic"],
-        c_nm_force=legacy["c_nm_force"],
-        c_struct=legacy["c_struct"],
-        b_met_anaerobic=legacy["b_met_anaerobic"],
-        f_met_systemic=legacy["f_met_systemic"],
-        f_nm_peripheral=legacy["f_nm_peripheral"],
-        f_nm_central=legacy["f_nm_central"],
-        f_struct_damage=legacy["f_struct_damage"],
-        s_struct_signal=float(getattr(row, "s_struct_signal", 0.0) or 0.0),
-        habit_strength=float(getattr(row, "habit_strength", 0.0) or 0.0),
-        skill_state=dict(getattr(row, "skill_state", None) or {}),
     )
 
 

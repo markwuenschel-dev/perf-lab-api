@@ -36,7 +36,7 @@ APP = Path(__file__).resolve().parents[1] / "app"
 #: Calls that read the predecessor state (or decide from it). The lock must come first.
 _PREDECESSOR_READS = (
     "get_latest_state",
-    "load_current_state",
+    "load_current_state_strict",
     "_current_or_staged_baseline",
     "has_state",
     "_state_row_count",
@@ -263,7 +263,7 @@ async def _state_rows(factory: async_sessionmaker[AsyncSession], uid: int) -> in
 
 async def _head(factory: async_sessionmaker[AsyncSession], uid: int) -> dict:
     async with factory() as db:
-        state = await state_service.load_current_state(db, uid)
+        state = await state_service.load_current_state_strict(db, uid)
         assert state is not None
         return state.model_dump(mode="json", exclude={"timestamp"})
 

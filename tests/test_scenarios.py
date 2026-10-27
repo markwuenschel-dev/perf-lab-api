@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import select
 
-from app.engine.state_bridge import unified_from_athlete_row
+from app.engine.state_loading import unified_from_athlete_row_strict
 from app.logic.prescriber import recommend_next_session
 from app.models.athlete_state import AthleteState
 from app.models.user import User
@@ -65,8 +65,8 @@ async def test_four_consecutive_hard_sessions_accumulate_fatigue(async_db):
         .limit(1)
     )).scalars().first()
 
-    from app.engine.state_bridge import unified_from_athlete_row
-    sv = unified_from_athlete_row(final_state)
+    from app.engine.state_loading import unified_from_athlete_row_strict
+    sv = unified_from_athlete_row_strict(final_state)
     f4 = sv.fatigue_f.cns + sv.fatigue_f.muscular + sv.fatigue_f.metabolic
 
     assert f4 > f1, (
@@ -143,7 +143,7 @@ async def test_weak_point_tags_appear_in_prescription_constraints(async_db):
     """
     user = await _user(async_db, "weak_point_rx@test.com")
     await initialize_athlete_state(async_db, user.id)
-    state = unified_from_athlete_row(
+    state = unified_from_athlete_row_strict(
         (await async_db.execute(
             select(AthleteState)
             .where(AthleteState.user_id == user.id)
@@ -173,7 +173,7 @@ async def test_no_weak_points_no_weak_point_constraints(async_db):
     """Without active weak points, constraints_applied should have no weak_point entries."""
     user = await _user(async_db, "no_weak@test.com")
     await initialize_athlete_state(async_db, user.id)
-    state = unified_from_athlete_row(
+    state = unified_from_athlete_row_strict(
         (await async_db.execute(
             select(AthleteState)
             .where(AthleteState.user_id == user.id)
@@ -253,7 +253,7 @@ async def test_high_fatigue_deload_candidate_selected(async_db):
         .order_by(AthleteState.timestamp.desc())
         .limit(1)
     )).scalars().first()
-    state = unified_from_athlete_row(final_row)
+    state = unified_from_athlete_row_strict(final_row)
 
     rx = recommend_next_session(state, goal="Strength")
 

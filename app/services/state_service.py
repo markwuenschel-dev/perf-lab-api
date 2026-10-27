@@ -2,8 +2,9 @@ import copy
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -11,16 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.config import settings
-from app.core.errors import CanonicalStateInvalid, normalize_decode_error
+from app.core.errors import CanonicalStateInvalid, DisplayStateRefused, normalize_decode_error
 from app.engine.engine_state_codec import EngineStateDecodeError
 from app.engine.phi_table import default_phi_for_row
 from app.engine.state_bridge import (
     athlete_state_kwargs_from_unified,
     build_unified_state_vector,
     capacity_from_legacy,
-    unified_from_athlete_row,
 )
 from app.engine.state_loading import (
+    DisplayStateUnavailable,
     ReadOnlyStateView,
     reconstruct_legacy_state_for_display,
     unified_from_athlete_row_strict,
@@ -270,7 +271,7 @@ async def stage_baseline_state(
     db.add(row)
     await db.flush()
     await db.refresh(row)
-    state = unified_from_athlete_row(row)
+    state = unified_from_athlete_row_strict(row)  # the row this function just built
 
     # Persist the immutable per-axis seed provenance snapshot (ADR-0059). Best-effort:
     # provenance capture must not fail account seeding. Never read at runtime for
@@ -359,50 +360,42 @@ async def _stage_seed_snapshot(
         logger.warning("seed snapshot persist failed for user %s", user_id, exc_info=True)
 
 
-async def load_current_state(
-    db: AsyncSession, user_id: int
-) -> UnifiedStateVector | None:
-    """Load the athlete's current domain state, or None if none exists yet.
-
-    The read half of the athlete-context load: fetch the latest row via the
-    repository seam and convert it to a domain vector. Stays above the seam per
-    CONTEXT.md (the repository returns rows, never vectors). Callers that need a
-    baseline created on absence use load_or_init_current_state instead.
-    """
-    row = await AthleteContextRepository(db).get_latest_state(user_id)
-    return unified_from_athlete_row(row) if row is not None else None
-
-
-async def load_recent_states(
-    db: AsyncSession, user_id: int, limit: int
-) -> list[UnifiedStateVector]:
-    """The athlete's recent domain state vectors, oldest→newest (chart order).
-
-    The multi-row twin of load_current_state: fetch recent rows via the repository seam
-    and convert them to domain vectors, staying above the seam per CONTEXT.md (the
-    repository returns rows, never vectors — this owns the fetch→convert pairing so routes
-    don't re-pair select(AthleteState) with unified_from_athlete_row by hand).
-    """
-    rows = await AthleteContextRepository(db).list_recent_states(user_id, limit)
-    return [unified_from_athlete_row(r) for r in reversed(rows)]
-
-
 async def load_recent_state_snapshots(
     db: AsyncSession, user_id: int, limit: int
 ) -> list[StateHistorySnapshotRead]:
     """Recent state snapshots projected for the history endpoint, oldest→newest.
 
-    Like load_recent_states, but carries each row's persisted id as ``snapshot_id`` and
-    derives the per-axis confidence-presentation band (ADR-0059). Pairs the id with the
-    converted vector here — above the repository seam — so the route stays free of ORM/id
-    knowledge, and so the durable snapshot identity survives the row→vector conversion
-    that ``unified_from_athlete_row`` would otherwise drop.
+    A DISPLAY surface (INT-15 2C): each row goes through the explicit display recovery, so a
+    row whose canonical payload cannot be decoded may still appear, reconstructed from the
+    legacy mirror and marked ``state_source="legacy_recovery"`` / ``degraded`` with its
+    reason. Carries each row's persisted id as ``snapshot_id`` and derives the per-axis
+    confidence-presentation band (ADR-0059), above the repository seam so the route holds
+    no ORM/id knowledge.
+
+    Raises:
+        DisplayStateRefused("history"): some row in the window cannot be shown even
+            degraded (future version, or unusable legacy scalars). The whole window is
+            refused rather than the row omitted: Overview and Twin read the LAST row as the
+            latest state, so dropping an unreadable head would silently present an older
+            snapshot as current. No history at all stays an empty list.
     """
     rows = await AthleteContextRepository(db).list_recent_states(user_id, limit)
-    return [
-        StateHistorySnapshotRead.from_state(unified_from_athlete_row(r), snapshot_id=r.id)
-        for r in reversed(rows)
-    ]
+    snapshots: list[StateHistorySnapshotRead] = []
+    for r in reversed(rows):
+        try:
+            view = reconstruct_legacy_state_for_display(r)
+        except DisplayStateUnavailable as exc:
+            raise DisplayStateRefused("history", exc.reason) from exc
+        snapshots.append(
+            StateHistorySnapshotRead.from_state(
+                view.state,
+                snapshot_id=r.id,
+                state_source=view.source,
+                degradation_reason=view.degradation_reason,
+                codec_version=view.codec_version,
+            )
+        )
+    return snapshots
 
 
 async def load_recent_workouts(
@@ -420,22 +413,6 @@ async def load_recent_workouts(
     return [WorkoutLogSummary.model_validate(r) for r in rows]
 
 
-async def load_or_init_current_state(
-    db: AsyncSession, user_id: int
-) -> UnifiedStateVector:
-    """Load the athlete's current domain state, auto-seeding a baseline if absent.
-
-    Like load_current_state, but when no state exists yet it initializes (and
-    commits) a baseline S0 and returns it. initialize_athlete_state already
-    returns the converted vector, so there is no redundant re-fetch.
-    """
-    row = await AthleteContextRepository(db).get_latest_state(user_id)
-    if row is None:
-        # Permissive on purpose, and named: this wrapper's policy until 2D deletes it.
-        return await initialize_athlete_state(db, user_id, decode=unified_from_athlete_row)
-    return unified_from_athlete_row(row)
-
-
 def preview_baseline_state(user_id: int) -> UnifiedStateVector:
     """The baseline ``initialize_athlete_state`` would seed with its defaults — built in
     memory, never persisted. Pure: no database access.
@@ -450,6 +427,28 @@ def preview_baseline_state(user_id: int) -> UnifiedStateVector:
     # Strict: the transient row was just built from a canonical vector, so it always decodes;
     # a failure here is a defect, never a reason to fall back to the legacy scalars.
     return unified_from_athlete_row_strict(transient)
+
+
+def _materialize_committed(
+    row: AthleteState, *, fallback: UnifiedStateVector, site: str
+) -> UnifiedStateVector:
+    """Decode a row read AFTER this request's commit, or keep ``fallback``. Never raises.
+
+    The workout is already durable here, so a decode failure must not turn it into a failed
+    save (a 409/500 the client would retry, double-logging the workout). It must not
+    reconstruct from the legacy scalars or reseed either. ``fallback`` is the valid result
+    this request already materialized; the unreadable row is reported loudly instead.
+    """
+    try:
+        return unified_from_athlete_row_strict(row)
+    except EngineStateDecodeError as exc:
+        logger.error(
+            "post_commit_state_unreadable site=%s reason=%s row_id=%s",
+            site,
+            normalize_decode_error(exc),
+            getattr(row, "id", None),
+        )
+        return fallback
 
 
 async def has_state(db: AsyncSession, user_id: int) -> bool:
@@ -510,6 +509,67 @@ async def load_or_init_current_state_strict(
             db, user_id, decode=unified_from_athlete_row_strict
         )
     return unified_from_athlete_row_strict(row)
+
+
+ShadowLoadOutcome = Literal[
+    "loaded",
+    "skipped_missing",
+    "skipped_incomplete",
+    "skipped_malformed",
+    "skipped_future_version",
+]
+
+# The internal decode taxonomy (`normalize_decode_error`) -> a shadow's skip outcome. One to one,
+# so a shadow records the same precision an operator or repair job would see.
+_SHADOW_SKIP: dict[str, ShadowLoadOutcome] = {
+    "canonical_state_missing": "skipped_missing",
+    "canonical_state_incomplete": "skipped_incomplete",
+    "canonical_state_malformed": "skipped_malformed",
+    "canonical_state_version_unsupported": "skipped_future_version",
+}
+
+
+@dataclass(frozen=True)
+class ShadowStateLoadResult:
+    """A shadow's view of the athlete's current state: canonical, or a reason it was skipped.
+
+    ``state`` is set only when ``outcome == "loaded"``. A skip carries no state at all — there
+    is no reconstruction to fall back to, so a shadow cannot compute from a lossy vector.
+    """
+
+    outcome: ShadowLoadOutcome
+    state: UnifiedStateVector | None = None
+
+
+async def try_load_current_state_for_shadow(
+    db: AsyncSession, user_id: int
+) -> ShadowStateLoadResult | None:
+    """Canonical state for a shadow estimator, a typed skip, or None if no state exists yet.
+
+    Shadows are not display (INT-15 slice 3): they compute a counterfactual from the state, so
+    a legacy reconstruction would feed them a vector nobody observed. They are not decisions
+    either, so a decode failure is not a refusal: it is neither recovered nor raised, but becomes
+    a skip the shadow records. (Shadows run in their own transactions after the main write has
+    committed, which protects that write from a shadow's rollback; they still add latency and
+    share the database with it.)
+
+    None and a skip stay distinct, as in the strict loader: None is "no state row yet" (a new
+    athlete, each shadow's existing no-op), ``skipped_missing`` is a row with no payload.
+    Anything other than a decode failure still propagates, to the shadow's best-effort write.
+    """
+    row = await AthleteContextRepository(db).get_latest_state(user_id)
+    if row is None:
+        return None
+    try:
+        state = unified_from_athlete_row_strict(row)
+    except EngineStateDecodeError as exc:
+        outcome = _SHADOW_SKIP[normalize_decode_error(exc)]
+        logger.info(
+            "shadow_state_skipped outcome=%s user_id=%s state_row_id=%s",
+            outcome, user_id, getattr(row, "id", None),
+        )
+        return ShadowStateLoadResult(outcome=outcome)
+    return ShadowStateLoadResult(outcome="loaded", state=state)
 
 
 async def load_current_state_for_display(
@@ -1363,9 +1423,13 @@ async def process_new_workout(
         if outcome is not None and outcome.applied:
             assert outcome.head is not None
             folded = True
-            result_state = unified_from_athlete_row(outcome.head)
+            # The correction head fold_late_events just wrote (canonical by construction).
+            # Strict, and still before the commit: a failure here is a defect and writes
+            # nothing, never a reconstruction.
+            result_state = unified_from_athlete_row_strict(outcome.head)
         else:
-            result_state = unified_from_athlete_row(last_record)
+            # The head this request already decoded strictly above, unchanged.
+            result_state = unified_from_athlete_row_strict(last_record)
         await db.commit()
     else:
         # Physical decay interval since the current state (never negative here: a workout
@@ -1395,7 +1459,9 @@ async def process_new_workout(
 
         # Materialize the return value BEFORE the shadow write: the EKF's best-effort
         # commit/rollback expires ORM objects, which would break a later attribute read.
-        result_state = unified_from_athlete_row(new_db_record)
+        result_state = _materialize_committed(
+            new_db_record, fallback=new_state_schema, site="new_state_row"
+        )
 
         # Shadow EKF (ADR-0041): advance the parallel full-covariance belief through this
         # same workout. Best-effort and capture-only; never affects the returned state.
@@ -1416,7 +1482,12 @@ async def process_new_workout(
         if written:
             latest = await AthleteContextRepository(db).get_latest_state(user_id)
             if latest is not None:
-                result_state = unified_from_athlete_row(latest)
+                # The commit above released the chain lock, so `latest` may be a CONCURRENT
+                # writer's row. If it cannot be read, keep the result already materialized
+                # for THIS committed workout: never a failed save, never a reconstruction.
+                result_state = _materialize_committed(
+                    latest, fallback=result_state, site="post_e1rm_reread"
+                )
 
     # ADR-0054: Model B per-exercise dose routing, shadow-only. Records the raw Σφ·D
     # routed dose + its 0–100 compatibility-scaled control-space values for offline

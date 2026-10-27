@@ -52,5 +52,14 @@ async def get_readiness(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ReadinessOut:
-    state, flags = await dashboard_service.readiness_payload(db, current_user.id)
-    return ReadinessOut(state=state, kpi_flags=flags)
+    view, flags = await dashboard_service.readiness_payload(db, current_user.id)
+    if view is None:
+        return ReadinessOut(state=None, kpi_flags=flags)
+    return ReadinessOut(
+        state=view.state,
+        state_source=view.source,
+        degraded=view.degraded,
+        degradation_reason=view.degradation_reason,
+        codec_version=view.codec_version,
+        kpi_flags=flags,
+    )

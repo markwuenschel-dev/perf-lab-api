@@ -222,18 +222,20 @@ function OnboardingBannerCard({
 }) {
   const twin = s.twin;
   const done = s.status === "completed";
+  // INT-15 2C: seeded state that cannot be read is NOT "provisional" — no confidence was
+  // measured, so it takes precedence and no band is shown. Never a gate: the banner and
+  // "done for now" stay exactly as they are.
+  const pill = twinPill(twin);
 
   return (
     <Card className="flex flex-col gap-3 p-[18px]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[13px] font-semibold leading-none text-ink">Your twin</span>
-          <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${
-            twin.provisional ? "text-warn border-warn/30 bg-warn/[0.06]" : "text-mint border-mint/30 bg-mint/[0.06]"
-          }`}>
-            {twin.seeded ? (twin.provisional ? "provisional" : "established") : "not seeded"}
+          <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold leading-none ${pill.className}`}>
+            {pill.label}
           </span>
-          {twin.overall_confidence && (
+          {pill.showConfidence && twin.overall_confidence && (
             <span className="text-[11.5px] font-medium leading-none text-dim">
               overall confidence: {twin.overall_confidence}
             </span>
@@ -249,6 +251,11 @@ function OnboardingBannerCard({
           </button>
         )}
       </div>
+      {twin.seeded && twin.state_available === false && (
+        <div role="note" className="text-[12px] font-medium leading-[1.5] text-mute">
+          Your stored training state can&apos;t be read right now, so no confidence is shown. It needs a repair on our side; you can keep going.
+        </div>
+      )}
       {!s.can_prescribe && s.missing_basics.length > 0 && (
         <div className="rounded-[10px] border border-info/[0.18] bg-info/[0.06] px-3 py-[10px] text-[11.5px] font-medium leading-[1.5] text-mute">
           To prescribe safely, finish the basics in Onboarding: {s.missing_basics.join(", ")}. Assessing a
@@ -466,3 +473,21 @@ function BenchmarkCard({
   );
 }
 
+
+
+/** The twin pill (INT-15 2C). Order is the precedence: unreadable seeded state first. */
+function twinPill(twin: OnboardingStateResponse["twin"]): {
+  label: string;
+  className: string;
+  showConfidence: boolean;
+} {
+  if (twin.seeded && twin.state_available === false) {
+    return { label: "state needs attention", className: "text-hot border-hot/30 bg-hot/[0.06]", showConfidence: false };
+  }
+  if (!twin.seeded) {
+    return { label: "not seeded", className: "text-warn border-warn/30 bg-warn/[0.06]", showConfidence: true };
+  }
+  return twin.provisional
+    ? { label: "provisional", className: "text-warn border-warn/30 bg-warn/[0.06]", showConfidence: true }
+    : { label: "established", className: "text-mint border-mint/30 bg-mint/[0.06]", showConfidence: true };
+}

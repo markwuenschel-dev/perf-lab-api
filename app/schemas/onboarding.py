@@ -122,6 +122,11 @@ class OnboardingTwinSummary(BaseModel):
     # band as the assessment card and the per-axis snapshot statuses — typed from
     # the one Literal so all three publish the same enum.
     overall_confidence: ConfidenceStatus | None
+    # INT-15 2C: whether the athlete's stored state could be read. False with seeded=True is
+    # a DAMAGED state (show "state needs attention", never a confidence band — a recovery
+    # from the legacy mirror carries no measured confidence). seeded=False is genuinely
+    # absent state, which is not damage.
+    state_available: bool
 
 
 class OnboardingStateResponse(BaseModel):
