@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Operating guide for **any** AI coding agent working in this repo (Claude Code, Codex,
-Grok, Cursor, etc.). The human initiates pushes/merges; when something is ambiguous or
-blocked, stop and ask rather than forcing it.
+Grok, Cursor, etc.). Once a PR is open, auto-merge is the default (see Git & PR workflow
+below); when something is ambiguous or blocked, stop and ask rather than forcing it.
 
 ## Git & PR workflow
 
@@ -37,17 +37,16 @@ blocked, stop and ask rather than forcing it.
 - Credentials come from a **`GH_TOKEN`** (and `GITHUB_TOKEN`) environment variable,
   supplied via local agent config that is **never committed** (for Claude Code:
   `.claude/settings.local.json` → `env`).
-- git is configured globally (`credential.helper`) to read that token automatically, so
-  `git push`/`fetch` and REST API calls work without prompts.
 - **Never print, echo, or commit the token**, and never write it into a tracked file.
   Prefer a fine-grained, repo-scoped, expiring PAT.
 
 ## Build & verify (run before pushing)
 
-- `npx tsc -b` — type-check (catches frontend↔backend contract drift)
+- `pnpm run verify` — `tsc -b` + vitest + vite build; vitest is a blocking CI gate
+- `pnpm run tokens:check` — generated design tokens + palette must be current (blocking in CI)
 - `pnpm run lint` — 3 pre-existing `react-refresh` errors in generated shadcn UI files
   (`badge`/`button`/`tabs`) are known and out of scope; introduce no new ones
-- `pnpm run build` — the production build must be green
+- After any `../openapi.json` change: `pnpm run gen:types` and commit `src/types.gen.ts` (CI fails on drift)
 
 ## Project conventions
 
@@ -62,5 +61,5 @@ blocked, stop and ask rather than forcing it.
 - Merging to `main` does **not** auto-deploy (Railway auto-deploy is retired). Production
   is a manual deploy of a self-hosted **EC2** docker-compose stack — this frontend is
   built into the `backend-with-frontend` Docker image (embeds the SPA at `/static`,
-  same-origin) and shipped via `./scripts/deploy.ps1` / `.sh`. See
+  same-origin) and shipped via `../scripts/deploy.ps1` / `.sh` (repo root). See
   [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for the full runbook.
