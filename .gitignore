@@ -216,6 +216,7 @@ __marimo__/
 .agents/
 .claude/skills/
 skills-lock.json
+.claude.local.md
 
 # External datasets (Kaggle, etc.) — pulled locally, not versioned
 data/kaggle/
