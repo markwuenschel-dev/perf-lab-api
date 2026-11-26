@@ -1,7 +1,7 @@
 """Manual wearable catch-up: sync every stored connection (or one user's) now.
 
 Not scheduled anywhere. Wearable data arrives when the athlete shows up: the web syncs a stale
-connection on load and when the check-in opens (ADR-0027, superseded: the production box sleeps
+connection on load and when the check-in opens (ADR-0027, superseded: the server may be stopped
 overnight, so a nightly job cannot be relied on). This command is for an operator who wants every
 connection caught up by hand.
 

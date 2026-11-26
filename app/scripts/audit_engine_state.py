@@ -464,16 +464,16 @@ def _explain_connect_failure(exc: Exception) -> str:
     lines += [
         f"  error: {type(exc).__name__}: {exc}",
         "",
-        "  Production Postgres has no published port and lives on an isolated Docker",
-        "  network. There is no external URL to point at - by design. Run this on the",
-        "  host, in a container attached to that network:",
+        "  A Postgres with no published port on an isolated Docker network has no",
+        "  external URL to point at. Run this inside a container attached to that",
+        "  network, e.g. the API service of the compose project that owns the database",
+        "  (it imports only modules at the deployed SHA, so copying the file in is enough):",
         "",
-        "    cd /opt/stack/infra",
-        "    sudo docker compose cp audit_engine_state.py perf-lab-api:/tmp/audit_engine_state.py",
-        "    sudo docker compose exec -T -w /app -e PYTHONPATH=/app perf-lab-api \\",
+        "    docker compose cp app/scripts/audit_engine_state.py api:/tmp/audit_engine_state.py",
+        "    docker compose exec -T -w /app -e PYTHONPATH=/app api \\",
         "        python /tmp/audit_engine_state.py --deployed-sha <sha>",
         "",
-        "  For a LOCAL run instead (this repo's docker-compose.yml):",
+        "  Or against this repo's docker-compose.yml Postgres, from your machine:",
         "    docker compose up -d postgres",
         "    DATABASE_URL='postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab'"
         " python -m app.scripts.audit_engine_state --deployed-sha local",
@@ -482,10 +482,9 @@ def _explain_connect_failure(exc: Exception) -> str:
         lines += [
             "",
             "  NOTE: that hostname belongs to a provider this project does not use.",
-            "  Your .env DATABASE_URL is stale. Production config is injected by the",
-            "  deployment's compose file, not read from .env.",
+            "  Your .env DATABASE_URL is stale; point it at a database you can reach.",
         ]
-    lines += ["", "This audit is READ-ONLY - it is safe to point at production.", ""]
+    lines += ["", "This audit is READ-ONLY - it is safe to point at any database.", ""]
     return "\n".join(lines)
 
 
