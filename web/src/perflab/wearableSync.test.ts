@@ -1,7 +1,7 @@
 // src/perflab/wearableSync.test.ts
 //
-// Wearable data reaches the check-in by syncing when the athlete shows up (the box sleeps
-// overnight, so no cron can). These pin the staleness rule, the UTC reading of the
+// Wearable data reaches the check-in by syncing when the athlete shows up (the server may
+// be stopped overnight, so no cron can). These pin the staleness rule, the UTC reading of the
 // backend's zone-less timestamps, and that a device-measured signal is never re-sent by hand.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WellnessSampleOut } from "@/types";

@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     # An instant at or after the last untyped-token issuer stopped (the previous release's
-    # container, which serves until `docker compose up -d` replaces it — docs/DEPLOY.md
+    # process, which serves until the new release replaces it — the historical docs/DEPLOY.md
     # "Typed-token cutover"). Every legitimate untyped token was issued before it, so an
     # untyped token is accepted only while its `exp` ≤ this + one TTL. Unset means "no
     # grace": untyped tokens are rejected. Production refuses to boot without it, or with

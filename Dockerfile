@@ -2,7 +2,7 @@
 # Python API image. Default target `backend` is API-only (split deploy: frontend
 # built and served as a separate image).
 # Target `backend-with-frontend` embeds the Vite SPA at /static for monolith deploy
-# (this is the target used in production — see docs/DEPLOY.md).
+# (the target the retired production host used — docs/DEPLOY.md is its historical runbook).
 #
 # Split deploy (default):  docker build -t perf-lab-api .
 # Monolith deploy:         docker build --target backend-with-frontend \

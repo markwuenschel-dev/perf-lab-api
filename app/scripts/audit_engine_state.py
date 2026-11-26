@@ -27,14 +27,14 @@ not restore history.
 
 Where it runs
 -------------
-Production Postgres has no published port and sits on an isolated Docker network, so this
-runs on the host, inside the running API container (it imports only modules that exist at the
-deployed SHA, so the new file can be copied in without a deploy):
+There is no live deployment. Point it at a database it can reach. A Postgres with no published
+port on an isolated Docker network is reachable only from a container on that network, so run
+it inside the API container there (it imports only modules that exist at the deployed SHA, so
+the file can be copied in without a deploy). Locally (this repo's docker-compose.yml):
 
-    cd /opt/stack/infra
-    sudo docker compose cp audit_engine_state.py perf-lab-api:/tmp/audit_engine_state.py
-    sudo docker compose exec -T -w /app -e PYTHONPATH=/app perf-lab-api \\
-        python /tmp/audit_engine_state.py --deployed-sha "$(git -C /opt/stack/perf-lab-api rev-parse HEAD)"
+    docker compose up -d postgres
+    DATABASE_URL='postgresql+asyncpg://perfuser:perfpass123@localhost:5432/perflab' \\
+        python -m app.scripts.audit_engine_state --deployed-sha local
 
 STRICTLY READ-ONLY. Issues SELECTs only, writes nothing, repairs nothing.
 """
@@ -450,10 +450,9 @@ async def audit_with_db(
 def _explain_connect_failure(exc: Exception) -> str:
     """Turn a 60-line asyncpg traceback into the one fact that matters.
 
-    Production Postgres has no published port and sits on an isolated Docker network,
-    reachable only by containers attached to it. The consequence for this script: there is
-    no external URL and no tunnel. It cannot be run against production from a laptop, by
-    design. It runs on the host.
+    A Postgres with no published port on an isolated Docker network is reachable only by
+    containers attached to it. The consequence for this script: there is no external URL and
+    no tunnel, so it must run inside such a container, not from a laptop.
     """
     host = ""
     try:

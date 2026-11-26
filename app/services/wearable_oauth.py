@@ -115,7 +115,7 @@ def state_hash(state: str) -> str:
 
 def redirect_uri() -> str:
     """``WEB_APP_URL`` + the callback path, validated. ``OURA_REDIRECT_URI`` is not read: it is
-    the pre-P6b release's setting and stays on the box for its rollback."""
+    the pre-P6b release's setting, kept only so that release could be rolled back to."""
     base = settings.WEB_APP_URL.rstrip("/")
     uri = f"{base}{CALLBACK_PATH}"
     parts = urlsplit(uri)
