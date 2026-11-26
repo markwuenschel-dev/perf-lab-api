@@ -198,7 +198,7 @@ CI runs the same gates on every PR ([`.github/workflows/ci.yml`](.github/workflo
 | [ADRs](docs/adr/) | Settled engineering decisions |
 | [PDRs](docs/pdr/) | Settled product thesis |
 | [Redesign roadmap](docs/REDESIGN_ROADMAP.md) | Wave 2 phases (P6/P8/P9 shipped) |
-| [Deploy](docs/DEPLOY.md) | EC2 docker-compose runbook |
+| [Deploy](docs/DEPLOY.md) | Historical EC2 runbook (host decommissioned 2026-11-26) |
 | [CONTEXT.md](CONTEXT.md) | Domain vocabulary — read this before changing engine code |
 
 ---

@@ -58,8 +58,8 @@ below); when something is ambiguous or blocked, stop and ask rather than forcing
   frontend-only types. Do **not** hand-edit API field shapes there — change the backend
   Pydantic schema and regenerate instead (see `../docs/SYNC_WITH_BACKEND.md`).
 - All HTTP goes through `src/api/perfLabClient.ts`.
-- Merging to `main` does **not** auto-deploy (Railway auto-deploy is retired). Production
-  is a manual deploy of a self-hosted **EC2** docker-compose stack — this frontend is
-  built into the `backend-with-frontend` Docker image (embeds the SPA at `/static`,
-  same-origin) and shipped via `../scripts/deploy.ps1` / `.sh` (repo root). See
-  [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for the full runbook.
+- Merging to `main` does **not** auto-deploy (Railway auto-deploy is retired). There is no
+  live deployment: the EC2 host was decommissioned 2026-11-26 and its deploy scripts were
+  removed. This frontend is built into the `backend-with-frontend` Docker image (embeds the
+  SPA at `/static`, same-origin). See [`../docs/DEPLOY.md`](../docs/DEPLOY.md) for the
+  historical runbook.

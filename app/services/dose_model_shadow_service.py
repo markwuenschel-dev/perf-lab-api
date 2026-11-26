@@ -37,8 +37,8 @@ from app.schemas.workout_structure import WorkoutStructure
 from app.schemas.workouts import ExternalIntensity, StressDose, WorkoutLog
 from app.services.telemetry_common import best_effort_write
 
-#: Environment variable carrying the commit the image was built from. scripts/deploy.sh bakes
-#: it in via the Dockerfile's build-arg. Rows written by an image built without it (every row
+#: Environment variable carrying the commit the image was built from, baked in via the
+#: Dockerfile's build-arg of the same name. Rows written by an image built without it (every row
 #: before that change, any local build) record ``code_version`` as None.
 BUILD_SHA_ENV = "APP_BUILD_SHA"
 

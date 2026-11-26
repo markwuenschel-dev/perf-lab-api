@@ -1,31 +1,14 @@
 # Deploy runbook
 
-Prod is a multi-app **docker-compose stack on AWS EC2** (moved off Render/Railway, 2026-07-10).
-Live: **https://perflab.44-198-76-44.nip.io** (nip.io wildcard DNS → EC2 `44.198.76.44`).
+> **Historical.** Prod ran as a multi-app docker-compose stack on AWS EC2 from 2026-07-10. That
+> host was decommissioned on 2026-11-26 and the one-command deploy scripts
+> (`scripts/deploy.sh`, `scripts/deploy.ps1`) were removed. There is no live deployment. The
+> sections below record how releases ran on that host; `deploy.sh <sha>` in them meant "check
+> out `<sha>` in the build source, rebuild, restart" (see *Manual deploy*). They stay because
+> migration error messages point at them.
 
 The app is host-agnostic (Dockerized) — nothing below is EC2-specific except the paths and the
 `sudo docker compose` invocation. For migration mechanics see [DEPLOYMENT.md](DEPLOYMENT.md).
-
----
-
-## TL;DR — one command
-
-```powershell
-./scripts/deploy.ps1                 # deploy latest main
-./scripts/deploy.ps1 -Ref <sha>      # roll back / deploy a specific commit or tag
-./scripts/deploy.ps1 -DryRun         # print the remote script, run nothing
-```
-
-```bash
-./scripts/deploy.sh                  # deploy latest main
-./scripts/deploy.sh <sha>            # roll back / deploy a specific commit or tag
-DRY_RUN=1 ./scripts/deploy.sh        # print the remote script, run nothing
-```
-
-`deploy.ps1` (PowerShell) and `deploy.sh` (bash) are the same flow. They SSH to the box, advance
-the build source, rebuild + restart the service, then verify with `alembic current` and a public
-`/ping` check. Overridable knobs: `SshKey`/`SSH_KEY` (default `~/.ssh/shared-box.pem`),
-`BoxHost`/`BOX`, `Url`/`URL`, `Tail`/`TAIL`.
 
 ---
 
@@ -56,7 +39,7 @@ Services in the stack:
 - **`postgres`** (`pgvector/pgvector:pg16`) — **shared** with neighbor apps (dominion-realm,
   leave-sprint, realmwalkers); perf-lab uses its own database within it.
 
-## Manual deploy (what the scripts automate)
+## Manual deploy
 
 Run on the box with `sudo docker compose`:
 
@@ -85,8 +68,9 @@ Running these locally fails — the internal DB host isn't resolvable off the bo
 
 ### Rollback
 
-`deploy.sh <sha>` / `deploy.ps1 -Ref <sha>` checks the ref out **detached**; deploying `main`
-again restores normal operation (`git checkout main && git reset --hard origin/main`).
+Rolling back meant checking the target ref out **detached** in the build source
+(`git checkout --detach <sha>`), then rebuilding; deploying `main` again restored normal operation
+(`git checkout main && git reset --hard origin/main`).
 
 **A rollback only works when the target SHA's migration head equals the database's.** The image
 runs `alembic upgrade head` before uvicorn (`Dockerfile`, `CMD`), and in production
@@ -105,8 +89,8 @@ is not a rollback procedure.
 ## Gotcha — the alembic race
 
 After `up -d`, boot runs `alembic upgrade head` while uvicorn starts. Checking `alembic current`
-in the first ~3–5 s can show the **old** head mid-migration — a race, not a failure. The deploy
-scripts `sleep` before checking. If it still looks behind, tail the logs for `Running upgrade`.
+in the first ~3–5 s can show the **old** head mid-migration — a race, not a failure. Sleep a few
+seconds before checking. If it still looks behind, tail the logs for `Running upgrade`.
 Also always `git status`-verify the source advanced: a stale checkout builds fine but ships old
 code **and** an old migration head.
 
