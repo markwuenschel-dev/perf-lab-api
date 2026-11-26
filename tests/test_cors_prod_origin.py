@@ -10,7 +10,7 @@ import pytest
 
 from app.core.config import DEV_DEFAULT_ORIGINS, Settings
 
-PROD_ORIGIN = "https://perflab.44-198-76-44.nip.io"
+PROD_ORIGIN = "https://perflab.example.com"
 
 
 @contextmanager
@@ -57,7 +57,7 @@ def test_prod_with_only_dev_defaults_and_empty_regex_raises():
         ALLOWED_ORIGINS=",".join(DEV_DEFAULT_ORIGINS),
         ALLOWED_ORIGIN_REGEX="",
     )
-    with pytest.raises(RuntimeError, match="ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io"):
+    with pytest.raises(RuntimeError, match="ALLOWED_ORIGINS=https://perflab.example.com"):
         main._check_production_cors(cfg)
 
 

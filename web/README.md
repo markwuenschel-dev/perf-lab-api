@@ -138,9 +138,10 @@ See the backend QUICKSTART_FLOW.md, ROADMAP.md, and PRESCRIBER_LOGIC.md for deep
 
 Deployment
 
-Production is a self-hosted **EC2** docker-compose stack — this frontend is built into
-the backend's `backend-with-frontend` Docker image (embeds the SPA at /static,
-same-origin), not deployed standalone. See `../docs/DEPLOY.md` for the full runbook.
+There is no live deployment (the EC2 host was decommissioned 2026-11-26). This frontend
+is built into the backend's `backend-with-frontend` Docker image (embeds the SPA at
+/static, same-origin), not deployed standalone. `../docs/DEPLOY.md` is the historical
+runbook for the retired host.
 (Netlify and Railway are no longer used by this project.)
 
 For a standalone/local static build: set VITE_API_BASE_URL to your deployed API (must

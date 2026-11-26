@@ -55,7 +55,7 @@ from app.core.config import (
 )
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
-PROD_ORIGIN = "https://perflab.44-198-76-44.nip.io"
+PROD_ORIGIN = "https://perflab.example.com"
 
 # A strong key of the shape the guard's own message recommends (`openssl rand -hex 32`).
 STRONG_KEY = "9f2c1a7e4b8d3056f1ae9c4b7d2085361ca7fe94b380d21c6a5f7e0b93d84c1f"
@@ -255,14 +255,14 @@ def test_the_non_origin_set_is_the_cors_specs_closed_set() -> None:
     [
         pytest.param(".*", id="obviously-broad"),
         pytest.param(r"https://[a-z0-9-]+\.perflab\.internal", id="looks-narrow"),
-        pytest.param(r"https://perflab\.44-198-76-44\.nip\.io", id="looks-exactly-pinned"),
+        pytest.param(r"https://perflab\.example\.com", id="looks-exactly-pinned"),
     ],
 )
 def test_no_origin_regex_boots_production_however_narrow_it_looks(regex: str) -> None:
     """Production refuses regex origin matching outright — it does not judge the pattern.
 
     The parametrisation is the argument. All three are refused, including the last, which
-    is a faithful transcription of the real production origin. That is the point: the
+    is a faithful transcription of the pinned origin these tests use. That is the point: the
     guard does not grade patterns, because "narrow enough" cannot be established from a
     pattern. Any check that tried would clear the shapes its author imagined and stay
     quiet about the rest — the accept-unless-recognised idiom this whole module removes.
