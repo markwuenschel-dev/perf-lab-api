@@ -208,30 +208,16 @@ jobs:
         run: pnpm run lint
         continue-on-error: true
 
-  # scripts/deploy.sh + deploy.ps1 had zero automated verification — a syntax error
-  # would only surface at actual deploy time. Cheap enough to run unconditionally
-  # rather than gating behind the changes filter.
+  # Syntax-checks scripts/merge-on-green.sh. Cheap enough to run unconditionally rather
+  # than gating behind the changes filter. The job name is a required status check in
+  # main's branch protection, so renaming it needs a matching branch-protection change.
   scripts:
     name: Deploy scripts (syntax)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: deploy.sh syntax + shellcheck
+      - name: merge-on-green.sh syntax + shellcheck
         run: |
-          bash -n scripts/deploy.sh
-          shellcheck scripts/deploy.sh
           bash -n scripts/merge-on-green.sh
           shellcheck scripts/merge-on-green.sh
-
-      - name: deploy.ps1 parses cleanly
-        shell: pwsh
-        run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "scripts/deploy.ps1", [ref]$null, [ref]$errors
-          ) | Out-Null
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_ }
-            exit 1
-          }

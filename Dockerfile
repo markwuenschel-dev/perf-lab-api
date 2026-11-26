@@ -54,7 +54,7 @@ RUN useradd --create-home --uid 1000 appuser \
 USER appuser
 
 # The commit this image was built from, recorded as `code_version` on shadow rows
-# (app/services/dose_model_shadow_service.py). scripts/deploy.sh passes it with --build-arg;
+# (app/services/dose_model_shadow_service.py). Pass it with `--build-arg APP_BUILD_SHA=<sha>`;
 # a build without it leaves the variable empty, which the service reads as "unknown".
 # Declared after the dependency layers so a new SHA only rebuilds what follows.
 ARG APP_BUILD_SHA=""
