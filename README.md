@@ -24,7 +24,7 @@
 
 Most training apps store sports: a 10K time, a squat 1RM, a race calendar. This repo stores **one body**. A latent state `S(t)` — capacity, fatigue, tissue, skill, habit — is updated by a stress dose `D(t)` and emits the next useful session `u(t)`.
 
-The backend is `app.main:app`. The control console lives in `web/` in this same repository. Live: [perflab.44-198-76-44.nip.io](https://perflab.44-198-76-44.nip.io).
+The backend is `app.main:app`. The control console lives in `web/` in this same repository. There is no live deployment (the EC2 host was decommissioned 2026-11-26).
 
 ---
 

@@ -249,7 +249,7 @@ def _cors_problem(cfg: Settings) -> str | None:
             f"ALLOWED_ORIGINS contains {listed}, which is not a real origin and allows "
             "callers you have not pinned. Combined with credentialed requests this hands "
             "them authenticated access. Pin explicit origins, e.g. "
-            "set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io."
+            "set ALLOWED_ORIGINS=https://perflab.example.com."
         )
 
     # INT-A1: a regex is refused outright rather than inspected. Judging a pattern's
@@ -264,7 +264,7 @@ def _cors_problem(cfg: Settings) -> str | None:
         return (
             "No explicit production CORS origin is configured; only local-dev origins are "
             "allowed. Pin the prod origin, e.g. "
-            "set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io. "
+            "set ALLOWED_ORIGINS=https://perflab.example.com. "
             "A regex alone is not accepted — an explicit origin must be pinned."
         )
 
@@ -275,7 +275,7 @@ def _check_production_cors(cfg: Settings) -> None:
     """Refuse to boot in production on a permissive or unpinned CORS config (INT-09).
 
     Production must pin at least one explicit allowed origin (e.g.
-    ``https://perflab.44-198-76-44.nip.io``) rather than relying on the old catch-all
+    ``https://perflab.example.com``) rather than relying on the old catch-all
     wildcard-subdomain regex default. Mirror ``_check_production_secrets``: fail fast
     (raise) in production, log a warning elsewhere so local/dev boots aren't blocked.
 

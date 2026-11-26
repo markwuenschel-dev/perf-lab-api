@@ -341,7 +341,7 @@ justifies a dedicated `app/integrations/` layer rather than stuffing it into `se
 - ✅ RESOLVED — **Un-bootable `main` masked by a stale last-good-deploy.** The P0 bugs
   landed 2026-06-19 (`bc6bcae`) and CI now gates app-boot + OpenAPI + pytest on every PR.
   (Render, the host referenced by the original entry, was retired 2026-07-10 — see
-  **Hosting — EC2** below and [`docs/DEPLOY.md`](DEPLOY.md).)
+  **Hosting** below and [`docs/DEPLOY.md`](DEPLOY.md).)
 - **Benchmark→state mappings cover only 13 of 36 definitions** — observations for the
   rest won't nudge `S(t)`. Audit `seed_benchmarks.py` mappings as P2/P5 work.
 - **No Hyrox-specific benchmarks** despite Hyrox being a target persona (`mixed_modal`
@@ -357,20 +357,18 @@ justifies a dedicated `app/integrations/` layer rather than stuffing it into `se
 - **DEV-only `user_id` override / auto-baseline** in `next-session` — confirm it's
   guarded for production.
 
-## Hosting — EC2 (moved 2026-07-10)
+## Hosting
 
 This section originally sketched a Railway migration. That migration never happened —
-the app instead moved to a self-hosted **AWS EC2 docker-compose stack** on 2026-07-10.
-[ADR-0028](adr/0028-hosting-platform.md) (Railway vs Render) is now superseded; the live
-topology, deploy commands, and rollback procedure are documented in
-[`docs/DEPLOY.md`](DEPLOY.md) — that is the single source of truth for hosting.
+the app instead moved to a self-hosted AWS EC2 docker-compose stack on 2026-07-10, and
+that host was decommissioned on 2026-11-26. There is no live deployment.
+[ADR-0028](adr/0028-hosting-platform.md) (Railway vs Render) is superseded;
+[`docs/DEPLOY.md`](DEPLOY.md) is the historical runbook for the retired host.
 
-The app remains **host-agnostic** (Dockerized) per the ADR-0028 guardrail; the EC2 move
-was config/ops, not a code change.
+The app remains **host-agnostic** (Dockerized) per the ADR-0028 guardrail.
 
-TODO: the P6 nightly wearable-pull scheduler (above) was built against a Railway Cron
-Job; how it now runs on the EC2 stack is not yet documented — confirm and record the
-answer in `docs/DEPLOY.md` rather than inventing the mechanism here.
+The P6 wearable-pull scheduler question is settled: no job is scheduled (ADR-0027,
+superseded; see the P6 entry above).
 
 ## Decision records & tracked cleanups
 

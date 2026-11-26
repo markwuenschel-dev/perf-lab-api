@@ -75,7 +75,7 @@ CORS_REGEX_UNSUPPORTED_IN_PRODUCTION = (
     "ALLOWED_ORIGIN_REGEX is set, and production does not accept regex origin matching. "
     "A pattern that looks anchored can still admit origins you did not intend, and that "
     "cannot be verified from the pattern alone. Pin explicit origins via ALLOWED_ORIGINS "
-    "instead, e.g. set ALLOWED_ORIGINS=https://perflab.44-198-76-44.nip.io."
+    "instead, e.g. set ALLOWED_ORIGINS=https://perflab.example.com."
 )
 
 # INT-A3: production does not accept debug logging.
@@ -160,7 +160,7 @@ class Settings(BaseSettings):
 
     # CORS — comma-separated list of allowed origins.
     # Defaults to local dev origins only. In production you MUST pin an explicit prod
-    # origin here via ALLOWED_ORIGINS (e.g. https://perflab.44-198-76-44.nip.io) —
+    # origin here via ALLOWED_ORIGINS (e.g. https://perflab.example.com) —
     # boot fails otherwise (see app.main._check_production_cors, INT-09).
     ALLOWED_ORIGINS: str = ",".join(DEV_DEFAULT_ORIGINS)
 
