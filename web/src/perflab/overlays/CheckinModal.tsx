@@ -172,8 +172,8 @@ export function CheckinModal() {
     sleep: "provided", hrv: "provided", rhr: "provided", soreness: "provided", mood: "provided", stress: "provided",
   }));
 
-  // Today's wearable readings. Sync first when stale (the box sleeps overnight, so no
-  // cron does it), then read today's device row. Any failure leaves the sliders in place.
+  // Today's wearable readings. Sync first when stale (the server may be stopped overnight,
+  // so no cron does it), then read today's device row. Any failure leaves the sliders in place.
   const [device, setDevice] = useState<DeviceReadings | null>(null);
   const open = state.checkinOpen;
   const token = auth.token;

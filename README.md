@@ -167,7 +167,7 @@ pnpm run dev                  # Vite console, talks to the API
 
 Do **not** `pip install -r requirements.txt`. [`pyproject.toml`](pyproject.toml) + [`uv.lock`](uv.lock) are the source of truth. The root `main.py` entrypoint is deprecated — use `app.main:app`.
 
-Production refuses to boot on a published `SECRET_KEY`, unpinned CORS, or `DEBUG=true`. Pin `ALLOWED_ORIGINS`. See [`docs/DEPLOY.md`](docs/DEPLOY.md).
+Production refuses to boot on a published `SECRET_KEY`, unpinned CORS, or `DEBUG=true`. Pin `ALLOWED_ORIGINS`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
 

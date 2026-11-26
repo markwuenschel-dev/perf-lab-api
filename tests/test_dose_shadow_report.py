@@ -38,7 +38,7 @@ def _row(**over: Any) -> dict[str, Any]:
 
 
 def test_report_columns_exist_on_the_model() -> None:
-    # A renamed column must fail here, not as an AttributeError on the box.
+    # A renamed column must fail here, not as an AttributeError in production.
     missing = [c for c in REPORT_COLUMNS if not hasattr(DoseModelShadowLog, c)]
     assert missing == []
 

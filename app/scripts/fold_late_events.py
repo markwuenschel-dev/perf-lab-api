@@ -22,7 +22,7 @@ what ``--apply`` would do only if the athlete's history does not change in betwe
 are refused, not capturable or ambiguous are reported again on every run.
 
 It does not need ``APPLY_LATE_EVENTS``: that flag is for events as they arrive. Applying is a
-deliberate operator act; there is no automated revert (see docs/DEPLOY.md).
+deliberate operator act; there is no automated revert (the historical docs/DEPLOY.md says why).
 """
 from __future__ import annotations
 

@@ -17,7 +17,7 @@ deadlock on pool exhaustion.
 **Waiting (one budget, ``ACQUIRE_BUDGET_S``).** In order: a per-process lock per connection id
 (queued callers in one process hold no database connection at all), a per-process capacity
 semaphore (``LOCK_CONNECTIONS_PER_PROCESS`` dedicated connections at most, for any mix of ids:
-the box's Postgres is shared with other apps), opening the dedicated connection, and the
+a deployment's Postgres may be shared with other apps), opening the dedicated connection, and the
 advisory lock itself under ``SET LOCAL lock_timeout`` set to what remains. ``SET LOCAL`` reverts
 at the COMMIT that ends the acquiring transaction, while the session-level lock survives it, so
 the connection then sits idle and not in a transaction. Expiry raises ``SyncBusy``.

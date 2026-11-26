@@ -1,7 +1,7 @@
 // src/perflab/wearableSync.ts
 //
 // Wearable data reaches the check-in by syncing when the athlete shows up, not by a
-// nightly job: the production box sleeps overnight, so a cron cannot be relied on. The app
+// nightly job: the server may be stopped overnight, so a cron cannot be relied on. The app
 // syncs on load and when the check-in opens, only if the last sync is stale. A failed sync
 // never blocks anything; the check-in simply asks for the signal by hand.
 import { getWearableConnection, syncOura } from "@/api/perfLabClient";
