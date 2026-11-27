@@ -211,3 +211,4 @@ def test_dose_does_not_mutate_its_input(log: WorkoutLog) -> None:
     calculate_stress_dose(log)
 
     assert log.model_dump() == before
+# Repo Hub Codex subscription delivery canary
